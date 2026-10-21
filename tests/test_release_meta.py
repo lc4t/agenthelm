@@ -66,6 +66,38 @@ class ReleaseMetaTests(unittest.TestCase):
             self.assertTrue(any(expected in problem for problem in problems), expected)
 
 
+ATTACH_SPEC = importlib.util.spec_from_file_location("attach_release", ROOT / "scripts/attach_release.py")
+attach_release = importlib.util.module_from_spec(ATTACH_SPEC)
+ATTACH_SPEC.loader.exec_module(attach_release)
+
+
+class AttachReleaseTests(unittest.TestCase):
+    def attach(self, tagged_versions: dict | None) -> dict:
+        latest = {"plugins": {"agent-pack": {"version": "1.6.0"}}}
+        release = {"tag": "v1", "tarball_sha256": "ab" * 32, "tarball_url": "https://example.invalid/a.tgz"}
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "latest.json"
+            target.write_text(json.dumps(latest), encoding="utf-8")
+
+            def fake_run(*command: str):
+                if command[:3] == ("gh", "release", "download"):
+                    Path(command[-1], "release.json").write_text(json.dumps(release), encoding="utf-8")
+                    return ""
+                if command[:2] == ("git", "show"):
+                    return None if tagged_versions is None else json.dumps({"plugins": tagged_versions})
+                raise AssertionError(command)
+
+            with mock.patch.object(attach_release, "run", side_effect=fake_run), \
+                    mock.patch("builtins.print"):
+                attach_release.main(["attach", str(target)])
+            return json.loads(target.read_text(encoding="utf-8"))
+
+    def test_release_is_attached_only_when_the_tag_ships_the_listed_versions(self) -> None:
+        self.assertEqual(self.attach({"agent-pack": {"version": "1.6.0"}})["release"]["tag"], "v1")
+        self.assertNotIn("release", self.attach({"agent-pack": {"version": "1.5.1"}}))
+        self.assertNotIn("release", self.attach(None))
+
+
 class SinceGateTests(unittest.TestCase):
     """--since compares a work tree with a release tag in a throwaway repository."""
 

@@ -3,7 +3,7 @@
   "name": "agents-init v6 / Project Profile 初始化与迁移",
   "description": "创建或迁移通用项目骨架与 Project Profile；随包 opinion-manager 管理用户确认的 Agent 行为规则。",
   "schema_version": "1.0",
-  "version": "6.4.0",
+  "version": "6.5.0",
   "status": "stable",
   "language": "zh-CN",
   "license": "CC-BY-4.0",

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-INITIALIZER_VERSION = "6.4.0"
+INITIALIZER_VERSION = "6.5.0"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")

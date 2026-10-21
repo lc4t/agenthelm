@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  actions: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Tag must be on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Tests
+        run: |
+          python -m unittest discover -s tests -v
+          python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
+          python -m unittest discover -s plugins/agent-pack/tests -v
+          python -m unittest discover -s plugins/opinion-manager/tests -v
+          python -m unittest discover -s plugins/project-orchestrator/tests -v
+
+      - name: Version gate against the previous release
+        run: |
+          previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -n "$previous" ]; then python scripts/release_meta.py --since "$previous"; else python scripts/release_meta.py; fi
+
+      - name: Build the release tarball
+        run: |
+          tag="$GITHUB_REF_NAME"
+          git archive --format=tar.gz --prefix="agenthelm-${tag}/" -o "agenthelm-${tag}.tar.gz" "$tag"
+          sha="$(sha256sum "agenthelm-${tag}.tar.gz" | cut -d' ' -f1)"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/agenthelm-${tag}.tar.gz"
+          printf '{"tag":"%s","commit":"%s","tarball_url":"%s","tarball_sha256":"%s"}\n' \
+            "$tag" "$GITHUB_SHA" "$url" "$sha" > release.json
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "agenthelm-${GITHUB_REF_NAME}.tar.gz" release.json \
+            --title "$GITHUB_REF_NAME" --notes "版本与迁移说明见 CHANGELOG.md 与 release/migrations.json。"
+
+      - name: Publish @agenthelm/cli when its version is new
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: packages/cli
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "NPM_TOKEN not set; skipping npm publish"; exit 0; fi
+          if npm view "@agenthelm/cli@${version}" version >/dev/null 2>&1; then echo "already published"; exit 0; fi
+          npm publish --access public --provenance
+
+      - name: Refresh the site so latest.json carries this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

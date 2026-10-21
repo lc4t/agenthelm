@@ -4,13 +4,13 @@
     "name": "Agents Init Plugin",
     "description": "可安装的项目初始化器，附带项目生命周期、扩展能力与 Opinion 管理。",
     "version": "0.6.0",
-    "updated_at": "2026-10-08",
+    "updated_at": "2026-10-21",
     "homepage": "./index.html",
     "future_domain": "skill.sakanano.moe"
   },
   "plugin": {
     "manifest": "./plugins/agents-init/plugin.json",
-    "version": "6.4.0",
+    "version": "6.5.0",
     "install_unit": "marketplace",
     "bundled_plugins": [
       "./plugins/project-orchestrator/plugin.json",
@@ -28,7 +28,7 @@
       "id": "agents-init",
       "name": "agents-init v6 / Project Profile 初始化与迁移",
       "description": "创建或迁移项目骨架；写入前验证同包 project-orchestrator、agent-pack 与 opinion-manager。",
-      "version": "6.4.0",
+      "version": "6.5.0",
       "status": "stable",
       "entrypoints": {
         "browser": "./plugins/agents-init/skills/agents-init/index.html",
@@ -41,7 +41,7 @@
       "id": "project-orchestrator",
       "name": "project-orchestrator / 项目生命周期编排",
       "description": "按项目模式组织 Case 工作目录或兼容既有 Task/Case；提供检索、无损迁移、验证与受控 Git 交付。",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",
@@ -53,7 +53,7 @@
       "id": "agent-pack",
       "name": "agent-pack / Agent 扩展能力管理",
       "description": "在项目与 Codex / Cursor / Claude 之间盘点、校验、安装、同步、迁移与对账 Plugin、Skill、MCP。",
-      "version": "1.5.1",
+      "version": "1.6.0",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/agent-pack/skills/agent-pack/SKILL.md",
@@ -66,7 +66,7 @@
       "id": "opinion-manager",
       "name": "opinion-manager / Agent 行为规则管理",
       "description": "三个首次主入口与可选记忆候选；一次内容确认后分别保存 Profile、正文与锁，支持精确版本和个人修改保护；可选的分层加载与项目私有的候选、灰度记账。",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "status": "experimental",
       "entrypoints": {
         "agent": "./plugins/opinion-manager/skills/opinion-manager/SKILL.md",

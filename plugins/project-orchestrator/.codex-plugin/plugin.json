@@ -1,6 +1,6 @@
 {
   "name": "project-orchestrator",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Portable project lifecycle orchestration for configured workspaces.",
   "author": {
     "name": "lc4t"

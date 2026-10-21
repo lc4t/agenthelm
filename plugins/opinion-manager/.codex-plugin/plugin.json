@@ -1,6 +1,6 @@
 {
   "name": "opinion-manager",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "选择模板变体与精确版本，管理个人 Profile、锁定快照和升级预览。",
   "author": {
     "name": "lc4t"

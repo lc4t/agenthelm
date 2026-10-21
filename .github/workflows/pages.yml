@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -43,6 +45,11 @@ jobs:
           mkdir -p _site/skills
           cp -R plugins/agents-init/skills/agents-init _site/skills/agents-init
           cp .nojekyll _site/.nojekyll
+
+      - name: Attach the latest release to latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/attach_release.py _site/latest.json
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

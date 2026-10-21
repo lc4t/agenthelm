@@ -269,7 +269,8 @@ def plugin_findings(latest: dict, installed: list[dict]) -> list[dict]:
             "change_kinds": kinds,
             "breaking": any(step.get("breaking") for step in steps),
             "steps": [{"to": step.get("to"), "change_kind": step.get("change_kind"),
-                       "breaking": step.get("breaking"), "summary": step.get("summary")} for step in steps],
+                       "breaking": step.get("breaking"), "summary": step.get("summary"),
+                       "actions": step.get("actions", [])} for step in steps],
         })
     return findings
 
@@ -422,6 +423,10 @@ def render_text(report: dict) -> str:
                 line += "（" + "、".join(kinds[kind] for kind in item["change_kinds"]) + "）"
             if item["breaking"]:
                 line += "（含不兼容变更）"
+            for step in item["steps"]:
+                if step.get("breaking"):
+                    line += f"\n      {step['to']} 不兼容：{step.get('summary')}"
+                    line += "".join(f"\n        - {action}" for action in step.get("actions") or [])
             hint = UPDATE_HINTS.get(item["client"])
             if hint:
                 line += f"\n      更新：{hint.format(plugin=item['plugin'])}"
@@ -529,7 +534,7 @@ def release_source(latest: dict, workdir: Path, source: Path | None = None) -> P
     tag, digest = release.get("tag"), release.get("tarball_sha256")
     if not tag or not digest:
         raise CheckError("云端 latest.json 没有发布 tag 与摘要；请用 --source 指定本地仓库")
-    url = f"https://codeload.github.com/{github_slug(latest)}/tar.gz/refs/tags/{tag}"
+    url = release.get("tarball_url") or f"https://github.com/{github_slug(latest)}/releases/download/{tag}/agenthelm-{tag}.tar.gz"
     archive = workdir / "release.tar.gz"
     request = urllib.request.Request(url, headers={"User-Agent": "agenthelm"})
     with urllib.request.urlopen(request, timeout=60) as response, archive.open("wb") as handle:  # noqa: S310

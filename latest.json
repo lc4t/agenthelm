@@ -2,14 +2,14 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/skill",
-  "released_at": "2026-10-08",
+  "released_at": "2026-10-21",
   "plugins": {
     "agent-pack": {
-      "version": "1.5.1",
+      "version": "1.6.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.4.0",
+      "version": "6.5.0",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
@@ -19,7 +19,7 @@
       }
     },
     "opinion-manager": {
-      "version": "0.4.0",
+      "version": "0.4.1",
       "source": "./plugins/opinion-manager",
       "content": {
         "opinion-manager/catalog": {
@@ -29,7 +29,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.6.0",
+      "version": "1.7.0",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -39,5 +39,52 @@
       }
     }
   },
-  "migrations": []
+  "migrations": [
+    {
+      "plugin": "agents-init",
+      "from": "6.4.0",
+      "to": "6.5.0",
+      "change_kind": "both",
+      "breaking": true,
+      "date": "2026-10-21",
+      "summary": "迁入 plugins/agents-init/ 并经 agenthelm 市场分发；初始化器在客户端缓存中查找同级插件；新增内容锁与 --mode refresh。",
+      "actions": [
+        "安装方式不兼容：旧的 agent-pack 复制 + ~/.claude/skills 软链需运行 npx @agenthelm/cli migrate --install",
+        "按仓库根路径引用 skills/agents-init/ 或根 plugin.json 的脚本需改为 plugins/agents-init/",
+        "已初始化的项目与 Profile 无需修改；新项目 runtime.distribution 为 marketplace"
+      ]
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.5.1",
+      "to": "1.6.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-21",
+      "summary": "新增 agenthelm check / install / update / migrate / doctor 与会话开始静默检查；Codex 适配器生成的 .mcp.json 改用 ${CLAUDE_PLUGIN_ROOT}。",
+      "actions": [
+        "会话开始每天至多联网检查一次；AGENTHELM_NO_UPDATE_CHECK=1 或 ~/.config/agenthelm/config.json 的 update_check=false 可关闭"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.6.0",
+      "to": "1.7.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-21",
+      "summary": "新增默认 Case 工具 runtime/case.py 与 Case 模板内容包。",
+      "actions": []
+    },
+    {
+      "plugin": "opinion-manager",
+      "from": "0.4.0",
+      "to": "0.4.1",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-21",
+      "summary": "声明公开目录的内容包清单；规则、模板与命令行为不变。",
+      "actions": []
+    }
+  ]
 }
