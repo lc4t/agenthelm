@@ -38,6 +38,24 @@ evidence: []
 
 示例只定义发现工具的通用输入，生产项目仍以自己的 Schema 为准。closed / done 等状态的语义、完成条件与审批由项目决定，工具不得据文件存在自行认定业务完成。
 
+### 默认 Case 工具（官方样例）
+
+没有自己 Case 工具的项目可直接使用随包的 `runtime/case.py`。它读取 Project Profile 的 `work.case.root`，按 [默认 Schema](case.schema.json) 校验，新建时使用 [CASE.md 模板](../templates/CASE.md)：
+
+```bash
+python3 runtime/case.py --project <项目> new --title "季度报告" --slug quarterly-report \
+  --goal "提交经评审的季度报告" --next-action "收集各组数据"
+python3 runtime/case.py --project <项目> list            # 未关闭的 Case，进行中在前；--all 含已关闭
+python3 runtime/case.py --project <项目> show quarterly   # 按 ID 或 ID 片段
+python3 runtime/case.py --project <项目> update quarterly --log "完成初稿" \
+  --next-action "提交评审" --add-deliverable docs/report.md
+python3 runtime/case.py --project <项目> validate
+```
+
+- `update` 只改指定字段，并向「工作记录」「决策记录」追加带时间的条目，其余正文原样保留；`--expect-updated-at` 防止覆盖并发修改。`active` 需要 `next_action`，`waiting` 需要 `waiting_for`；其余完成语义仍由项目决定。
+- Profile 的 `work.case.command` 声明了项目自己的工具时，本工具只做 `list` / `show` / `validate`，写操作返回 `project-tool` 并提示改用项目工具；`work.case.schema` 可替换默认 Schema。
+- 模板与 Schema 属于内容包 `project-orchestrator/case-template`，随插件版本更新，只影响之后新建的 Case，不改写已有 Case。
+
 ## 迁移工具
 
 运行 `runtime/case_workspace.py migrate --project <项目> --map <映射.json>` 先预演。审阅映射后追加 `--apply`。映射必须有 `schema_version: "1.0"` 和 `moves` 数组，每项包含项目相对 `source`、`target`；目标必须处于 cases 的一个 Case 目录内。可选 `records` 数组包含 `path`（目标 CASE.md）、`content`（项目创建器预先生成的正文），工具只负责排他创建，不替项目认定状态。

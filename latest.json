@@ -30,7 +30,13 @@
     },
     "project-orchestrator": {
       "version": "1.6.0",
-      "source": "./plugins/project-orchestrator"
+      "source": "./plugins/project-orchestrator",
+      "content": {
+        "project-orchestrator/case-template": {
+          "version": "1.0.0",
+          "kind": "sample"
+        }
+      }
     }
   },
   "migrations": []
