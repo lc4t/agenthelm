@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""agenthelm：检查已安装的 agenthelm 插件与项目内容是否落后于云端发布。
+"""agenthelm：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 插件。
 
 ``check`` 只读：比较各客户端已安装的插件版本、项目里由模板渲染的文件，
-以及 Opinion 来源与云端 ``latest.json``。``--hook`` 供会话开始时静默调用：
+以及 Opinion 来源与云端 ``latest.json``。``install``、``update``、``migrate``
+默认只预览，``--apply`` 才执行。通过 ``npx @agenthelm/cli <命令>`` 或
+``python3 <agent-pack>/runtime/agenthelm.py <命令>`` 运行。``--hook`` 供会话开始时静默调用：
 每天至多联网一次、离线不报错、只在有更新时输出一行，可用环境变量
 ``AGENTHELM_NO_UPDATE_CHECK=1`` 或用户配置 ``{"update_check": false}`` 关闭。
 """
@@ -27,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 MARKETPLACE = "agenthelm"
+CLI = "npx @agenthelm/cli"
 DEFAULT_LATEST_URLS = (
     "https://agenthelm.sakanano.moe/latest.json",
     "https://raw.githubusercontent.com/lc4t/skill/main/latest.json",
@@ -382,8 +385,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
 UPDATE_HINTS = {
     "claude": "claude plugin marketplace update agenthelm && claude plugin update {plugin}@agenthelm",
     "codex": "codex plugin marketplace upgrade agenthelm",
-    "cursor": "agenthelm update --client cursor",
-    "legacy": "agenthelm migrate",
+    "cursor": f"{CLI} update",
+    "legacy": f"{CLI} migrate --install",
 }
 
 
@@ -401,7 +404,7 @@ def one_line(report: dict) -> str | None:
         parts.append("Opinion 有新版本模板或规则")
     if summary["legacy_installs"]:
         parts.append(f"{summary['legacy_installs']} 个旧方式安装待迁移")
-    return "agenthelm：" + "，".join(parts) + "。运行 `agenthelm check` 查看详情；更新前会先预览，由你决定。"
+    return "agenthelm：" + "，".join(parts) + f"。运行 `{CLI} check` 查看详情；更新前会先预览，由你决定。"
 
 
 def render_text(report: dict) -> str:
@@ -843,7 +846,7 @@ def doctor(env: Env, report: dict) -> dict:
         clients = [item["client"] for item in items]
         if "legacy" in clients and any(client in {"claude", "codex"} for client in clients):
             issues.append({"plugin": plugin, "issue": "duplicate",
-                           "detail": "同时存在市场安装与旧方式安装，运行 agenthelm migrate"})
+                           "detail": f"同时存在市场安装与旧方式安装，运行 {CLI} migrate"})
         versions = {item.get("version") for item in items if item["client"] != "legacy"}
         if len(versions) > 1:
             issues.append({"plugin": plugin, "issue": "version-skew",
