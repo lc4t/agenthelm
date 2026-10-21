@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "packs": [
+    {
+      "id": "opinion-manager/catalog",
+      "version": "1.0.0",
+      "kind": "catalog",
+      "title": "公开 Opinion 规则与模板目录",
+      "description": "可选择的规则与模板版本；项目采用情况由 opinion.lock.json 记录，更新经 opinion-manager 预览与确认。",
+      "sources": [
+        "catalog"
+      ],
+      "materializes": [],
+      "project_lock": "opinion-manager",
+      "files": {
+        "catalog/README.md": "af654d84bdbc22c020dda7fe090d0ee364d5a892e93bdfa5fdd6c3305635ccb7",
+        "catalog/rules/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "catalog/rules/om.align-requirements/versions/1.0.0.json": "26b95f2edce0d4942b3652c624b270a29fd75caa1fc5717debdffca126241091",
+        "catalog/rules/om.assumptions-authority/versions/1.0.0.json": "85b02b03bbf8447f703820026d9ebe6e9ac1182000c90451dad4c81cd23c23d6",
+        "catalog/rules/om.batch-questions/versions/1.0.0.json": "2cad060df9195bf6f47083b0443fb92a9e1735989991aab34aae0c2651d18337",
+        "catalog/rules/om.bilingual-terms/versions/1.0.0.json": "420531760d1ab5ffe52395a680597cb652574027e542fd4684b7166e14918c39",
+        "catalog/rules/om.calculations/versions/1.0.0.json": "e54f87a7993d5908a1adfff07534b85af96a317d90b6eda6b84d3f8701331a18",
+        "catalog/rules/om.chinese-response/versions/1.0.0.json": "6bd3337a65a81251fad64555a7702016807c64e78aeb9709cb50cdc7325662c5",
+        "catalog/rules/om.clean-deliverable/versions/1.0.0.json": "f0af00b2666ca7146447f17c8e13ca01c9e0d73c01883797787b44c045b06df2",
+        "catalog/rules/om.complete-options/versions/1.0.0.json": "ef9ee103ee35dea554ae5d72735ebdeb7b0e16bf707b2362ef31be004c63110b",
+        "catalog/rules/om.conclusion-first/versions/1.0.0.json": "2c0975c3fba8d4553b69a714fd324a1240c10ba0429904740db853cf10d8f8d3",
+        "catalog/rules/om.concrete-titles/versions/1.0.0.json": "019d017fc9181339f1f969fd3e81323761e28b755c4ef434fb6af4d55925f538",
+        "catalog/rules/om.consistent-items/versions/1.0.0.json": "dd7030332d69d2eb91a7b1af34a3ac37d49e4018365da1e7a2d10afd71ed66f0",
+        "catalog/rules/om.device-readable/versions/1.0.0.json": "0afce0068b778ffa8c623cc1ff208192f70e03434f0ace4fd303565ba728a75b",
+        "catalog/rules/om.editable-diagrams/versions/1.0.0.json": "68d293ebd061527d948e892b9f4503a74043ed37ecf2a922cdd9047f508e2ed8",
+        "catalog/rules/om.evidence-inference/versions/1.0.0.json": "01593b17d08a67ee41b28d96e454b25d752fd5eccc341476a75d2bfb541884f2",
+        "catalog/rules/om.maintenance-chinese/versions/1.0.0.json": "6a6659917a0bccda3750f79727ea433eb63d40426aa2a212b65499a8160fc181",
+        "catalog/rules/om.maintenance-project-language/versions/1.0.0.json": "c29d447ac315533a52a6c242d7cc52b1668d9945c87c1f922dce261872730235",
+        "catalog/rules/om.markdown-structure/versions/1.0.0.json": "3647daeb2f4e4f532c8f77a033703bd3b36bbdd355a1f1f6ce8ac1e19afb66d7",
+        "catalog/rules/om.portable-files/versions/1.0.0.json": "f638ce7554a11e8f793b63ee01ea0ca65a8df405b3ca34da1ad8865960908057",
+        "catalog/rules/om.report-context/versions/1.0.0.json": "c423df33e1ad8dbf7d060b15fb23b35b68ebf924beb76ac129b346e5cf46c917",
+        "catalog/rules/om.report-formats/versions/1.0.0.json": "1fa5a40415061366227cdba554bc811bfabdc764b110adfdfedf5935e2239774",
+        "catalog/rules/om.report-review/versions/1.0.0.json": "054ebce7547cf7254a0d9d03af8b651daf6ae6361c921e3fa111aea7f9d96d4e",
+        "catalog/rules/om.response-brief/versions/1.0.0.json": "1d64ac6bedde9fd7205c6e517bb484acebedd08fe82f06aa761cf04bf010414a",
+        "catalog/rules/om.response-dense/versions/1.0.0.json": "5dda9f066dae841df986a190f00ea0bc56c0d3b0ce42ebffa9b2e1910dc0c4b9",
+        "catalog/rules/om.rules-tools/versions/1.0.0.json": "6f0657b70bd2e15e0dc68b95a9ef77234cd4af79d40a9a9f8a8158da16323a8d",
+        "catalog/rules/om.semantic-wrap/versions/1.0.0.json": "77890d37d6e21bf0568df250d5ec6398699c595728decf624d2f6ac8887802d7",
+        "catalog/rules/om.solutions-proportional/versions/1.0.0.json": "4ba50387659bc4e4593026a2ab253abda0f9d0e8e959063957dc58d72dbd5dac",
+        "catalog/rules/om.solutions-three-level/versions/1.0.0.json": "c9c2c2bad29e79a649ce04c95c9a2cb5a7ba6b92e5318878d7d5a40e50df7b6d",
+        "catalog/rules/om.tables-compact/versions/1.0.0.json": "0822de141431d920e6bf8ae0cc7a07641ad34e4248d252133f5a488fc17610f4",
+        "catalog/rules/om.tables-list-first/versions/1.0.0.json": "8e4d9f8d0382ca9a4a06a31e64bc402bfe1d2f8fd80f576670d28de26565fe15",
+        "catalog/rules/om.test-evidence/versions/1.0.0.json": "5fb88ea8478601128a5662077beb8180126c3c7529a9e54fa4b324a47e1b9304",
+        "catalog/rules/om.versioned-files/versions/1.0.0.json": "b5cc996847cf20f4764be135c4a5189a30f16dd26d4eaeda38bf6318820c256c",
+        "catalog/templates/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "catalog/templates/delivery-standard/compact-tables/versions/1.0.0.json": "b0d988b5e62017ce4784466f590fdc3ac3693412541ab71f788beac0658c25e1",
+        "catalog/templates/delivery-standard/list-first/versions/1.0.0.json": "3ea2774fb2f3fb5943d83eae3d36c637b4bcc6bbc45c54cf4428de0db1c4240f",
+        "catalog/templates/development-standard/chinese-maintenance/versions/1.0.0.json": "3d268a6a323d4bac1afcd5b8539b65f4019ab112850b223c61ee06615840248d",
+        "catalog/templates/development-standard/project-language/versions/1.0.0.json": "6f2d69873b198ce0cf7fac509cbb8f4702de37c8d98ff3c5ec31578022e0d990",
+        "catalog/templates/response-style/brief-chinese/versions/1.0.0.json": "951aacd484989835be5811730510a103d2efe044342f275066f64765d747448b",
+        "catalog/templates/response-style/dense-chinese/versions/1.0.0.json": "72479e811a3db0a9c50401a60f0c06694e00014a558ad1c20ed78945e99edcfa",
+        "catalog/templates/scenario/concise-project/versions/1.0.0.json": "efa1adfed739a206699cd6ae34b620d8c4717343959ffe63fe7ecc0456b16614",
+        "catalog/templates/scenario/reviewed-project/versions/1.0.0.json": "4b51fcccb57c237eee3fff56b2a73c86252bb7ee9cb5e71d1aa2cfc0d6062aa1",
+        "catalog/templates/work-method/proportional/versions/1.0.0.json": "e73ea29f532d09813b00ed161e9beb7ab079eb56dda5ecffda1c30cc630d0bd8",
+        "catalog/templates/work-method/three-level/versions/1.0.0.json": "0fa27605f23901f7d120d5d6c4ee63f14dbe12c4da53b1e3287da3d4b68da5ef"
+      }
+    }
+  ]
+}

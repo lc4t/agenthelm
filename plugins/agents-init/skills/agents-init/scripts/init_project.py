@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -18,6 +19,10 @@ INITIALIZER_VERSION = "6.4.0"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
+# Baseline of the template-derived files this initializer wrote; `check`
+# compares it with the files on disk and the newest content pack version.
+CONTENT_LOCK_PATH = Path(".agents/moe.sakanano.agent-pack/content.lock.json")
+CONTENT_LOCK_OWNER = "agenthelm"
 LEGACY_PROFILE_PATH = Path(".agents/moe.sakanano.project-runtime/project.json")
 RUNTIME_BLOCK = {
     "skill": "project-orchestrator",
@@ -574,6 +579,52 @@ def apply_migration(
         os.close(root_fd)
 
 
+def contract_pack(plugin_root: Path = PLUGIN_ROOT) -> dict | None:
+    """The content pack whose rendered files this initializer tracks in the project."""
+    try:
+        content = json.loads((plugin_root / "content.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    for pack in content.get("packs", []):
+        if pack.get("project_lock") == CONTENT_LOCK_OWNER:
+            return pack
+    return None
+
+
+def content_baseline(pack: dict | None, files: dict[Path, str], written: Iterable[Path]) -> dict[str, str]:
+    if pack is None:
+        return {}
+    tracked = {Path(path) for path in pack.get("materializes", [])}
+    return {
+        path.as_posix(): hashlib.sha256(files[path].encode("utf-8")).hexdigest()
+        for path in sorted(written, key=str)
+        if path in tracked
+    }
+
+
+def write_content_lock(root: Path, pack: dict, baseline: dict[str, str]) -> None:
+    """Merge this run's baseline into the project's content lock, atomically."""
+    path = root / CONTENT_LOCK_PATH
+    for parent in [*reversed(CONTENT_LOCK_PATH.parents[:-1])]:
+        if (root / parent).is_symlink():
+            raise InitError(f"refusing symlinked parent: {parent}")
+    if path.is_symlink():
+        raise InitError(f"refusing symlinked content lock: {CONTENT_LOCK_PATH}")
+    lock: dict = {"schema_version": 1, "packs": {}}
+    if path.exists():
+        try:
+            lock = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InitError(f"content lock 无法解析：{CONTENT_LOCK_PATH}", code="profile-invalid") from exc
+    entry = lock.setdefault("packs", {}).get(pack["id"], {})
+    files = {**entry.get("files", {}), **baseline}
+    lock["packs"][pack["id"]] = {"plugin": "agents-init", "version": pack["version"], "files": dict(sorted(files.items()))}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json_text(lock), encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--project", type=Path, required=True)
@@ -692,6 +743,8 @@ def main(argv: list[str] | None = None) -> int:
             raise InitError("--replace path does not exist: " + ", ".join(str(path) for path in sorted(missing_replace, key=str)))
         replace = [path for path in collisions if path in requested_replace]
         preserved = [path for path in collisions if path not in requested_replace]
+        pack = contract_pack()
+        baseline = content_baseline(pack, files, [*create, *replace])
         if args.mode == "init":
             applied = bool(args.apply and not collisions)
             if applied:
@@ -707,6 +760,8 @@ def main(argv: list[str] | None = None) -> int:
                     except OSError:
                         pass
             ok = True
+        if applied and pack is not None and baseline:
+            write_content_lock(root, pack, baseline)
         result = {
             "ok": ok,
             "mode": args.mode,
@@ -719,6 +774,11 @@ def main(argv: list[str] | None = None) -> int:
             "retire": [str(path) for path in retire],
             "profile_upgraded_from": str(LEGACY_PROFILE_PATH) if retire else None,
             "runtime": runtime_status,
+            "content_lock": {
+                "path": str(CONTENT_LOCK_PATH),
+                "pack": f"{pack['id']}@{pack['version']}",
+                "files": sorted(baseline),
+            } if pack is not None and baseline else None,
         }
         if args.output == "json":
             print(json_text(result), end="")

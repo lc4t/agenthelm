@@ -10,11 +10,23 @@
     },
     "agents-init": {
       "version": "6.4.0",
-      "source": "./plugins/agents-init"
+      "source": "./plugins/agents-init",
+      "content": {
+        "agents-init/project-contract": {
+          "version": "1.0.0",
+          "kind": "template"
+        }
+      }
     },
     "opinion-manager": {
       "version": "0.4.0",
-      "source": "./plugins/opinion-manager"
+      "source": "./plugins/opinion-manager",
+      "content": {
+        "opinion-manager/catalog": {
+          "version": "1.0.0",
+          "kind": "catalog"
+        }
+      }
     },
     "project-orchestrator": {
       "version": "1.6.0",

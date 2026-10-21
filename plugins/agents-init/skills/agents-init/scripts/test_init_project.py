@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -122,6 +123,44 @@ class InitProjectTests(unittest.TestCase):
             for heading in ("## 待确认假设", "## 未解决冲突", "## Opinion 演化候选"):
                 self.assertIn(heading, summary)
             self.assertIn("只保存尚未处理的事项与指向权威位置的指针", summary)
+
+    def test_apply_records_content_baseline_for_rendered_templates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = self.run_script(root, "--apply")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lock = json.loads((root / init_project.CONTENT_LOCK_PATH).read_text())
+            entry = lock["packs"]["agents-init/project-contract"]
+            pack = init_project.contract_pack()
+            self.assertEqual(entry["version"], pack["version"])
+            self.assertEqual(sorted(entry["files"]), sorted(pack["materializes"]))
+            for relative, digest in entry["files"].items():
+                self.assertEqual(hashlib.sha256((root / relative).read_bytes()).hexdigest(), digest)
+            # Working documents the user fills in are not template content.
+            self.assertNotIn(".agent-doc/progress.md", entry["files"])
+            self.assertEqual(json.loads(result.stdout)["content_lock"]["path"], str(init_project.CONTENT_LOCK_PATH))
+
+    def test_dry_run_writes_no_content_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = json.loads(self.run_script(root).stdout)
+            self.assertEqual(payload["content_lock"]["pack"].split("@")[0], "agents-init/project-contract")
+            self.assertFalse((root / init_project.CONTENT_LOCK_PATH).exists())
+
+    def test_migrate_merges_baseline_only_for_rewritten_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as backup:
+            root = Path(temporary)
+            self.assertEqual(self.run_script(root, "--apply").returncode, 0)
+            lock_path = root / init_project.CONTENT_LOCK_PATH
+            before = json.loads(lock_path.read_text())["packs"]["agents-init/project-contract"]["files"]
+            (root / "AGENTS.md").write_text("edited\n", encoding="utf-8")
+            result = self.run_script(root, "--mode", "migrate", "--replace", "AGENT.md",
+                                     "--recovery-dir", str(Path(backup) / "r"), "--apply")
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+            after = json.loads(lock_path.read_text())["packs"]["agents-init/project-contract"]["files"]
+            # AGENTS.md was preserved, so its install-time baseline must survive the user's edit.
+            self.assertEqual(after["AGENTS.md"], before["AGENTS.md"])
+            self.assertEqual(after["AGENT.md"], hashlib.sha256((root / "AGENT.md").read_bytes()).hexdigest())
 
     def test_profile_schema_declares_every_generated_top_level_field(self) -> None:
         schema = json.loads((SCRIPT.parents[1] / "project.schema.json").read_text(encoding="utf-8"))
