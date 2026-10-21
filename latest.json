@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "marketplace": "agenthelm",
+  "repository": "https://github.com/lc4t/skill",
+  "released_at": "2026-10-08",
+  "plugins": {
+    "agents-init": {
+      "version": "6.4.0",
+      "source": "./"
+    },
+    "agent-pack": {
+      "version": "1.5.1",
+      "source": "./plugins/agent-pack"
+    },
+    "opinion-manager": {
+      "version": "0.4.0",
+      "source": "./plugins/opinion-manager"
+    },
+    "project-orchestrator": {
+      "version": "1.6.0",
+      "source": "./plugins/project-orchestrator"
+    }
+  },
+  "migrations": []
+}

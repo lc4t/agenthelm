@@ -2,11 +2,11 @@
   "mcpServers": {
     "agent-pack": {
       "command": "python3",
-      "args": ["${PLUGIN_ROOT}/runtime/mcp_server.py"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/runtime/mcp_server.py"],
       "env": {
-        "PYTHONPATH": "${PLUGIN_ROOT}/runtime"
+        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/runtime"
       },
-      "cwd": "${PLUGIN_ROOT}"
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
     }
   }
 }

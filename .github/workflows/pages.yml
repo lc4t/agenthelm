@@ -34,8 +34,10 @@ jobs:
           rm -rf _site
           mkdir -p _site
 
-          cp -R index.html index.json README.md CHANGELOG.md INSTALL.md llms.txt \
-            plugin.json archive skills plugins scripts _site/
+          cp -R index.html index.json latest.json README.md CHANGELOG.md INSTALL.md llms.txt \
+            plugin.json archive skills plugins scripts release _site/
+          mkdir -p _site/.claude-plugin
+          cp .claude-plugin/marketplace.json _site/.claude-plugin/marketplace.json
           mkdir -p _site/.codex-plugin
           cp .codex-plugin/plugin.json _site/.codex-plugin/plugin.json
           cp .nojekyll _site/.nojekyll
