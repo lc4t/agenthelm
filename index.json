@@ -9,9 +9,9 @@
     "future_domain": "skill.sakanano.moe"
   },
   "plugin": {
-    "manifest": "./plugin.json",
+    "manifest": "./plugins/agents-init/plugin.json",
     "version": "6.4.0",
-    "install_unit": "repository-root",
+    "install_unit": "marketplace",
     "bundled_plugins": [
       "./plugins/project-orchestrator/plugin.json",
       "./plugins/agent-pack/plugin.json",
@@ -19,7 +19,9 @@
     ],
     "agent_install": "./INSTALL.md",
     "llms": "./llms.txt",
-    "bootstrap_and_init": "./scripts/bootstrap_and_init.py"
+    "bootstrap_and_init": "./scripts/bootstrap_and_init.py",
+    "marketplace": "./.claude-plugin/marketplace.json",
+    "latest": "./latest.json"
   },
   "skills": [
     {
@@ -29,10 +31,10 @@
       "version": "6.4.0",
       "status": "stable",
       "entrypoints": {
-        "browser": "./skills/agents-init/index.html",
-        "agent": "./skills/agents-init/SKILL.md",
-        "metadata": "./skills/agents-init/skill.json",
-        "template": "./skills/agents-init/AGENT.template.md"
+        "browser": "./plugins/agents-init/skills/agents-init/index.html",
+        "agent": "./plugins/agents-init/skills/agents-init/SKILL.md",
+        "metadata": "./plugins/agents-init/skills/agents-init/skill.json",
+        "template": "./plugins/agents-init/skills/agents-init/AGENT.template.md"
       }
     },
     {

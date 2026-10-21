@@ -2,7 +2,7 @@
 
 这是一个公开、可移植的 Agent 分发包，包含四个职责独立的 Plugin，Skill 主体均为中文：
 
-- `agents-init`（仓库根目录）：创建或显式迁移项目骨架与 Project Profile；
+- `agents-init`（`plugins/agents-init/`）：创建或显式迁移项目骨架与 Project Profile；
 - `project-orchestrator`（`plugins/project-orchestrator/`）：初始化完成后管理 Task、Case、能力路由、验证、进度与受控 Git 交接；
 - `agent-pack`（`plugins/agent-pack/`）：在项目与 Codex / Cursor / Claude Code 之间盘点、校验、安装、同步、迁移与对账 Plugin、Skill、MCP。
 - `opinion-manager`（`plugins/opinion-manager/`）：管理模板系列、平行变体与精确版本，生成完整 `OPINION.md` 和锁定快照，提供个人 Profile 派生与升级审阅。提供经逐文件批准的规则、平行偏好变体和场景模板。
@@ -13,7 +13,7 @@ Opinion 保持独立职责，并随完整分发包安装。公开候选目录见
 
 ## 安装单元
 
-**仓库根目录是唯一下载单元。** 根 manifest 为 [`plugin.json`](plugin.json)；`plugins/` 下三个 Plugin 各有自己的 `plugin.json`。只下载 `skills/agents-init/` 会缺少必需的 `project-orchestrator`、`agent-pack` 与 `opinion-manager`，初始化器会以 `runtime-required` 停止并保持目标项目零写入。
+四个 Plugin 都在 `plugins/` 下，各有自己的 `plugin.json`，由市场清单 [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) 统一列出；Claude Code、Codex 与 Cursor 都读取这份清单。只安装 `agents-init` 会缺少必需的 `project-orchestrator`、`agent-pack` 与 `opinion-manager`，初始化器会以 `runtime-required` 停止并保持目标项目零写入。
 
 用户可以直接告诉具备联网、本地 Shell 与项目写入能力的 Agent：
 
@@ -26,7 +26,7 @@ Agent 从 [`llms.txt`](llms.txt) 发现 [`INSTALL.md`](INSTALL.md)，再调用 `
 克隆或下载完整仓库后，用随包的 agent-pack 逐个安装，先预演再应用（`--client` 可取 `codex`、`cursor`、`claude`）：
 
 ```bash
-python3 plugins/agent-pack/runtime/agent_pack_config.py bootstrap --plugin . --client codex
+python3 plugins/agent-pack/runtime/agent_pack_config.py bootstrap --plugin plugins/agents-init --client codex
 python3 plugins/agent-pack/runtime/agent_pack_config.py bootstrap --plugin plugins/project-orchestrator --client codex
 python3 plugins/agent-pack/runtime/agent_pack_config.py bootstrap --plugin plugins/agent-pack --client codex
 python3 plugins/agent-pack/runtime/agent_pack_config.py bootstrap --plugin plugins/opinion-manager --client codex
@@ -67,14 +67,16 @@ python3 scripts/bootstrap_and_init.py \
 
 ```text
 /
-├── plugin.json                    # agents-init 的 Agent Plugins 1.0 manifest
-├── .codex-plugin/plugin.json      # Codex adapter
-├── skills/agents-init/            # 初始化器、模板与 Profile schema
+├── .claude-plugin/marketplace.json # agenthelm 市场清单（由 scripts/release_meta.py 生成）
+├── latest.json                    # 云端版本源（同上）
+├── release/migrations.json        # 版本间差异与迁移说明
 ├── plugins/
+│   ├── agents-init/               # 初始化器、模板与 Profile schema
 │   ├── project-orchestrator/      # 生命周期编排 Plugin 与条目式记忆工具
 │   ├── agent-pack/                # 扩展能力管理 Plugin、CLI 与 MCP
 │   └── opinion-manager/           # Opinion 配置、组合与审查；版本化规则、平行变体与场景模板
 ├── scripts/bootstrap_and_init.py
+├── scripts/release_meta.py
 ├── INSTALL.md
 ├── llms.txt
 └── tests/

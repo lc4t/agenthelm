@@ -96,7 +96,7 @@ class InitProjectTests(unittest.TestCase):
             self.assertEqual(profile["runtime"]["skill"], "project-orchestrator")
             self.assertEqual(profile["runtime"]["plugin"], "project-orchestrator")
             self.assertEqual(profile["runtime"]["capability_manager"], "agent-pack")
-            self.assertEqual(profile["runtime"]["distribution"], "bundled")
+            self.assertEqual(profile["runtime"]["distribution"], "marketplace")
             self.assertEqual(profile["opinion"]["provider"], "opinion-manager")
             self.assertEqual(profile["opinion"]["loading_mode"], "tiered")
             self.assertEqual(profile["memory"], {"provider": "project-orchestrator", "root": "memory",
@@ -152,6 +152,45 @@ class InitProjectTests(unittest.TestCase):
             },
         ))
         self.assertEqual(files[Path("docs/refs/README.md")], templates["docs/refs/README.md"])
+
+    def make_companions(self, parent: Path, layout: str) -> Path:
+        """Lay out agents-init plus its three companions the way a client stores them."""
+        def plugin(root: Path, name: str, version: str) -> None:
+            (root).mkdir(parents=True, exist_ok=True)
+            (root / "plugin.json").write_text(json.dumps({"name": name, "version": version}))
+            for relative in init_project.BUNDLED_PLUGINS.get(name, ()):
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_text("x")
+        if layout == "flat":
+            plugin(parent / "agents-init", "agents-init", "7.0.0")
+            for name in init_project.BUNDLED_PLUGINS:
+                plugin(parent / name, name, "9.0.0")
+            return parent / "agents-init"
+        market = parent / "plugins/cache/agenthelm"
+        plugin(market / "agents-init/7.0.0", "agents-init", "7.0.0")
+        for name in init_project.BUNDLED_PLUGINS:
+            plugin(market / name / "1.0.0", name, "1.0.0")
+            plugin(market / name / "2.0.0", name, "2.0.0")
+        if layout == "claude-cache":
+            # Claude Code leaves the superseded 2.0.0 directory behind; its record points at 1.0.0.
+            record = {"version": 2, "plugins": {
+                f"{name}@agenthelm": [{"installPath": str(market / name / "1.0.0")}]
+                for name in init_project.BUNDLED_PLUGINS}}
+            (parent / "plugins/installed_plugins.json").write_text(json.dumps(record))
+        return market / "agents-init/7.0.0"
+
+    def test_companions_are_found_in_every_client_layout(self) -> None:
+        for layout, expected in (("flat", "9.0.0"), ("codex-cache", "2.0.0"), ("claude-cache", "1.0.0")):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as temporary:
+                agents_init = self.make_companions(Path(temporary), layout)
+                status = init_project.validate_runtime(agents_init)
+                self.assertEqual(status["source"], "external")
+                self.assertEqual(status["capabilities"], f"agent-pack@{expected}")
+                self.assertEqual(status["opinion"], f"opinion-manager@{expected}")
+
+    def test_repository_root_is_accepted_as_runtime_root(self) -> None:
+        repository = SCRIPT.parents[5]
+        self.assertTrue(init_project.validate_runtime(repository)["available"])
 
     def test_missing_runtime_fails_before_any_project_write(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as incomplete:

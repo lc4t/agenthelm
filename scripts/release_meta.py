@@ -32,6 +32,8 @@ LATEST_FILE = "latest.json"
 MIGRATIONS_FILE = "release/migrations.json"
 CATEGORY = "Developer Tools"
 POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
+OWNER = {"name": "lc4t"}
+DESCRIPTION = "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。"
 BARE_PLUGIN_ROOT = re.compile(r"\$\{PLUGIN_ROOT\}")
 
 
@@ -44,12 +46,11 @@ def dump(data) -> str:
 
 
 def plugin_roots() -> list[Path]:
-    """The root plugin first, then every plugins/<id>, in a stable order."""
-    return [ROOT, *sorted(path.parent for path in (ROOT / "plugins").glob("*/plugin.json"))]
+    return sorted(path.parent for path in (ROOT / "plugins").glob("*/plugin.json"))
 
 
 def source_of(root: Path) -> str:
-    return "./" if root == ROOT else "./" + root.relative_to(ROOT).as_posix()
+    return "./" + root.relative_to(ROOT).as_posix()
 
 
 def load_plugins() -> list[dict]:
@@ -61,7 +62,6 @@ def load_plugins() -> list[dict]:
 
 
 def build_marketplace(plugins: list[dict]) -> dict:
-    root_manifest = plugins[0]["manifest"]
     entries = []
     for item in plugins:
         manifest = item["manifest"]
@@ -78,8 +78,8 @@ def build_marketplace(plugins: list[dict]) -> dict:
         })
     return {
         "name": MARKETPLACE_NAME,
-        "owner": root_manifest["author"],
-        "metadata": {"description": root_manifest["description"]},
+        "owner": OWNER,
+        "metadata": {"description": DESCRIPTION},
         "plugins": entries,
     }
 

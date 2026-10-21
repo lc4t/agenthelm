@@ -23,7 +23,7 @@ description: 初始化仓库或将既有仓库迁移到 agents-init v6 项目骨
 
 初始化或迁移项目前，完整读取 [AGENT.template.md](AGENT.template.md)。它是 v6.4 骨架契约、中文生成模板与迁移指南，也是初始化器生成 Markdown 的唯一权威源。
 
-本 Skill 必须从完整分发包使用。开始前确认根目录同时存在 `plugin.json`、`plugins/project-orchestrator/skills/project-orchestrator/SKILL.md`、`plugins/agent-pack/runtime/agent_pack_config.py` 与 `plugins/opinion-manager/runtime/opinion_manager.py`。只下载 `skills/agents-init/` 子目录时停止初始化并报告 `runtime-required`，引导用户安装完整分发包；禁止生成一个无法执行的项目契约。
+本 Skill 需要同一市场的 `project-orchestrator`、`agent-pack` 与 `opinion-manager` 一并安装。初始化器在 agents-init 旁边查找它们：仓库与 Cursor 本地插件为同级目录，Claude Code 与 Codex 为插件缓存中的同市场目录。找不到时停止初始化并报告 `runtime-required`，引导用户从 agenthelm 市场安装缺少的 Plugin；禁止生成一个无法执行的项目契约。
 
 ## 工作流程
 

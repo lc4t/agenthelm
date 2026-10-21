@@ -20,7 +20,7 @@ class ReleaseMetaTests(unittest.TestCase):
         marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
         self.assertEqual(marketplace["name"], "agenthelm")
         entries = {entry["name"]: entry for entry in marketplace["plugins"]}
-        roots = [ROOT, *sorted(path.parent for path in (ROOT / "plugins").glob("*/plugin.json"))]
+        roots = sorted(path.parent for path in (ROOT / "plugins").glob("*/plugin.json"))
         self.assertEqual(len(entries), len(roots))
         for root in roots:
             manifest = json.loads((root / "plugin.json").read_text(encoding="utf-8"))

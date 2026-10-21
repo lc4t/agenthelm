@@ -23,7 +23,7 @@ RUNTIME_BLOCK = {
     "skill": "project-orchestrator",
     "plugin": "project-orchestrator",
     "capability_manager": "agent-pack",
-    "distribution": "bundled",
+    "distribution": "marketplace",
     "required": True,
     "commit_policy": "explicit",
     "push_policy": "explicit",
@@ -135,27 +135,79 @@ def _read_manifest(path: Path) -> dict:
     return manifest
 
 
-def validate_runtime(plugin_root: Path) -> dict[str, str | bool]:
+def _version_key(value: str) -> tuple[int, ...]:
+    numbers = re.findall(r"\d+", value.split("+", 1)[0])
+    return tuple(int(number) for number in numbers) if numbers else ()
+
+
+def _claude_installed_path(cache_market: Path, name: str) -> Path | None:
+    """Claude Code keeps superseded version directories; its install record names the live one."""
+    record = cache_market.parent.parent / "installed_plugins.json"
+    try:
+        installed = json.loads(record.read_text(encoding="utf-8")).get("plugins", {})
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+        return None
+    for entry in installed.get(f"{name}@{cache_market.name}", []):
+        path = Path(str(entry.get("installPath", ""))).resolve()
+        if path.parent == (cache_market / name).resolve() and (path / "plugin.json").is_file():
+            return path
+    return None
+
+
+def locate_companion(agents_init_root: Path, name: str) -> Path | None:
+    """Find a companion plugin installed next to this agents-init.
+
+    Two layouts exist: ``<dir>/<plugin>`` (this repository, Cursor's local
+    plugins, agent-pack bootstrap) and ``<marketplace>/<plugin>/<version>``
+    (the Claude Code and Codex plugin caches).
+    """
+    flat = agents_init_root.parent / name
+    if (flat / "plugin.json").is_file():
+        return flat
+    cache_market = agents_init_root.parent.parent
+    versions_dir = cache_market / name
+    if not versions_dir.is_dir():
+        return None
+    live = _claude_installed_path(cache_market, name)
+    if live is not None:
+        return live
+    candidates = [path for path in versions_dir.iterdir() if (path / "plugin.json").is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (_version_key(path.name), path.stat().st_mtime))
+
+
+def _agents_init_root(plugin_root: Path) -> Path:
     root = plugin_root.expanduser().resolve()
-    required = [Path("plugin.json")]
-    for name, files in BUNDLED_PLUGINS.items():
-        required.append(Path("plugins") / name / "plugin.json")
-        required.extend(Path("plugins") / name / relative for relative in files)
-    missing = [str(relative) for relative in required if not _is_regular_file(root / relative)]
-    if missing:
-        raise InitError(
-            "缺少必需的同包 project-orchestrator / agent-pack / opinion-manager 文件："
-            + ", ".join(missing),
-            code="runtime-required",
-        )
+    # A repository checkout passes its root; plugins live under plugins/.
+    nested = root / "plugins" / "agents-init"
+    return nested if (nested / "plugin.json").is_file() else root
+
+
+def validate_runtime(plugin_root: Path) -> dict[str, str | bool]:
+    root = _agents_init_root(plugin_root)
+    if not _is_regular_file(root / "plugin.json"):
+        raise InitError(f"缺少 agents-init Plugin manifest：{root / 'plugin.json'}", code="runtime-required")
     if _read_manifest(root / "plugin.json").get("name") != "agents-init":
         raise InitError("Plugin manifest 必须声明 name=agents-init", code="runtime-required")
+    missing: list[str] = []
     versions: dict[str, str] = {}
-    for name in BUNDLED_PLUGINS:
-        manifest = _read_manifest(root / "plugins" / name / "plugin.json")
+    for name, files in BUNDLED_PLUGINS.items():
+        companion = locate_companion(root, name)
+        if companion is None:
+            missing.append(f"{name}/plugin.json")
+            continue
+        missing.extend(f"{name}/{relative}" for relative in files if not _is_regular_file(companion / relative))
+        manifest = _read_manifest(companion / "plugin.json")
         if manifest.get("name") != name:
             raise InitError(f"同包 Plugin manifest 必须声明 name={name}", code="runtime-required")
         versions[name] = str(manifest.get("version", ""))
+    if missing:
+        raise InitError(
+            "缺少必需的 project-orchestrator / agent-pack / opinion-manager 文件："
+            + ", ".join(missing),
+            code="runtime-required",
+        )
     return {
         "available": True,
         "source": "bundled" if root == PLUGIN_ROOT.resolve() else "external",
@@ -543,8 +595,8 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         default=PLUGIN_ROOT,
         help=(
-            "包含 agents-init 与 plugins/{project-orchestrator,agent-pack,opinion-manager} "
-            "的完整分发根目录"
+            "agents-init Plugin 根目录（同级查找 project-orchestrator、agent-pack、"
+            "opinion-manager），或含 plugins/ 的仓库根目录"
         ),
     )
     result.add_argument("--apply", action="store_true", help="create the complete skeleton only when no collision exists")

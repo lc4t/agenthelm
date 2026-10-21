@@ -22,7 +22,7 @@ Opinion provider 保持独立职责，并作为 `opinion-manager` 随包安装�
 
 ## 执行
 
-1. 读取 `https://skill.sakanano.moe/plugin.json` 的 `repository` 字段，将该完整仓库下载或克隆到新建的安全临时目录。只下载 `skills/agents-init/` 子目录不受支持。
+1. 读取 `https://skill.sakanano.moe/plugins/agents-init/plugin.json` 的 `repository` 字段，将该完整仓库下载或克隆到新建的安全临时目录。只下载 `skills/agents-init/` 子目录不受支持。
 2. 根据当前宿主选择 `--client codex`、`--client cursor` 或 `--client claude`。
 3. 从项目现有文件确认名称、项目类型、VCS、技术栈、runtime 与 Agent 客户端。项目名不能派生 ASCII slug 时（例如纯中文名），显式传入 `--slug example-project`，slug 使用 ASCII。无法确认且会改变生成契约时，一次性询问用户。
 4. 确认目标项目目录已存在；全新项目先执行 `mkdir -p /absolute/path/to/project`。在完整仓库根目录运行统一编排器，默认只预演：
