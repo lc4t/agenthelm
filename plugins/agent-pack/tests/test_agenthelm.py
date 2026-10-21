@@ -360,6 +360,15 @@ class AgenthelmOperationTests(unittest.TestCase):
         installed = [{"client": "claude", "plugin": "agents-init", "version": "99.0.0", "path": str(newer)}]
         self.assertEqual(agenthelm.locate_companion("agents-init", installed), newer)
 
+    def test_locate_returns_the_newest_or_the_requested_version(self) -> None:
+        legacy = self.home / ".agents/plugins/plugins/opinion-manager"
+        write(legacy / "plugin.json", {"name": "opinion-manager", "version": "0.4.0"})
+        codex = self.home / ".codex/plugins/cache/agenthelm/opinion-manager/0.4.1"
+        write(codex / "plugin.json", {"name": "opinion-manager", "version": "0.4.1"})
+        self.assertEqual(agenthelm.locate(self.env, "opinion-manager")["path"], str(codex))
+        self.assertEqual(agenthelm.locate(self.env, "opinion-manager", "0.4.0")["path"], str(legacy))
+        self.assertFalse(agenthelm.locate(self.env, "opinion-manager", "9.9.9")["ok"])
+
     def test_release_download_requires_a_pinned_tag_and_digest(self) -> None:
         with self.assertRaises(agenthelm.CheckError):
             agenthelm.release_source(self.latest, self.root)

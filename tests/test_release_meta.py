@@ -30,6 +30,12 @@ class ReleaseMetaTests(unittest.TestCase):
             # Claude Code decides updates from this entry version only, so it must never be blank.
             self.assertEqual(entries[manifest["name"]]["version"], manifest["version"])
 
+    def test_installing_agents_init_brings_its_companions_in_claude_code(self) -> None:
+        marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+        entries = {entry["name"]: entry for entry in marketplace["plugins"]}
+        self.assertEqual(sorted(entries["agents-init"]["dependencies"]),
+                         ["agent-pack", "opinion-manager", "project-orchestrator"])
+
     def test_marketplace_uses_sources_every_client_understands(self) -> None:
         marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
         for entry in marketplace["plugins"]:

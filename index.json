@@ -1,12 +1,13 @@
 {
   "site": {
-    "id": "sakanano-cloud-skills",
-    "name": "Agents Init Plugin",
-    "description": "可安装的项目初始化器，附带项目生命周期、扩展能力与 Opinion 管理。",
-    "version": "0.6.0",
+    "id": "agenthelm",
+    "name": "agenthelm",
+    "description": "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。",
+    "version": "0.7.0",
     "updated_at": "2026-10-21",
     "homepage": "./index.html",
-    "future_domain": "skill.sakanano.moe"
+    "domain": "agenthelm.sakanano.moe",
+    "legacy_domain": "skill.sakanano.moe"
   },
   "plugin": {
     "manifest": "./plugins/agents-init/plugin.json",
@@ -21,7 +22,8 @@
     "llms": "./llms.txt",
     "bootstrap_and_init": "./scripts/bootstrap_and_init.py",
     "marketplace": "./.claude-plugin/marketplace.json",
-    "latest": "./latest.json"
+    "latest": "./latest.json",
+    "cli": "npx @agenthelm/cli"
   },
   "skills": [
     {

@@ -842,6 +842,15 @@ def recovery_dir_for(env: Env, label: str) -> Path:
     return env.home / ".agent-pack" / "recovery" / f"{stamp}-agenthelm-{label}"
 
 
+def locate(env: Env, plugin: str, version: str | None = None) -> dict:
+    """Where a plugin is installed, newest first: the stable lookup for downstream wrappers."""
+    found = [item for item in installed_plugins(env, {plugin}) if version is None or item.get("version") == version]
+    found.sort(key=lambda item: (version_key(item.get("version") or "") or (0,), item["client"] != "legacy"),
+               reverse=True)
+    return {"ok": bool(found), "plugin": plugin, "version": version,
+            "path": found[0]["path"] if found else None, "installs": found}
+
+
 def doctor(env: Env, report: dict) -> dict:
     issues = []
     by_plugin: dict[str, list[dict]] = {}
@@ -914,6 +923,12 @@ def parser() -> argparse.ArgumentParser:
 
     doctor_parser = sub.add_parser("doctor", help="报告重复安装、版本不一致、旧方式残留与检查开关")
     common(doctor_parser)
+
+    locate_parser = sub.add_parser("locate", help="输出插件的已安装位置（最新优先），供下游脚本查找")
+    locate_parser.add_argument("plugin")
+    locate_parser.add_argument("--version", help="只要这个版本")
+    locate_parser.add_argument("--output", choices=("text", "json"), default="json")
+    locate_parser.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     return result
 
 
@@ -947,6 +962,13 @@ def main(argv: list[str] | None = None) -> int:
         project = (args.project or Path.cwd()).resolve()
     if args.command == "check" and args.hook:
         return hook(env, project, args.hook_format)
+    if args.command == "locate":
+        found = locate(env, args.plugin, args.version)
+        if args.output == "json":
+            print(json.dumps(found, ensure_ascii=False, indent=2))
+        elif found["path"]:
+            print(found["path"])
+        return 0 if found["ok"] else 1
     try:
         if args.command == "check":
             report = run_check(env, project, latest_source=args.latest, offline=args.offline,

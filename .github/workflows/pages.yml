@@ -36,7 +36,7 @@ jobs:
           rm -rf _site
           mkdir -p _site
 
-          cp -R index.html index.json latest.json README.md CHANGELOG.md INSTALL.md llms.txt \
+          cp -R index.html index.json latest.json README.md CHANGELOG.md INSTALL.md MIGRATION.md llms.txt \
             archive plugins scripts release _site/
           mkdir -p _site/.claude-plugin
           cp .claude-plugin/marketplace.json _site/.claude-plugin/marketplace.json

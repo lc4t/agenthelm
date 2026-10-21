@@ -1,17 +1,18 @@
-# Agents Init Plugin
+# agenthelm
 
-一句话触发：用户要求“用 https://skill.sakanano.moe/ 初始化当前项目”时，读取 https://skill.sakanano.moe/INSTALL.md 并执行。
+跨 Agent 的项目管理插件集（agents-init、project-orchestrator、agent-pack、opinion-manager），经 agenthelm 市场分发。
 
-分发包 manifest：https://skill.sakanano.moe/plugin.json
-初始化 Skill：https://skill.sakanano.moe/skills/agents-init/SKILL.md
-生命周期 Skill：https://skill.sakanano.moe/plugins/project-orchestrator/skills/project-orchestrator/SKILL.md
-扩展能力 Skill：https://skill.sakanano.moe/plugins/agent-pack/skills/agent-pack/SKILL.md
-扩展能力 MCP manifest：https://skill.sakanano.moe/plugins/agent-pack/mcp.json
-Opinion 管理 Skill：https://skill.sakanano.moe/plugins/opinion-manager/skills/opinion-manager/SKILL.md
+一句话触发：用户要求“用 agenthelm 初始化当前项目”或给出 https://agenthelm.sakanano.moe/ 时，读取 https://agenthelm.sakanano.moe/INSTALL.md 并执行。
 
-必须下载完整仓库。禁止只下载 agents-init 子目录；禁止复制任何用户的 global.yml、凭据、.env 或私有路径。
+市场清单：https://agenthelm.sakanano.moe/.claude-plugin/marketplace.json （GitHub：lc4t/skill，市场名 agenthelm）
+云端版本源：https://agenthelm.sakanano.moe/latest.json
+初始化 Skill：https://agenthelm.sakanano.moe/plugins/agents-init/skills/agents-init/SKILL.md
+生命周期 Skill：https://agenthelm.sakanano.moe/plugins/project-orchestrator/skills/project-orchestrator/SKILL.md
+扩展能力 Skill：https://agenthelm.sakanano.moe/plugins/agent-pack/skills/agent-pack/SKILL.md
+Opinion 管理 Skill：https://agenthelm.sakanano.moe/plugins/opinion-manager/skills/opinion-manager/SKILL.md
 
-目标项目目录须已存在；全新项目先创建目录。要求 Python 3.11 及以上。统一命令位于完整仓库根目录，会依次安装 agents-init、project-orchestrator、agent-pack、opinion-manager 四个 Plugin：
-python3 scripts/bootstrap_and_init.py --client <codex|cursor|claude> --project <absolute-path> --name <name> --project-type <csv> --vcs <vcs> --stack <csv> --runtime <runtime> --agent-cli <csv>
+安装：npx @agenthelm/cli install --client <claude|codex|cursor> 先预览，经用户同意后追加 --apply；或使用客户端市场命令（Claude Code：claude plugin install agents-init --marketplace lc4t/skill，会一并安装依赖；Codex：codex plugin marketplace add lc4t/skill，再安装四个 <插件>@agenthelm）。四个插件须一并安装。
 
-命令默认 dry-run；审阅计划并获得用户授权后追加 --apply。成功标准为 initializer.applied=true 且 doctor.ok=true。初始化后由 opinion-manager 只展示三个主入口：直接用模板、选择模板的部分条目、从空白开始迭代；另可选择基于已授权记忆提出候选规则。选择后再展示所需内容；实际可选规则、模板变体及精确版本以 catalog 输出为准。公开模板由用户选择，个人规则、Profile 和锁只保存到目标项目的指定私有位置；正式保存前先预览 Profile 与完整正文、锁，用户一次确认内容；写前核对未变化，Agent 使用两项各自真实指纹保存、读回并 verify。版本契约见 plugins/opinion-manager/references/versioning.md。
+检查与更新：npx @agenthelm/cli check（只读）；npx @agenthelm/cli update 预览，同意后 --apply。旧方式安装用 npx @agenthelm/cli migrate --install 迁移。
+
+禁止复制任何用户的个人规则、凭据、.env 或私有路径。初始化默认 dry-run，确认后 --apply；成功标准为 initializer.applied=true 且 doctor.ok=true。Opinion 首次配置只展示三个主入口：直接用模板、选择模板的部分条目、从空白开始迭代；另可选择基于已授权记忆提出候选规则。版本契约见 plugins/opinion-manager/references/versioning.md。

@@ -52,7 +52,12 @@
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
-      }
+      },
+      "dependencies": [
+        "project-orchestrator",
+        "agent-pack",
+        "opinion-manager"
+      ]
     },
     {
       "name": "opinion-manager",

@@ -42,6 +42,9 @@ CATEGORY = "Developer Tools"
 POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
 OWNER = {"name": "lc4t"}
 DESCRIPTION = "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。"
+# Installing agents-init alone must bring its companions (Claude Code installs
+# marketplace-entry dependencies; other clients ignore the field).
+DEPENDENCIES = {"agents-init": ["project-orchestrator", "agent-pack", "opinion-manager"]}
 BARE_PLUGIN_ROOT = re.compile(r"\$\{PLUGIN_ROOT\}")
 CHANGE_KINDS = {"code", "content", "both"}
 VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
@@ -121,6 +124,7 @@ def build_marketplace(plugins: list[dict]) -> dict:
             "keywords": manifest.get("keywords", []),
             "category": CATEGORY,
             "policy": POLICY,
+            **({"dependencies": DEPENDENCIES[manifest["name"]]} if manifest["name"] in DEPENDENCIES else {}),
         })
     return {
         "name": MARKETPLACE_NAME,
