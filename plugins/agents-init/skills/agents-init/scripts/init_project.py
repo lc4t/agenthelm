@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -625,17 +626,171 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str]) -> None
     os.replace(temporary, path)
 
 
+def _read_project_json(root: Path, relative: Path, label: str) -> dict:
+    path = root / relative
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if root in parent.parents):
+        raise InitError(f"refusing symlinked {label}", code="profile-invalid")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise InitError(f"缺少 {relative}", code="refresh-unavailable") from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise InitError(f"{label} 无法解析：{relative}", code="profile-invalid") from exc
+    if not isinstance(data, dict):
+        raise InitError(f"{label} 根节点必须是对象", code="profile-invalid")
+    return data
+
+
+def inputs_from_profile(root: Path) -> Inputs:
+    """Rebuild the initializer inputs a project was rendered with from its own Profile."""
+    profile = _read_project_json(root, PROFILE_PATH, "Project Profile")
+    details = profile.get("profile") or {}
+    try:
+        package = _read_project_json(root, Path(".agents/plugin.json"), "project plugin manifest")
+        slug = str(package.get("name") or "")
+    except InitError:
+        slug = ""
+    name = str(profile.get("name") or "")
+    return Inputs(
+        root, name, slug or slugify(name),
+        tuple(details.get("project_type") or ()), str(details.get("vcs") or ""),
+        tuple(details.get("stack") or ()), str(details.get("runtime") or ""),
+        tuple(details.get("agent_cli") or ()),
+        str((profile.get("work") or {}).get("mode") or "legacy"),
+    )
+
+
+def _unified_diff(relative: str, current: str, new: str, limit: int = 200) -> str:
+    lines = list(difflib.unified_diff(
+        current.splitlines(keepends=True), new.splitlines(keepends=True),
+        fromfile=f"a/{relative}", tofile=f"b/{relative}",
+    ))
+    if len(lines) > limit:
+        lines = lines[:limit] + [f"... ({len(lines) - limit} more diff lines)\n"]
+    return "".join(lines)
+
+
+def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
+    """Re-render the tracked template files after a content pack update.
+
+    Files still identical to their install-time baseline are replaced; files the
+    user edited are only replaced with --accept or kept with --keep. Every
+    replaced file is copied to --recovery-dir first.
+    """
+    pack = contract_pack()
+    if pack is None:
+        raise InitError("当前 agents-init 未声明可刷新的内容包", code="refresh-unavailable")
+    try:
+        lock = _read_project_json(root, CONTENT_LOCK_PATH, "content lock")
+    except InitError as exc:
+        if exc.code != "refresh-unavailable":
+            raise
+        lock = {"schema_version": 1, "packs": {}}
+    # Without a baseline (projects initialised before content locks existed),
+    # every file that differs from the new render counts as locally modified.
+    entry = (lock.get("packs") or {}).get(pack["id"]) or {}
+    baseline: dict[str, str] = dict(entry.get("files") or {})
+    rendered = files_for(inputs_from_profile(root))
+    accept = {Path(value) for value in args.accept}
+    keep = {Path(value) for value in args.keep}
+    tracked = [Path(path) for path in pack.get("materializes", [])]
+    unknown = (accept | keep) - set(tracked)
+    if unknown:
+        raise InitError("不是内容包跟踪的文件：" + ", ".join(sorted(map(str, unknown))))
+    if accept & keep:
+        raise InitError("同一文件不能同时 --accept 与 --keep：" + ", ".join(sorted(map(str, accept & keep))))
+    plan: list[dict] = []
+    for relative in tracked:
+        new = rendered[relative]
+        new_digest = hashlib.sha256(new.encode("utf-8")).hexdigest()
+        path = root / relative
+        if path.is_symlink():
+            raise InitError(f"refusing symlinked file: {relative}")
+        current = path.read_text(encoding="utf-8") if path.is_file() else None
+        current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
+        if current_digest == new_digest:
+            state, action = "unchanged", "keep"
+        elif current is None:
+            state = "missing"
+            action = "create" if relative in accept else "skip"
+        elif new_digest == baseline.get(relative.as_posix()):
+            # The new template renders this file exactly as before; the user's edits stay untouched.
+            state, action = "local-only", "keep"
+        elif current_digest == baseline.get(relative.as_posix()):
+            state, action = "clean", "keep" if relative in keep else "replace"
+        else:
+            state = "modified"
+            action = "replace" if relative in accept else "keep" if relative in keep else "blocked"
+        item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
+        if action in {"replace", "blocked", "create"} or (state == "clean" and action == "keep"):
+            item["diff"] = _unified_diff(relative.as_posix(), current or "", new)
+        plan.append(item)
+    blocked = [item["path"] for item in plan if item["action"] == "blocked"]
+    replacing = [Path(item["path"]) for item in plan if item["action"] == "replace"]
+    result = {
+        "ok": not blocked,
+        "mode": "refresh",
+        "applied": False,
+        "pack": f"{pack['id']}@{pack['version']}",
+        "from_version": entry.get("version"),
+        "files": plan,
+        "blocked": blocked,
+    }
+    if blocked:
+        result["hint"] = "本地已改动的文件需逐个选择：--accept <文件> 用新模板替换（先备份），或 --keep <文件> 保留本地"
+    if not args.apply or blocked:
+        return (0 if not blocked else 1), result
+    if replacing and args.recovery_dir is None:
+        raise InitError("--recovery-dir is required when refresh replaces files")
+    if replacing:
+        recovery = args.recovery_dir.expanduser().resolve()
+        if recovery == root or root in recovery.parents:
+            raise InitError("--recovery-dir must be outside the project root")
+        for relative in replacing:
+            archived = recovery / relative
+            if archived.exists():
+                raise InitError(f"recovery collision: {relative}")
+            archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            archived.write_bytes((root / relative).read_bytes())
+        result["recovery"] = str(recovery)
+    for item in plan:
+        relative = Path(item["path"])
+        if item["action"] in {"replace", "create"}:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+            temporary.write_text(rendered[relative], encoding="utf-8")
+            os.replace(temporary, target)
+    files = dict(baseline)
+    for item in plan:
+        if item["action"] in {"replace", "create"} or item["state"] == "unchanged":
+            files[item["path"]] = item["new_sha256"]
+        # Files kept on purpose keep their old baseline: the tool did not write them.
+    lock.setdefault("packs", {})[pack["id"]] = {"plugin": "agents-init", "version": pack["version"],
+                                               "files": dict(sorted(files.items()))}
+    lock_path = root / CONTENT_LOCK_PATH
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = lock_path.with_name(f".{lock_path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json_text(lock), encoding="utf-8")
+    os.replace(temporary, lock_path)
+    result["applied"] = True
+    return 0, result
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--project", type=Path, required=True)
-    result.add_argument("--name", required=True)
+    result.add_argument("--name")
     result.add_argument("--slug")
-    result.add_argument("--project-type", type=split_csv, required=True)
-    result.add_argument("--vcs", required=True)
-    result.add_argument("--stack", type=split_csv, required=True)
-    result.add_argument("--runtime", required=True)
-    result.add_argument("--agent-cli", type=split_csv, required=True)
-    result.add_argument("--mode", choices=("init", "migrate"), default="init")
+    result.add_argument("--project-type", type=split_csv)
+    result.add_argument("--vcs")
+    result.add_argument("--stack", type=split_csv)
+    result.add_argument("--runtime")
+    result.add_argument("--agent-cli", type=split_csv)
+    result.add_argument("--mode", choices=("init", "migrate", "refresh"), default="init",
+                        help="refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件")
+    result.add_argument("--accept", action="append", default=[], help="refresh：用新模板替换这个本地已改动的文件")
+    result.add_argument("--keep", action="append", default=[], help="refresh：保留这个文件的本地内容")
     result.add_argument("--work-mode", choices=("case-workspace", "legacy"), default=None,
                         help="新项目默认 case-workspace；既有项目只在显式选择后更改模式")
     result.add_argument("--replace", action="append", default=[], help="known skeleton path to replace in migrate mode")
@@ -659,6 +814,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         root = validate_root(args.project)
+        if args.mode == "refresh":
+            code, result = refresh_project(args, root)
+            if args.output == "json":
+                print(json_text(result), end="")
+            else:
+                label = "Applied" if result["applied"] else ("Blocked" if result["blocked"] else "Dry-run")
+                print(f"{label}: {result['pack']} (from {result['from_version']})")
+                for item in result["files"]:
+                    print(f"  {item['action']:8} {item['path']} [{item['state']}]")
+                if result.get("hint"):
+                    print(result["hint"])
+            return code
+        missing = [flag for flag, value in (("--name", args.name), ("--project-type", args.project_type),
+                                            ("--vcs", args.vcs), ("--stack", args.stack),
+                                            ("--runtime", args.runtime), ("--agent-cli", args.agent_cli))
+                   if not value]
+        if missing:
+            raise InitError("init/migrate 需要：" + ", ".join(missing))
         runtime_status = validate_runtime(args.runtime_plugin_root)
         slug = args.slug or slugify(args.name)
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):

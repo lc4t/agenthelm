@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import subprocess
 import sys
@@ -161,6 +162,102 @@ class InitProjectTests(unittest.TestCase):
             # AGENTS.md was preserved, so its install-time baseline must survive the user's edit.
             self.assertEqual(after["AGENTS.md"], before["AGENTS.md"])
             self.assertEqual(after["AGENT.md"], hashlib.sha256((root / "AGENT.md").read_bytes()).hexdigest())
+
+    def refresh(self, root: Path, *extra: str, template_suffix: str = "\n<!-- v1.1 -->\n") -> tuple[int, dict]:
+        """Run --mode refresh in-process against a newer AGENTS.md template and pack version."""
+        templates = init_project.load_templates()
+        templates["AGENTS.md"] += template_suffix
+        pack = {**init_project.contract_pack(), "version": "1.1.0"}
+        output = io.StringIO()
+        with mock.patch.object(init_project, "load_templates", return_value=templates), \
+                mock.patch.object(init_project, "contract_pack", return_value=pack), \
+                mock.patch("sys.stdout", output):
+            code = init_project.main(["--project", str(root), "--mode", "refresh", "--output", "json", *extra])
+        return code, json.loads(output.getvalue())
+
+    def lock_entry(self, root: Path) -> dict:
+        return json.loads((root / init_project.CONTENT_LOCK_PATH).read_text())["packs"]["agents-init/project-contract"]
+
+    def test_refresh_replaces_clean_files_after_backup_and_bumps_the_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as backup:
+            root = Path(temporary)
+            self.assertEqual(self.run_script(root, "--apply").returncode, 0)
+            original = (root / "AGENTS.md").read_text()
+            code, preview = self.refresh(root)
+            self.assertEqual(code, 0)
+            actions = {item["path"]: (item["state"], item["action"]) for item in preview["files"]}
+            self.assertEqual(actions["AGENTS.md"], ("clean", "replace"))
+            self.assertEqual(actions["AGENT.md"], ("unchanged", "keep"))
+            self.assertIn("+<!-- v1.1 -->", next(i for i in preview["files"] if i["path"] == "AGENTS.md")["diff"])
+            self.assertEqual((root / "AGENTS.md").read_text(), original)  # dry-run writes nothing
+            code, applied = self.refresh(root, "--apply", "--recovery-dir", str(Path(backup) / "r"))
+            self.assertTrue(applied["applied"], applied)
+            self.assertTrue((root / "AGENTS.md").read_text().endswith("<!-- v1.1 -->\n"))
+            self.assertEqual((Path(backup) / "r/AGENTS.md").read_text(), original)
+            entry = self.lock_entry(root)
+            self.assertEqual(entry["version"], "1.1.0")
+            self.assertEqual(entry["files"]["AGENTS.md"], hashlib.sha256((root / "AGENTS.md").read_bytes()).hexdigest())
+
+    def test_refresh_blocks_on_local_edits_until_the_user_chooses(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as backup:
+            root = Path(temporary)
+            self.assertEqual(self.run_script(root, "--apply").returncode, 0)
+            (root / "AGENTS.md").write_text("my own rules\n", encoding="utf-8")
+            old_baseline = self.lock_entry(root)["files"]["AGENTS.md"]
+            code, blocked = self.refresh(root, "--apply", "--recovery-dir", str(Path(backup) / "a"))
+            self.assertEqual(code, 1)
+            self.assertEqual(blocked["blocked"], ["AGENTS.md"])
+            self.assertFalse(blocked["applied"])
+            self.assertEqual((root / "AGENTS.md").read_text(), "my own rules\n")
+            code, kept = self.refresh(root, "--apply", "--keep", "AGENTS.md")
+            self.assertTrue(kept["applied"])
+            self.assertEqual((root / "AGENTS.md").read_text(), "my own rules\n")
+            entry = self.lock_entry(root)
+            self.assertEqual(entry["version"], "1.1.0")
+            self.assertEqual(entry["files"]["AGENTS.md"], old_baseline)
+
+    def test_refresh_leaves_edits_alone_when_the_template_output_did_not_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.run_script(root, "--apply").returncode, 0)
+            (root / "AGENT.RULES.md").write_text("project rules of my own\n", encoding="utf-8")
+            code, preview = self.refresh(root)
+            self.assertEqual(code, 0, preview)
+            states = {item["path"]: (item["state"], item["action"]) for item in preview["files"]}
+            self.assertEqual(states["AGENT.RULES.md"], ("local-only", "keep"))
+            self.assertEqual(preview["blocked"], [])
+
+    def test_refresh_accept_replaces_an_edited_file_with_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as backup:
+            root = Path(temporary)
+            self.assertEqual(self.run_script(root, "--apply").returncode, 0)
+            (root / "AGENTS.md").write_text("my own rules\n", encoding="utf-8")
+            code, applied = self.refresh(root, "--apply", "--accept", "AGENTS.md",
+                                         "--recovery-dir", str(Path(backup) / "r"))
+            self.assertEqual(code, 0, applied)
+            self.assertEqual((Path(backup) / "r/AGENTS.md").read_text(), "my own rules\n")
+            self.assertIn("<!-- v1.1 -->", (root / "AGENTS.md").read_text())
+
+    def test_refresh_without_a_lock_treats_differences_as_local_edits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.run_script(root, "--apply").returncode, 0)
+            (root / init_project.CONTENT_LOCK_PATH).unlink()
+            code, preview = self.refresh(root)
+            self.assertEqual(code, 1)
+            self.assertEqual(preview["blocked"], ["AGENTS.md"])
+            self.assertIsNone(preview["from_version"])
+
+    def test_refresh_rejects_untracked_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.run_script(root, "--apply").returncode, 0)
+            output = io.StringIO()
+            with mock.patch("sys.stdout", output):
+                code = init_project.main(["--project", str(root), "--mode", "refresh", "--output", "json",
+                                          "--accept", ".agent-doc/progress.md"])
+            self.assertEqual(code, 2)
+            self.assertIn("不是内容包跟踪的文件", json.loads(output.getvalue())["error"])
 
     def test_profile_schema_declares_every_generated_top_level_field(self) -> None:
         schema = json.loads((SCRIPT.parents[1] / "project.schema.json").read_text(encoding="utf-8"))

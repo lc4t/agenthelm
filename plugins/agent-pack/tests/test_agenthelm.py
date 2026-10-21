@@ -185,5 +185,185 @@ class AgenthelmCheckTests(unittest.TestCase):
         self.assertEqual(json.loads(printed.call_args.args[0])["summary"]["plugins_behind"], 1)
 
 
+
+class AgenthelmOperationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "home"
+        self.env = agenthelm.Env(home=self.home, variables={})
+        latest = json.loads(json.dumps(LATEST))
+        latest["repository"] = "https://github.com/lc4t/skill"
+        self.latest = latest
+        self.latest_file = self.root / "latest.json"
+        write(self.latest_file, latest)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def run_cli(self, *args: str) -> tuple[int, dict]:
+        with mock.patch("builtins.print") as printed:
+            code = agenthelm.main([*args, "--home", str(self.home), "--latest", str(self.latest_file),
+                                   "--output", "json"])
+        return code, json.loads(printed.call_args.args[0])
+
+    def legacy_home(self) -> None:
+        legacy = self.home / ".agents/plugins/plugins/agent-pack"
+        write(legacy / "plugin.json", {"name": "agent-pack", "version": "1.5.1"})
+        write(legacy / "skills/agent-pack/SKILL.md", "x")
+        write(self.home / ".agents/plugins/marketplace.json", {"name": "personal", "plugins": [
+            {"name": "agent-pack", "source": {"source": "local", "path": "./.agents/plugins/plugins/agent-pack"}},
+            {"name": "someone-else", "source": {"source": "local", "path": "./x"}}]})
+        write(self.home / ".codex/config.toml",
+              'model = "x"\n\n[plugins."agent-pack@personal"]\nenabled = true\n\n'
+              '[plugins."someone-else@personal"]\nenabled = true\n')
+        (self.home / ".claude/skills").mkdir(parents=True)
+        (self.home / ".claude/skills/agent-pack").symlink_to(legacy / "skills/agent-pack")
+        (self.home / ".claude/skills/unrelated").symlink_to(self.root)
+        record = self.home / ".claude/agent-pack/plugins"
+        record.mkdir(parents=True)
+        (record / "agent-pack").symlink_to(legacy)
+        write(self.home / ".claude.json", {"mcpServers": {
+            "agent-pack": {"command": "python3", "args": [str(record / "agent-pack/runtime/mcp_server.py")]},
+            "mine": {"command": "node", "args": ["server.js"]}}})
+
+    def test_migrate_previews_then_retires_only_agenthelm_legacy_installs(self) -> None:
+        self.legacy_home()
+        code, preview = self.run_cli("migrate")
+        self.assertEqual(code, 0)
+        kinds = sorted(item["kind"] for item in preview["legacy"])
+        self.assertEqual(kinds, ["claude-skill-link", "claude-user-mcp", "codex-config-section",
+                                 "codex-personal-entry", "plugin-copy", "plugin-record"])
+        self.assertTrue((self.home / ".agents/plugins/plugins/agent-pack").exists())  # preview only
+        code, applied = self.run_cli("migrate", "--apply")
+        self.assertEqual(code, 0, applied)
+        recovery = Path(applied["recovery"])
+        self.assertFalse((self.home / ".agents/plugins/plugins/agent-pack").exists())
+        self.assertFalse((self.home / ".claude/skills/agent-pack").is_symlink())
+        self.assertTrue((self.home / ".claude/skills/unrelated").is_symlink())
+        self.assertTrue((recovery / "moved/.agents/plugins/plugins/agent-pack/plugin.json").is_file())
+        marketplace = json.loads((self.home / ".agents/plugins/marketplace.json").read_text())
+        self.assertEqual([entry["name"] for entry in marketplace["plugins"]], ["someone-else"])
+        config = (self.home / ".codex/config.toml").read_text()
+        self.assertNotIn("agent-pack@personal", config)
+        self.assertIn('[plugins."someone-else@personal"]', config)
+        self.assertIn('model = "x"', config)
+        servers = json.loads((self.home / ".claude.json").read_text())["mcpServers"]
+        self.assertEqual(list(servers), ["mine"])
+        self.assertIn("agent-pack", json.loads((recovery / "files/.claude.json").read_text())["mcpServers"])
+        self.assertEqual(len(json.loads((recovery / "migration.json").read_text())["artifacts"]), 6)
+
+    def test_skill_links_into_a_checkout_of_an_agenthelm_plugin_are_legacy(self) -> None:
+        checkout = self.root / "checkout/plugins/agent-pack"
+        write(checkout / "plugin.json", {"name": "agent-pack", "version": "1.5.1"})
+        write(checkout / "skills/agent-pack/SKILL.md", "x")
+        foreign = self.root / "elsewhere/skills/agent-pack"
+        write(foreign / "SKILL.md", "y")
+        (self.home / ".claude/skills").mkdir(parents=True)
+        (self.home / ".claude/skills/agent-pack").symlink_to(checkout / "skills/agent-pack")
+        artifacts = agenthelm.legacy_artifacts(self.env, {"agent-pack"})
+        self.assertEqual([item["kind"] for item in artifacts], ["claude-skill-link"])
+        (self.home / ".claude/skills/agent-pack").unlink()
+        (self.home / ".claude/skills/agent-pack").symlink_to(foreign)
+        self.assertEqual(agenthelm.legacy_artifacts(self.env, {"agent-pack"}), [])
+
+    def test_copied_claude_skill_is_reported_but_left_for_the_user(self) -> None:
+        write(self.home / ".claude/skills/agent-pack/SKILL.md", "copied by hand")
+        code, applied = self.run_cli("migrate", "--apply")
+        self.assertEqual(code, 0)
+        self.assertEqual(applied["retired"][0]["status"], "manual")
+        self.assertTrue((self.home / ".claude/skills/agent-pack/SKILL.md").is_file())
+
+    def test_install_plans_native_marketplace_commands_per_client(self) -> None:
+        steps = agenthelm.install_steps(self.env, self.latest, ["claude", "codex"], ["agent-pack"], None, self.home)
+        commands = [step.command for step in steps]
+        self.assertEqual(commands, [
+            ["claude", "plugin", "marketplace", "add", "lc4t/skill"],
+            ["claude", "plugin", "install", "agent-pack@agenthelm"],
+            ["codex", "plugin", "marketplace", "add", "lc4t/skill"],
+            ["codex", "plugin", "add", "agent-pack@agenthelm"],
+        ])
+        mirrored = agenthelm.install_steps(self.env, self.latest, ["claude"], ["agent-pack"], None, self.home,
+                                           "https://mirror.example/skill.git")
+        self.assertEqual(mirrored[0].command[-1], "https://mirror.example/skill.git")
+
+    def test_update_plans_per_client_and_waits_for_the_new_template_plugin(self) -> None:
+        report = {"_latest": self.latest, "summary": {}, "content": [
+            {"pack": "agents-init/project-contract", "plugin": "agents-init", "version": "1.0.0",
+             "latest": "1.1.0", "status": "update-available", "locally_changed": []}],
+            "plugins": [
+                {"client": "claude", "plugin": "agent-pack", "status": "behind", "latest": "1.6.0", "scope": "project"},
+                {"client": "codex", "plugin": "agent-pack", "status": "behind", "latest": "1.6.0"},
+                {"client": "codex", "plugin": "agents-init", "status": "behind", "latest": "7.0.0"},
+                {"client": "claude", "plugin": "opinion-manager", "status": "current", "latest": "0.4.0"},
+            ]}
+        steps = agenthelm.update_steps(self.env, report, self.root, None, self.home, [], [], None, None)
+        commands = [step.command for step in steps if step.command]
+        self.assertEqual(commands, [
+            ["claude", "plugin", "marketplace", "update", "agenthelm"],
+            ["claude", "plugin", "update", "agent-pack@agenthelm", "--scope", "project"],
+            ["codex", "plugin", "marketplace", "upgrade", "agenthelm"],
+        ])
+        content = [step for step in steps if step.kind == "content"]
+        self.assertEqual(len(content), 1)
+        self.assertIn("先更新 agents-init", content[0].blocked)
+        only_content = agenthelm.update_steps(self.env, report, self.root, None, self.home, [], [], None, "content")
+        self.assertEqual([step.kind for step in only_content], ["content"])
+
+    def test_failed_step_stops_the_remaining_ones(self) -> None:
+        steps = [agenthelm.Step("update", "claude", "one", [sys.executable, "-c", "raise SystemExit(3)"]),
+                 agenthelm.Step("update", "claude", "two", [sys.executable, "-c", "pass"])]
+        results = agenthelm.execute_steps(steps, apply=True, recovery_root=None)
+        self.assertEqual([record["status"] for record in results], ["failed"])
+        preview = agenthelm.execute_steps(steps, apply=False, recovery_root=None)
+        self.assertEqual([record["status"] for record in preview], ["preview", "preview"])
+
+    def test_doctor_flags_duplicate_and_skewed_installs(self) -> None:
+        report = {"_latest": self.latest, "summary": {}, "plugins": [
+            {"client": "claude", "plugin": "agent-pack", "version": "1.6.0"},
+            {"client": "codex", "plugin": "agent-pack", "version": "1.5.1"},
+            {"client": "legacy", "plugin": "agent-pack", "version": "1.5.1"}]}
+        result = agenthelm.doctor(self.env, report)
+        issues = {issue["issue"] for issue in result["issues"]}
+        self.assertTrue({"duplicate", "version-skew", "incomplete"} <= issues)
+        self.assertFalse(result["ok"])
+
+    def test_release_archive_with_escaping_paths_is_rejected(self) -> None:
+        import io
+        import tarfile
+        archive = self.root / "bad.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            info = tarfile.TarInfo("../escape.txt")
+            info.size = 1
+            bundle.addfile(info, io.BytesIO(b"x"))
+        target = self.root / "out"
+        target.mkdir()
+        with self.assertRaises(agenthelm.CheckError):
+            agenthelm._safe_extract(archive, target)
+        self.assertFalse((self.root / "escape.txt").exists())
+
+    def test_client_commands_run_against_the_inspected_home(self) -> None:
+        with mock.patch.dict(agenthelm.os.environ, {"CLAUDE_CONFIG_DIR": "/real/.claude", "CODEX_HOME": "/real/.codex"}):
+            env = agenthelm.current_env(self.home)
+        child = env.child_environment()
+        self.assertEqual(child["HOME"], str(self.home))
+        self.assertNotIn("CLAUDE_CONFIG_DIR", child)
+        self.assertNotIn("CODEX_HOME", child)
+        step = agenthelm.Step("install", "claude", "home", [sys.executable, "-c",
+                              "import os, sys; sys.exit(0 if os.environ['HOME'] == sys.argv[1] else 5)", str(self.home)])
+        (record,) = agenthelm.execute_steps([step], apply=True, recovery_root=None, child_env=child)
+        self.assertEqual(record["status"], "applied")
+
+    def test_newest_companion_wins_over_the_copy_next_to_this_script(self) -> None:
+        newer = self.home / ".claude/plugins/cache/agenthelm/agents-init/99.0.0"
+        write(newer / "plugin.json", {"name": "agents-init", "version": "99.0.0"})
+        installed = [{"client": "claude", "plugin": "agents-init", "version": "99.0.0", "path": str(newer)}]
+        self.assertEqual(agenthelm.locate_companion("agents-init", installed), newer)
+
+    def test_release_download_requires_a_pinned_tag_and_digest(self) -> None:
+        with self.assertRaises(agenthelm.CheckError):
+            agenthelm.release_source(self.latest, self.root)
+
+
 if __name__ == "__main__":
     unittest.main()
