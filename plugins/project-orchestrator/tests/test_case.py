@@ -118,6 +118,14 @@ class CaseToolTests(unittest.TestCase):
         code, result = self.run_case("new", "--title", "x", "--slug", "api-token", "--goal", "y", "--next-action", "z")
         self.assertEqual(code, 2)
 
+    def test_options_work_before_or_after_the_subcommand(self) -> None:
+        self.new()
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            code = case.main(["list", "--project", str(self.root), "--output", "json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(json.loads(output.getvalue())["cases"]), 1)
+
     def test_frontmatter_round_trip(self) -> None:
         data = {"schema_version": "1.0", "id": "CASE-20260101-001-x", "title": "引号\"与冒号: 测试",
                 "status": "active", "tags": [], "evidence": ["a", "b"], "created_at": "2026-01-01T00:00:00+08:00"}

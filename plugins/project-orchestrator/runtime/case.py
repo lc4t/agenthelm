@@ -416,8 +416,16 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     result.add_argument("--project", type=Path, default=Path.cwd())
     result.add_argument("--output", choices=("text", "json"), default="text")
+    # The same options are accepted after the subcommand, where people tend to type them.
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument("--project", type=Path, default=argparse.SUPPRESS)
+    shared.add_argument("--output", choices=("text", "json"), default=argparse.SUPPRESS)
     sub = result.add_subparsers(dest="command", required=True)
-    new = sub.add_parser("new", help="新建 Case 目录与 CASE.md")
+
+    def command(name: str, help_text: str) -> argparse.ArgumentParser:
+        return sub.add_parser(name, parents=[shared], help=help_text)
+
+    new = command("new", "新建 Case 目录与 CASE.md")
     new.add_argument("--title", required=True)
     new.add_argument("--slug", required=True, help="目录名后缀：小写字母、数字与连字符")
     new.add_argument("--goal", required=True)
@@ -427,12 +435,12 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--source")
     new.add_argument("--current-state")
     new.add_argument("--tag", action="append", default=[])
-    listing = sub.add_parser("list", help="列出 Case（默认不含已关闭）")
+    listing = command("list", "列出 Case（默认不含已关闭）")
     listing.add_argument("--status", choices=tuple(STATUS_ORDER))
     listing.add_argument("--all", action="store_true")
-    show = sub.add_parser("show", help="查看一个 Case 的字段与正文")
+    show = command("show", "查看一个 Case 的字段与正文")
     show.add_argument("case")
-    change = sub.add_parser("update", help="更新状态、下一动作，追加工作记录、决策、交付物与证据")
+    change = command("update", "更新状态、下一动作，追加工作记录、决策、交付物与证据")
     change.add_argument("case")
     change.add_argument("--status", choices=tuple(STATUS_ORDER))
     change.add_argument("--title")
@@ -448,7 +456,7 @@ def parser() -> argparse.ArgumentParser:
     change.add_argument("--add-tag", action="append", default=[])
     change.add_argument("--add-alias", action="append", default=[])
     change.add_argument("--expect-updated-at", help="只在 updated_at 等于该值时写入，避免覆盖并发修改")
-    check = sub.add_parser("validate", help="按 Schema 校验 Case")
+    check = command("validate", "按 Schema 校验 Case")
     check.add_argument("case", nargs="?")
     return result
 
