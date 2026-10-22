@@ -193,7 +193,7 @@ class AgenthelmOperationTests(unittest.TestCase):
         self.home = self.root / "home"
         self.env = agenthelm.Env(home=self.home, variables={})
         latest = json.loads(json.dumps(LATEST))
-        latest["repository"] = "https://github.com/lc4t/skill"
+        latest["repository"] = "https://github.com/lc4t/agenthelm"
         self.latest = latest
         self.latest_file = self.root / "latest.json"
         write(self.latest_file, latest)
@@ -278,9 +278,9 @@ class AgenthelmOperationTests(unittest.TestCase):
         steps = agenthelm.install_steps(self.env, self.latest, ["claude", "codex"], ["agent-pack"], None, self.home)
         commands = [step.command for step in steps]
         self.assertEqual(commands, [
-            ["claude", "plugin", "marketplace", "add", "lc4t/skill"],
+            ["claude", "plugin", "marketplace", "add", "lc4t/agenthelm"],
             ["claude", "plugin", "install", "agent-pack@agenthelm"],
-            ["codex", "plugin", "marketplace", "add", "lc4t/skill"],
+            ["codex", "plugin", "marketplace", "add", "lc4t/agenthelm"],
             ["codex", "plugin", "add", "agent-pack@agenthelm"],
         ])
         mirrored = agenthelm.install_steps(self.env, self.latest, ["claude"], ["agent-pack"], None, self.home,

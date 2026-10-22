@@ -4,14 +4,14 @@
 
 一句话触发：用户要求“用 agenthelm 初始化当前项目”或给出 https://agenthelm.sakanano.moe/ 时，读取 https://agenthelm.sakanano.moe/INSTALL.md 并执行。
 
-市场清单：https://agenthelm.sakanano.moe/.claude-plugin/marketplace.json （GitHub：lc4t/skill，市场名 agenthelm）
+市场清单：https://agenthelm.sakanano.moe/.claude-plugin/marketplace.json （GitHub：lc4t/agenthelm，市场名 agenthelm）
 云端版本源：https://agenthelm.sakanano.moe/latest.json
 初始化 Skill：https://agenthelm.sakanano.moe/plugins/agents-init/skills/agents-init/SKILL.md
 生命周期 Skill：https://agenthelm.sakanano.moe/plugins/project-orchestrator/skills/project-orchestrator/SKILL.md
 扩展能力 Skill：https://agenthelm.sakanano.moe/plugins/agent-pack/skills/agent-pack/SKILL.md
 Opinion 管理 Skill：https://agenthelm.sakanano.moe/plugins/opinion-manager/skills/opinion-manager/SKILL.md
 
-安装：npx @agenthelm/cli install --client <claude|codex|cursor> 先预览，经用户同意后追加 --apply；或使用客户端市场命令（Claude Code：claude plugin install agents-init --marketplace lc4t/skill，会一并安装依赖；Codex：codex plugin marketplace add lc4t/skill，再安装四个 <插件>@agenthelm）。四个插件须一并安装。
+安装：npx @agenthelm/cli install --client <claude|codex|cursor> 先预览，经用户同意后追加 --apply；或使用客户端市场命令（Claude Code：claude plugin install agents-init --marketplace lc4t/agenthelm，会一并安装依赖；Codex：codex plugin marketplace add lc4t/agenthelm，再安装四个 <插件>@agenthelm）。四个插件须一并安装。
 
 检查与更新：npx @agenthelm/cli check（只读）；npx @agenthelm/cli update 预览，同意后 --apply。旧方式安装用 npx @agenthelm/cli migrate --install 迁移。
 

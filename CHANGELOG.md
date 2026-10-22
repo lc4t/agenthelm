@@ -2,7 +2,7 @@
 
 ## 2026-10-21 — agenthelm 市场：Agents Init 6.5.0 / Agent Pack 1.6.0 / Project Orchestrator 1.7.0 / Opinion Manager 0.4.1
 
-四个插件改为经 agenthelm 市场分发：一份 `.claude-plugin/marketplace.json` 同时供 Claude Code、Codex 与 Cursor 读取，`latest.json` 作为云端版本源，`npx @agenthelm/cli` 负责安装、检查、更新与迁移。
+仓库由 lc4t/skill 改名为 lc4t/agenthelm（旧地址由 GitHub 重定向）。四个插件改为经 agenthelm 市场分发：一份 `.claude-plugin/marketplace.json` 同时供 Claude Code、Codex 与 Cursor 读取，`latest.json` 作为云端版本源，`npx @agenthelm/cli` 负责安装、检查、更新与迁移。
 
 ### 发布与更新
 

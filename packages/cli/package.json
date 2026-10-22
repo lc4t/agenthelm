@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lc4t/skill.git",
+    "url": "git+https://github.com/lc4t/agenthelm.git",
     "directory": "packages/cli"
   },
   "homepage": "https://agenthelm.sakanano.moe/",

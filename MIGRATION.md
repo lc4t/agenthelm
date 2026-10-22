@@ -33,7 +33,7 @@ python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --versio
 
 - 版本：继续比较插件 `plugin.json` 的 `version`。本次各插件版本为 agents-init 6.5.0、agent-pack 1.6.0、project-orchestrator 1.7.0、opinion-manager 0.4.1。
 - 提交：市场安装没有本地 Git 工作区，“HEAD 等于钉定提交”无法再检查。改为钉定 tag（`v6.5.0` 起每次发布都有 tag 与带 SHA-256 的发布包），或只钉版本号。
-- 需要固定到某次发布时，添加市场时带上 ref：`claude plugin marketplace add lc4t/skill#v6.5.0`、`codex plugin marketplace add lc4t/skill --ref v6.5.0`。钉定后不会收到更新提示之外的自动升级。
+- 需要固定到某次发布时，添加市场时带上 ref：`claude plugin marketplace add lc4t/agenthelm#v6.5.0`、`codex plugin marketplace add lc4t/agenthelm --ref v6.5.0`。钉定后不会收到更新提示之外的自动升级。
 
 ## Project Profile
 
@@ -42,7 +42,7 @@ python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --versio
 | 字段 | 旧值 | 新值 |
 |---|---|---|
 | `distribution` | `bundled` | `marketplace` |
-| `source_repository` | `lc4t/skill` | 不变（仓库改名后为新名字；旧地址由 GitHub 重定向） |
+| `source_repository` | `lc4t/skill` | `lc4t/agenthelm`（仓库已改名；旧地址由 GitHub 重定向，钉定的旧提交仍可取到） |
 | `source_ref` | `v6.4.0` | 采用的发布 tag，如 `v6.5.0` |
 | `source_commit` | 提交 SHA | 可保留作审计记录；不再用于“本地 HEAD 一致”检查 |
 | `plugin_version` / `capability_manager_version` | 1.6.0 / 1.5.1 | 1.7.0 / 1.6.0 |

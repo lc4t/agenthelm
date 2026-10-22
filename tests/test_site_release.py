@@ -45,7 +45,7 @@ class SiteReleaseTests(unittest.TestCase):
             self.assertEqual(manifest["name"], name)
             self.assertEqual(adapter["version"], manifest["version"])
             self.assertEqual(indexed[name]["version"], manifest["version"])
-            self.assertEqual(manifest["repository"], "https://github.com/lc4t/skill")
+            self.assertEqual(manifest["repository"], "https://github.com/lc4t/agenthelm")
             self.assertTrue((root / "skills" / name / "SKILL.md").is_file())
         initializer = json.loads((ROOT / "plugins/agents-init/skills/agents-init/skill.json").read_text(encoding="utf-8"))
         manifest = json.loads((ROOT / "plugins/agents-init/plugin.json").read_text(encoding="utf-8"))

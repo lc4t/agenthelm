@@ -28,8 +28,8 @@ npx @agenthelm/cli install --client <claude|codex|cursor> --apply
 
 没有 Node 时，直接执行当前客户端的市场命令（同样先取得同意）：
 
-- Claude Code：`claude plugin install agents-init --marketplace lc4t/skill`（会一并安装另外三个依赖插件）。
-- Codex：`codex plugin marketplace add lc4t/skill`，再对四个插件分别执行 `codex plugin add <插件>@agenthelm`。
+- Claude Code：`claude plugin install agents-init --marketplace lc4t/agenthelm`（会一并安装另外三个依赖插件）。
+- Codex：`codex plugin marketplace add lc4t/agenthelm`，再对四个插件分别执行 `codex plugin add <插件>@agenthelm`。
 
 若 `npx @agenthelm/cli check` 报告旧方式安装（`~/.agents/plugins/plugins/<id>` 或 `~/.claude/skills/<id>` 软链），先预览 `npx @agenthelm/cli migrate --install`，经同意后追加 `--apply`。
 

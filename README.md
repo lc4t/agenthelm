@@ -27,13 +27,13 @@ npx @agenthelm/cli install --apply
 **Claude Code**：一条命令添加市场并安装；`agents-init` 声明了另外三个插件为依赖，会一并装上（需要 Claude Code 2.1.292 及以上）。
 
 ```bash
-claude plugin install agents-init --marketplace lc4t/skill
+claude plugin install agents-init --marketplace lc4t/agenthelm
 ```
 
 **Codex**
 
 ```bash
-codex plugin marketplace add lc4t/skill
+codex plugin marketplace add lc4t/agenthelm
 codex plugin add agents-init@agenthelm
 codex plugin add project-orchestrator@agenthelm
 codex plugin add agent-pack@agenthelm
@@ -44,7 +44,7 @@ codex plugin add opinion-manager@agenthelm
 
 **Cursor**：个人使用 `npx @agenthelm/cli install --client cursor --apply`，插件装入 `~/.cursor/plugins/local/`，重启 Cursor 生效。Teams / Enterprise 可在 Dashboard → Plugins & MCPs 用 Import from Repo 导入本仓库，并开启 Auto Refresh。
 
-**团队项目**：在项目里运行 `claude plugin marketplace add lc4t/skill --scope project` 并提交 `.claude/settings.json`，成员信任该目录后即可看到市场，各自安装。
+**团队项目**：在项目里运行 `claude plugin marketplace add lc4t/agenthelm --scope project` 并提交 `.claude/settings.json`，成员信任该目录后即可看到市场，各自安装。
 
 ## 初始化项目
 

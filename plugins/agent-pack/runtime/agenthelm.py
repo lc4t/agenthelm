@@ -32,7 +32,7 @@ MARKETPLACE = "agenthelm"
 CLI = "npx @agenthelm/cli"
 DEFAULT_LATEST_URLS = (
     "https://agenthelm.sakanano.moe/latest.json",
-    "https://raw.githubusercontent.com/lc4t/skill/main/latest.json",
+    "https://raw.githubusercontent.com/lc4t/agenthelm/main/latest.json",
 )
 ENV_LATEST = "AGENTHELM_LATEST_URL"
 ENV_DISABLE = "AGENTHELM_NO_UPDATE_CHECK"
