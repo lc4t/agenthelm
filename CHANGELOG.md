@@ -1,5 +1,9 @@
 # 更新记录
 
+## 2026-10-23 — agenthelm 6.5.3 / Agent Pack 1.6.3
+
+- `agent-pack` 1.6.3：客户端命令行先查 PATH，再查应用自带位置（ChatGPT.app 内的 Codex、`~/.local/bin`、Homebrew），找不到时提示可用 `AGENTHELM_CODEX` / `AGENTHELM_CLAUDE` 指定；`migrate` 一并把 Codex 旧的 `plugins/cache/personal/<插件>` 缓存移入恢复目录（`CODEX_HOME` 在家目录之外也能处理）；`check` 把旧方式安装单独标为“旧方式安装，待迁移”，汇总不再把它们算作“可更新”。
+
 ## 2026-10-22 — agenthelm 6.5.2 / Agent Pack 1.6.2
 
 - `agent-pack` 1.6.2：`inventory --source client:claude|codex` 纳入市场安装（Claude Code 安装记录与 Codex 插件缓存）；`agenthelm locate` 默认排除旧方式安装，`--include-legacy` 可列出；`check` 的 Opinion 检查在 macOS 不再因 `/var` 符号链接失败。交互命令联网超时从 3 秒放宽到 10 秒；站点 `latest.json` 取不到而改用 GitHub 原始文件时，从 GitHub Release 的 `release.json` 获取发布包信息（tag 所含插件版本一致才采用），Cursor 安装与更新不再失败；解包启用 Python 的 `data` 过滤。
