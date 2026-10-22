@@ -18,6 +18,8 @@ class CliPackageTests(unittest.TestCase):
         self.assertEqual(manifest["bin"], {"agenthelm": "bin/agenthelm.js"})
         self.assertEqual(sorted(manifest["files"]), ["bin", "runtime"])
         self.assertEqual(manifest["scripts"]["prepack"], "node scripts/sync-runtime.mjs")
+        # A scoped package is private by default; the first staged publish must be public.
+        self.assertEqual(manifest["publishConfig"], {"access": "public"})
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_launcher_runs_the_plugin_runtime(self) -> None:

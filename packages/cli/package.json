@@ -21,5 +21,15 @@
     "directory": "packages/cli"
   },
   "homepage": "https://agenthelm.sakanano.moe/",
-  "keywords": ["agenthelm", "claude-code", "codex", "cursor", "agent-plugins", "project-management"]
+  "keywords": [
+    "agenthelm",
+    "claude-code",
+    "codex",
+    "cursor",
+    "agent-plugins",
+    "project-management"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
