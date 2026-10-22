@@ -5,7 +5,7 @@
   "released_at": "2026-10-22",
   "plugins": {
     "agent-pack": {
-      "version": "1.6.1",
+      "version": "1.6.2",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -99,6 +99,18 @@
       "date": "2026-10-22",
       "summary": "未安装任何插件时，check 提示运行 install，不再显示“全部为最新”。",
       "actions": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.6.1",
+      "to": "1.6.2",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-22",
+      "summary": "inventory 纳入市场安装；locate 默认排除旧方式安装；Opinion 检查修复 macOS 符号链接问题；联网超时放宽到 10 秒，站点不可达时从 GitHub Release 获取发布包信息；解包启用安全过滤。",
+      "actions": [
+        "下游若依赖 locate 返回旧方式安装的路径，改用 --include-legacy 或改为市场安装路径"
+      ]
     }
   ]
 }
