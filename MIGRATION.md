@@ -19,7 +19,7 @@ npx @sakanano-moe/agenthelm locate opinion-manager --version 0.4.1
 python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --version 0.4.1
 ```
 
-输出 JSON 的 `path` 是插件根目录（含 `plugin.json` 与 `runtime/`），不传 `--version` 时取最新；未找到时退出码为 1。不想依赖命令时，按以下顺序自行查找：
+输出 JSON 的 `path` 是插件根目录（含 `plugin.json` 与 `runtime/`），不传 `--version` 时取最新；未找到时退出码为 1。默认不返回旧方式安装（agent-pack 1.6.2 起），清理前后结果一致；需要排查时加 `--include-legacy`。不想依赖命令时，按以下顺序自行查找：
 
 | 客户端 | 位置 |
 |---|---|
@@ -31,7 +31,7 @@ python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --versio
 
 ## 下游脚本：版本与提交钉定
 
-- 版本：继续比较插件 `plugin.json` 的 `version`。本次各插件版本为 agents-init 6.5.0、agent-pack 1.6.0、project-orchestrator 1.7.0、opinion-manager 0.4.1。
+- 版本：继续比较插件 `plugin.json` 的 `version`。当前各插件版本以 [`latest.json`](https://agenthelm.sakanano.moe/latest.json) 为准（6.5.2 发布时为 agents-init 6.5.0、agent-pack 1.6.2、project-orchestrator 1.7.0、opinion-manager 0.4.1）。
 - 提交：市场安装没有本地 Git 工作区，“HEAD 等于钉定提交”无法再检查。改为钉定 tag（`v6.5.0` 起每次发布都有 tag 与带 SHA-256 的发布包），或只钉版本号。
 - 需要固定到某次发布时，添加市场时带上 ref：`claude plugin marketplace add lc4t/agenthelm#v6.5.0`、`codex plugin marketplace add lc4t/agenthelm --ref v6.5.0`。钉定后不会收到更新提示之外的自动升级。
 

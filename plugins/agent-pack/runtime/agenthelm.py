@@ -37,7 +37,8 @@ DEFAULT_LATEST_URLS = (
 ENV_LATEST = "AGENTHELM_LATEST_URL"
 ENV_DISABLE = "AGENTHELM_NO_UPDATE_CHECK"
 CACHE_TTL_SECONDS = 24 * 3600
-FETCH_TIMEOUT_SECONDS = 3
+# Interactive commands wait longer: some networks reach the site slowly.
+FETCH_TIMEOUT_SECONDS = 10
 HOOK_FETCH_TIMEOUT_SECONDS = 2
 FAILURE_BACKOFF_SECONDS = 6 * 3600
 CONTENT_LOCK = Path(".agents/moe.sakanano.agent-pack/content.lock.json")
@@ -133,10 +134,14 @@ def update_check_enabled(env: Env) -> bool:
 
 # ---------------------------------------------------------------- cloud source
 
-def _fetch(url: str, timeout: float = FETCH_TIMEOUT_SECONDS) -> dict:
+def _fetch_json(url: str, timeout: float = FETCH_TIMEOUT_SECONDS) -> Any:
     request = urllib.request.Request(url, headers={"User-Agent": "agenthelm-check"})
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-        data = json.loads(response.read().decode("utf-8"))
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _fetch(url: str, timeout: float = FETCH_TIMEOUT_SECONDS) -> dict:
+    data = _fetch_json(url, timeout)
     if not isinstance(data, dict) or data.get("marketplace") != MARKETPLACE:
         raise CheckError(f"{url} is not an agenthelm latest.json")
     return data
@@ -331,7 +336,8 @@ def opinion_findings(project: Path, installed: list[dict]) -> list[dict]:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return [{"status": "error", "error": f"{OPINION_LOCK} 无法解析：{exc}"}]
     with tempfile.TemporaryDirectory() as temporary:
-        profile_file = Path(temporary) / "profile.json"
+        # macOS temporary paths live under /var, a symlink opinion-manager refuses.
+        profile_file = Path(temporary).resolve() / "profile.json"
         profile_file.write_text(json.dumps(profile, ensure_ascii=False), encoding="utf-8")
         completed = subprocess.run(
             [sys.executable, str(manager / "runtime" / "opinion_manager.py"), "updates",
@@ -523,7 +529,29 @@ def _safe_extract(archive: Path, destination: Path) -> None:
                 raise CheckError(f"发布包含越界路径：{member.name}")
             if not (member.isfile() or member.isdir()):
                 raise CheckError(f"发布包含不支持的条目：{member.name}")
-        bundle.extractall(destination)  # noqa: S202 - every member was validated above
+        try:
+            bundle.extractall(destination, filter="data")  # noqa: S202 - members validated above
+        except TypeError:  # Python without extraction filters
+            bundle.extractall(destination)  # noqa: S202
+
+
+def _plugin_versions(latest: dict) -> dict:
+    return {name: item.get("version") for name, item in latest.get("plugins", {}).items()}
+
+
+def github_release(latest: dict) -> dict:
+    """Release details straight from GitHub, used when latest.json came from the raw fallback.
+
+    Accepted only when that tag ships exactly the plugin versions ``latest`` lists,
+    the same rule the site applies before attaching a release.
+    """
+    try:
+        slug = github_slug(latest)
+        release = _fetch_json(f"https://github.com/{slug}/releases/latest/download/release.json")
+        tagged = _fetch_json(f"https://raw.githubusercontent.com/{slug}/{release['tag']}/latest.json")
+    except (OSError, ValueError, KeyError, TypeError, CheckError, urllib.error.URLError):
+        return {}
+    return release if _plugin_versions(tagged) == _plugin_versions(latest) else {}
 
 
 def release_source(latest: dict, workdir: Path, source: Path | None = None) -> Path:
@@ -533,7 +561,7 @@ def release_source(latest: dict, workdir: Path, source: Path | None = None) -> P
         if not (root / "plugins").is_dir():
             raise CheckError(f"{root} 不含 plugins/ 目录")
         return root
-    release = latest.get("release") or {}
+    release = latest.get("release") or github_release(latest)
     tag, digest = release.get("tag"), release.get("tarball_sha256")
     if not tag or not digest:
         raise CheckError("云端 latest.json 没有发布 tag 与摘要；请用 --source 指定本地仓库")
@@ -845,9 +873,15 @@ def recovery_dir_for(env: Env, label: str) -> Path:
     return env.home / ".agent-pack" / "recovery" / f"{stamp}-agenthelm-{label}"
 
 
-def locate(env: Env, plugin: str, version: str | None = None) -> dict:
-    """Where a plugin is installed, newest first: the stable lookup for downstream wrappers."""
-    found = [item for item in installed_plugins(env, {plugin}) if version is None or item.get("version") == version]
+def locate(env: Env, plugin: str, version: str | None = None, *, include_legacy: bool = False) -> dict:
+    """Where a plugin is installed, newest first: the stable lookup for downstream wrappers.
+
+    Legacy copies are left out unless asked for, so a wrapper that works today
+    keeps working after ``migrate`` retires them.
+    """
+    found = [item for item in installed_plugins(env, {plugin})
+             if (version is None or item.get("version") == version)
+             and (include_legacy or item["client"] != "legacy")]
     found.sort(key=lambda item: (version_key(item.get("version") or "") or (0,), item["client"] != "legacy"),
                reverse=True)
     return {"ok": bool(found), "plugin": plugin, "version": version,
@@ -930,6 +964,8 @@ def parser() -> argparse.ArgumentParser:
     locate_parser = sub.add_parser("locate", help="输出插件的已安装位置（最新优先），供下游脚本查找")
     locate_parser.add_argument("plugin")
     locate_parser.add_argument("--version", help="只要这个版本")
+    locate_parser.add_argument("--include-legacy", action="store_true",
+                               help="也列出旧方式安装（默认不列，避免清理后才失效）")
     locate_parser.add_argument("--output", choices=("text", "json"), default="json")
     locate_parser.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     return result
@@ -966,7 +1002,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check" and args.hook:
         return hook(env, project, args.hook_format)
     if args.command == "locate":
-        found = locate(env, args.plugin, args.version)
+        found = locate(env, args.plugin, args.version, include_legacy=args.include_legacy)
         if args.output == "json":
             print(json.dumps(found, ensure_ascii=False, indent=2))
         elif found["path"]:
