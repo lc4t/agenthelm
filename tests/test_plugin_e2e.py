@@ -11,7 +11,7 @@ from pathlib import Path
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 AGENT_PACK = PLUGIN_ROOT / "plugins" / "agent-pack" / "runtime" / "agent_pack_config.py"
 UNITS = (
-    ("agents-init", PLUGIN_ROOT),
+    ("agents-init", PLUGIN_ROOT / "plugins" / "agents-init"),
     ("project-orchestrator", PLUGIN_ROOT / "plugins" / "project-orchestrator"),
     ("agent-pack", PLUGIN_ROOT / "plugins" / "agent-pack"),
     ("opinion-manager", PLUGIN_ROOT / "plugins" / "opinion-manager"),
@@ -28,9 +28,9 @@ class PluginEndToEndTests(unittest.TestCase):
         )
 
     def test_manifests_distribute_four_chinese_skills(self) -> None:
-        manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))
+        manifest = json.loads((PLUGIN_ROOT / "plugins/agents-init/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "agents-init")
-        self.assertEqual(manifest["version"], "6.4.0")
+        self.assertEqual(manifest["version"], "6.5.0")
         for name, root in UNITS:
             skill_file = root / "skills" / name / "SKILL.md"
             self.assertTrue(skill_file.is_file(), name)

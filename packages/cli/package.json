@@ -1,0 +1,36 @@
+{
+  "name": "@sakanano-moe/agenthelm",
+  "version": "6.5.0",
+  "description": "agenthelm 命令行：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 项目管理插件。",
+  "license": "MIT",
+  "bin": {
+    "agenthelm": "bin/agenthelm.js"
+  },
+  "files": [
+    "bin",
+    "runtime"
+  ],
+  "scripts": {
+    "prepack": "node scripts/sync-runtime.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lc4t/agenthelm.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://agenthelm.sakanano.moe/",
+  "keywords": [
+    "agenthelm",
+    "claude-code",
+    "codex",
+    "cursor",
+    "agent-plugins",
+    "project-management"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

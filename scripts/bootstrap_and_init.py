@@ -13,9 +13,9 @@ from typing import Any
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 AGENT_PACK = PLUGIN_ROOT / "plugins" / "agent-pack" / "runtime" / "agent_pack_config.py"
-INITIALIZER = PLUGIN_ROOT / "skills" / "agents-init" / "scripts" / "init_project.py"
+INITIALIZER = PLUGIN_ROOT / "plugins" / "agents-init" / "skills" / "agents-init" / "scripts" / "init_project.py"
 INSTALL_UNITS = (
-    ("agents-init", PLUGIN_ROOT),
+    ("agents-init", PLUGIN_ROOT / "plugins" / "agents-init"),
     ("project-orchestrator", PLUGIN_ROOT / "plugins" / "project-orchestrator"),
     ("agent-pack", PLUGIN_ROOT / "plugins" / "agent-pack"),
     ("opinion-manager", PLUGIN_ROOT / "plugins" / "opinion-manager"),

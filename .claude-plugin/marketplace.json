@@ -1,0 +1,112 @@
+{
+  "name": "agenthelm",
+  "owner": {
+    "name": "lc4t"
+  },
+  "metadata": {
+    "description": "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。"
+  },
+  "plugins": [
+    {
+      "name": "agent-pack",
+      "source": "./plugins/agent-pack",
+      "description": "Deterministic Agent-extension capability management: inventory, doctor, bootstrap, sync, transfer, and reconcile Agent Plugins / Skills / MCP servers across Codex, Cursor, Claude Code, and project sources. Ships a stdio MCP.",
+      "version": "1.6.0",
+      "author": {
+        "name": "lc4t"
+      },
+      "repository": "https://github.com/lc4t/agenthelm",
+      "license": "MIT",
+      "keywords": [
+        "agent-pack",
+        "agent-plugins",
+        "mcp",
+        "capability-management",
+        "inventory",
+        "doctor",
+        "bootstrap"
+      ],
+      "category": "Developer Tools",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
+    },
+    {
+      "name": "agents-init",
+      "source": "./plugins/agents-init",
+      "description": "初始化或迁移 Agent 项目契约；同一分发包附带 project-orchestrator、agent-pack 与 opinion-manager。",
+      "version": "6.5.0",
+      "author": {
+        "name": "lc4t"
+      },
+      "repository": "https://github.com/lc4t/agenthelm",
+      "license": "MIT",
+      "keywords": [
+        "agents-init",
+        "project-orchestrator",
+        "agent-pack",
+        "opinion-manager",
+        "agent-skills",
+        "agent-plugins"
+      ],
+      "category": "Developer Tools",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "dependencies": [
+        "project-orchestrator",
+        "agent-pack",
+        "opinion-manager"
+      ]
+    },
+    {
+      "name": "opinion-manager",
+      "source": "./plugins/opinion-manager",
+      "description": "Manage Agent behavior rules through templates, partial selection, blank iteration, and authorized-memory candidates, with complete previews and exact version locks.",
+      "version": "0.4.1",
+      "author": {
+        "name": "lc4t"
+      },
+      "repository": "https://github.com/lc4t/agenthelm",
+      "license": "MIT",
+      "keywords": [
+        "opinion-manager",
+        "agent-behavior",
+        "agent-rules",
+        "templates",
+        "preferences"
+      ],
+      "category": "Developer Tools",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
+    },
+    {
+      "name": "project-orchestrator",
+      "source": "./plugins/project-orchestrator",
+      "description": "Portable lifecycle orchestration with Case workspaces, legacy Task/Case compatibility, verified migrations, discovery and scoped Git delivery.",
+      "version": "1.7.0",
+      "author": {
+        "name": "lc4t"
+      },
+      "repository": "https://github.com/lc4t/agenthelm",
+      "license": "MIT",
+      "keywords": [
+        "project-orchestrator",
+        "task",
+        "case",
+        "workflow",
+        "lifecycle",
+        "agent-skills"
+      ],
+      "category": "Developer Tools",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
+    }
+  ]
+}

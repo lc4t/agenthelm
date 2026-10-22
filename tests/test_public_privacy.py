@@ -50,7 +50,7 @@ class PublicPrivacyTests(unittest.TestCase):
     def test_bundled_plugins_declare_the_public_repository(self) -> None:
         for manifest in sorted((ROOT / "plugins").glob("*/plugin.json")):
             text = manifest.read_text(encoding="utf-8")
-            self.assertIn('"repository": "https://github.com/lc4t/skill"', text, manifest.as_posix())
+            self.assertIn('"repository": "https://github.com/lc4t/agenthelm"', text, manifest.as_posix())
 
 
 if __name__ == "__main__":

@@ -319,6 +319,39 @@ class ProjectRuntimeConfigTests(unittest.TestCase):
         preview = install_plugin(plugin, "codex", home=home)
         self.assertEqual(preview["operations"][0]["action"], "keep-plugin")
 
+    def test_codex_adapter_projects_claude_plugin_placeholders(self) -> None:
+        plugin = self.root / "placeholder-codex"
+        write_json(plugin / "plugin.json", {
+            "$schema": AGENT_PLUGIN_SCHEMA,
+            "name": "placeholder-codex",
+            "version": "1.0.0",
+            "description": "Placeholder projection test plugin",
+        })
+        portable = {
+            "type": "stdio",
+            "command": "python3",
+            "args": ["${PLUGIN_ROOT}/runtime/server.py", "${PLUGIN_DATA}/state"],
+            "env": {"PYTHONPATH": "${PLUGIN_ROOT}/runtime"},
+            "cwd": "${PLUGIN_ROOT}",
+        }
+        write_json(plugin / "mcp.json", {
+            "$schema": AGENT_PLUGIN_MCP_SCHEMA,
+            "mcpServers": {"demo": portable},
+        })
+        home = self.root / "home"
+        install_plugin(plugin, "codex", home=home, apply=True)
+        target = home / ".agents/plugins/plugins/placeholder-codex"
+        # Codex keeps reading the portable mcp.json; .mcp.json is what Claude
+        # Code and Cursor load, and neither expands ${PLUGIN_ROOT}.
+        self.assertEqual(json.loads((target / "mcp.json").read_text())["mcpServers"]["demo"], portable)
+        projected = json.loads((target / ".mcp.json").read_text())["mcpServers"]["demo"]
+        self.assertEqual(projected["args"], [
+            "${CLAUDE_PLUGIN_ROOT}/runtime/server.py",
+            "${CLAUDE_PLUGIN_DATA}/state",
+        ])
+        self.assertEqual(projected["env"], {"PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/runtime"})
+        self.assertEqual(projected["cwd"], "${CLAUDE_PLUGIN_ROOT}")
+
     def test_codex_adapter_refreshes_stale_identity_but_keeps_interface(self) -> None:
         plugin = self.root / "drifted-codex"
         write_json(plugin / "plugin.json", {

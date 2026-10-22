@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="alternate" type="text/plain" href="./llms.txt" title="Agent 安装入口">
-  <title>云端 Skills</title>
-  <meta name="description" content="可安装的项目初始化与持续项目运行时，供浏览器、AI Agent 与程序共同读取。">
+  <title>agenthelm</title>
+  <meta name="description" content="agenthelm：跨 Agent 的项目管理插件集，供浏览器、AI Agent 与程序共同读取。">
   <style>
     :root {
       color-scheme: light;
@@ -232,6 +232,20 @@
       font-size: 0.92em;
     }
 
+    pre {
+      margin: 12px 0;
+      padding: 12px 14px;
+      overflow-x: auto;
+      background: rgba(242, 201, 76, 0.16);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+    }
+
     footer {
       margin-top: 40px;
       padding-top: 22px;
@@ -262,21 +276,28 @@
   <div class="shell">
     <header>
       <div>
-        <p class="eyebrow">Sakanano Cloud Skills</p>
-        <h1>云端 Skills</h1>
-        <p class="summary">一个可安装的 Agent 分发包：用 <code>agents-init</code> 初始化项目，由 <code>project-orchestrator</code> 管理生命周期、<code>agent-pack</code> 管理扩展能力、<code>opinion-manager</code> 管理用户确认的 Agent 行为规则。</p>
+        <p class="eyebrow">agenthelm</p>
+        <h1>agenthelm</h1>
+        <p class="summary">跨 Agent 的项目管理插件集：<code>agents-init</code> 初始化项目，<code>project-orchestrator</code> 管理 Case 与生命周期，<code>agent-pack</code> 管理扩展能力并负责检查与更新，<code>opinion-manager</code> 管理用户确认的 Agent 行为规则。Claude Code、Codex、Cursor 读取同一份市场清单。</p>
       </div>
-      <span class="badge">Plugin 6.4.0</span>
+      <span class="badge">Plugin 6.5.0</span>
     </header>
 
-    <section class="panel" aria-labelledby="one-line-title">
-      <h2 id="one-line-title">一句话交给 Agent</h2>
-      <p>直接说：<strong>用 https://skill.sakanano.moe/ 初始化当前项目</strong>。Agent 应读取 <a href="./llms.txt"><code>llms.txt</code></a> 与 <a href="./INSTALL.md"><code>INSTALL.md</code></a>，先预演完整 Plugin 安装和项目初始化，获得确认后再应用。</p>
+    <section class="panel" aria-labelledby="install-title">
+      <h2 id="install-title">安装</h2>
+      <p>四个插件须一并安装。任意客户端：先预览，确认后执行（需要 Node 18+ 与 Python 3.11+）。</p>
+      <pre><code>npx @sakanano-moe/agenthelm install
+npx @sakanano-moe/agenthelm install --apply</code></pre>
+      <p><strong>Claude Code</strong>：<code>claude plugin install agents-init --marketplace lc4t/agenthelm</code>，会一并安装另外三个依赖插件。</p>
+      <p><strong>Codex</strong>：<code>codex plugin marketplace add lc4t/agenthelm</code>，再 <code>codex plugin add &lt;插件&gt;@agenthelm</code>；添加市场后可在桌面端打开下方链接查看并安装。</p>
+      <p><strong>Cursor</strong>：<code>npx @sakanano-moe/agenthelm install --client cursor --apply</code>，重启生效；Teams / Enterprise 可在 Dashboard 导入本仓库为团队市场。</p>
       <div class="actions">
-        <a class="button" href="./INSTALL.md">Agent 安装说明</a>
-        <a class="button secondary" href="./llms.txt">llms.txt</a>
-        <a class="button secondary" href="./plugin.json">Plugin manifest</a>
+        <a class="button" href="claude-cli://install-plugin?plugin=agents-init&amp;marketplace=lc4t/agenthelm">在 Claude Code 中打开（实验）</a>
+        <a class="button secondary" href="codex://plugins/install/agents-init?marketplace=agenthelm">在 Codex 中打开</a>
+        <a class="button secondary" href="./INSTALL.md">Agent 安装说明</a>
+        <a class="button secondary" href="./.claude-plugin/marketplace.json">市场清单</a>
       </div>
+      <p>检查与更新：<code>npx @sakanano-moe/agenthelm check</code> 只读报告；<code>npx @sakanano-moe/agenthelm update</code> 预览，确认后 <code>--apply</code>。会话开始时每天至多检查一次，<code>AGENTHELM_NO_UPDATE_CHECK=1</code> 可关闭。</p>
     </section>
 
     <main>
@@ -289,24 +310,24 @@
               <p>创建或迁移通用项目骨架，并在写入前验证随包的 <code>project-orchestrator</code>、<code>agent-pack</code> 与 <code>opinion-manager</code>；可把 v5 Profile 升级到 v6。</p>
             </div>
             <div class="file-map" aria-label="AGENTS.md 初始化模板文件入口">
-              <a class="file-link" href="./skills/agents-init/SKILL.md">
+              <a class="file-link" href="./plugins/agents-init/skills/agents-init/SKILL.md">
                 <strong>SKILL.md</strong>
                 <span>AI 执行入口：触发条件、必读文件和初始化流程。</span>
               </a>
-              <a class="file-link" href="./skills/agents-init/AGENT.template.md">
+              <a class="file-link" href="./plugins/agents-init/skills/agents-init/AGENT.template.md">
                 <strong>AGENT.template.md</strong>
                 <span>独立模板：v6 骨架契约、职责边界与迁移规则。</span>
               </a>
-              <a class="file-link" href="./skills/agents-init/skill.json">
+              <a class="file-link" href="./plugins/agents-init/skills/agents-init/skill.json">
                 <strong>skill.json</strong>
                 <span>机器索引：版本、入口路径、文件角色和命令。</span>
               </a>
             </div>
             <div class="actions" aria-label="AGENTS.md 初始化模板链接">
-              <a class="button" href="./skills/agents-init/index.html">浏览</a>
-              <a class="button secondary" href="./skills/agents-init/SKILL.md">Skill</a>
-              <a class="button secondary" href="./skills/agents-init/AGENT.template.md">模板</a>
-              <a class="button secondary" href="./skills/agents-init/skill.json">JSON</a>
+              <a class="button" href="./plugins/agents-init/skills/agents-init/index.html">浏览</a>
+              <a class="button secondary" href="./plugins/agents-init/skills/agents-init/SKILL.md">Skill</a>
+              <a class="button secondary" href="./plugins/agents-init/skills/agents-init/AGENT.template.md">模板</a>
+              <a class="button secondary" href="./plugins/agents-init/skills/agents-init/skill.json">JSON</a>
             </div>
           </article>
           <article class="skill-card">
@@ -395,7 +416,7 @@
     </main>
 
     <footer>
-      <span>Plugin 6.4.0 · 更新日期 2026-10-08</span>
+      <span>Plugin 6.5.0 · 更新日期 2026-10-21</span>
     </footer>
   </div>
 </body>

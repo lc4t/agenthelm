@@ -16,11 +16,15 @@ jobs:
         python: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - name: Derived metadata and version gate against the last release
+        run: python scripts/release_meta.py --since "$(git describe --tags --abbrev=0)"
       - run: python -m unittest discover -s tests -v
-      - run: python -m unittest discover -s skills/agents-init/scripts -v
+      - run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
       - run: python -m unittest discover -s plugins/agent-pack/tests -v
       - run: python -m unittest discover -s plugins/opinion-manager/tests -v
       - run: python -m unittest discover -s plugins/project-orchestrator/tests -v

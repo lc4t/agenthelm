@@ -3,10 +3,10 @@
   "name": "agents-init v6 / Project Profile 初始化与迁移",
   "description": "创建或迁移通用项目骨架与 Project Profile；随包 opinion-manager 管理用户确认的 Agent 行为规则。",
   "schema_version": "1.0",
-  "version": "6.4.0",
+  "version": "6.5.0",
   "status": "stable",
   "language": "zh-CN",
-  "license": "CC-BY-4.0",
+  "license": "MIT",
   "created_at": "2026-07-02",
   "updated_at": "2026-10-08",
   "authors": [
@@ -108,15 +108,15 @@
   },
   "compatibility": {
     "agent_plugins": "1.0.0",
-    "project_orchestrator": "bundled as plugins/project-orchestrator",
-    "agent_pack": "bundled as plugins/agent-pack",
-    "opinion_manager": "bundled as plugins/opinion-manager"
+    "project_orchestrator": "companion plugin project-orchestrator",
+    "agent_pack": "companion plugin agent-pack",
+    "opinion_manager": "companion plugin opinion-manager"
   },
   "distribution": {
     "plugin_manifest": "../../plugin.json",
-    "lifecycle_skill": "../../plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",
-    "capability_skill": "../../plugins/agent-pack/skills/agent-pack/SKILL.md",
-    "opinion_skill": "../../plugins/opinion-manager/skills/opinion-manager/SKILL.md",
-    "install_unit": "repository-root"
+    "lifecycle_skill": "../../../project-orchestrator/skills/project-orchestrator/SKILL.md",
+    "capability_skill": "../../../agent-pack/skills/agent-pack/SKILL.md",
+    "opinion_skill": "../../../opinion-manager/skills/opinion-manager/SKILL.md",
+    "install_unit": "marketplace"
   }
 }

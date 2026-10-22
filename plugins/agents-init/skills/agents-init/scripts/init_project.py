@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import difflib
+import hashlib
 import json
 import os
 import re
@@ -14,16 +16,20 @@ from pathlib import Path
 from typing import Iterable
 
 
-INITIALIZER_VERSION = "6.4.0"
+INITIALIZER_VERSION = "6.5.0"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
+# Baseline of the template-derived files this initializer wrote; `check`
+# compares it with the files on disk and the newest content pack version.
+CONTENT_LOCK_PATH = Path(".agents/moe.sakanano.agent-pack/content.lock.json")
+CONTENT_LOCK_OWNER = "agenthelm"
 LEGACY_PROFILE_PATH = Path(".agents/moe.sakanano.project-runtime/project.json")
 RUNTIME_BLOCK = {
     "skill": "project-orchestrator",
     "plugin": "project-orchestrator",
     "capability_manager": "agent-pack",
-    "distribution": "bundled",
+    "distribution": "marketplace",
     "required": True,
     "commit_policy": "explicit",
     "push_policy": "explicit",
@@ -135,27 +141,79 @@ def _read_manifest(path: Path) -> dict:
     return manifest
 
 
-def validate_runtime(plugin_root: Path) -> dict[str, str | bool]:
+def _version_key(value: str) -> tuple[int, ...]:
+    numbers = re.findall(r"\d+", value.split("+", 1)[0])
+    return tuple(int(number) for number in numbers) if numbers else ()
+
+
+def _claude_installed_path(cache_market: Path, name: str) -> Path | None:
+    """Claude Code keeps superseded version directories; its install record names the live one."""
+    record = cache_market.parent.parent / "installed_plugins.json"
+    try:
+        installed = json.loads(record.read_text(encoding="utf-8")).get("plugins", {})
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+        return None
+    for entry in installed.get(f"{name}@{cache_market.name}", []):
+        path = Path(str(entry.get("installPath", ""))).resolve()
+        if path.parent == (cache_market / name).resolve() and (path / "plugin.json").is_file():
+            return path
+    return None
+
+
+def locate_companion(agents_init_root: Path, name: str) -> Path | None:
+    """Find a companion plugin installed next to this agents-init.
+
+    Two layouts exist: ``<dir>/<plugin>`` (this repository, Cursor's local
+    plugins, agent-pack bootstrap) and ``<marketplace>/<plugin>/<version>``
+    (the Claude Code and Codex plugin caches).
+    """
+    flat = agents_init_root.parent / name
+    if (flat / "plugin.json").is_file():
+        return flat
+    cache_market = agents_init_root.parent.parent
+    versions_dir = cache_market / name
+    if not versions_dir.is_dir():
+        return None
+    live = _claude_installed_path(cache_market, name)
+    if live is not None:
+        return live
+    candidates = [path for path in versions_dir.iterdir() if (path / "plugin.json").is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (_version_key(path.name), path.stat().st_mtime))
+
+
+def _agents_init_root(plugin_root: Path) -> Path:
     root = plugin_root.expanduser().resolve()
-    required = [Path("plugin.json")]
-    for name, files in BUNDLED_PLUGINS.items():
-        required.append(Path("plugins") / name / "plugin.json")
-        required.extend(Path("plugins") / name / relative for relative in files)
-    missing = [str(relative) for relative in required if not _is_regular_file(root / relative)]
-    if missing:
-        raise InitError(
-            "缺少必需的同包 project-orchestrator / agent-pack / opinion-manager 文件："
-            + ", ".join(missing),
-            code="runtime-required",
-        )
+    # A repository checkout passes its root; plugins live under plugins/.
+    nested = root / "plugins" / "agents-init"
+    return nested if (nested / "plugin.json").is_file() else root
+
+
+def validate_runtime(plugin_root: Path) -> dict[str, str | bool]:
+    root = _agents_init_root(plugin_root)
+    if not _is_regular_file(root / "plugin.json"):
+        raise InitError(f"缺少 agents-init Plugin manifest：{root / 'plugin.json'}", code="runtime-required")
     if _read_manifest(root / "plugin.json").get("name") != "agents-init":
         raise InitError("Plugin manifest 必须声明 name=agents-init", code="runtime-required")
+    missing: list[str] = []
     versions: dict[str, str] = {}
-    for name in BUNDLED_PLUGINS:
-        manifest = _read_manifest(root / "plugins" / name / "plugin.json")
+    for name, files in BUNDLED_PLUGINS.items():
+        companion = locate_companion(root, name)
+        if companion is None:
+            missing.append(f"{name}/plugin.json")
+            continue
+        missing.extend(f"{name}/{relative}" for relative in files if not _is_regular_file(companion / relative))
+        manifest = _read_manifest(companion / "plugin.json")
         if manifest.get("name") != name:
             raise InitError(f"同包 Plugin manifest 必须声明 name={name}", code="runtime-required")
         versions[name] = str(manifest.get("version", ""))
+    if missing:
+        raise InitError(
+            "缺少必需的 project-orchestrator / agent-pack / opinion-manager 文件："
+            + ", ".join(missing),
+            code="runtime-required",
+        )
     return {
         "available": True,
         "source": "bundled" if root == PLUGIN_ROOT.resolve() else "external",
@@ -522,17 +580,217 @@ def apply_migration(
         os.close(root_fd)
 
 
+def contract_pack(plugin_root: Path = PLUGIN_ROOT) -> dict | None:
+    """The content pack whose rendered files this initializer tracks in the project."""
+    try:
+        content = json.loads((plugin_root / "content.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    for pack in content.get("packs", []):
+        if pack.get("project_lock") == CONTENT_LOCK_OWNER:
+            return pack
+    return None
+
+
+def content_baseline(pack: dict | None, files: dict[Path, str], written: Iterable[Path]) -> dict[str, str]:
+    if pack is None:
+        return {}
+    tracked = {Path(path) for path in pack.get("materializes", [])}
+    return {
+        path.as_posix(): hashlib.sha256(files[path].encode("utf-8")).hexdigest()
+        for path in sorted(written, key=str)
+        if path in tracked
+    }
+
+
+def write_content_lock(root: Path, pack: dict, baseline: dict[str, str]) -> None:
+    """Merge this run's baseline into the project's content lock, atomically."""
+    path = root / CONTENT_LOCK_PATH
+    for parent in [*reversed(CONTENT_LOCK_PATH.parents[:-1])]:
+        if (root / parent).is_symlink():
+            raise InitError(f"refusing symlinked parent: {parent}")
+    if path.is_symlink():
+        raise InitError(f"refusing symlinked content lock: {CONTENT_LOCK_PATH}")
+    lock: dict = {"schema_version": 1, "packs": {}}
+    if path.exists():
+        try:
+            lock = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InitError(f"content lock 无法解析：{CONTENT_LOCK_PATH}", code="profile-invalid") from exc
+    entry = lock.setdefault("packs", {}).get(pack["id"], {})
+    files = {**entry.get("files", {}), **baseline}
+    lock["packs"][pack["id"]] = {"plugin": "agents-init", "version": pack["version"], "files": dict(sorted(files.items()))}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json_text(lock), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _read_project_json(root: Path, relative: Path, label: str) -> dict:
+    path = root / relative
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if root in parent.parents):
+        raise InitError(f"refusing symlinked {label}", code="profile-invalid")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise InitError(f"缺少 {relative}", code="refresh-unavailable") from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise InitError(f"{label} 无法解析：{relative}", code="profile-invalid") from exc
+    if not isinstance(data, dict):
+        raise InitError(f"{label} 根节点必须是对象", code="profile-invalid")
+    return data
+
+
+def inputs_from_profile(root: Path) -> Inputs:
+    """Rebuild the initializer inputs a project was rendered with from its own Profile."""
+    profile = _read_project_json(root, PROFILE_PATH, "Project Profile")
+    details = profile.get("profile") or {}
+    try:
+        package = _read_project_json(root, Path(".agents/plugin.json"), "project plugin manifest")
+        slug = str(package.get("name") or "")
+    except InitError:
+        slug = ""
+    name = str(profile.get("name") or "")
+    return Inputs(
+        root, name, slug or slugify(name),
+        tuple(details.get("project_type") or ()), str(details.get("vcs") or ""),
+        tuple(details.get("stack") or ()), str(details.get("runtime") or ""),
+        tuple(details.get("agent_cli") or ()),
+        str((profile.get("work") or {}).get("mode") or "legacy"),
+    )
+
+
+def _unified_diff(relative: str, current: str, new: str, limit: int = 200) -> str:
+    lines = list(difflib.unified_diff(
+        current.splitlines(keepends=True), new.splitlines(keepends=True),
+        fromfile=f"a/{relative}", tofile=f"b/{relative}",
+    ))
+    if len(lines) > limit:
+        lines = lines[:limit] + [f"... ({len(lines) - limit} more diff lines)\n"]
+    return "".join(lines)
+
+
+def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
+    """Re-render the tracked template files after a content pack update.
+
+    Files still identical to their install-time baseline are replaced; files the
+    user edited are only replaced with --accept or kept with --keep. Every
+    replaced file is copied to --recovery-dir first.
+    """
+    pack = contract_pack()
+    if pack is None:
+        raise InitError("当前 agents-init 未声明可刷新的内容包", code="refresh-unavailable")
+    try:
+        lock = _read_project_json(root, CONTENT_LOCK_PATH, "content lock")
+    except InitError as exc:
+        if exc.code != "refresh-unavailable":
+            raise
+        lock = {"schema_version": 1, "packs": {}}
+    # Without a baseline (projects initialised before content locks existed),
+    # every file that differs from the new render counts as locally modified.
+    entry = (lock.get("packs") or {}).get(pack["id"]) or {}
+    baseline: dict[str, str] = dict(entry.get("files") or {})
+    rendered = files_for(inputs_from_profile(root))
+    accept = {Path(value) for value in args.accept}
+    keep = {Path(value) for value in args.keep}
+    tracked = [Path(path) for path in pack.get("materializes", [])]
+    unknown = (accept | keep) - set(tracked)
+    if unknown:
+        raise InitError("不是内容包跟踪的文件：" + ", ".join(sorted(map(str, unknown))))
+    if accept & keep:
+        raise InitError("同一文件不能同时 --accept 与 --keep：" + ", ".join(sorted(map(str, accept & keep))))
+    plan: list[dict] = []
+    for relative in tracked:
+        new = rendered[relative]
+        new_digest = hashlib.sha256(new.encode("utf-8")).hexdigest()
+        path = root / relative
+        if path.is_symlink():
+            raise InitError(f"refusing symlinked file: {relative}")
+        current = path.read_text(encoding="utf-8") if path.is_file() else None
+        current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
+        if current_digest == new_digest:
+            state, action = "unchanged", "keep"
+        elif current is None:
+            state = "missing"
+            action = "create" if relative in accept else "skip"
+        elif new_digest == baseline.get(relative.as_posix()):
+            # The new template renders this file exactly as before; the user's edits stay untouched.
+            state, action = "local-only", "keep"
+        elif current_digest == baseline.get(relative.as_posix()):
+            state, action = "clean", "keep" if relative in keep else "replace"
+        else:
+            state = "modified"
+            action = "replace" if relative in accept else "keep" if relative in keep else "blocked"
+        item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
+        if action in {"replace", "blocked", "create"} or (state == "clean" and action == "keep"):
+            item["diff"] = _unified_diff(relative.as_posix(), current or "", new)
+        plan.append(item)
+    blocked = [item["path"] for item in plan if item["action"] == "blocked"]
+    replacing = [Path(item["path"]) for item in plan if item["action"] == "replace"]
+    result = {
+        "ok": not blocked,
+        "mode": "refresh",
+        "applied": False,
+        "pack": f"{pack['id']}@{pack['version']}",
+        "from_version": entry.get("version"),
+        "files": plan,
+        "blocked": blocked,
+    }
+    if blocked:
+        result["hint"] = "本地已改动的文件需逐个选择：--accept <文件> 用新模板替换（先备份），或 --keep <文件> 保留本地"
+    if not args.apply or blocked:
+        return (0 if not blocked else 1), result
+    if replacing and args.recovery_dir is None:
+        raise InitError("--recovery-dir is required when refresh replaces files")
+    if replacing:
+        recovery = args.recovery_dir.expanduser().resolve()
+        if recovery == root or root in recovery.parents:
+            raise InitError("--recovery-dir must be outside the project root")
+        for relative in replacing:
+            archived = recovery / relative
+            if archived.exists():
+                raise InitError(f"recovery collision: {relative}")
+            archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            archived.write_bytes((root / relative).read_bytes())
+        result["recovery"] = str(recovery)
+    for item in plan:
+        relative = Path(item["path"])
+        if item["action"] in {"replace", "create"}:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+            temporary.write_text(rendered[relative], encoding="utf-8")
+            os.replace(temporary, target)
+    files = dict(baseline)
+    for item in plan:
+        if item["action"] in {"replace", "create"} or item["state"] == "unchanged":
+            files[item["path"]] = item["new_sha256"]
+        # Files kept on purpose keep their old baseline: the tool did not write them.
+    lock.setdefault("packs", {})[pack["id"]] = {"plugin": "agents-init", "version": pack["version"],
+                                               "files": dict(sorted(files.items()))}
+    lock_path = root / CONTENT_LOCK_PATH
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = lock_path.with_name(f".{lock_path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json_text(lock), encoding="utf-8")
+    os.replace(temporary, lock_path)
+    result["applied"] = True
+    return 0, result
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--project", type=Path, required=True)
-    result.add_argument("--name", required=True)
+    result.add_argument("--name")
     result.add_argument("--slug")
-    result.add_argument("--project-type", type=split_csv, required=True)
-    result.add_argument("--vcs", required=True)
-    result.add_argument("--stack", type=split_csv, required=True)
-    result.add_argument("--runtime", required=True)
-    result.add_argument("--agent-cli", type=split_csv, required=True)
-    result.add_argument("--mode", choices=("init", "migrate"), default="init")
+    result.add_argument("--project-type", type=split_csv)
+    result.add_argument("--vcs")
+    result.add_argument("--stack", type=split_csv)
+    result.add_argument("--runtime")
+    result.add_argument("--agent-cli", type=split_csv)
+    result.add_argument("--mode", choices=("init", "migrate", "refresh"), default="init",
+                        help="refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件")
+    result.add_argument("--accept", action="append", default=[], help="refresh：用新模板替换这个本地已改动的文件")
+    result.add_argument("--keep", action="append", default=[], help="refresh：保留这个文件的本地内容")
     result.add_argument("--work-mode", choices=("case-workspace", "legacy"), default=None,
                         help="新项目默认 case-workspace；既有项目只在显式选择后更改模式")
     result.add_argument("--replace", action="append", default=[], help="known skeleton path to replace in migrate mode")
@@ -543,8 +801,8 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         default=PLUGIN_ROOT,
         help=(
-            "包含 agents-init 与 plugins/{project-orchestrator,agent-pack,opinion-manager} "
-            "的完整分发根目录"
+            "agents-init Plugin 根目录（同级查找 project-orchestrator、agent-pack、"
+            "opinion-manager），或含 plugins/ 的仓库根目录"
         ),
     )
     result.add_argument("--apply", action="store_true", help="create the complete skeleton only when no collision exists")
@@ -556,6 +814,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         root = validate_root(args.project)
+        if args.mode == "refresh":
+            code, result = refresh_project(args, root)
+            if args.output == "json":
+                print(json_text(result), end="")
+            else:
+                label = "Applied" if result["applied"] else ("Blocked" if result["blocked"] else "Dry-run")
+                print(f"{label}: {result['pack']} (from {result['from_version']})")
+                for item in result["files"]:
+                    print(f"  {item['action']:8} {item['path']} [{item['state']}]")
+                if result.get("hint"):
+                    print(result["hint"])
+            return code
+        missing = [flag for flag, value in (("--name", args.name), ("--project-type", args.project_type),
+                                            ("--vcs", args.vcs), ("--stack", args.stack),
+                                            ("--runtime", args.runtime), ("--agent-cli", args.agent_cli))
+                   if not value]
+        if missing:
+            raise InitError("init/migrate 需要：" + ", ".join(missing))
         runtime_status = validate_runtime(args.runtime_plugin_root)
         slug = args.slug or slugify(args.name)
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
@@ -640,6 +916,8 @@ def main(argv: list[str] | None = None) -> int:
             raise InitError("--replace path does not exist: " + ", ".join(str(path) for path in sorted(missing_replace, key=str)))
         replace = [path for path in collisions if path in requested_replace]
         preserved = [path for path in collisions if path not in requested_replace]
+        pack = contract_pack()
+        baseline = content_baseline(pack, files, [*create, *replace])
         if args.mode == "init":
             applied = bool(args.apply and not collisions)
             if applied:
@@ -655,6 +933,8 @@ def main(argv: list[str] | None = None) -> int:
                     except OSError:
                         pass
             ok = True
+        if applied and pack is not None and baseline:
+            write_content_lock(root, pack, baseline)
         result = {
             "ok": ok,
             "mode": args.mode,
@@ -667,6 +947,11 @@ def main(argv: list[str] | None = None) -> int:
             "retire": [str(path) for path in retire],
             "profile_upgraded_from": str(LEGACY_PROFILE_PATH) if retire else None,
             "runtime": runtime_status,
+            "content_lock": {
+                "path": str(CONTENT_LOCK_PATH),
+                "pack": f"{pack['id']}@{pack['version']}",
+                "files": sorted(baseline),
+            } if pack is not None and baseline else None,
         }
         if args.output == "json":
             print(json_text(result), end="")

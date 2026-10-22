@@ -52,7 +52,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 {
   "$schema": "https://skill.sakanano.moe/skills/agents-init/project.schema.json",
   "schema_version": "1.0",
-  "initializer_version": "6.4.0",
+  "initializer_version": "6.5.0",
   "name": "PROJECT_NAME",
   "profile": {
     "project_type": ["PROJECT_TYPE"],
@@ -65,7 +65,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
     "skill": "project-orchestrator",
     "plugin": "project-orchestrator",
     "capability_manager": "agent-pack",
-    "distribution": "bundled",
+    "distribution": "marketplace",
     "required": true,
     "commit_policy": "explicit",
     "push_policy": "explicit"
