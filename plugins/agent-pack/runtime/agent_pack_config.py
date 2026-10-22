@@ -485,6 +485,34 @@ def _client_plugin_roots(client: str, home: Path) -> list[Path]:
     return []
 
 
+def _version_tuple(value: str) -> tuple[int, ...]:
+    numbers = re.findall(r"\d+", value.split("+", 1)[0])
+    return tuple(int(number) for number in numbers)
+
+
+def _client_marketplace_plugins(client: str, home: Path) -> list[Path]:
+    """Plugin roots the client installed from marketplaces (not agent-pack bootstrap copies)."""
+    found: list[Path] = []
+    if client == "claude":
+        try:
+            records = _read_json(home / ".claude" / "plugins" / "installed_plugins.json").get("plugins", {})
+        except AgentPackError:
+            records = {}
+        for entries in records.values() if isinstance(records, dict) else ():
+            for entry in entries if isinstance(entries, list) else ():
+                path = Path(str(entry.get("installPath", "")))
+                if (path / "plugin.json").is_file():
+                    found.append(path)
+    elif client == "codex":
+        cache = home / ".codex" / "plugins" / "cache"
+        if cache.is_dir() and not cache.is_symlink():
+            for plugin_dir in sorted(path for market in cache.iterdir() if market.is_dir() for path in market.iterdir()):
+                versions = [path for path in plugin_dir.iterdir() if (path / "plugin.json").is_file()] if plugin_dir.is_dir() else []
+                if versions:
+                    found.append(max(versions, key=lambda path: (_version_tuple(path.name), path.name)))
+    return found
+
+
 def _claude_plugin_records(home: Path) -> Path:
     """Install records for Claude Code: one symlink per plugin to its source root."""
     return home / ".claude" / "agent-pack" / "plugins"
@@ -527,6 +555,8 @@ def inventory_client(client: str, home: Path | None = None) -> Inventory:
         for child in sorted(plugin_parent.iterdir(), key=lambda item: item.name):
             if child.is_dir() and (child / "plugin.json").is_file():
                 _merge_inventory(inventory, _inventory_plugin(child, inventory.source))
+    for child in _client_marketplace_plugins(client, home):
+        _merge_inventory(inventory, _inventory_plugin(child, inventory.source))
     known = {Path(item.path).resolve() for item in inventory.skills}
     for skill_root in _client_skill_roots(client, home):
         if not skill_root.is_dir() or skill_root.is_symlink():

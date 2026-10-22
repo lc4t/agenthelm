@@ -178,6 +178,8 @@ class AgenthelmCheckTests(unittest.TestCase):
             report = agenthelm.run_check(self.env, project, latest_source=str(self.latest_file))
         command = run.call_args.args[0]
         self.assertEqual(command[1:3], [str(manager / "runtime/opinion_manager.py"), "updates"])
+        profile_arg = Path(command[command.index("--profile") + 1])
+        self.assertEqual(profile_arg, profile_arg.resolve())  # no /var -> /private/var symlink on macOS
         self.assertEqual(report["summary"]["opinion_updates"], 1)
         self.assertIn("a/b@1.1.0", agenthelm.render_text(report))
 
@@ -371,7 +373,10 @@ class AgenthelmOperationTests(unittest.TestCase):
         codex = self.home / ".codex/plugins/cache/agenthelm/opinion-manager/0.4.1"
         write(codex / "plugin.json", {"name": "opinion-manager", "version": "0.4.1"})
         self.assertEqual(agenthelm.locate(self.env, "opinion-manager")["path"], str(codex))
-        self.assertEqual(agenthelm.locate(self.env, "opinion-manager", "0.4.0")["path"], str(legacy))
+        # Legacy copies stay out by default so wrappers do not break once migrate retires them.
+        self.assertFalse(agenthelm.locate(self.env, "opinion-manager", "0.4.0")["ok"])
+        self.assertEqual(agenthelm.locate(self.env, "opinion-manager", "0.4.0", include_legacy=True)["path"],
+                         str(legacy))
         self.assertFalse(agenthelm.locate(self.env, "opinion-manager", "9.9.9")["ok"])
 
     def test_release_download_requires_a_pinned_tag_and_digest(self) -> None:

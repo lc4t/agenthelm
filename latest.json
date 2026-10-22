@@ -107,8 +107,10 @@
       "change_kind": "code",
       "breaking": false,
       "date": "2026-10-22",
-      "summary": "联网超时放宽到 10 秒；站点不可达时从 GitHub Release 获取发布包信息，Cursor 安装与更新不再失败；解包启用安全过滤。",
-      "actions": []
+      "summary": "inventory 纳入市场安装；locate 默认排除旧方式安装；Opinion 检查修复 macOS 符号链接问题；联网超时放宽到 10 秒，站点不可达时从 GitHub Release 获取发布包信息；解包启用安全过滤。",
+      "actions": [
+        "下游若依赖 locate 返回旧方式安装的路径，改用 --include-legacy 或改为市场安装路径"
+      ]
     }
   ]
 }

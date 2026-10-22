@@ -2,7 +2,7 @@
 
 ## 2026-10-22 — agenthelm 6.5.2 / Agent Pack 1.6.2
 
-- `agent-pack` 1.6.2：交互命令联网超时从 3 秒放宽到 10 秒；站点 `latest.json` 取不到而改用 GitHub 原始文件时，从 GitHub Release 的 `release.json` 获取发布包信息（tag 所含插件版本一致才采用），Cursor 安装与更新不再失败；解包启用 Python 的 `data` 过滤。
+- `agent-pack` 1.6.2：`inventory --source client:claude|codex` 纳入市场安装（Claude Code 安装记录与 Codex 插件缓存）；`agenthelm locate` 默认排除旧方式安装，`--include-legacy` 可列出；`check` 的 Opinion 检查在 macOS 不再因 `/var` 符号链接失败。交互命令联网超时从 3 秒放宽到 10 秒；站点 `latest.json` 取不到而改用 GitHub 原始文件时，从 GitHub Release 的 `release.json` 获取发布包信息（tag 所含插件版本一致才采用），Cursor 安装与更新不再失败；解包启用 Python 的 `data` 过滤。
 - 发布流水线：同一 tag 只发布一次，Release 已存在时跳过创建。
 
 ## 2026-10-22 — agenthelm 6.5.1 / Agent Pack 1.6.1

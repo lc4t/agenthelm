@@ -576,5 +576,26 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(response["result"]["protocolVersion"], "2025-06-18")
 
 
+class MarketplaceInventoryTests(unittest.TestCase):
+    def test_client_inventory_includes_marketplace_installs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            def plugin(root: Path, name: str, version: str) -> None:
+                write_json(root / "plugin.json", {"$schema": AGENT_PLUGIN_SCHEMA, "name": name, "version": version,
+                                                  "description": "test"})
+                (root / "skills" / name).mkdir(parents=True)
+                (root / "skills" / name / "SKILL.md").write_text("---\nname: x\ndescription: y\n---\n")
+            claude_root = home / ".claude/plugins/cache/agenthelm/agent-pack/1.6.2"
+            plugin(claude_root, "agent-pack", "1.6.2")
+            write_json(home / ".claude/plugins/installed_plugins.json", {"version": 2, "plugins": {
+                "agent-pack@agenthelm": [{"scope": "user", "installPath": str(claude_root), "version": "1.6.2"}]}})
+            plugin(home / ".codex/plugins/cache/agenthelm/opinion-manager/0.4.0", "opinion-manager", "0.4.0")
+            plugin(home / ".codex/plugins/cache/agenthelm/opinion-manager/0.4.1", "opinion-manager", "0.4.1")
+            claude = inventory_client("claude", home)
+            self.assertEqual([(item["name"], item["version"]) for item in claude.plugins], [("agent-pack", "1.6.2")])
+            codex = inventory_client("codex", home)
+            self.assertEqual([(item["name"], item["version"]) for item in codex.plugins], [("opinion-manager", "0.4.1")])
+
+
 if __name__ == "__main__":
     unittest.main()

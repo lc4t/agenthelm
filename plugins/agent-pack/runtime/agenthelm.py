@@ -336,7 +336,8 @@ def opinion_findings(project: Path, installed: list[dict]) -> list[dict]:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return [{"status": "error", "error": f"{OPINION_LOCK} 无法解析：{exc}"}]
     with tempfile.TemporaryDirectory() as temporary:
-        profile_file = Path(temporary) / "profile.json"
+        # macOS temporary paths live under /var, a symlink opinion-manager refuses.
+        profile_file = Path(temporary).resolve() / "profile.json"
         profile_file.write_text(json.dumps(profile, ensure_ascii=False), encoding="utf-8")
         completed = subprocess.run(
             [sys.executable, str(manager / "runtime" / "opinion_manager.py"), "updates",
@@ -872,9 +873,15 @@ def recovery_dir_for(env: Env, label: str) -> Path:
     return env.home / ".agent-pack" / "recovery" / f"{stamp}-agenthelm-{label}"
 
 
-def locate(env: Env, plugin: str, version: str | None = None) -> dict:
-    """Where a plugin is installed, newest first: the stable lookup for downstream wrappers."""
-    found = [item for item in installed_plugins(env, {plugin}) if version is None or item.get("version") == version]
+def locate(env: Env, plugin: str, version: str | None = None, *, include_legacy: bool = False) -> dict:
+    """Where a plugin is installed, newest first: the stable lookup for downstream wrappers.
+
+    Legacy copies are left out unless asked for, so a wrapper that works today
+    keeps working after ``migrate`` retires them.
+    """
+    found = [item for item in installed_plugins(env, {plugin})
+             if (version is None or item.get("version") == version)
+             and (include_legacy or item["client"] != "legacy")]
     found.sort(key=lambda item: (version_key(item.get("version") or "") or (0,), item["client"] != "legacy"),
                reverse=True)
     return {"ok": bool(found), "plugin": plugin, "version": version,
@@ -957,6 +964,8 @@ def parser() -> argparse.ArgumentParser:
     locate_parser = sub.add_parser("locate", help="输出插件的已安装位置（最新优先），供下游脚本查找")
     locate_parser.add_argument("plugin")
     locate_parser.add_argument("--version", help="只要这个版本")
+    locate_parser.add_argument("--include-legacy", action="store_true",
+                               help="也列出旧方式安装（默认不列，避免清理后才失效）")
     locate_parser.add_argument("--output", choices=("text", "json"), default="json")
     locate_parser.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     return result
@@ -993,7 +1002,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check" and args.hook:
         return hook(env, project, args.hook_format)
     if args.command == "locate":
-        found = locate(env, args.plugin, args.version)
+        found = locate(env, args.plugin, args.version, include_legacy=args.include_legacy)
         if args.output == "json":
             print(json.dumps(found, ensure_ascii=False, indent=2))
         elif found["path"]:
