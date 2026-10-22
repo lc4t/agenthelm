@@ -101,6 +101,12 @@
             "root": {"$ref": "#/$defs/relativePath"},
             "artifact_mode": {"enum": ["case-local", "external-references"]}
           }
+        },
+        "assets": {
+          "type": ["object", "null"], "additionalProperties": true,
+          "properties": {
+            "roots": {"$ref": "#/$defs/pathArray"}
+          }
         }
       }
     },

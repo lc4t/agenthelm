@@ -83,7 +83,7 @@ Case 自有输入放 `refs/`，交付物放 `docs/`（草稿 `docs/drafts/`）�
 
 项目没有声明自己的 Case 工具（Profile 无 `work.case.command`）时，用随包的 `runtime/case.py` 新建、更新与校验 Case，不手写 Frontmatter；用法见 [Case 工作目录工具](../../references/case-workspaces.md#默认-case-工具官方样例)。
 
-检索和统计以所有 Case 为入口，通过标题、别名、旧 Task ID、标签、目标和文件名查找；正文只在候选确定后按需读取。恢复视图只展示未关闭状态，全量统计包括历史完成与放弃记录，禁止把迁移时间当作业务完成时间。
+检索和统计以所有 Case 为入口，通过标题、别名、旧 Task ID、标签、目标和文件名查找；正文只在候选确定后按需读取。查找具体文件、版本或引用影响面时先用随包的 `runtime/assets.py find` / `refs` / `check`（人用入口 `runtime/wf.py`），不靠记忆翻目录；见 [交付物台账](../../references/case-workspaces.md#交付物台账与-wf-查找官方样例)。恢复视图只展示未关闭状态，全量统计包括历史完成与放弃记录，禁止把迁移时间当作业务完成时间。
 
 已授权迁移历史 Task 时，先列出全部源目录与目标映射，再做代表性 Demo、哈希验证和批量迁移。独立 Task 转独立 Case，确有同一目标和证据链的 Task 才合入既有 Case；标题相似不能作为合并证据。保留原 TASK.md、progress、原文件和旧 ID；关闭原因包含放弃时保留真实历史状态。工具入口和限制见 [Case 工作目录工具](../../references/case-workspaces.md)。
 

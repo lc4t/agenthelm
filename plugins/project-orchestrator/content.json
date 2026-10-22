@@ -17,6 +17,21 @@
         "references/case.schema.json": "7e56e407926a3e49434102ca87bcd5e48174357f527afd8952ab9af993732205",
         "templates/CASE.md": "a33ffcec5c239cbcf4c0828f08336c578d6d184363b01db1419f74fcdc9e1086"
       }
+    },
+    {
+      "id": "project-orchestrator/asset-synonyms",
+      "version": "1.0.0",
+      "kind": "sample",
+      "title": "交付物台账同义词示例",
+      "description": "runtime/assets.py 与 wf 查找时展开的同义词组示例；复制为项目的 .agents/moe.sakanano.agent-pack/asset-synonyms.json 后按需修改，缺省不启用任何同义词。",
+      "sources": [
+        "references/asset-synonyms.example.json"
+      ],
+      "materializes": [],
+      "project_lock": "none",
+      "files": {
+        "references/asset-synonyms.example.json": "97855f46f6591309af99199f63d7a11bbd44013b6ed576fb97f70a36e12a6192"
+      }
     }
   ]
 }
