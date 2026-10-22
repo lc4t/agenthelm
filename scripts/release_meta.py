@@ -38,6 +38,7 @@ MARKETPLACE_FILE = ".claude-plugin/marketplace.json"
 LATEST_FILE = "latest.json"
 MIGRATIONS_FILE = "release/migrations.json"
 CONTENT_FILE = "content.json"
+CLI_PACKAGE = "packages/cli/package.json"
 CATEGORY = "Developer Tools"
 POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
 OWNER = {"name": "lc4t"}
@@ -121,6 +122,7 @@ def build_marketplace(plugins: list[dict]) -> dict:
             "version": manifest["version"],
             "author": manifest["author"],
             "repository": manifest["repository"],
+            "license": manifest.get("license"),
             "keywords": manifest.get("keywords", []),
             "category": CATEGORY,
             "policy": POLICY,
@@ -205,6 +207,13 @@ def consistency_problems(plugins: list[dict]) -> list[str]:
                 problems.append(f"{name}: content pack {pack['id']} must be named {name}/<pack>")
             if not VERSION_RE.fullmatch(pack["version"]):
                 problems.append(f"{pack['id']}: version must be MAJOR.MINOR.PATCH")
+    # One number per release: the git tag, the site and the npm CLI all carry it.
+    suite = index["plugin"]["version"]
+    if indexed.get("agents-init") != suite:
+        problems.append("index.json plugin.version must equal the agents-init version (the release version)")
+    cli = read_json(ROOT / CLI_PACKAGE)["version"]
+    if cli != suite:
+        problems.append(f"{CLI_PACKAGE} version {cli} must equal the release version {suite}")
     return problems + migration_problems(plugins)
 
 

@@ -6,6 +6,8 @@
 
 ### 发布与更新
 
+- 以 MIT 许可证发布（新增 `LICENSE`；各插件 `plugin.json` 与市场条目声明 `license`）。
+- 一次发布一个版本号：git tag、站点 `index.json` 与 npm 包 `@sakanano-moe/agenthelm` 均为 6.5.0，`release_meta.py` 与发布流水线校验三者一致。
 - `scripts/release_meta.py` 从各插件 `plugin.json` 生成市场清单与 `latest.json`；Claude Code 只按市场条目的 `version` 判定更新，条目版本因此统一由脚本生成。
 - 版本门禁：插件或内容包改动未升版本即失败；升版本必须在 `release/migrations.json` 写明 `change_kind`（code / content / both）、是否不兼容与需要的动作。
 - 内容包：插件在 `content.json` 声明模板与样例（独立版本与文件摘要）。只改模板或样例的发布被单独标出，由用户选择是否更新。

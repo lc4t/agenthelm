@@ -1,3 +1,4 @@
 runtime/
 node_modules/
 *.tgz
+LICENSE

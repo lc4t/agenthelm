@@ -25,8 +25,11 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Tag must be on main
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Tag must be on main and name the release version
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          version="$(python -c "import json; print(json.load(open('index.json'))['plugin']['version'])")"
+          test "$GITHUB_REF_NAME" = "v${version}" || { echo "tag $GITHUB_REF_NAME does not match release version v${version}"; exit 1; }
 
       - name: Tests
         run: |

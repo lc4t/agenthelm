@@ -9,6 +9,7 @@ const source = join(here, "..", "..", "..", "plugins", "agent-pack", "runtime");
 const target = join(here, "..", "runtime");
 rmSync(target, { recursive: true, force: true });
 mkdirSync(target, { recursive: true });
+cpSync(join(here, "..", "..", "..", "LICENSE"), join(here, "..", "LICENSE"));
 for (const name of readdirSync(source)) {
   if (name.endsWith(".py")) cpSync(join(source, name), join(target, name));
 }
