@@ -57,14 +57,14 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "agenthelm-${GITHUB_REF_NAME}.tar.gz" release.json \
             --title "$GITHUB_REF_NAME" --notes "版本与迁移说明见 CHANGELOG.md 与 release/migrations.json。"
 
-      - name: Publish @sakanano/agenthelm when its version is new
+      - name: Publish @sakanano-moe/agenthelm when its version is new
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: packages/cli
         run: |
           version="$(node -p "require('./package.json').version")"
           if [ -z "$NODE_AUTH_TOKEN" ]; then echo "NPM_TOKEN not set; skipping npm publish"; exit 0; fi
-          if npm view "@sakanano/agenthelm@${version}" version >/dev/null 2>&1; then echo "already published"; exit 0; fi
+          if npm view "@sakanano-moe/agenthelm@${version}" version >/dev/null 2>&1; then echo "already published"; exit 0; fi
           npm publish --access public --provenance
 
       - name: Refresh the site so latest.json carries this release

@@ -1,5 +1,5 @@
 {
-  "name": "@sakanano/agenthelm",
+  "name": "@sakanano-moe/agenthelm",
   "version": "0.1.0",
   "description": "agenthelm 命令行：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 项目管理插件。",
   "bin": {

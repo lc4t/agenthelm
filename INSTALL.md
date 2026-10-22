@@ -13,7 +13,7 @@
 
 ## 前提
 
-- 本机有 Python 3.11 及以上；使用 `npx @sakanano/agenthelm` 时另需 Node 18 及以上。
+- 本机有 Python 3.11 及以上；使用 `npx @sakanano-moe/agenthelm` 时另需 Node 18 及以上。
 - 安装会写入用户级客户端目录，初始化会写入项目；两者都需用户确认。
 - 禁止读取或上传项目 `.env`、个人 Opinion 规则、凭据及私有目录内容。
 
@@ -22,8 +22,8 @@
 先预览，向用户展示将执行的命令，取得同意后再追加 `--apply`：
 
 ```bash
-npx @sakanano/agenthelm install --client <claude|codex|cursor>
-npx @sakanano/agenthelm install --client <claude|codex|cursor> --apply
+npx @sakanano-moe/agenthelm install --client <claude|codex|cursor>
+npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 ```
 
 没有 Node 时，直接执行当前客户端的市场命令（同样先取得同意）：
@@ -31,7 +31,7 @@ npx @sakanano/agenthelm install --client <claude|codex|cursor> --apply
 - Claude Code：`claude plugin install agents-init --marketplace lc4t/agenthelm`（会一并安装另外三个依赖插件）。
 - Codex：`codex plugin marketplace add lc4t/agenthelm`，再对四个插件分别执行 `codex plugin add <插件>@agenthelm`。
 
-若 `npx @sakanano/agenthelm check` 报告旧方式安装（`~/.agents/plugins/plugins/<id>` 或 `~/.claude/skills/<id>` 软链），先预览 `npx @sakanano/agenthelm migrate --install`，经同意后追加 `--apply`。
+若 `npx @sakanano-moe/agenthelm check` 报告旧方式安装（`~/.agents/plugins/plugins/<id>` 或 `~/.claude/skills/<id>` 软链），先预览 `npx @sakanano-moe/agenthelm migrate --install`，经同意后追加 `--apply`。
 
 安装完成后需要新会话（Claude Code 可用 `/reload-plugins`，Codex 与 Cursor 需重启）才能加载插件。文件安装完成不能证明当前会话已加载插件。
 
@@ -49,13 +49,13 @@ npx @sakanano/agenthelm install --client <claude|codex|cursor> --apply
 
 ## 3. 检查与更新
 
-- `npx @sakanano/agenthelm check`：只读报告插件、项目模板/样例与 Opinion 是否落后，并区分代码更新、仅模板/样例更新与不兼容变更。
-- `npx @sakanano/agenthelm update`：预览更新；经用户同意后追加 `--apply`。本地改过的模板生成文件须用户逐个选择 `--accept` 或 `--keep`。
+- `npx @sakanano-moe/agenthelm check`：只读报告插件、项目模板/样例与 Opinion 是否落后，并区分代码更新、仅模板/样例更新与不兼容变更。
+- `npx @sakanano-moe/agenthelm update`：预览更新；经用户同意后追加 `--apply`。本地改过的模板生成文件须用户逐个选择 `--accept` 或 `--keep`。
 - 会话开始的静默检查由 agent-pack 完成，不需要 Agent 额外调用。
 
 ## 无客户端命令时的兜底
 
-无法使用客户端市场时，可下载完整仓库，在仓库根目录运行 `python3 scripts/bootstrap_and_init.py --client <codex|cursor|claude> --project <绝对路径> ...`，默认只预演，确认后追加 `--apply`。这种方式不经市场，之后需用 `npx @sakanano/agenthelm migrate --install` 改为市场安装才能自动获得更新。
+无法使用客户端市场时，可下载完整仓库，在仓库根目录运行 `python3 scripts/bootstrap_and_init.py --client <codex|cursor|claude> --project <绝对路径> ...`，默认只预演，确认后追加 `--apply`。这种方式不经市场，之后需用 `npx @sakanano-moe/agenthelm migrate --install` 改为市场安装才能自动获得更新。
 
 ## 安全语义
 

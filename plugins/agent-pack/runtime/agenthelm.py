@@ -3,7 +3,7 @@
 
 ``check`` 只读：比较各客户端已安装的插件版本、项目里由模板渲染的文件，
 以及 Opinion 来源与云端 ``latest.json``。``install``、``update``、``migrate``
-默认只预览，``--apply`` 才执行。通过 ``npx @sakanano/agenthelm <命令>`` 或
+默认只预览，``--apply`` 才执行。通过 ``npx @sakanano-moe/agenthelm <命令>`` 或
 ``python3 <agent-pack>/runtime/agenthelm.py <命令>`` 运行。``--hook`` 供会话开始时静默调用：
 每天至多联网一次、离线不报错、只在有更新时输出一行，可用环境变量
 ``AGENTHELM_NO_UPDATE_CHECK=1`` 或用户配置 ``{"update_check": false}`` 关闭。
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 MARKETPLACE = "agenthelm"
-CLI = "npx @sakanano/agenthelm"
+CLI = "npx @sakanano-moe/agenthelm"
 DEFAULT_LATEST_URLS = (
     "https://agenthelm.sakanano.moe/latest.json",
     "https://raw.githubusercontent.com/lc4t/agenthelm/main/latest.json",

@@ -23,7 +23,7 @@
     "bootstrap_and_init": "./scripts/bootstrap_and_init.py",
     "marketplace": "./.claude-plugin/marketplace.json",
     "latest": "./latest.json",
-    "cli": "npx @sakanano/agenthelm"
+    "cli": "npx @sakanano-moe/agenthelm"
   },
   "skills": [
     {

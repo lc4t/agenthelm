@@ -4,9 +4,9 @@
 
 ## 顺序很重要
 
-1. **先装新的**：`npx @sakanano/agenthelm install`（预览）→ 追加 `--apply`。新旧安装此时并存，旧路径仍可用。
+1. **先装新的**：`npx @sakanano-moe/agenthelm install`（预览）→ 追加 `--apply`。新旧安装此时并存，旧路径仍可用。
 2. **再改下游**：按下文更新查找路径、版本钉定与 Profile 字段，并在新会话中验证。
-3. **最后清旧的**：`npx @sakanano/agenthelm migrate`（预览）→ 追加 `--apply`。旧文件移入 `~/.agent-pack/recovery/<时间>-agenthelm-migrate/`，`migration.json` 列出每一项的原位置，可按清单移回。
+3. **最后清旧的**：`npx @sakanano-moe/agenthelm migrate`（预览）→ 追加 `--apply`。旧文件移入 `~/.agent-pack/recovery/<时间>-agenthelm-migrate/`，`migration.json` 列出每一项的原位置，可按清单移回。
 
 先执行第 3 步会让仍按旧路径查找插件的下游脚本立刻失效。
 
@@ -15,7 +15,7 @@
 旧查找顺序（`~/.agents/plugins/plugins/<id>`、`~/.claude/agent-pack/plugins/<id>`、`~/.codex/plugins/cache/personal/<id>/<版本>`）在迁移后找不到插件。改为：
 
 ```bash
-npx @sakanano/agenthelm locate opinion-manager --version 0.4.1
+npx @sakanano-moe/agenthelm locate opinion-manager --version 0.4.1
 python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --version 0.4.1
 ```
 
@@ -51,4 +51,4 @@ python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --versio
 
 ## 项目里的模板文件
 
-v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.lock.json`。之后模板更新时，`npx @sakanano/agenthelm update` 会把与新模板不同的文件都视为本地改动，逐个要求 `--accept`（用新模板，先备份）或 `--keep`（保留本地）；选择后即建立基线。
+v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.lock.json`。之后模板更新时，`npx @sakanano-moe/agenthelm update` 会把与新模板不同的文件都视为本地改动，逐个要求 `--accept`（用新模板，先备份）或 `--keep`（保留本地）；选择后即建立基线。

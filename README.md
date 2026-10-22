@@ -18,8 +18,8 @@
 **任意客户端（推荐）**：先预览，确认后执行。需要 Node 18+ 与 Python 3.11+。
 
 ```bash
-npx @sakanano/agenthelm install
-npx @sakanano/agenthelm install --apply
+npx @sakanano-moe/agenthelm install
+npx @sakanano-moe/agenthelm install --apply
 ```
 
 它检测本机的 Claude Code、Codex 与 Cursor，分别调用各自的市场命令；`--client claude|codex|cursor` 可只装某一个。
@@ -42,7 +42,7 @@ codex plugin add opinion-manager@agenthelm
 
 添加市场后，Codex 桌面端也可打开 `codex://plugins/install/agents-init?marketplace=agenthelm` 查看并安装。
 
-**Cursor**：个人使用 `npx @sakanano/agenthelm install --client cursor --apply`，插件装入 `~/.cursor/plugins/local/`，重启 Cursor 生效。Teams / Enterprise 可在 Dashboard → Plugins & MCPs 用 Import from Repo 导入本仓库，并开启 Auto Refresh。
+**Cursor**：个人使用 `npx @sakanano-moe/agenthelm install --client cursor --apply`，插件装入 `~/.cursor/plugins/local/`，重启 Cursor 生效。Teams / Enterprise 可在 Dashboard → Plugins & MCPs 用 Import from Repo 导入本仓库，并开启 Auto Refresh。
 
 **团队项目**：在项目里运行 `claude plugin marketplace add lc4t/agenthelm --scope project` 并提交 `.claude/settings.json`，成员信任该目录后即可看到市场，各自安装。
 
@@ -62,9 +62,9 @@ python3 plugins/agents-init/skills/agents-init/scripts/init_project.py \
 ## 检查与更新
 
 ```bash
-npx @sakanano/agenthelm check            # 只读：插件、项目模板/样例与 Opinion 是否落后
-npx @sakanano/agenthelm update           # 预览要执行的更新
-npx @sakanano/agenthelm update --apply   # 执行
+npx @sakanano-moe/agenthelm check            # 只读：插件、项目模板/样例与 Opinion 是否落后
+npx @sakanano-moe/agenthelm update           # 预览要执行的更新
+npx @sakanano-moe/agenthelm update --apply   # 执行
 ```
 
 - 云端版本源是 [`latest.json`](latest.json)。`check` 分别标出插件代码更新、只改模板或样例的更新，以及含不兼容变更的版本和需要做的动作。
@@ -78,8 +78,8 @@ npx @sakanano/agenthelm update --apply   # 执行
 早期版本把插件复制到 `~/.agents/plugins/plugins/<id>`，并在 `~/.claude/skills/<id>` 建软链。与市场安装并存会出现重复的 Skill 与 MCP：
 
 ```bash
-npx @sakanano/agenthelm migrate --install           # 预览
-npx @sakanano/agenthelm migrate --install --apply
+npx @sakanano-moe/agenthelm migrate --install           # 预览
+npx @sakanano-moe/agenthelm migrate --install --apply
 ```
 
 旧文件整体移入 `~/.agent-pack/recovery/<时间>-agenthelm-migrate/`，并写入 `migration.json` 清单。下游工具的不兼容点见 [`CHANGELOG.md`](CHANGELOG.md)。
@@ -96,7 +96,7 @@ npx @sakanano/agenthelm migrate --install --apply
 │   ├── project-orchestrator/      # 生命周期编排、默认 Case 工具与条目式记忆
 │   ├── agent-pack/                # 扩展能力管理、agenthelm 命令行与 MCP
 │   └── opinion-manager/           # Opinion 配置、组合与审查；版本化规则与模板
-├── packages/cli/                  # @sakanano/agenthelm（npx 入口，调用 agent-pack 的同一份代码）
+├── packages/cli/                  # @sakanano-moe/agenthelm（npx 入口，调用 agent-pack 的同一份代码）
 ├── scripts/                       # release_meta.py、attach_release.py、bootstrap_and_init.py
 └── tests/
 ```
@@ -105,7 +105,7 @@ npx @sakanano/agenthelm migrate --install --apply
 
 - 各插件的 `plugin.json` 是唯一手写版本；`content.json` 声明模板与样例内容包。改动后运行 `python3 scripts/release_meta.py --write` 生成市场清单、`latest.json` 与内容摘要。
 - 版本门禁 `python3 scripts/release_meta.py --since <上一个 tag>`：插件或内容包改动未升版本即失败；升版本须在 `release/migrations.json` 写明 `change_kind`（code / content / both）、`breaking` 与 `actions`。
-- `main` 是发布基线，客户端市场跟随 `main`；在 `main` 上打 `v*` tag 触发发布：构建发布包、上传摘要、按需发布 `@sakanano/agenthelm`、刷新站点。
+- `main` 是发布基线，客户端市场跟随 `main`；在 `main` 上打 `v*` tag 触发发布：构建发布包、上传摘要、按需发布 `@sakanano-moe/agenthelm`、刷新站点。
 - `tests/test_public_privacy.py` 扫描全部已跟踪文件，拦截本机路径、私钥与私有项目标识。公开 Opinion 模板须经内容检查、测试和用户逐文件明确同意；个人规则不得进入公开模板、示例、测试与文档。
 - push 前完成单元测试、Plugin 校验、端到端初始化与公开敏感信息审计；版本、结构或入口变化记录到 [`CHANGELOG.md`](CHANGELOG.md)。
 

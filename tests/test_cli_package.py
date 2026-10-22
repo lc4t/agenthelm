@@ -14,7 +14,7 @@ PACKAGE = ROOT / "packages/cli"
 class CliPackageTests(unittest.TestCase):
     def test_package_ships_the_launcher_and_the_synced_runtime(self) -> None:
         manifest = json.loads((PACKAGE / "package.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["name"], "@sakanano/agenthelm")
+        self.assertEqual(manifest["name"], "@sakanano-moe/agenthelm")
         self.assertEqual(manifest["bin"], {"agenthelm": "bin/agenthelm.js"})
         self.assertEqual(sorted(manifest["files"]), ["bin", "runtime"])
         self.assertEqual(manifest["scripts"]["prepack"], "node scripts/sync-runtime.mjs")

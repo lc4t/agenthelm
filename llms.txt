@@ -11,8 +11,8 @@
 扩展能力 Skill：https://agenthelm.sakanano.moe/plugins/agent-pack/skills/agent-pack/SKILL.md
 Opinion 管理 Skill：https://agenthelm.sakanano.moe/plugins/opinion-manager/skills/opinion-manager/SKILL.md
 
-安装：npx @sakanano/agenthelm install --client <claude|codex|cursor> 先预览，经用户同意后追加 --apply；或使用客户端市场命令（Claude Code：claude plugin install agents-init --marketplace lc4t/agenthelm，会一并安装依赖；Codex：codex plugin marketplace add lc4t/agenthelm，再安装四个 <插件>@agenthelm）。四个插件须一并安装。
+安装：npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> 先预览，经用户同意后追加 --apply；或使用客户端市场命令（Claude Code：claude plugin install agents-init --marketplace lc4t/agenthelm，会一并安装依赖；Codex：codex plugin marketplace add lc4t/agenthelm，再安装四个 <插件>@agenthelm）。四个插件须一并安装。
 
-检查与更新：npx @sakanano/agenthelm check（只读）；npx @sakanano/agenthelm update 预览，同意后 --apply。旧方式安装用 npx @sakanano/agenthelm migrate --install 迁移。
+检查与更新：npx @sakanano-moe/agenthelm check（只读）；npx @sakanano-moe/agenthelm update 预览，同意后 --apply。旧方式安装用 npx @sakanano-moe/agenthelm migrate --install 迁移。
 
 禁止复制任何用户的个人规则、凭据、.env 或私有路径。初始化默认 dry-run，确认后 --apply；成功标准为 initializer.applied=true 且 doctor.ok=true。Opinion 首次配置只展示三个主入口：直接用模板、选择模板的部分条目、从空白开始迭代；另可选择基于已授权记忆提出候选规则。版本契约见 plugins/opinion-manager/references/versioning.md。
