@@ -449,7 +449,10 @@ def render_text(report: dict) -> str:
             lines.append(f"  [Opinion] 有新版本：{refs}（用 opinion-manager 预览后确认）")
         elif item["status"] in {"error", "unknown"}:
             lines.append(f"  [Opinion] {item.get('error')}")
-    lines.append(one_line(report) or "全部为最新。")
+    if not report["plugins"]:
+        lines.append(f"运行 `{CLI} install` 预览安装。")
+    else:
+        lines.append(one_line(report) or "全部为最新。")
     return "\n".join(lines) + "\n"
 
 
