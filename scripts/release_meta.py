@@ -208,9 +208,10 @@ def consistency_problems(plugins: list[dict]) -> list[str]:
             if not VERSION_RE.fullmatch(pack["version"]):
                 problems.append(f"{pack['id']}: version must be MAJOR.MINOR.PATCH")
     # One number per release: the git tag, the site and the npm CLI all carry it.
+    # It moves on its own; plugins keep independent versions.
     suite = index["plugin"]["version"]
-    if indexed.get("agents-init") != suite:
-        problems.append("index.json plugin.version must equal the agents-init version (the release version)")
+    if not VERSION_RE.fullmatch(suite):
+        problems.append("index.json plugin.version (the release version) must be MAJOR.MINOR.PATCH")
     cli = read_json(ROOT / CLI_PACKAGE)["version"]
     if cli != suite:
         problems.append(f"{CLI_PACKAGE} version {cli} must equal the release version {suite}")

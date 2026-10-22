@@ -10,13 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SiteReleaseTests(unittest.TestCase):
     def test_homepage_metadata_matches_plugin_authority(self) -> None:
-        manifest = json.loads((ROOT / "plugins/agents-init/plugin.json").read_text(encoding="utf-8"))
         index = json.loads((ROOT / "index.json").read_text(encoding="utf-8"))
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
-        version = manifest["version"]
+        cli = json.loads((ROOT / "packages/cli/package.json").read_text(encoding="utf-8"))
+        version = index["plugin"]["version"]  # the release version, shared with the git tag and npm
         updated_at = index["site"]["updated_at"]
-        self.assertEqual(index["plugin"]["version"], version)
-        self.assertIn(f"Plugin {version}", homepage)
+        self.assertEqual(cli["version"], version)
+        self.assertIn(f"Release {version}", homepage)
         self.assertIn(f"更新日期 {updated_at}", homepage)
         self.assertNotIn("main 分支", homepage)
         self.assertNotIn("正式域名", homepage)

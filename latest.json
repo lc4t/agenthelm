@@ -2,10 +2,10 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-10-21",
+  "released_at": "2026-10-22",
   "plugins": {
     "agent-pack": {
-      "version": "1.6.0",
+      "version": "1.6.1",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -88,6 +88,16 @@
       "breaking": false,
       "date": "2026-10-21",
       "summary": "声明公开目录的内容包清单；规则、模板与命令行为不变。",
+      "actions": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.6.0",
+      "to": "1.6.1",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-22",
+      "summary": "未安装任何插件时，check 提示运行 install，不再显示“全部为最新”。",
       "actions": []
     }
   ]

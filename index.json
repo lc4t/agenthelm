@@ -4,14 +4,14 @@
     "name": "agenthelm",
     "description": "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。",
     "version": "0.7.0",
-    "updated_at": "2026-10-21",
+    "updated_at": "2026-10-22",
     "homepage": "./index.html",
     "domain": "agenthelm.sakanano.moe",
     "legacy_domain": "skill.sakanano.moe"
   },
   "plugin": {
     "manifest": "./plugins/agents-init/plugin.json",
-    "version": "6.5.0",
+    "version": "6.5.1",
     "install_unit": "marketplace",
     "bundled_plugins": [
       "./plugins/project-orchestrator/plugin.json",
@@ -55,7 +55,7 @@
       "id": "agent-pack",
       "name": "agent-pack / Agent 扩展能力管理",
       "description": "在项目与 Codex / Cursor / Claude 之间盘点、校验、安装、同步、迁移与对账 Plugin、Skill、MCP。",
-      "version": "1.6.0",
+      "version": "1.6.1",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/agent-pack/skills/agent-pack/SKILL.md",

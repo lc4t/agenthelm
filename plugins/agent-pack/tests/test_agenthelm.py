@@ -101,6 +101,11 @@ class AgenthelmCheckTests(unittest.TestCase):
         (finding,) = self.check(project)["content"]
         self.assertEqual((finding["status"], finding["latest"]), ("update-available", "1.1.0"))
 
+    def test_nothing_installed_points_to_install_instead_of_up_to_date(self) -> None:
+        text = agenthelm.render_text(self.check())
+        self.assertNotIn("全部为最新", text)
+        self.assertIn("install", text)
+
     def test_content_only_release_is_reported_without_plugin_changes(self) -> None:
         project = self.project_with_lock()
         report = self.check(project)

@@ -1,5 +1,11 @@
 # 更新记录
 
+## 2026-10-22 — agenthelm 6.5.1 / Agent Pack 1.6.1
+
+- 发布版本号与 agents-init 版本解绑：git tag、站点与 npm 包共用独立的发布版本号，各插件只在自身改动时升级。
+- `agent-pack` 1.6.1：未安装任何插件时，`check` 提示运行 `install`，不再显示“全部为最新”。
+- 发布流水线：GitHub Actions 升级到 Node 24 运行时的版本；npm 暂存发布在未设置 `NPM_TOKEN` 时改用 Trusted Publishing（OIDC），配置可信发布者后即可删除令牌。
+
 ## 2026-10-21 — agenthelm 市场：Agents Init 6.5.0 / Agent Pack 1.6.0 / Project Orchestrator 1.7.0 / Opinion Manager 0.4.1
 
 仓库由 lc4t/skill 改名为 lc4t/agenthelm（旧地址由 GitHub 重定向）。四个插件改为经 agenthelm 市场分发：一份 `.claude-plugin/marketplace.json` 同时供 Claude Code、Codex 与 Cursor 读取，`latest.json` 作为云端版本源，`npx @sakanano-moe/agenthelm` 负责安装、检查、更新与迁移。
