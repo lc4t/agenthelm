@@ -87,7 +87,8 @@ class AgenthelmCheckTests(unittest.TestCase):
         self.assertEqual(behind["change_kinds"], ["code", "content"])
         self.assertTrue(behind["breaking"])
         self.assertEqual(by_client[("codex", "agents-init")]["status"], "current")
-        self.assertEqual(by_client[("legacy", "opinion-manager")]["status"], "current")
+        # A pre-marketplace copy is migrated, never reported as "behind" or "current".
+        self.assertEqual(by_client[("legacy", "opinion-manager")]["status"], "legacy")
         self.assertNotIn("other", {item["plugin"] for item in report["plugins"]})
         self.assertEqual(report["summary"]["legacy_installs"], 1)
         self.assertFalse(report["summary"]["up_to_date"])
@@ -198,7 +199,17 @@ class AgenthelmOperationTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.home = self.root / "home"
-        self.env = agenthelm.Env(home=self.home, variables={})
+        # Stub client commands on a private PATH keep command planning independent of this machine.
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for name in ("claude", "codex"):
+            stub = self.bin / name
+            stub.write_text("#!/bin/sh\nexit 0\n")
+            stub.chmod(0o755)
+        self.env = agenthelm.Env(home=self.home, variables={"PATH": str(self.bin)})
+        patcher = mock.patch.object(agenthelm, "known_cli_locations", return_value=[])
+        patcher.start()
+        self.addCleanup(patcher.stop)
         latest = json.loads(json.dumps(LATEST))
         latest["repository"] = "https://github.com/lc4t/agenthelm"
         self.latest = latest
@@ -284,11 +295,12 @@ class AgenthelmOperationTests(unittest.TestCase):
     def test_install_plans_native_marketplace_commands_per_client(self) -> None:
         steps = agenthelm.install_steps(self.env, self.latest, ["claude", "codex"], ["agent-pack"], None, self.home)
         commands = [step.command for step in steps]
+        claude, codex = str(self.bin / "claude"), str(self.bin / "codex")
         self.assertEqual(commands, [
-            ["claude", "plugin", "marketplace", "add", "lc4t/agenthelm"],
-            ["claude", "plugin", "install", "agent-pack@agenthelm"],
-            ["codex", "plugin", "marketplace", "add", "lc4t/agenthelm"],
-            ["codex", "plugin", "add", "agent-pack@agenthelm"],
+            [claude, "plugin", "marketplace", "add", "lc4t/agenthelm"],
+            [claude, "plugin", "install", "agent-pack@agenthelm"],
+            [codex, "plugin", "marketplace", "add", "lc4t/agenthelm"],
+            [codex, "plugin", "add", "agent-pack@agenthelm"],
         ])
         mirrored = agenthelm.install_steps(self.env, self.latest, ["claude"], ["agent-pack"], None, self.home,
                                            "https://mirror.example/skill.git")
@@ -306,10 +318,11 @@ class AgenthelmOperationTests(unittest.TestCase):
             ]}
         steps = agenthelm.update_steps(self.env, report, self.root, None, self.home, [], [], None, None)
         commands = [step.command for step in steps if step.command]
+        claude, codex = str(self.bin / "claude"), str(self.bin / "codex")
         self.assertEqual(commands, [
-            ["claude", "plugin", "marketplace", "update", "agenthelm"],
-            ["claude", "plugin", "update", "agent-pack@agenthelm", "--scope", "project"],
-            ["codex", "plugin", "marketplace", "upgrade", "agenthelm"],
+            [claude, "plugin", "marketplace", "update", "agenthelm"],
+            [claude, "plugin", "update", "agent-pack@agenthelm", "--scope", "project"],
+            [codex, "plugin", "marketplace", "upgrade", "agenthelm"],
         ])
         content = [step for step in steps if step.kind == "content"]
         self.assertEqual(len(content), 1)
@@ -360,6 +373,68 @@ class AgenthelmOperationTests(unittest.TestCase):
                               "import os, sys; sys.exit(0 if os.environ['HOME'] == sys.argv[1] else 5)", str(self.home)])
         (record,) = agenthelm.execute_steps([step], apply=True, recovery_root=None, child_env=child)
         self.assertEqual(record["status"], "applied")
+
+    def test_client_cli_is_found_on_path_then_in_the_apps_own_folder(self) -> None:
+        app = self.root / "ChatGPT.app/codex"
+        app.parent.mkdir()
+        app.write_text("#!/bin/sh\n")
+        app.chmod(0o755)
+        lone = agenthelm.Env(home=self.home, variables={"PATH": str(self.root / "empty")})
+        with mock.patch.object(agenthelm, "known_cli_locations",
+                               side_effect=lambda env, name: [app] if name == "codex" else []):
+            self.assertEqual(agenthelm.find_cli(lone, "codex"), str(app))
+            self.assertIsNone(agenthelm.find_cli(lone, "claude"))
+            self.assertEqual(agenthelm.find_cli(self.env, "codex"), str(self.bin / "codex"))  # PATH wins
+            lone.variables["AGENTHELM_CODEX"] = str(self.bin / "codex")
+            self.assertEqual(agenthelm.find_cli(lone, "codex"), str(self.bin / "codex"))  # explicit override wins
+            self.assertEqual(agenthelm.detect_clients(lone), ["codex"])
+
+    def test_missing_client_cli_blocks_the_step_and_says_how_to_point_at_it(self) -> None:
+        lone = agenthelm.Env(home=self.home, variables={"PATH": str(self.root / "empty")})
+        steps = agenthelm.install_steps(lone, self.latest, ["codex"], ["agent-pack"], None, self.home)
+        self.assertTrue(all(step.blocked and "AGENTHELM_CODEX" in step.blocked for step in steps))
+
+    def test_legacy_installs_are_reported_for_migration_not_as_updates(self) -> None:
+        self.latest_file.write_text(json.dumps(LATEST), encoding="utf-8")
+        write(self.home / ".agents/plugins/plugins/agent-pack/plugin.json", {"name": "agent-pack", "version": "1.5.1"})
+        report = agenthelm.run_check(self.env, None, latest_source=str(self.latest_file))
+        (item,) = [entry for entry in report["plugins"] if entry["client"] == "legacy"]
+        self.assertEqual(item["status"], "legacy")
+        self.assertEqual(report["summary"]["plugins_behind"], 0)
+        self.assertEqual(report["summary"]["legacy_installs"], 1)
+        text = agenthelm.render_text(report)
+        self.assertIn("待迁移", text)
+        self.assertNotIn("可更新", text)
+        message = agenthelm.one_line(report)
+        self.assertIn("1 个旧方式安装待迁移", message)
+        self.assertNotIn("可更新", message)
+
+    def test_migrate_also_retires_the_codex_personal_cache_of_agenthelm_plugins(self) -> None:
+        mine = self.home / ".codex/plugins/cache/personal/agent-pack/1.5.1"
+        write(mine / "plugin.json", {"name": "agent-pack", "version": "1.5.1"})
+        other = self.home / ".codex/plugins/cache/personal/zotero-mcp/0.7.2"
+        write(other / "plugin.json", {"name": "zotero-mcp", "version": "0.7.2"})
+        write(self.home / ".codex/config.toml",
+              '[plugins."agent-pack@personal"]\nenabled = true\n\n[plugins."zotero-mcp@personal"]\nenabled = true\n')
+        code, applied = self.run_cli("migrate", "--apply")
+        self.assertEqual(code, 0, applied)
+        self.assertFalse((self.home / ".codex/plugins/cache/personal/agent-pack").exists())
+        self.assertTrue(other.is_dir())  # a plugin that is not agenthelm's stays
+        self.assertNotIn("agent-pack@personal", (self.home / ".codex/config.toml").read_text())
+        self.assertIn("zotero-mcp@personal", (self.home / ".codex/config.toml").read_text())
+        recovery = Path(applied["recovery"])
+        self.assertTrue((recovery / "moved/.codex/plugins/cache/personal/agent-pack/1.5.1/plugin.json").is_file())
+
+    def test_codex_home_outside_the_home_folder_can_still_be_retired(self) -> None:
+        codex_home = self.root / "elsewhere/codex"
+        write(codex_home / "plugins/cache/personal/agent-pack/1.5.1/plugin.json", {"name": "agent-pack"})
+        env = agenthelm.Env(home=self.home, variables={"PATH": str(self.bin), "CODEX_HOME": str(codex_home)})
+        artifacts = agenthelm.legacy_artifacts(env, {"agent-pack"})
+        self.assertEqual([item["kind"] for item in artifacts], ["codex-personal-cache"])
+        recovery = self.root / "recovery"
+        done = agenthelm.retire_legacy(env, artifacts, recovery)
+        self.assertEqual(done[0]["status"], "moved")
+        self.assertFalse((codex_home / "plugins/cache/personal/agent-pack").exists())
 
     def test_newest_companion_wins_over_the_copy_next_to_this_script(self) -> None:
         newer = self.home / ".claude/plugins/cache/agenthelm/agents-init/99.0.0"
