@@ -2,18 +2,18 @@
 
 ## 2026-10-21 — agenthelm 市场：Agents Init 6.5.0 / Agent Pack 1.6.0 / Project Orchestrator 1.7.0 / Opinion Manager 0.4.1
 
-仓库由 lc4t/skill 改名为 lc4t/agenthelm（旧地址由 GitHub 重定向）。四个插件改为经 agenthelm 市场分发：一份 `.claude-plugin/marketplace.json` 同时供 Claude Code、Codex 与 Cursor 读取，`latest.json` 作为云端版本源，`npx @agenthelm/cli` 负责安装、检查、更新与迁移。
+仓库由 lc4t/skill 改名为 lc4t/agenthelm（旧地址由 GitHub 重定向）。四个插件改为经 agenthelm 市场分发：一份 `.claude-plugin/marketplace.json` 同时供 Claude Code、Codex 与 Cursor 读取，`latest.json` 作为云端版本源，`npx @sakanano/agenthelm` 负责安装、检查、更新与迁移。
 
 ### 发布与更新
 
 - `scripts/release_meta.py` 从各插件 `plugin.json` 生成市场清单与 `latest.json`；Claude Code 只按市场条目的 `version` 判定更新，条目版本因此统一由脚本生成。
 - 版本门禁：插件或内容包改动未升版本即失败；升版本必须在 `release/migrations.json` 写明 `change_kind`（code / content / both）、是否不兼容与需要的动作。
 - 内容包：插件在 `content.json` 声明模板与样例（独立版本与文件摘要）。只改模板或样例的发布被单独标出，由用户选择是否更新。
-- 打 tag 发布：构建发布包并上传摘要，Pages 只在 tag 与 main 的插件版本一致时把发布包写入线上 `latest.json`；`@agenthelm/cli` 版本变化时发布到 npm。
+- 打 tag 发布：构建发布包并上传摘要，Pages 只在 tag 与 main 的插件版本一致时把发布包写入线上 `latest.json`；`@sakanano/agenthelm` 版本变化时发布到 npm。
 
 ### agent-pack 1.6.0
 
-- 新增 `runtime/agenthelm.py`（`npx @agenthelm/cli` 调用同一份代码）：`check` 只读比较 Claude Code、Codex、Cursor 与旧方式安装的版本、项目模板与 Opinion；`install` / `update` 调用各客户端原生市场命令，Cursor 从带摘要的发布包安装；`migrate` 把旧方式安装移入恢复目录并改为市场安装；`doctor` 报告重复安装与版本不一致。写操作默认预览，`--apply` 才执行。
+- 新增 `runtime/agenthelm.py`（`npx @sakanano/agenthelm` 调用同一份代码）：`check` 只读比较 Claude Code、Codex、Cursor 与旧方式安装的版本、项目模板与 Opinion；`install` / `update` 调用各客户端原生市场命令，Cursor 从带摘要的发布包安装；`migrate` 把旧方式安装移入恢复目录并改为市场安装；`doctor` 报告重复安装与版本不一致。写操作默认预览，`--apply` 才执行。
 - `hooks/hooks.json`：会话开始静默检查，每天至多联网一次、同一提示每天一次，离线不报错；`AGENTHELM_NO_UPDATE_CHECK=1` 或 `~/.config/agenthelm/config.json` 的 `"update_check": false` 关闭。
 - Codex 适配器生成的 `.mcp.json` 改用 `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PLUGIN_DATA}`：Claude Code 与 Cursor 不展开 `${PLUGIN_ROOT}`；Codex 仍读取 `mcp.json`。
 
@@ -35,8 +35,8 @@
 ### 不兼容点（下游须处理）
 
 - 安装布局：仓库根不再是安装单元，根 `plugin.json`、`.codex-plugin/` 与 `skills/agents-init/` 移到 `plugins/agents-init/`。按旧路径引用这些文件的脚本需要更新。
-- 旧方式安装（agent-pack 复制到 `~/.agents/plugins/plugins/<id>`、`~/.claude/skills/<id>` 软链、`~/.claude.json` 中的 agent-pack MCP）与市场安装并存会重复；用 `npx @agenthelm/cli migrate --install` 迁移，旧文件进入 `~/.agent-pack/recovery/` 并附清单。
-- 按 `~/.agents/plugins/plugins/agent-pack` → `~/.claude/agent-pack/plugins/agent-pack` → `~/.cursor/plugins/local/agent-pack` 查找 agent-pack 的下游工具，需改为读取客户端安装记录（Claude Code `~/.claude/plugins/installed_plugins.json`、Codex `~/.codex/plugins/cache/agenthelm/`）或调用 `npx @agenthelm/cli doctor`。
+- 旧方式安装（agent-pack 复制到 `~/.agents/plugins/plugins/<id>`、`~/.claude/skills/<id>` 软链、`~/.claude.json` 中的 agent-pack MCP）与市场安装并存会重复；用 `npx @sakanano/agenthelm migrate --install` 迁移，旧文件进入 `~/.agent-pack/recovery/` 并附清单。
+- 按 `~/.agents/plugins/plugins/agent-pack` → `~/.claude/agent-pack/plugins/agent-pack` → `~/.cursor/plugins/local/agent-pack` 查找 agent-pack 的下游工具，需改为读取客户端安装记录（Claude Code `~/.claude/plugins/installed_plugins.json`、Codex `~/.codex/plugins/cache/agenthelm/`）或调用 `npx @sakanano/agenthelm doctor`。
 - `agent_pack_config.py` 的 `inventory` / `bootstrap` / `reconcile` / `doctor` 参数与 `mcp_env_launcher.py` 的参数不变；opinion-manager 的命令与状态文件格式不变。
 
 ## 2026-10-08 — Agents Init 6.4.0 / Project Orchestrator 1.6.0

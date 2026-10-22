@@ -7,7 +7,7 @@ const { join } = require("node:path");
 
 const script = join(__dirname, "..", "runtime", "agenthelm.py");
 if (!existsSync(script)) {
-  console.error("agenthelm: runtime is missing from this package; reinstall @agenthelm/cli.");
+  console.error("agenthelm: runtime is missing from this package; reinstall @sakanano/agenthelm.");
   process.exit(2);
 }
 

@@ -1,4 +1,4 @@
-// Copy agent-pack's Python runtime into the package so `npx @agenthelm/cli`
+// Copy agent-pack's Python runtime into the package so `npx @sakanano/agenthelm`
 // runs exactly the code that ships in the plugin, with no second copy to maintain.
 import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";

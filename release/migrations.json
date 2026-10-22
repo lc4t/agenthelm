@@ -8,7 +8,7 @@
     "date": "2026-10-21",
     "summary": "迁入 plugins/agents-init/ 并经 agenthelm 市场分发；初始化器在客户端缓存中查找同级插件；新增内容锁与 --mode refresh。",
     "actions": [
-      "安装方式不兼容：旧的 agent-pack 复制 + ~/.claude/skills 软链需运行 npx @agenthelm/cli migrate --install",
+      "安装方式不兼容：旧的 agent-pack 复制 + ~/.claude/skills 软链需运行 npx @sakanano/agenthelm migrate --install",
       "按仓库根路径引用 skills/agents-init/ 或根 plugin.json 的脚本需改为 plugins/agents-init/",
       "已初始化的项目与 Profile 无需修改；新项目 runtime.distribution 为 marketplace"
     ]
