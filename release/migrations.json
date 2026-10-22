@@ -66,5 +66,17 @@
     "actions": [
       "下游若依赖 locate 返回旧方式安装的路径，改用 --include-legacy 或改为市场安装路径"
     ]
+  },
+  {
+    "plugin": "agent-pack",
+    "from": "1.6.2",
+    "to": "1.6.3",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-10-23",
+    "summary": "自动找到 ChatGPT.app 自带的 Codex 命令行；migrate 一并清理 Codex 的旧 @personal 插件缓存；check 把旧方式安装单独列为待迁移，不再算作可更新。",
+    "actions": [
+      "Codex 命令行不在 PATH 时可用 AGENTHELM_CODEX / AGENTHELM_CLAUDE 指定"
+    ]
   }
 ]

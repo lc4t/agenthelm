@@ -255,7 +255,9 @@ def plugin_findings(latest: dict, installed: list[dict]) -> list[dict]:
     for item in installed:
         target = latest.get("plugins", {}).get(item["plugin"], {}).get("version")
         current = item.get("version") or ""
-        if target is None:
+        if item["client"] == "legacy":
+            status = "legacy"  # a pre-marketplace copy: it gets migrated, not updated
+        elif target is None:
             status = "unknown"
         elif is_newer(target, current):
             status = "behind"
@@ -421,7 +423,11 @@ def render_text(report: dict) -> str:
     if not report["plugins"]:
         lines.append("未发现已安装的 agenthelm 插件。")
     for item in report["plugins"]:
-        label = {"behind": "可更新", "current": "最新", "ahead": "高于云端", "unknown": "版本未知"}[item["status"]]
+        label = {"behind": "可更新", "current": "最新", "ahead": "高于云端", "unknown": "版本未知",
+                 "legacy": "旧方式安装，待迁移"}[item["status"]]
+        if item["status"] == "legacy":
+            lines.append(f"  [旧方式] {item['plugin']} {item.get('version')}  {label}")
+            continue
         line = f"  [{item['client']}] {item['plugin']} {item.get('version')} → {item.get('latest')}  {label}"
         if item["status"] == "behind":
             kinds = {"code": "代码", "content": "仅模板/样例", "both": "代码与模板"}
@@ -436,8 +442,6 @@ def render_text(report: dict) -> str:
             hint = UPDATE_HINTS.get(item["client"])
             if hint:
                 line += f"\n      更新：{hint.format(plugin=item['plugin'])}"
-        elif item["client"] == "legacy":
-            line += f"\n      旧方式安装：{UPDATE_HINTS['legacy']}"
         lines.append(line)
     for item in report["content"]:
         if item.get("pack") is None:
@@ -458,6 +462,8 @@ def render_text(report: dict) -> str:
     if not report["plugins"]:
         lines.append(f"运行 `{CLI} install` 预览安装。")
     else:
+        if any(item["status"] == "legacy" for item in report["plugins"]):
+            lines.append(f"旧方式安装可用 `{UPDATE_HINTS['legacy']}` 预览迁移。")
         lines.append(one_line(report) or "全部为最新。")
     return "\n".join(lines) + "\n"
 
@@ -512,9 +518,9 @@ def github_slug(latest: dict) -> str:
 
 def detect_clients(env: Env) -> list[str]:
     found = []
-    if shutil.which("claude") or env.claude_dir.is_dir():
+    if find_cli(env, "claude") or env.claude_dir.is_dir():
         found.append("claude")
-    if shutil.which("codex") or env.codex_dir.is_dir():
+    if find_cli(env, "codex") or env.codex_dir.is_dir():
         found.append("codex")
     if (env.home / ".cursor").is_dir():
         found.append("cursor")
@@ -608,8 +614,34 @@ class Step:
         return data
 
 
-def _need(binary: str) -> str | None:
-    return None if shutil.which(binary) else f"未找到 {binary} 命令"
+def known_cli_locations(env: Env, name: str) -> list[Path]:
+    """Where a client's command line lives when it is not on PATH (GUI apps, per-user installs)."""
+    home = env.home
+    if name == "codex":
+        bundle = "ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
+        return [Path("/Applications") / bundle, home / "Applications" / bundle,
+                home / ".local/bin/codex", Path("/opt/homebrew/bin/codex"), Path("/usr/local/bin/codex")]
+    return [home / ".local/bin" / name, Path("/opt/homebrew/bin") / name, Path("/usr/local/bin") / name]
+
+
+def find_cli(env: Env, name: str) -> str | None:
+    """A client's command line: ``AGENTHELM_<NAME>`` override, then PATH, then the usual app locations."""
+    override = env.get(f"AGENTHELM_{name.upper()}")
+    if override and os.access(override, os.X_OK):
+        return override
+    on_path = shutil.which(name, path=env.get("PATH") or "")
+    if on_path:
+        return on_path
+    for candidate in known_cli_locations(env, name):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def _cli(env: Env, name: str, *args: str) -> tuple[list[str], str | None]:
+    """The command (using the resolved executable) and why it cannot run, if it cannot."""
+    found = find_cli(env, name)
+    return [found or name, *args], (None if found else f"未找到 {name} 命令（已查 PATH 与常见安装位置；可用 AGENTHELM_{name.upper()} 指定）")
 
 
 def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str], source: Path | None,
@@ -618,17 +650,17 @@ def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str]
     steps: list[Step] = []
     for client in clients:
         if client == "claude":
-            steps.append(Step("install", "claude", f"Claude Code 添加 agenthelm 市场（{slug}）",
-                              ["claude", "plugin", "marketplace", "add", slug], blocked=_need("claude")))
+            command, blocked = _cli(env, "claude", "plugin", "marketplace", "add", slug)
+            steps.append(Step("install", "claude", f"Claude Code 添加 agenthelm 市场（{slug}）", command, blocked=blocked))
             for plugin in plugins:
-                steps.append(Step("install", "claude", f"Claude Code 安装 {plugin}",
-                                  ["claude", "plugin", "install", f"{plugin}@{MARKETPLACE}"], blocked=_need("claude")))
+                command, blocked = _cli(env, "claude", "plugin", "install", f"{plugin}@{MARKETPLACE}")
+                steps.append(Step("install", "claude", f"Claude Code 安装 {plugin}", command, blocked=blocked))
         elif client == "codex":
-            steps.append(Step("install", "codex", f"Codex 添加 agenthelm 市场（{slug}）",
-                              ["codex", "plugin", "marketplace", "add", slug], blocked=_need("codex")))
+            command, blocked = _cli(env, "codex", "plugin", "marketplace", "add", slug)
+            steps.append(Step("install", "codex", f"Codex 添加 agenthelm 市场（{slug}）", command, blocked=blocked))
             for plugin in plugins:
-                steps.append(Step("install", "codex", f"Codex 安装 {plugin}",
-                                  ["codex", "plugin", "add", f"{plugin}@{MARKETPLACE}"], blocked=_need("codex")))
+                command, blocked = _cli(env, "codex", "plugin", "add", f"{plugin}@{MARKETPLACE}")
+                steps.append(Step("install", "codex", f"Codex 安装 {plugin}", command, blocked=blocked))
         elif client == "cursor":
             steps.append(cursor_step(latest, plugins, source, home, "安装"))
     return steps
@@ -655,17 +687,16 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
     if only in (None, "plugins"):
         claude = sorted({item["plugin"] for item in behind if item["client"] == "claude"})
         if claude:
-            steps.append(Step("update", "claude", "刷新 Claude Code 的 agenthelm 市场",
-                              ["claude", "plugin", "marketplace", "update", MARKETPLACE], blocked=_need("claude")))
+            command, blocked = _cli(env, "claude", "plugin", "marketplace", "update", MARKETPLACE)
+            steps.append(Step("update", "claude", "刷新 Claude Code 的 agenthelm 市场", command, blocked=blocked))
             for item in [entry for entry in behind if entry["client"] == "claude"]:
-                command = ["claude", "plugin", "update", f"{item['plugin']}@{MARKETPLACE}"]
-                if item.get("scope") and item["scope"] != "user":
-                    command += ["--scope", item["scope"]]
+                extra = ["--scope", item["scope"]] if item.get("scope") and item["scope"] != "user" else []
+                command, blocked = _cli(env, "claude", "plugin", "update", f"{item['plugin']}@{MARKETPLACE}", *extra)
                 steps.append(Step("update", "claude", f"Claude Code 更新 {item['plugin']} → {item['latest']}",
-                                  command, blocked=_need("claude")))
+                                  command, blocked=blocked))
         if any(item["client"] == "codex" for item in behind):
-            steps.append(Step("update", "codex", "Codex 升级 agenthelm 市场与已装插件",
-                              ["codex", "plugin", "marketplace", "upgrade", MARKETPLACE], blocked=_need("codex")))
+            command, blocked = _cli(env, "codex", "plugin", "marketplace", "upgrade", MARKETPLACE)
+            steps.append(Step("update", "codex", "Codex 升级 agenthelm 市场与已装插件", command, blocked=blocked))
         cursor = sorted({item["plugin"] for item in behind if item["client"] == "cursor"})
         if cursor:
             steps.append(cursor_step(latest, cursor, source, home, "更新"))
@@ -799,6 +830,10 @@ def legacy_artifacts(env: Env, names: set[str]) -> list[dict]:
                           "path": str(env.home / ".agents/plugins/marketplace.json")})
     for name in _codex_personal_sections(env, names):
         artifacts.append({"kind": "codex-config-section", "name": name, "path": str(env.codex_dir / "config.toml")})
+    for name in sorted(names):
+        cache = env.codex_dir / "plugins" / "cache" / "personal" / name
+        if cache.is_dir() and not cache.is_symlink():
+            artifacts.append({"kind": "codex-personal-cache", "name": name, "path": str(cache)})
     try:
         servers = read_json(env.home / ".claude.json").get("mcpServers", {})
     except (OSError, ValueError, AttributeError):
@@ -827,10 +862,17 @@ def retire_legacy(env: Env, artifacts: list[dict], recovery: Path) -> list[dict]
     done: list[dict] = []
     backed_up: set[str] = set()
 
+    def inside_recovery(path: Path) -> Path:
+        """The path below the recovery folder: home-relative, or absolute for locations outside home."""
+        try:
+            return path.relative_to(env.home)
+        except ValueError:
+            return Path("external") / str(path).lstrip("/")
+
     def backup(path: Path) -> None:
         if str(path) in backed_up:
             return
-        target = recovery / "files" / path.relative_to(env.home)
+        target = recovery / "files" / inside_recovery(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
         backed_up.add(str(path))
@@ -840,8 +882,8 @@ def retire_legacy(env: Env, artifacts: list[dict], recovery: Path) -> list[dict]
         if item.get("manual"):
             done.append({**item, "status": "manual"})
             continue
-        if item["kind"] in {"plugin-copy", "plugin-record", "claude-skill-link"}:
-            target = recovery / "moved" / path.relative_to(env.home)
+        if item["kind"] in {"plugin-copy", "plugin-record", "claude-skill-link", "codex-personal-cache"}:
+            target = recovery / "moved" / inside_recovery(path)
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(path, target)
             done.append({**item, "status": "moved", "to": str(target)})
