@@ -103,7 +103,7 @@ npx @sakanano-moe/agenthelm migrate --install --apply
 
 ## 维护与发布
 
-- 许可证：[MIT](LICENSE)。git tag、站点与 npm 包 `@sakanano-moe/agenthelm` 使用同一个发布版本号（与 `agents-init` 版本一致），由 `release_meta.py` 校验。
+- 许可证：[MIT](LICENSE)。git tag、站点（`index.json` 的 `plugin.version`）与 npm 包 `@sakanano-moe/agenthelm` 使用同一个发布版本号，由 `release_meta.py` 校验；各插件版本独立，只在自身改动时升级。
 - 各插件的 `plugin.json` 是唯一手写版本；`content.json` 声明模板与样例内容包。改动后运行 `python3 scripts/release_meta.py --write` 生成市场清单、`latest.json` 与内容摘要。
 - 版本门禁 `python3 scripts/release_meta.py --since <上一个 tag>`：插件或内容包改动未升版本即失败；升版本须在 `release/migrations.json` 写明 `change_kind`（code / content / both）、`breaking` 与 `actions`。
 - `main` 是发布基线，客户端市场跟随 `main`；在 `main` 上打 `v*` tag 触发发布：构建发布包、上传摘要、按需发布 `@sakanano-moe/agenthelm`、刷新站点。
