@@ -1,4 +1,4 @@
-# AGENT.template.md v6.3
+# AGENT.template.md v6.4
 
 > 适用范围：可移植的项目初始化与迁移。运行期项目生命周期由同一分发包内的 `project-orchestrator` 负责，Agent 扩展能力由 `agent-pack` 负责，Opinion 由 `opinion-manager` 负责。
 
@@ -33,6 +33,8 @@
 │   ├── plan.md
 │   ├── progress.md
 │   └── chat-summary.md
+├── cases/
+│   └── .gitkeep
 ├── memory/
 │   └── .gitkeep
 └── docs/
@@ -50,7 +52,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 {
   "$schema": "https://skill.sakanano.moe/skills/agents-init/project.schema.json",
   "schema_version": "1.0",
-  "initializer_version": "6.3.0",
+  "initializer_version": "6.5.0",
   "name": "PROJECT_NAME",
   "profile": {
     "project_type": ["PROJECT_TYPE"],
@@ -63,7 +65,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
     "skill": "project-orchestrator",
     "plugin": "project-orchestrator",
     "capability_manager": "agent-pack",
-    "distribution": "bundled",
+    "distribution": "marketplace",
     "required": true,
     "commit_policy": "explicit",
     "push_policy": "explicit"
@@ -93,8 +95,9 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
     "destination_mcp": ".agents/mcp.json"
   },
   "work": {
+    "mode": "case-workspace",
     "task": null,
-    "case": null
+    "case": {"root": "cases", "artifact_mode": "case-local"}
   },
   "privacy": {
     "forbidden_default_reads": [],
@@ -104,6 +107,8 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 ```
 
 `$schema` 是公开的 Project Profile 契约。Tool 必须分别验证 `schema_version` 与 `initializer_version`。多值字段使用 JSON 数组；缺失的集成使用 `null` 或空数组，禁止杜撰命令。`runtime` 可追加项目自己的 `runtime_entry`、`session_bootstrap` 等字段，由 `project-orchestrator` 读取。
+
+`work.mode` 新项目默认 `case-workspace`，Case 是唯一持久工作目录，子任务在 Case 内管理。既有项目字段缺失或为 `legacy` 时继续使用已有模式，升级 Plugin 不会自动迁移业务文件。`work.case.artifact_mode=case-local` 声明专属材料放入 Case；公共模板、长期项目源码和正式规则继续保留各自权威位置。Case 子目录按需创建，不为简单工作堆空目录。
 
 `opinion.loading_mode` 为 `tiered` 时，按 Opinion Profile 中用户确认的加载声明读取核心规则与规则束；Profile 没有声明时仍然完整读取 `OPINION.md`。设为 `full` 可以让所有 Session 立即回到完整读取。
 
@@ -137,7 +142,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 ## 职责边界
 
 - `agents-init` 只创建或迁移本骨架。
-- `project-orchestrator` 负责 Task/Case 选择、文件落位、进度、验证编排和 Git 交接。
+- `project-orchestrator` 按 `work.mode` 选择工作容器、组织 Case 目录、管理进度、验证编排和 Git 交接。
 - `agent-pack` 负责项目与客户端之间的 Plugin/Skill/MCP 能力管理。
 - Opinion 指导并审查交付物，不管理项目生命周期。
 - 领域 Skill 禁止创建无关 Task、编辑根进度、自我修改或自主提交。
@@ -183,7 +188,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 
 ## 记忆
 
-- 写入去向：每类信息只有一个权威位置，其他位置只留指针。稳定的项目事实与外部资料位置写入记忆条目；进行中的工作状态写入 Task 或 Case；行为与表达偏好经 `opinion-manager` 的候选流程确认；`.agent-doc/chat-summary.md` 只保存未决事项与指针。
+- 写入去向：每类信息只有一个权威位置，其他位置只留指针。稳定的项目事实与外部资料位置写入记忆条目；进行中的工作状态写入所选工作模式的权威记录；行为与表达偏好经 `opinion-manager` 的候选流程确认；`.agent-doc/chat-summary.md` 只保存未决事项与指针。
 - 不写入记忆：能从文件或版本历史直接得到的内容；已在规则或本文件中的内容；已完成工作的流水；只对当前对话有用的内容。
 - 召回：记忆反映写入当时的事实。依据某条记忆行动前，核对其中提到的文件、命令与外部对象仍然存在；发现过期时更新或退役该条目。
 - 客户端私有记忆：客户端自带的记忆功能只保存该客户端自身的运行事实。项目事实、偏好与结论写入仓库，使所有客户端读到同一份内容。
@@ -232,7 +237,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 ```markdown
 # 进度
 
-当前没有活动的 Task 或 Case。项目工作状态由 `project-orchestrator` 通过已配置的项目子系统管理。
+当前没有活动的工作记录。项目工作状态由 `project-orchestrator` 通过已配置的项目子系统管理。
 ```
 <!-- /agents-init:template -->
 
@@ -313,6 +318,14 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 4. 只有 `project-orchestrator`、`agent-pack` 与 `opinion-manager` 验证通过后，才精简重复的 Agent 入口说明。
 5. 保持历史 Task/Case 与能力源完整，随后使用 `agent-pack` 盘点。
 6. 只有得到明确授权，才能把个人 Opinion 内容移入私有权威源。
+
+### 将既有项目整理为 Case 工作目录
+
+1. 阅读同包 `project-orchestrator/references/case-workspaces.md`，明确 Case 的目标、子工作项与专属材料范围。
+2. 使用 `--mode migrate --work-mode case-workspace --replace .agents/moe.sakanano.agent-pack/project.json --recovery-dir <项目外恢复目录>` 预演；旧 task 配置保存为 `legacy_task`，原业务文件保持在原位，等待独立的已授权数据迁移。
+3. Profile 替换保留项目自定义的 runtime、opinion、memory、capabilities 和 privacy。未显式选择模式时保留现有 `work` 段。
+4. 展示全部 Task、Case 专属输入和交付物的目标映射，Demo 通过后用 `case_workspace.py migrate` 实施；保留旧 TASK.md、progress、旧 ID 与真实完成或放弃证据。
+5. 用项目 Tool 校验 Case、链接和索引，验证旧名称检索与全量统计；迁移完成后关闭生产态 Task 创建入口。其他项目单独授权并迁移。
 
 ### 为既有 v6 项目补充记忆与分层加载
 

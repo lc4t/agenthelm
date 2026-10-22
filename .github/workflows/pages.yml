@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -34,11 +36,20 @@ jobs:
           rm -rf _site
           mkdir -p _site
 
-          cp -R index.html index.json README.md CHANGELOG.md INSTALL.md llms.txt \
-            plugin.json archive skills plugins scripts _site/
-          mkdir -p _site/.codex-plugin
-          cp .codex-plugin/plugin.json _site/.codex-plugin/plugin.json
+          cp -R index.html index.json latest.json README.md CHANGELOG.md INSTALL.md MIGRATION.md llms.txt \
+            archive plugins scripts release _site/
+          mkdir -p _site/.claude-plugin
+          cp .claude-plugin/marketplace.json _site/.claude-plugin/marketplace.json
+          # Compatibility: existing Project Profiles reference the schema and
+          # initializer at /skills/agents-init/ on the old site path.
+          mkdir -p _site/skills
+          cp -R plugins/agents-init/skills/agents-init _site/skills/agents-init
           cp .nojekyll _site/.nojekyll
+
+      - name: Attach the latest release to latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/attach_release.py _site/latest.json
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

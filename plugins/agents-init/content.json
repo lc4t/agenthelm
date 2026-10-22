@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "packs": [
+    {
+      "id": "agents-init/project-contract",
+      "version": "1.0.0",
+      "kind": "template",
+      "title": "项目契约模板",
+      "description": "初始化时渲染为项目入口文件的中文模板；更新后由用户逐文件选择是否重新渲染。",
+      "sources": [
+        "skills/agents-init/AGENT.template.md"
+      ],
+      "materializes": [
+        "AGENTS.md",
+        "AGENT.RULES.md",
+        "CLAUDE.md",
+        "AGENT.md",
+        "docs/refs/README.md"
+      ],
+      "project_lock": "agenthelm",
+      "files": {
+        "skills/agents-init/AGENT.template.md": "f95fc85579870330d66eaeac5b3a5faadb3283123079b31ddb46161777bfd650"
+      }
+    }
+  ]
+}

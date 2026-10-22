@@ -1,12 +1,13 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agents-init",
-  "version": "6.3.0",
+  "version": "6.5.0",
   "description": "初始化或迁移 Agent 项目契约；同一分发包附带 project-orchestrator、agent-pack 与 opinion-manager。",
   "author": {
     "name": "lc4t"
   },
-  "repository": "https://github.com/lc4t/skill",
+  "repository": "https://github.com/lc4t/agenthelm",
+  "license": "MIT",
   "keywords": [
     "agents-init",
     "project-orchestrator",

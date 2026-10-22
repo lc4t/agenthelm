@@ -21,9 +21,9 @@ description: 初始化仓库或将既有仓库迁移到 agents-init v6 项目骨
 
 ## 必读材料
 
-初始化或迁移项目前，完整读取 [AGENT.template.md](AGENT.template.md)。它是 v6.3 骨架契约、中文生成模板与迁移指南，也是初始化器生成 Markdown 的唯一权威源。
+初始化或迁移项目前，完整读取 [AGENT.template.md](AGENT.template.md)。它是 v6.4 骨架契约、中文生成模板与迁移指南，也是初始化器生成 Markdown 的唯一权威源。
 
-本 Skill 必须从完整分发包使用。开始前确认根目录同时存在 `plugin.json`、`plugins/project-orchestrator/skills/project-orchestrator/SKILL.md`、`plugins/agent-pack/runtime/agent_pack_config.py` 与 `plugins/opinion-manager/runtime/opinion_manager.py`。只下载 `skills/agents-init/` 子目录时停止初始化并报告 `runtime-required`，引导用户安装完整分发包；禁止生成一个无法执行的项目契约。
+本 Skill 需要同一市场的 `project-orchestrator`、`agent-pack` 与 `opinion-manager` 一并安装。初始化器在 agents-init 旁边查找它们：仓库与 Cursor 本地插件为同级目录，Claude Code 与 Codex 为插件缓存中的同市场目录。找不到时停止初始化并报告 `runtime-required`，引导用户从 agenthelm 市场安装缺少的 Plugin；禁止生成一个无法执行的项目契约。
 
 ## 工作流程
 
@@ -79,6 +79,8 @@ AGENT.md
 ├── plan.md
 ├── progress.md
 └── chat-summary.md
+cases/
+└── .gitkeep
 memory/
 └── .gitkeep
 docs/
@@ -87,6 +89,8 @@ docs/
 ```
 
 `AGENTS.md` 是项目执行入口；`CLAUDE.md` 与 `AGENT.md` 是短路由文件；初始化产生的 `OPINION.md` 保持为空白配置入口。用户确认后由 `opinion-manager` 写入当前项目；用户内容禁止复制到公开模板、示例、测试或文档。
+
+新项目默认 `work.mode=case-workspace`。`--work-mode legacy` 可保留旧分类；既有项目迁移时未显式选择模式就保持现有模式。Case 数据迁移由 `project-orchestrator` 的已审阅映射工具执行，初始化器只更新骨架与 Profile。
 
 ## 迁移规则
 

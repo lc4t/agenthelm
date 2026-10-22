@@ -31,7 +31,7 @@
         "skill": {"const": "project-orchestrator"},
         "plugin": {"const": "project-orchestrator"},
         "capability_manager": {"const": "agent-pack"},
-        "distribution": {"enum": ["bundled", "external"]},
+        "distribution": {"enum": ["marketplace", "bundled", "external"]},
         "required": {"type": "boolean"},
         "commit_policy": {"enum": ["explicit", "project-policy"]},
         "push_policy": {"enum": ["explicit", "project-policy"]}
@@ -89,7 +89,27 @@
         "destination_mcp": {"$ref": "#/$defs/relativePath"}
       }
     },
-    "work": {"type": "object", "additionalProperties": true},
+    "work": {
+      "type": "object", "additionalProperties": true,
+      "properties": {
+        "mode": {"enum": ["case-workspace", "legacy"]},
+        "task": {"type": ["object", "null"]},
+        "legacy_task": {"type": ["object", "null"]},
+        "case": {
+          "type": ["object", "null"], "additionalProperties": true,
+          "properties": {
+            "root": {"$ref": "#/$defs/relativePath"},
+            "artifact_mode": {"enum": ["case-local", "external-references"]}
+          }
+        },
+        "assets": {
+          "type": ["object", "null"], "additionalProperties": true,
+          "properties": {
+            "roots": {"$ref": "#/$defs/pathArray"}
+          }
+        }
+      }
+    },
     "privacy": {
       "type": "object",
       "additionalProperties": true,

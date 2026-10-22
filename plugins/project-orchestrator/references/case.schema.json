@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agenthelm.sakanano.moe/plugins/project-orchestrator/references/case.schema.json",
+  "title": "agenthelm 默认 Case Frontmatter",
+  "description": "project-orchestrator runtime/case.py 使用的默认字段。项目可在 Profile 的 work.case.schema 指定自己的 Schema。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "title", "status", "goal", "next_action", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "id": {"type": "string", "pattern": "^CASE-[0-9]{8}-[0-9]{3}-[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "title": {"type": "string", "minLength": 1},
+    "status": {"enum": ["captured", "active", "waiting", "suspended", "done", "abandoned"]},
+    "sensitivity": {"enum": ["shared", "private"]},
+    "source": {"type": "string"},
+    "goal": {"type": "string", "minLength": 1},
+    "done_when": {"type": "string"},
+    "current_state": {"type": "string"},
+    "next_action": {"type": "string"},
+    "waiting_for": {"type": "string"},
+    "resume_when": {"type": "string"},
+    "artifact_mode": {"enum": ["case-local"]},
+    "aliases": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "legacy_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "tags": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "deliverables": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "evidence": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|[+-][0-9]{2}:[0-9]{2})$"},
+    "updated_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|[+-][0-9]{2}:[0-9]{2})$"}
+  }
+}

@@ -877,7 +877,9 @@ def _codex_adapter(package_root: Path) -> None:
     mcp = _read_json(mcp_path)
     codex_mcps: dict[str, Any] = {}
     for name, config in mcp.get("mcpServers", {}).items():
-        item = dict(config)
+        # Codex reads the portable mcp.json (${PLUGIN_ROOT}); this projection is
+        # what Claude Code and Cursor load, and they only expand CLAUDE_* names.
+        item = _claude_plugin_placeholders(dict(config))
         mcp_type = item.pop("type", None)
         if mcp_type == "streamable-http":
             item["type"] = "http"
@@ -885,6 +887,18 @@ def _codex_adapter(package_root: Path) -> None:
             item["type"] = "sse"
         codex_mcps[name] = item
     _write_json_atomic(package_root / ".mcp.json", {"mcpServers": codex_mcps})
+
+
+def _claude_plugin_placeholders(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("${PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}").replace(
+            "${PLUGIN_DATA}", "${CLAUDE_PLUGIN_DATA}"
+        )
+    if isinstance(value, list):
+        return [_claude_plugin_placeholders(child) for child in value]
+    if isinstance(value, dict):
+        return {key: _claude_plugin_placeholders(child) for key, child in value.items()}
+    return value
 
 
 def _package_name(root: Path) -> str:

@@ -1,5 +1,54 @@
 # 更新记录
 
+## 2026-10-21 — agenthelm 市场：Agents Init 6.5.0 / Agent Pack 1.6.0 / Project Orchestrator 1.7.0 / Opinion Manager 0.4.1
+
+仓库由 lc4t/skill 改名为 lc4t/agenthelm（旧地址由 GitHub 重定向）。四个插件改为经 agenthelm 市场分发：一份 `.claude-plugin/marketplace.json` 同时供 Claude Code、Codex 与 Cursor 读取，`latest.json` 作为云端版本源，`npx @sakanano-moe/agenthelm` 负责安装、检查、更新与迁移。
+
+### 发布与更新
+
+- 以 MIT 许可证发布（新增 `LICENSE`；各插件 `plugin.json` 与市场条目声明 `license`）。
+- 一次发布一个版本号：git tag、站点 `index.json` 与 npm 包 `@sakanano-moe/agenthelm` 均为 6.5.0，`release_meta.py` 与发布流水线校验三者一致。
+- `scripts/release_meta.py` 从各插件 `plugin.json` 生成市场清单与 `latest.json`；Claude Code 只按市场条目的 `version` 判定更新，条目版本因此统一由脚本生成。
+- 版本门禁：插件或内容包改动未升版本即失败；升版本必须在 `release/migrations.json` 写明 `change_kind`（code / content / both）、是否不兼容与需要的动作。
+- 内容包：插件在 `content.json` 声明模板与样例（独立版本与文件摘要）。只改模板或样例的发布被单独标出，由用户选择是否更新。
+- 打 tag 发布：构建发布包并上传摘要，Pages 只在 tag 与 main 的插件版本一致时把发布包写入线上 `latest.json`；`@sakanano-moe/agenthelm` 版本变化时发布到 npm。
+
+### agent-pack 1.6.0
+
+- 新增 `runtime/agenthelm.py`（`npx @sakanano-moe/agenthelm` 调用同一份代码）：`check` 只读比较 Claude Code、Codex、Cursor 与旧方式安装的版本、项目模板与 Opinion；`install` / `update` 调用各客户端原生市场命令，Cursor 从带摘要的发布包安装；`migrate` 把旧方式安装移入恢复目录并改为市场安装；`doctor` 报告重复安装与版本不一致。写操作默认预览，`--apply` 才执行。
+- `hooks/hooks.json`：会话开始静默检查，每天至多联网一次、同一提示每天一次，离线不报错；`AGENTHELM_NO_UPDATE_CHECK=1` 或 `~/.config/agenthelm/config.json` 的 `"update_check": false` 关闭。
+- Codex 适配器生成的 `.mcp.json` 改用 `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PLUGIN_DATA}`：Claude Code 与 Cursor 不展开 `${PLUGIN_ROOT}`；Codex 仍读取 `mcp.json`。
+
+### agents-init 6.5.0
+
+- 迁入 `plugins/agents-init/`。初始化器在三种布局中查找同级插件：仓库与 Cursor 本地为同级目录，Claude Code 与 Codex 为插件缓存（Claude Code 以 `installed_plugins.json` 为准）。`--runtime-plugin-root` 同时接受插件根与仓库根。
+- 初始化与迁移写入 `.agents/moe.sakanano.agent-pack/content.lock.json`，记录模板渲染文件的安装时摘要；`--mode refresh` 按 Profile 用新模板重新渲染，未改动的文件先备份再替换，本地改动须 `--accept` 或 `--keep`。
+- 新项目 Profile 的 `runtime.distribution` 为 `marketplace`；Schema 保留 `bundled` 与 `external`。
+
+### project-orchestrator 1.7.0
+
+- 默认 Case 工具 `runtime/case.py`（官方样例）：`new` / `list` / `show` / `update` / `validate`；项目声明 `work.case.command` 时写操作让位给项目工具。模板与默认 Schema 属于内容包 `project-orchestrator/case-template`。
+- 交付物台账 `runtime/assets.py` 与人用查找入口 `runtime/wf.py`（官方样例，只读）：按标题、文件名、日期与同义词查找，同系列版本归组，追踪引用与改动影响面，巡检无人认领的交付物与断链。扫描 `work.case.root` 与新的可选字段 `work.assets.roots`（agents-init Profile Schema 同步加入）；同义词来自项目可选文件 `asset-synonyms.json`，示例属于内容包 `project-orchestrator/asset-synonyms`；台账与“上次结果”存于 `$XDG_CACHE_HOME/agenthelm/assets/`，不写项目；凭据类文件不登记；非 macOS 上打开与显示降级为打印路径。
+
+### opinion-manager 0.4.1
+
+- 声明公开目录的内容包清单；规则、模板与命令行为不变。
+
+### 不兼容点（下游须处理）
+
+- 安装布局：仓库根不再是安装单元，根 `plugin.json`、`.codex-plugin/` 与 `skills/agents-init/` 移到 `plugins/agents-init/`。按旧路径引用这些文件的脚本需要更新。
+- 旧方式安装（agent-pack 复制到 `~/.agents/plugins/plugins/<id>`、`~/.claude/skills/<id>` 软链、`~/.claude.json` 中的 agent-pack MCP）与市场安装并存会重复；用 `npx @sakanano-moe/agenthelm migrate --install` 迁移，旧文件进入 `~/.agent-pack/recovery/` 并附清单。
+- 按 `~/.agents/plugins/plugins/agent-pack` → `~/.claude/agent-pack/plugins/agent-pack` → `~/.cursor/plugins/local/agent-pack` 查找 agent-pack 的下游工具，需改为读取客户端安装记录（Claude Code `~/.claude/plugins/installed_plugins.json`、Codex `~/.codex/plugins/cache/agenthelm/`）或调用 `npx @sakanano-moe/agenthelm doctor`。
+- `agent_pack_config.py` 的 `inventory` / `bootstrap` / `reconcile` / `doctor` 参数与 `mcp_env_launcher.py` 的参数不变；opinion-manager 的命令与状态文件格式不变。
+
+## 2026-10-08 — Agents Init 6.4.0 / Project Orchestrator 1.6.0
+
+- 新项目默认 Case 工作目录，专属资料与交付物就近保存，子工作项留在 Case 内。
+- Project Profile 增加 work.mode 与 Case 文件落位声明；既有项目保持原模式，显式迁移保留原配置和 legacy_task 指针。
+- 提供 Case 元数据和文件名检索、全量盘点及已审阅目录映射的无损迁移；冲突与路径风险失败关闭，应用前后哈希核验，失败撤回本次移动。
+- 初始化模板、迁移器、元数据及兼容测试同步升级。
+
+
 ## 2026-10-08 — Opinion Manager 0.4.0 / Agents Init 6.3.0 / Project Orchestrator 1.5.0 / Agent Pack 1.5.1
 
 - `project-orchestrator` 与 `agent-pack` 改为在本仓库直接维护，移除 `scripts/export_plugins.py`；原导出时的隐私扫描改为 `tests/test_public_privacy.py`，对全部已跟踪文件生效。

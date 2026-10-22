@@ -13,9 +13,9 @@ from typing import Any
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 AGENT_PACK = PLUGIN_ROOT / "plugins" / "agent-pack" / "runtime" / "agent_pack_config.py"
-INITIALIZER = PLUGIN_ROOT / "skills" / "agents-init" / "scripts" / "init_project.py"
+INITIALIZER = PLUGIN_ROOT / "plugins" / "agents-init" / "skills" / "agents-init" / "scripts" / "init_project.py"
 INSTALL_UNITS = (
-    ("agents-init", PLUGIN_ROOT),
+    ("agents-init", PLUGIN_ROOT / "plugins" / "agents-init"),
     ("project-orchestrator", PLUGIN_ROOT / "plugins" / "project-orchestrator"),
     ("agent-pack", PLUGIN_ROOT / "plugins" / "agent-pack"),
     ("opinion-manager", PLUGIN_ROOT / "plugins" / "opinion-manager"),
@@ -54,6 +54,8 @@ def initializer_command(args: argparse.Namespace, *, apply: bool) -> list[str]:
     ]
     if args.slug:
         command.extend(("--slug", args.slug))
+    if getattr(args, 'work_mode', None):
+        command.extend(('--work-mode', args.work_mode))
     if apply:
         command.append("--apply")
     return command
@@ -160,6 +162,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--stack", required=True)
     result.add_argument("--runtime", required=True)
     result.add_argument("--agent-cli", required=True)
+    result.add_argument('--work-mode', choices=('case-workspace', 'legacy'))
     result.add_argument("--home", type=Path, help="测试或显式客户端 home；默认使用当前用户 home")
     result.add_argument("--apply", action="store_true")
     return result

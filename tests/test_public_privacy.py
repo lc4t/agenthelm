@@ -20,7 +20,7 @@ SELF = Path(__file__).resolve().relative_to(ROOT).as_posix()
 
 
 def tracked_files() -> list[str]:
-    result = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=False)
+    result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard"], cwd=ROOT, capture_output=True, text=True, check=False)
     if result.returncode:
         return []
     return [line for line in result.stdout.splitlines() if line]
@@ -50,7 +50,7 @@ class PublicPrivacyTests(unittest.TestCase):
     def test_bundled_plugins_declare_the_public_repository(self) -> None:
         for manifest in sorted((ROOT / "plugins").glob("*/plugin.json")):
             text = manifest.read_text(encoding="utf-8")
-            self.assertIn('"repository": "https://github.com/lc4t/skill"', text, manifest.as_posix())
+            self.assertIn('"repository": "https://github.com/lc4t/agenthelm"', text, manifest.as_posix())
 
 
 if __name__ == "__main__":

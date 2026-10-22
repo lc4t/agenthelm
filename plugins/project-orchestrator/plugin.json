@@ -1,12 +1,13 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "project-orchestrator",
-  "version": "1.5.0",
-  "description": "Portable project lifecycle orchestration: discover the project contract, pick the smallest Task/Case, route to deterministic tools and leaf skills, verify, and deliver scoped Git changes.",
+  "version": "1.7.0",
+  "description": "Portable lifecycle orchestration with Case workspaces, legacy Task/Case compatibility, verified migrations, discovery and scoped Git delivery.",
   "author": {
     "name": "lc4t"
   },
-  "repository": "https://github.com/lc4t/skill",
+  "repository": "https://github.com/lc4t/agenthelm",
+  "license": "MIT",
   "keywords": [
     "project-orchestrator",
     "task",

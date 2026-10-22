@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SiteReleaseTests(unittest.TestCase):
     def test_homepage_metadata_matches_plugin_authority(self) -> None:
-        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        manifest = json.loads((ROOT / "plugins/agents-init/plugin.json").read_text(encoding="utf-8"))
         index = json.loads((ROOT / "index.json").read_text(encoding="utf-8"))
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
         version = manifest["version"]
@@ -26,11 +26,11 @@ class SiteReleaseTests(unittest.TestCase):
         for required in (
             "INSTALL.md",
             "llms.txt",
-            "plugin.json",
-            "skills",
             "plugins",
             "scripts",
-            ".codex-plugin/plugin.json",
+            "latest.json",
+            ".claude-plugin/marketplace.json",
+            "_site/skills/agents-init",
         ):
             self.assertIn(required, workflow)
         self.assertNotIn("runtime", workflow)
@@ -38,26 +38,26 @@ class SiteReleaseTests(unittest.TestCase):
     def test_bundled_plugins_match_manifests(self) -> None:
         index = json.loads((ROOT / "index.json").read_text(encoding="utf-8"))
         indexed = {item["id"]: item for item in index["skills"]}
-        for name in ("project-orchestrator", "agent-pack", "opinion-manager"):
+        for name in ("agents-init", "project-orchestrator", "agent-pack", "opinion-manager"):
             root = ROOT / "plugins" / name
             manifest = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
             adapter = json.loads((root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["name"], name)
             self.assertEqual(adapter["version"], manifest["version"])
             self.assertEqual(indexed[name]["version"], manifest["version"])
-            self.assertEqual(manifest["repository"], "https://github.com/lc4t/skill")
+            self.assertEqual(manifest["repository"], "https://github.com/lc4t/agenthelm")
             self.assertTrue((root / "skills" / name / "SKILL.md").is_file())
-        initializer = json.loads((ROOT / "skills/agents-init/skill.json").read_text(encoding="utf-8"))
-        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        initializer = json.loads((ROOT / "plugins/agents-init/skills/agents-init/skill.json").read_text(encoding="utf-8"))
+        manifest = json.loads((ROOT / "plugins/agents-init/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(initializer["version"], manifest["version"])
         self.assertEqual(indexed["agents-init"]["version"], manifest["version"])
         self.assertEqual(initializer["privacy"]["public_opinion_templates_included"],
                          any((ROOT / "plugins/opinion-manager/catalog/templates").rglob("*.json")))
 
     def test_no_project_runtime_left_in_distribution(self) -> None:
-        self.assertFalse((ROOT / "skills/project-runtime").exists())
+        self.assertFalse((ROOT / "skills").exists())
         self.assertFalse((ROOT / "runtime").exists())
-        for path in ("plugin.json", ".codex-plugin/plugin.json", "index.json", "llms.txt"):
+        for path in ("plugins/agents-init/plugin.json", "plugins/agents-init/.codex-plugin/plugin.json", "index.json", "llms.txt"):
             self.assertNotIn("project-runtime", (ROOT / path).read_text(encoding="utf-8"), path)
 
     def test_versioned_catalog_dependencies_and_legacy_directory(self) -> None:

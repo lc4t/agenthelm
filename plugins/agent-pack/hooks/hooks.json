@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/runtime/agenthelm.py\" check --hook --hook-format claude-hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
