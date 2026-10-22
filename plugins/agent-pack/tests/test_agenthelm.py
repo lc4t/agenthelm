@@ -375,8 +375,25 @@ class AgenthelmOperationTests(unittest.TestCase):
         self.assertFalse(agenthelm.locate(self.env, "opinion-manager", "9.9.9")["ok"])
 
     def test_release_download_requires_a_pinned_tag_and_digest(self) -> None:
-        with self.assertRaises(agenthelm.CheckError):
+        with mock.patch.object(agenthelm, "_fetch_json", side_effect=OSError("offline")), \
+                self.assertRaises(agenthelm.CheckError):
             agenthelm.release_source(self.latest, self.root)
+
+    def test_release_falls_back_to_github_when_the_tag_ships_the_listed_versions(self) -> None:
+        release = {"tag": "v9", "tarball_sha256": "ab" * 32, "tarball_url": "https://example.invalid/a.tgz"}
+
+        def fetch(url: str, timeout: float = 0):
+            if url.endswith("/releases/latest/download/release.json"):
+                return release
+            if url == "https://raw.githubusercontent.com/lc4t/agenthelm/v9/latest.json":
+                return tagged
+            raise AssertionError(url)
+
+        tagged = json.loads(json.dumps(self.latest))
+        with mock.patch.object(agenthelm, "_fetch_json", side_effect=fetch):
+            self.assertEqual(agenthelm.github_release(self.latest), release)
+            tagged["plugins"]["agent-pack"]["version"] = "0.0.1"
+            self.assertEqual(agenthelm.github_release(self.latest), {})
 
 
 if __name__ == "__main__":
