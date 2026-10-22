@@ -35,6 +35,10 @@
         "project-orchestrator/case-template": {
           "version": "1.0.0",
           "kind": "sample"
+        },
+        "project-orchestrator/asset-synonyms": {
+          "version": "1.0.0",
+          "kind": "sample"
         }
       }
     }
@@ -73,7 +77,7 @@
       "change_kind": "both",
       "breaking": false,
       "date": "2026-10-21",
-      "summary": "新增默认 Case 工具 runtime/case.py 与 Case 模板内容包。",
+      "summary": "新增默认 Case 工具 runtime/case.py 与 Case 模板内容包；新增只读交付物台账 runtime/assets.py、人用查找入口 runtime/wf.py 与同义词示例内容包。",
       "actions": []
     },
     {

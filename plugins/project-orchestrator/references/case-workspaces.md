@@ -56,6 +56,25 @@ python3 runtime/case.py --project <项目> validate
 - Profile 的 `work.case.command` 声明了项目自己的工具时，本工具只做 `list` / `show` / `validate`，写操作返回 `project-tool` 并提示改用项目工具；`work.case.schema` 可替换默认 Schema。
 - 模板与 Schema 属于内容包 `project-orchestrator/case-template`，随插件版本更新，只影响之后新建的 Case，不改写已有 Case。
 
+### 交付物台账与 wf 查找（官方样例）
+
+`runtime/assets.py` 把 Case 与额外扫描根下的文件登记成一份只读台账，回答“文件在哪、属于哪个 Case、有哪些版本、谁引用它、改动会波及谁”。`runtime/wf.py` 是同一台账的人用入口，不需要 Agent。
+
+```bash
+python3 runtime/assets.py --project <项目> find 周报 9月1号      # 标题、文件名、日期与同义词；同系列版本归为一组
+python3 runtime/assets.py --project <项目> find 方案 --ext xlsx --kind deliverable --in alpha
+python3 runtime/assets.py --project <项目> refs cases/<CASE-ID>/docs/report.md --depth 2
+python3 runtime/assets.py --project <项目> check                 # 无人认领的交付物、断链、跨容器重复、上游更新
+python3 runtime/wf.py 周报 9月1号                                 # 在项目内任意目录运行；o1 打开、v1 看版本、r1 看引用
+```
+
+- 扫描范围：Case 根取 `work.case.root`（缺省 `cases`）；`work.assets.roots` 可追加项目内的额外根（例如 `["projects"]`），每个一级子目录视为一个容器；未声明时只扫 Case 根，没有 Project Profile 时按缺省值运行。Case 内文件按 `docs/`、`docs/drafts/`、`refs/`、`data/` 等目录推断角色；`CASE.md` 的 `deliverables` / `evidence` 视为声明引用，正文中的 Markdown 链接、wikilink、反引号路径、Case 编号与旧 Task 路径（`legacy_ids`）都会建立引用边。开头带 `<!-- derived:` 标记的生成视图不作为引用来源。
+- 同义词：可选文件 `.agents/moe.sakanano.agent-pack/asset-synonyms.json`，格式见 [示例](asset-synonyms.example.json)（`groups` 中每组互为同义）；缺省为空，不内置任何词表。
+- 不登记：文件名含凭据类词语（credential、password、secret、token、cookie、.env、私钥等）或扩展名为证书/密钥的文件；非 `shared` 的 Case；`.git`、`node_modules` 等工具目录与 `cache` 类缓存目录；含 `.svn` / `.git` 的嵌套外部检出（被 Git 忽略时上溯到最外层被忽略目录）。Git 忽略的文件只在属于文档、表格或压缩包时登记元数据。不需要安装 SVN；项目不是 Git 工作区或没有 git 时，Git 状态记为 `none`。
+- 状态与写入：台账为 SQLite，位于 `$XDG_CACHE_HOME/agenthelm/assets/<项目摘要>/`（缺省 `~/.cache`），文件清单未变时重建为 no-op；`wf` 的“上一次结果”也存于此。两者都不写项目，缓存目录落在项目内时拒绝运行。
+- 平台：macOS 上 iCloud 未下载的文件（dataless）只登记元数据，不读取、不算哈希；`wf` 的打开、在 Finder 中显示、复制路径调用 `open` / `pbcopy`，其他平台或命令缺失时打印绝对路径。
+- 两个命令都接受 `--project` 与 `--output json`，写在子命令前后均可；查找结果以文件本身与 CASE.md 为准，台账只是可重建的投影。
+
 ## 迁移工具
 
 运行 `runtime/case_workspace.py migrate --project <项目> --map <映射.json>` 先预演。审阅映射后追加 `--apply`。映射必须有 `schema_version: "1.0"` 和 `moves` 数组，每项包含项目相对 `source`、`target`；目标必须处于 cases 的一个 Case 目录内。可选 `records` 数组包含 `path`（目标 CASE.md）、`content`（项目创建器预先生成的正文），工具只负责排他创建，不替项目认定状态。

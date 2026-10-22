@@ -26,6 +26,7 @@
 ### project-orchestrator 1.7.0
 
 - 默认 Case 工具 `runtime/case.py`（官方样例）：`new` / `list` / `show` / `update` / `validate`；项目声明 `work.case.command` 时写操作让位给项目工具。模板与默认 Schema 属于内容包 `project-orchestrator/case-template`。
+- 交付物台账 `runtime/assets.py` 与人用查找入口 `runtime/wf.py`（官方样例，只读）：按标题、文件名、日期与同义词查找，同系列版本归组，追踪引用与改动影响面，巡检无人认领的交付物与断链。扫描 `work.case.root` 与新的可选字段 `work.assets.roots`（agents-init Profile Schema 同步加入）；同义词来自项目可选文件 `asset-synonyms.json`，示例属于内容包 `project-orchestrator/asset-synonyms`；台账与“上次结果”存于 `$XDG_CACHE_HOME/agenthelm/assets/`，不写项目；凭据类文件不登记；非 macOS 上打开与显示降级为打印路径。
 
 ### opinion-manager 0.4.1
 
