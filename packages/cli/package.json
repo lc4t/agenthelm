@@ -1,7 +1,7 @@
 {
   "name": "@sakanano-moe/agenthelm",
-  "version": "6.5.3",
-  "description": "agenthelm 命令行：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 项目管理插件。",
+  "version": "6.6.0",
+  "description": "agenthelm 命令行：安装、检查与更新 agenthelm 插件；用户级运行时；不需要 AI Agent 的项目入口（agenthelm project）。",
   "license": "MIT",
   "bin": {
     "agenthelm": "bin/agenthelm.js"

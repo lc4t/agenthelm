@@ -17,6 +17,8 @@ description: 确定性地盘点、校验、安装、同步、迁移与对账 Age
 
 优先使用随附的 `agent-pack` MCP Tool（`agent_pack_inventory` / `agent_pack_doctor` / `agent_pack_bootstrap` / `agent_pack_sync` / `agent_pack_transfer` / `agent_pack_reconcile`）；不可用时运行标准库 CLI `runtime/agent_pack_config.py`。执行能力管理前读取 [references/capability-config.md](../../references/capability-config.md)。
 
+`runtime/agenthelm.py` 另有两个面向人的入口：`project` 转交 project-orchestrator 的项目入口（不需要 AI Agent）；`runtime install|update|use|status` 管理用户级运行时（`~/.local/share/agenthelm/`，项目根目录的启动器优先使用它），写操作默认预览、`--apply` 才执行，新版本装在旁边、旧版本保留。
+
 ## 执行顺序
 
 1. 盘点来源与目标（`inventory --source project:/path | plugin:/path | client:codex | client:cursor | client:claude`）；

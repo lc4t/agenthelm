@@ -1,5 +1,54 @@
 # 更新记录
 
+## 2026-10-25 — agenthelm 6.6.0 / Project Orchestrator 1.8.0 / Agent Pack 1.7.0 / Agents Init 6.6.0
+
+不开 AI Agent 也能用：项目根目录的启动器（缺省 `./menu`）打开项目菜单，用于找资料、看进展、读项目指南、检查与维护、记录事项。它不调用模型，不需要 AI 客户端，只需要 Python 3.11+。
+
+### project-orchestrator 1.8.0
+
+- 新增项目入口 `runtime/project_cli.py`（`agenthelm project`）：交互菜单与非交互子命令 `find` / `open` / `refs` / `progress` / `show` / `guide` / `health` / `fix` / `record` / `tools` / `capabilities`。
+  - 非交互时从不等待输入，`--output json` 输出稳定的结构。
+  - 退出码：0 成功；1 没有结果或有必须处理的项；2 用法错误；3 运行时缺失或不兼容；4 能力不可用；5 写入冲突；6 执行失败。
+- 找资料复用交付物台账，看进展读 `CASE.md` 或项目在 `entry.items` 声明的事项工具。结果显示来源与读取时间，不推断优先级或是否完成。
+- 检查汇总以下各项，按“必须处理 / 建议处理 / 可选更新 / 当前不可用”分级，每条写明原因、影响与下一步：
+  - 运行环境、入口、资料索引、事项记录、记忆、项目工具；
+  - 经 agent-pack 检查的插件、模板、个人规则版本与运行时。
+- 修复与更新按“检查 → 选择 → 看影响 → 确认 → 验证”执行，处理项包括：重建索引（只写用户缓存）、更新客户端插件、更新项目模板（改过的文件逐个保留或采用，替换前备份）、安装或更新运行时、补上入口。执行前重新预览，写入范围与预览不一致就不执行。个人规则的新版本只提示，不采纳。
+- 记录事项：新建、追加记录、更新下一动作与等待对象、关闭与恢复、登记交付物。写入前核对内容摘要与 `updated_at`，别人刚改过就拒绝写入；`--expect-updated-at` / `--expect-sha256` 支持跨命令核对。项目工具没有写接口时说明缺口，不绕过它改文件。
+- 项目工具：`.agents/moe.sakanano.agent-pack/tools.json` 声明的操作只在被选中并确认后运行，参数列表不经过 shell；缺命令、缺环境变量或离线时显示为不可用。
+- `--demo study|personal|research|blank` 内置虚构项目，用来体验与测试，结果标注「演示」。
+- `case.py` 新增 `plan_create` / `plan_update` 与 `--expect-sha256`；`update` 在替换前再次核对文件内容。
+- 内容包 `asset-synonyms` 1.1.0：示例改为“笔记 / 报告 / 照片”等场景中立的词组；`wf` 帮助示例同步。
+
+### agent-pack 1.7.0
+
+- 新增 `agenthelm runtime install | update | use | status`：把四个插件装进用户数据目录 `~/.local/share/agenthelm/runtimes/<版本>/`，并维护 `current` 指针。
+  - 同一版本不改写；新版本装在旁边，旧版本保留，可切回。
+  - 来源可以是随附内容、联网下载并核对摘要的发布包，或离线的本地目录与 `.tar.gz`。
+  - `--link-bin` 建命令链接，不覆盖别人的文件。
+- 新增 `agenthelm project`，转交 project-orchestrator 的项目入口。
+- npm 包 `@sakanano-moe/agenthelm` 改为携带完整发布内容（`index.json` 与四个插件，不含测试），`npx … runtime install` 由此安装完整运行时。
+
+### agents-init 6.6.0
+
+- 新项目默认生成根目录启动器 `menu`（`--entry-name` 改名，`--no-entry` 不生成）和 Profile 的 `entry` 段；README.md 不存在时新建并写入「怎样使用」，已存在的不改动。
+- 启动器按以下顺序查找运行时，从不经过 npx 临时下载代码，都找不到时说明原因与下一步并以退出码 3 结束：
+  1. `AGENTHELM_BIN`
+  2. 用户级运行时
+  3. PATH 上的 `agenthelm`
+  4. 已安装客户端里的 agent-pack
+- 新增 `--mode entry`，为已初始化的项目补上入口：只涉及 Profile、启动器与内容锁。已有同名文件须 `--keep` 或 `--accept`（替换前备份）；`--readme-entry` 在 README 末尾追加带标记的说明，只追加一次。
+- Profile Schema 新增可选的 `entry` 段：`api`、`launcher`、`about`、`guide`、`where`、`start`、`tools`、`items`。这是增量兼容改动，旧 Profile 无需修改。
+- 项目契约模板内容包 1.1.0：`AGENTS.md` 增加「人用入口」，内容锁开始跟踪启动器，`refresh` 写入时保持可执行权限。
+
+### 不兼容点
+
+无。没有 `entry` 段的项目仍可用 `agenthelm project`；更新模板时你改过的文件逐个选择保留或采用。接入步骤见 [MIGRATION.md](MIGRATION.md#660给已初始化的项目接入人用入口)。
+
+### 验证范围
+
+macOS（Python 3.14，bash 3.2 的 `/bin/sh`）上全量测试通过。Linux 由 CI（ubuntu，Python 3.11–3.13）覆盖。Windows 未验证，运行时命令在 Windows 上直接拒绝。Linux 桌面上的打开与复制（`xdg-open`、`wl-copy` / `xclip` / `xsel`）没有逐一验证，做不到时打印绝对路径。
+
 ## 2026-10-23 — agenthelm 6.5.3 / Agent Pack 1.6.3
 
 - `agent-pack` 1.6.3：客户端命令行先查 PATH，再查应用自带位置（ChatGPT.app 内的 Codex、`~/.local/bin`、Homebrew），找不到时提示可用 `AGENTHELM_CODEX` / `AGENTHELM_CLAUDE` 指定；`migrate` 一并把 Codex 旧的 `plugins/cache/personal/<插件>` 缓存移入恢复目录（`CODEX_HOME` 在家目录之外也能处理）；`check` 把旧方式安装单独标为“旧方式安装，待迁移”，汇总不再把它们算作“可更新”。

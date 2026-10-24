@@ -31,11 +31,22 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Tag must be on main and name the release version
+      # vX.Y.Z on main is a release. vX.Y.Z-rc.N on dev is a release candidate: a GitHub
+      # pre-release and an npm "next" version for trying dev before it reaches main.
+      # Client marketplaces follow main, so a candidate never reaches them.
+      - name: Tag must name the release version (main) or a candidate of it (dev)
+        id: kind
         run: |
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           version="$(python -c "import json; print(json.load(open('index.json'))['plugin']['version'])")"
-          test "$GITHUB_REF_NAME" = "v${version}" || { echo "tag $GITHUB_REF_NAME does not match release version v${version}"; exit 1; }
+          if [ "$GITHUB_REF_NAME" = "v${version}" ]; then
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$GITHUB_REF_NAME" | grep -Eq "^v${version//./\\.}-rc\.[0-9]+$"; then
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/dev
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag $GITHUB_REF_NAME does not match release version v${version} or v${version}-rc.N"; exit 1
+          fi
 
       - name: Tests
         run: |
@@ -47,7 +58,7 @@ jobs:
 
       - name: Version gate against the previous release
         run: |
-          previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          previous="$(git describe --tags --abbrev=0 --exclude '*-rc.*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
           if [ -n "$previous" ]; then python scripts/release_meta.py --since "$previous"; else python scripts/release_meta.py; fi
 
       - name: Build the release tarball
@@ -64,7 +75,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then echo "release $GITHUB_REF_NAME already exists"; exit 0; fi
-          gh release create "$GITHUB_REF_NAME" "agenthelm-${GITHUB_REF_NAME}.tar.gz" release.json \
+          prerelease=""
+          if [ "${{ steps.kind.outputs.prerelease }}" = "true" ]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" "agenthelm-${GITHUB_REF_NAME}.tar.gz" release.json $prerelease \
             --title "$GITHUB_REF_NAME" --notes "版本与迁移说明见 CHANGELOG.md 与 release/migrations.json。"
 
       # Stage, not publish: a maintainer approves each version on npmjs.com with
@@ -76,14 +89,20 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: packages/cli
         run: |
+          channel="latest"
+          if [ "${{ steps.kind.outputs.prerelease }}" = "true" ]; then
+            npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+            channel="next"
+          fi
           version="$(node -p "require('./package.json').version")"
           if npm view "@sakanano-moe/agenthelm@${version}" version >/dev/null 2>&1; then echo "already published"; exit 0; fi
           if [ -z "$NODE_AUTH_TOKEN" ]; then echo "NPM_TOKEN not set; using Trusted Publishing (OIDC)"; fi
           npm install -g npm@^11.15.0
-          npm stage publish
+          npm stage publish --tag "$channel"
           echo "::notice::@sakanano-moe/agenthelm@${version} is staged; approve it on npmjs.com with 2FA to publish."
 
       - name: Refresh the site so latest.json carries this release
+        if: steps.kind.outputs.prerelease != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref main

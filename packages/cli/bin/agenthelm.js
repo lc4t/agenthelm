@@ -5,7 +5,7 @@ const { spawnSync } = require("node:child_process");
 const { existsSync } = require("node:fs");
 const { join } = require("node:path");
 
-const script = join(__dirname, "..", "runtime", "agenthelm.py");
+const script = join(__dirname, "..", "runtime", "plugins", "agent-pack", "runtime", "agenthelm.py");
 if (!existsSync(script)) {
   console.error("agenthelm: runtime is missing from this package; reinstall @sakanano-moe/agenthelm.");
   process.exit(2);

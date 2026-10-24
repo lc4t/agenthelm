@@ -8,7 +8,7 @@
 
 - `agents-init`：创建或迁移项目骨架与 Project Profile；
 - `project-orchestrator`：初始化后管理 Case、路由、验证、进度、记忆与 Git 交付；
-- `agent-pack`：管理项目与客户端之间的 Plugin / Skill / MCP，并提供 `agenthelm` 检查与更新；
+- `agent-pack`：管理项目与客户端之间的 Plugin / Skill / MCP，并提供 `agenthelm` 检查、更新与用户级运行时；
 - `opinion-manager`：生成和维护用户确认的 Agent 行为规则。
 
 ## 前提
@@ -43,11 +43,19 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 2. 从项目现有文件确认名称、项目类型、VCS、技术栈、runtime 与 Agent 客户端。项目名不能派生 ASCII slug 时显式传 `--slug`。无法确认且会改变生成契约时，一次性询问用户。
 3. 运行已安装 agents-init 的 `skills/agents-init/scripts/init_project.py`，默认只预演；向用户展示拟创建文件与碰撞项，得到确认后追加 `--apply`。
 4. 运行 `agent-pack` 的 `doctor --project <项目>` 确认 `ok=true`，报告已创建文件与仍需填写的 `TODO`。
+   初始化会生成根目录启动器 `menu`（用户选了别的名字时用 `--entry-name`）；向用户说明：不开 Agent 时运行 `./menu` 即可找资料、看进展与检查项目。
 5. 完整读取 opinion-manager 的 Skill、[版本契约](plugins/opinion-manager/references/versioning.md) 与 [首次使用说明](plugins/opinion-manager/references/onboarding.md)。只提供三个主选项：直接用模板、选择模板的部分条目、从空白开始迭代；另可选择基于已授权记忆提出候选规则。正式保存前预览 Profile 与完整正文，用户一次确认；个人来源、Profile、`OPINION.md` 与 `opinion.lock.json` 只保存在目标项目，禁止复制到公开位置。
 
 已有 v5 项目（存在 `.agents/moe.sakanano.project-runtime/project.json`）使用 `--mode migrate --recovery-dir <项目外目录>` 升级 Profile，详见 `AGENT.template.md` 的“从 v5 迁移”。
 
-## 3. 检查与更新
+## 3. 不需要 AI Agent 的入口
+
+- 已初始化但没有启动器的项目：`init_project.py --project <项目> --mode entry --entry-name <名称>` 预览，经同意后 `--apply`。根目录已有同名文件时让用户选择 `--keep`（保留）或 `--accept`（替换，先备份到 `--recovery-dir`）。
+- 让项目脱离 AI 客户端也能打开菜单：预览 `npx @sakanano-moe/agenthelm runtime install`，经同意后 `--apply`；运行时写入用户数据目录 `~/.local/share/agenthelm/`。
+- 离线安装：解压发布包 `agenthelm-v<版本>.tar.gz`，运行 `python3 <解压目录>/plugins/agent-pack/runtime/agenthelm.py runtime install --apply`。
+- Agent 自己需要查资料或看进展时，调用 `./<启动器> find <词> --output json`、`progress --output json` 等子命令，不另写查找逻辑；写入类子命令默认只预览。
+
+## 4. 检查与更新
 
 - `npx @sakanano-moe/agenthelm check`：只读报告插件、项目模板/样例与 Opinion 是否落后，并区分代码更新、仅模板/样例更新与不兼容变更。
 - `npx @sakanano-moe/agenthelm update`：预览更新；经用户同意后追加 `--apply`。本地改过的模板生成文件须用户逐个选择 `--accept` 或 `--keep`。

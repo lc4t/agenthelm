@@ -1,4 +1,4 @@
-# AGENT.template.md v6.4
+# AGENT.template.md v6.6
 
 > 适用范围：可移植的项目初始化与迁移。运行期项目生命周期由同一分发包内的 `project-orchestrator` 负责，Agent 扩展能力由 `agent-pack` 负责，Opinion 由 `opinion-manager` 负责。
 
@@ -18,6 +18,8 @@
 
 ```text
 <project>/
+├── README.md        # 不存在时新建，含「怎样使用」；已有的不改动
+├── menu             # 人用入口（启动器），文件名可由 --entry-name 改
 ├── AGENTS.md
 ├── AGENT.RULES.md
 ├── OPINION.md
@@ -42,6 +44,8 @@
     └── drafts/.gitkeep
 ```
 
+根目录启动器（缺省名 `menu`）让人不经过 AI Agent 也能打开项目菜单：找资料、看进展、项目指南、检查与维护。它按顺序查找 `AGENTHELM_BIN`、用户级运行时（`agenthelm runtime install` 安装）、PATH 上的 `agenthelm` 与已安装客户端里的 agent-pack，从不通过 npx 临时下载代码；都找不到时说明原因与下一步并以退出码 3 结束。启动器内容与文件名无关，由内容包跟踪更新。
+
 Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skills/` 和 `mcp.json`。反向域名目录保存客户端扩展 Project Profile，避免与未来标准组件碰撞；`agent-pack` 从这里读取能力契约。
 
 ## 3. Project Profile
@@ -52,7 +56,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 {
   "$schema": "https://skill.sakanano.moe/skills/agents-init/project.schema.json",
   "schema_version": "1.0",
-  "initializer_version": "6.5.0",
+  "initializer_version": "6.6.0",
   "name": "PROJECT_NAME",
   "profile": {
     "project_type": ["PROJECT_TYPE"],
@@ -102,7 +106,8 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
   "privacy": {
     "forbidden_default_reads": [],
     "generated_outputs": []
-  }
+  },
+  "entry": {"api": 1, "launcher": "menu"}
 }
 ```
 
@@ -111,6 +116,8 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 `work.mode` 新项目默认 `case-workspace`，Case 是唯一持久工作目录，子任务在 Case 内管理。既有项目字段缺失或为 `legacy` 时继续使用已有模式，升级 Plugin 不会自动迁移业务文件。`work.case.artifact_mode=case-local` 声明专属材料放入 Case；公共模板、长期项目源码和正式规则继续保留各自权威位置。Case 子目录按需创建，不为简单工作堆空目录。
 
 `opinion.loading_mode` 为 `tiered` 时，按 Opinion Profile 中用户确认的加载声明读取核心规则与规则束；Profile 没有声明时仍然完整读取 `OPINION.md`。设为 `full` 可以让所有 Session 立即回到完整读取。
+
+`entry` 声明人用入口：`api` 是项目入口的接口版本（运行时不支持时启动器提示更新，不改项目文件），`launcher` 是根目录启动器的文件名。可选字段：`about`（一句话简介，缺省取 README 开头）、`guide`（项目首页的相对路径）、`where` 与 `start`（指南里的“资料在哪”“怎样开始”）、`tools`（项目工具声明文件，缺省 `.agents/moe.sakanano.agent-pack/tools.json`）、`items`（项目自己的事项工具，约定见 project-orchestrator 的 case-workspaces.md「项目入口适配」）。没有 `entry` 段的项目仍可用 `agenthelm project` 打开菜单。
 
 `memory` 声明项目记忆的提供方。`provider` 为 `project-orchestrator` 时使用随包的条目式工具，条目保存在 `root` 目录。项目已有自己的记忆实现时把 `provider` 设为 `project`，在 `index_command` 与 `check_command` 填写生成索引和执行检查的命令，`policy` 指向项目自己的参数文件。体积预算、保留窗口、条数和复核间隔等参数由各项目设定，不随模板分发。
 
@@ -147,6 +154,10 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 - Opinion 指导并审查交付物，不管理项目生命周期。
 - 领域 Skill 禁止创建无关 Task、编辑根进度、自我修改或自主提交。
 - 保留无关改动。push、发布、merge、删除与破坏性迁移都需要明确授权。
+
+## 人用入口
+
+不需要 Agent 也能运行 `ENTRY_COMMAND` 打开项目菜单：找资料、看进展、项目指南、检查与维护。Agent 需要同样的信息时调用它的子命令并加 `--output json`（例如 `ENTRY_COMMAND find <词> --output json`），不另写一套查找逻辑；写入类子命令默认只预览。
 
 ## 项目专属入口
 
@@ -326,6 +337,12 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 3. Profile 替换保留项目自定义的 runtime、opinion、memory、capabilities 和 privacy。未显式选择模式时保留现有 `work` 段。
 4. 展示全部 Task、Case 专属输入和交付物的目标映射，Demo 通过后用 `case_workspace.py migrate` 实施；保留旧 TASK.md、progress、旧 ID 与真实完成或放弃证据。
 5. 用项目 Tool 校验 Case、链接和索引，验证旧名称检索与全量统计；迁移完成后关闭生产态 Task 创建入口。其他项目单独授权并迁移。
+
+### 为已初始化的项目补上人用入口
+
+1. `--mode entry --entry-name <名称>` 预览：只涉及 Profile 的 `entry` 段、根目录启动器与内容锁；加 `--readme-entry` 时在 README 末尾追加带标记的「怎样使用」。
+2. 根目录已有同名文件时视为用户自己的文件：`--keep <名称>` 保留（不跟踪更新），`--accept <名称>` 用模板替换并先备份到 `--recovery-dir`；不选则不写入。
+3. 确认后加 `--apply`，再运行 `./<名称> health` 验证。也可以在菜单「检查项目与环境」里处理“项目根目录还没有人用入口”。
 
 ### 为既有 v6 项目补充记忆与分层加载
 

@@ -52,3 +52,17 @@ python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --versio
 ## 项目里的模板文件
 
 v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.lock.json`。之后模板更新时，`npx @sakanano-moe/agenthelm update` 会把与新模板不同的文件都视为本地改动，逐个要求 `--accept`（用新模板，先备份）或 `--keep`（保留本地）；选择后即建立基线。
+
+## 6.6.0：给已初始化的项目接入人用入口
+
+不改也能继续使用：没有 `entry` 段的项目可以直接运行 `agenthelm project`。要在项目根目录放一个稳定入口：
+
+1. 更新插件（`npx @sakanano-moe/agenthelm update` 预览 → `--apply`），或安装运行时（`npx @sakanano-moe/agenthelm runtime install --apply`）。
+2. 预览补入口：`agenthelm project fix add-entry --entry-name <名称>`，或 `python3 <agents-init>/skills/agents-init/scripts/init_project.py --project <项目> --mode entry --entry-name <名称>`。只涉及 Profile 的 `entry` 段、启动器与内容锁。
+3. 项目根目录已有同名脚本（例如自己写过的菜单）时视为你的文件：`--keep <名称>` 保留它（检查会提示它是否调用了 agenthelm），`--accept <名称>` 换成模板并先备份。自己的脚本要接入公共菜单，在脚本里调用 `agenthelm project --project "<项目根目录>" "$@"` 即可。
+4. 需要时加 `--readme-entry`（或在菜单里对 README.md 选择采用），在 README 末尾追加带标记的「怎样使用」。
+5. 确认后 `--apply`，再运行 `./<名称> health` 验证。
+
+模板内容包 `agents-init/project-contract` 升到 1.1.0（`AGENTS.md` 增加「人用入口」，并开始跟踪启动器）。`agenthelm update` 或菜单「修复与更新」会列出受影响的文件：未改动的先备份再替换；你改过的逐个选择保留（`--keep`）或采用（`--accept`）。
+
+项目自己管理事项（不用默认 Case 工具）时，按 [case-workspaces.md「项目入口适配」](plugins/project-orchestrator/references/case-workspaces.md#项目入口适配) 在 `entry.items` 声明只读接口；没有声明写接口时，菜单里的记录事项会显示为不可用，不会绕过项目工具改文件。项目专用操作写进 `.agents/moe.sakanano.agent-pack/tools.json`。

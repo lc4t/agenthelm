@@ -280,7 +280,7 @@
         <h1>agenthelm</h1>
         <p class="summary">跨 Agent 的项目管理插件集：<code>agents-init</code> 初始化项目，<code>project-orchestrator</code> 管理 Case 与生命周期，<code>agent-pack</code> 管理扩展能力并负责检查与更新，<code>opinion-manager</code> 管理用户确认的 Agent 行为规则。Claude Code、Codex、Cursor 读取同一份市场清单。</p>
       </div>
-      <span class="badge">Release 6.5.3</span>
+      <span class="badge">Release 6.6.0</span>
     </header>
 
     <section class="panel" aria-labelledby="install-title">
@@ -298,6 +298,15 @@ npx @sakanano-moe/agenthelm install --apply</code></pre>
         <a class="button secondary" href="./.claude-plugin/marketplace.json">市场清单</a>
       </div>
       <p>检查与更新：<code>npx @sakanano-moe/agenthelm check</code> 只读报告；<code>npx @sakanano-moe/agenthelm update</code> 预览，确认后 <code>--apply</code>。会话开始时每天至多检查一次，<code>AGENTHELM_NO_UPDATE_CHECK=1</code> 可关闭。</p>
+    </section>
+
+    <section class="panel" aria-labelledby="entry-title">
+      <h2 id="entry-title">不开 AI Agent 也能用</h2>
+      <p>初始化后的项目根目录有一个启动器（缺省 <code>./menu</code>）：找资料、看进展、项目指南、检查与维护、记录事项。不调用模型，不需要 AI 客户端，只需要 Python 3.11+。</p>
+      <pre><code>npx @sakanano-moe/agenthelm runtime install --apply   # 只需一次：装好用户级运行时
+./menu                                                # 打开项目菜单
+npx @sakanano-moe/agenthelm project --demo study      # 用虚构项目先看看</code></pre>
+      <p>断网时可查本地资料、看进展与读指南；写入类操作都先预览、确认后执行并回读验证。离线安装：解压发布包后运行 <code>python3 &lt;解压目录&gt;/plugins/agent-pack/runtime/agenthelm.py runtime install --apply</code>。</p>
     </section>
 
     <main>
@@ -333,7 +342,7 @@ npx @sakanano-moe/agenthelm install --apply</code></pre>
           <article class="skill-card">
             <div>
               <h3>project-orchestrator / 项目生命周期编排</h3>
-              <p>读取项目契约，选择最小 Task / Case，把工作路由给确定性 Tool 与叶子 Skill，再完成验证、进度记录与受控 Git 交付。</p>
+              <p>读取项目契约，选择最小 Task / Case，把工作路由给确定性 Tool 与叶子 Skill，再完成验证、进度记录与受控 Git 交付；附不需要 AI Agent 的项目入口。</p>
             </div>
             <div class="file-map" aria-label="project-orchestrator 文件入口">
               <a class="file-link" href="./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md">
@@ -416,7 +425,7 @@ npx @sakanano-moe/agenthelm install --apply</code></pre>
     </main>
 
     <footer>
-      <span>Release 6.5.2 · 更新日期 2026-10-23</span>
+      <span>Release 6.6.0 · 更新日期 2026-10-25</span>
     </footer>
   </div>
 </body>
