@@ -93,7 +93,7 @@ class InitProjectTests(unittest.TestCase):
             profile = json.loads((root / ".agents/moe.sakanano.agent-pack/project.json").read_text())
             self.assertFalse((root / ".agents/moe.sakanano.project-runtime").exists())
             self.assertEqual(profile["schema_version"], "1.0")
-            self.assertEqual(profile["initializer_version"], "6.5.0")
+            self.assertEqual(profile["initializer_version"], "6.6.0")
             self.assertEqual(profile["$schema"], "https://skill.sakanano.moe/skills/agents-init/project.schema.json")
             self.assertEqual(profile["runtime"]["skill"], "project-orchestrator")
             self.assertEqual(profile["runtime"]["plugin"], "project-orchestrator")
@@ -134,7 +134,8 @@ class InitProjectTests(unittest.TestCase):
             entry = lock["packs"]["agents-init/project-contract"]
             pack = init_project.contract_pack()
             self.assertEqual(entry["version"], pack["version"])
-            self.assertEqual(sorted(entry["files"]), sorted(pack["materializes"]))
+            # The pack's fixed files plus the project's root launcher (default name menu).
+            self.assertEqual(sorted(entry["files"]), sorted([*pack["materializes"], init_project.DEFAULT_ENTRY]))
             for relative, digest in entry["files"].items():
                 self.assertEqual(hashlib.sha256((root / relative).read_bytes()).hexdigest(), digest)
             # Working documents the user fills in are not template content.
@@ -285,6 +286,7 @@ class InitProjectTests(unittest.TestCase):
                 "STACK": "python",
                 "RUNTIME": "本地",
                 "AGENT_CLI": "codex",
+                "ENTRY_COMMAND": "agenthelm project",
             },
         ))
         self.assertEqual(files[Path("docs/refs/README.md")], templates["docs/refs/README.md"])
@@ -460,7 +462,7 @@ class InitProjectTests(unittest.TestCase):
             self.assertFalse(legacy.parent.exists())
             self.assertEqual((recovery / ".agents/moe.sakanano.project-runtime/project.json").read_text(), original)
             profile = json.loads((root / ".agents/moe.sakanano.agent-pack/project.json").read_text())
-            self.assertEqual(profile["initializer_version"], "6.5.0")
+            self.assertEqual(profile["initializer_version"], "6.6.0")
             self.assertEqual(profile["runtime"]["skill"], "project-orchestrator")
             self.assertEqual(profile["runtime"]["capability_manager"], "agent-pack")
             self.assertEqual(profile["runtime"]["session_bootstrap"], "make brief")
@@ -552,6 +554,124 @@ class InitProjectTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 2)
             self.assertEqual((root / "AGENTS.md").read_text(), "legacy\n")
+
+
+class EntryTests(unittest.TestCase):
+    """根目录启动器、Profile 的 entry 段与 README「怎样使用」。"""
+
+    def init(self, root: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "--project", str(root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--output", "json", *extra],
+                              capture_output=True, text=True, check=False)
+
+    def entry(self, root: Path, *extra: str) -> tuple[int, dict]:
+        result = subprocess.run([sys.executable, str(SCRIPT), "--project", str(root), "--mode", "entry",
+                                 "--output", "json", *extra], capture_output=True, text=True, check=False)
+        return result.returncode, json.loads(result.stdout)
+
+    def profile(self, root: Path) -> dict:
+        return json.loads((root / init_project.PROFILE_PATH).read_text(encoding="utf-8"))
+
+    def test_init_creates_an_executable_launcher_readme_and_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.init(root, "--apply").returncode, 0)
+            launcher = root / "menu"
+            self.assertTrue(launcher.stat().st_mode & 0o111)
+            self.assertEqual(launcher.read_text(encoding="utf-8"), init_project.launcher_text())
+            self.assertEqual(self.profile(root)["entry"], {"api": 1, "launcher": "menu"})
+            self.assertIn("`./menu`", (root / "README.md").read_text(encoding="utf-8"))
+            self.assertIn("## 人用入口", (root / "AGENTS.md").read_text(encoding="utf-8"))
+
+    def test_init_keeps_an_existing_readme_and_can_skip_the_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "README.md").write_text("# Mine\n", encoding="utf-8")
+            self.assertEqual(self.init(root, "--no-entry", "--apply").returncode, 0)
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "# Mine\n")
+            self.assertNotIn("entry", self.profile(root))
+            self.assertFalse((root / "menu").exists())
+            self.assertIn("agenthelm project", (root / "AGENTS.md").read_text(encoding="utf-8"))
+
+    def test_custom_name_and_invalid_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.init(root, "--entry-name", "go", "--apply").returncode, 0)
+            self.assertTrue((root / "go").is_file())
+        for bad in ("../x", "README.md", "a b", ".hidden"):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as temporary:
+                self.assertEqual(self.init(Path(temporary), "--entry-name", bad).returncode, 2)
+
+    def test_entry_mode_adds_launcher_and_profile_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.init(root, "--no-entry", "--apply")
+            agents_before = (root / "AGENTS.md").read_text(encoding="utf-8")
+            code, preview = self.entry(root, "--entry-name", "work")
+            self.assertEqual((code, preview["applied"]), (0, False))
+            self.assertFalse((root / "work").exists())
+            code, result = self.entry(root, "--entry-name", "work", "--apply")
+            self.assertTrue(result["applied"])
+            self.assertTrue((root / "work").stat().st_mode & 0o111)
+            self.assertEqual(self.profile(root)["entry"]["launcher"], "work")
+            self.assertEqual((root / "AGENTS.md").read_text(encoding="utf-8"), agents_before,
+                             "其他模板文件走正常的 refresh，不在这里改")
+            lock = json.loads((root / init_project.CONTENT_LOCK_PATH).read_text(encoding="utf-8"))
+            self.assertIn("work", lock["packs"]["agents-init/project-contract"]["files"])
+            code, again = self.entry(root, "--entry-name", "work", "--apply")
+            self.assertEqual(again["entry"]["action"], "unchanged")
+            code, renamed = self.entry(root, "--entry-name", "other")
+            self.assertEqual(code, 2, "改名需要手动修改 Profile")
+
+    def test_entry_mode_respects_an_existing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as recovery:
+            root = Path(temporary)
+            self.init(root, "--no-entry", "--apply")
+            (root / "work").write_text("mine\n", encoding="utf-8")
+            code, blocked = self.entry(root, "--entry-name", "work", "--apply")
+            self.assertEqual((code, blocked["applied"], blocked["blocked"]), (1, False, ["work"]))
+            self.assertNotIn("entry", self.profile(root))
+            code, kept = self.entry(root, "--entry-name", "work", "--keep", "work", "--apply")
+            self.assertEqual((root / "work").read_text(encoding="utf-8"), "mine\n")
+            self.assertEqual(self.profile(root)["entry"]["launcher"], "work")
+            lock = json.loads((root / init_project.CONTENT_LOCK_PATH).read_text(encoding="utf-8"))
+            self.assertNotIn("work", lock["packs"]["agents-init/project-contract"]["files"], "保留的文件不跟踪")
+            code, replaced = self.entry(root, "--entry-name", "work", "--accept", "work",
+                                        "--recovery-dir", str(Path(recovery) / "r"), "--apply")
+            self.assertTrue(replaced["applied"])
+            self.assertEqual((Path(recovery) / "r/work").read_text(encoding="utf-8"), "mine\n")
+            self.assertEqual((root / "work").read_text(encoding="utf-8"), init_project.launcher_text())
+
+    def test_readme_section_is_appended_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.init(root, "--apply")
+            (root / "README.md").write_text("# Notes\n\nMy intro.\n", encoding="utf-8")
+            self.entry(root, "--entry-name", "menu", "--readme-entry", "--apply")
+            self.entry(root, "--entry-name", "menu", "--readme-entry", "--apply")
+            text = (root / "README.md").read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("# Notes\n\nMy intro.\n"))
+            self.assertEqual(text.count(init_project.README_START), 1)
+
+    def test_refresh_tracks_the_launcher_and_keeps_it_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as recovery:
+            root = Path(temporary)
+            self.init(root, "--apply")
+            launcher = root / "menu"
+            launcher.write_text("#!/bin/sh\n# an older launcher\n", encoding="utf-8")
+            lock_path = root / init_project.CONTENT_LOCK_PATH
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["packs"]["agents-init/project-contract"]["files"]["menu"] = hashlib.sha256(
+                launcher.read_bytes()).hexdigest()
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(SCRIPT), "--project", str(root), "--mode", "refresh",
+                                     "--recovery-dir", str(Path(recovery) / "r"), "--apply", "--output", "json"],
+                                    capture_output=True, text=True, check=False)
+            plan = {item["path"]: item for item in json.loads(result.stdout)["files"]}
+            self.assertEqual(plan["menu"]["action"], "replace", result.stdout)
+            self.assertEqual(launcher.read_text(encoding="utf-8"), init_project.launcher_text())
+            self.assertTrue(launcher.stat().st_mode & 0o111)
 
 
 if __name__ == "__main__":

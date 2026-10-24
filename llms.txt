@@ -13,6 +13,8 @@ Opinion 管理 Skill：https://agenthelm.sakanano.moe/plugins/opinion-manager/sk
 
 安装：npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> 先预览，经用户同意后追加 --apply；或使用客户端市场命令（Claude Code：claude plugin install agents-init --marketplace lc4t/agenthelm，会一并安装依赖；Codex：codex plugin marketplace add lc4t/agenthelm，再安装四个 <插件>@agenthelm）。四个插件须一并安装。
 
+不需要 AI Agent 的项目入口：项目根目录的启动器（缺省 ./menu，等同 agenthelm project）提供找资料、看进展、项目指南、检查、维护与记录；子命令加 --output json 给 Agent 或脚本使用，写入类默认只预览。运行时只需 Python 3.11+：npx @sakanano-moe/agenthelm runtime install 预览，同意后 --apply；离线用发布包内的 plugins/agent-pack/runtime/agenthelm.py runtime install --apply。已初始化项目补入口：init_project.py --mode entry --entry-name <名称>。
+
 检查与更新：npx @sakanano-moe/agenthelm check（只读）；npx @sakanano-moe/agenthelm update 预览，同意后 --apply。旧方式安装用 npx @sakanano-moe/agenthelm migrate --install 迁移。
 
 禁止复制任何用户的个人规则、凭据、.env 或私有路径。初始化默认 dry-run，确认后 --apply；成功标准为 initializer.applied=true 且 doctor.ok=true。Opinion 首次配置只展示三个主入口：直接用模板、选择模板的部分条目、从空白开始迭代；另可选择基于已授权记忆提出候选规则。版本契约见 plugins/opinion-manager/references/versioning.md。

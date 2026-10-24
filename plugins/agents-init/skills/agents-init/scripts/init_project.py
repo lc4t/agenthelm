@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-INITIALIZER_VERSION = "6.5.0"
+INITIALIZER_VERSION = "6.6.0"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
@@ -47,6 +47,17 @@ BUNDLED_PLUGINS = {
     ),
 }
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "AGENT.template.md"
+# 项目根目录的人用入口（启动器）：文件名由项目选择，内容与名称无关，随内容包更新。
+LAUNCHER_TEMPLATE = Path(__file__).resolve().parents[1] / "launcher.sh"
+DEFAULT_ENTRY = "menu"
+ENTRY_API = 1
+ENTRY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+RESERVED_ENTRY_NAMES = {"AGENTS.md", "AGENT.md", "CLAUDE.md", "AGENT.RULES.md", "OPINION.md", "README.md",
+                        "cases", "docs", "memory", ".agents", ".git"}
+README_START = "<!-- agenthelm:entry -->"
+README_END = "<!-- /agenthelm:entry -->"
+# 内容锁里没有记录模板版本时（早于内容锁的项目），补登的条目使用这个版本，检查会提示刷新。
+UNKNOWN_PACK_VERSION = "0.0.0"
 TEMPLATE_PATTERN = re.compile(
     r"<!-- agents-init:template (?P<name>[^ ]+) -->\n"
     r"```markdown\n(?P<body>.*?)```\n"
@@ -84,6 +95,7 @@ class Inputs:
     runtime: str
     agent_cli: tuple[str, ...]
     work_mode: str = "case-workspace"
+    entry_launcher: str | None = None
 
 
 def split_csv(value: str) -> tuple[str, ...]:
@@ -289,6 +301,36 @@ def validate_inline(label: str, value: str) -> str:
     return value.strip()
 
 
+def validate_entry_name(name: str) -> str:
+    if not ENTRY_NAME_RE.fullmatch(name) or name in RESERVED_ENTRY_NAMES:
+        raise InitError(f"启动器名称不合法：{name}（只能用字母、数字、. _ -，且不能与骨架文件同名）")
+    return name
+
+
+def launcher_text() -> str:
+    try:
+        return LAUNCHER_TEMPLATE.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise InitError(f"无法读取启动器模板：{LAUNCHER_TEMPLATE}", code="template-invalid") from exc
+
+
+def entry_command(launcher: str | None) -> str:
+    return f"./{launcher}" if launcher else "agenthelm project"
+
+
+def readme_block(launcher: str | None) -> str:
+    command = entry_command(launcher)
+    return (f"{README_START}\n## 怎样使用\n\n在项目根目录运行 `{command}` 打开项目菜单：找资料、看进展、项目指南、检查与维护。"
+            f"不需要 AI 客户端，只需要 Python 3.11+；第一次运行如果提示缺少运行时，按提示安装一次即可。\n\n"
+            f"不进菜单也可以：`{command} find 关键词`、`{command} progress`、`{command} --help`。\n{README_END}\n")
+
+
+def tracked_paths(pack: dict | None, launcher: str | None) -> list[Path]:
+    """Files the content lock follows: the pack's fixed list plus this project's launcher."""
+    tracked = [Path(path) for path in (pack or {}).get("materializes", [])]
+    return tracked + ([Path(launcher)] if launcher else [])
+
+
 def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[Path, str]:
     templates = templates or load_templates()
     profile = {
@@ -336,7 +378,10 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
         },
         "privacy": {"forbidden_default_reads": [], "generated_outputs": []},
     }
+    if inputs.entry_launcher:
+        profile["entry"] = {"api": ENTRY_API, "launcher": inputs.entry_launcher}
     replacements = {
+        "ENTRY_COMMAND": entry_command(inputs.entry_launcher),
         "PROJECT_NAME": inputs.name,
         "PROJECT_SLUG": inputs.slug,
         "PROJECT_TYPE": ", ".join(inputs.project_type),
@@ -374,6 +419,8 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
     }
     if inputs.work_mode == "case-workspace":
         files[Path("cases/.gitkeep")] = ""
+    if inputs.entry_launcher:
+        files[Path(inputs.entry_launcher)] = launcher_text()
     return files
 
 
@@ -592,10 +639,11 @@ def contract_pack(plugin_root: Path = PLUGIN_ROOT) -> dict | None:
     return None
 
 
-def content_baseline(pack: dict | None, files: dict[Path, str], written: Iterable[Path]) -> dict[str, str]:
+def content_baseline(pack: dict | None, files: dict[Path, str], written: Iterable[Path],
+                     launcher: str | None = None) -> dict[str, str]:
     if pack is None:
         return {}
-    tracked = {Path(path) for path in pack.get("materializes", [])}
+    tracked = set(tracked_paths(pack, launcher))
     return {
         path.as_posix(): hashlib.sha256(files[path].encode("utf-8")).hexdigest()
         for path in sorted(written, key=str)
@@ -657,7 +705,14 @@ def inputs_from_profile(root: Path) -> Inputs:
         tuple(details.get("stack") or ()), str(details.get("runtime") or ""),
         tuple(details.get("agent_cli") or ()),
         str((profile.get("work") or {}).get("mode") or "legacy"),
+        _profile_launcher(profile),
     )
+
+
+def _profile_launcher(profile: dict) -> str | None:
+    entry = profile.get("entry")
+    launcher = entry.get("launcher") if isinstance(entry, dict) else None
+    return validate_entry_name(launcher) if isinstance(launcher, str) else None
 
 
 def _unified_diff(relative: str, current: str, new: str, limit: int = 200) -> str:
@@ -690,10 +745,11 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     # every file that differs from the new render counts as locally modified.
     entry = (lock.get("packs") or {}).get(pack["id"]) or {}
     baseline: dict[str, str] = dict(entry.get("files") or {})
-    rendered = files_for(inputs_from_profile(root))
+    inputs = inputs_from_profile(root)
+    rendered = files_for(inputs)
     accept = {Path(value) for value in args.accept}
     keep = {Path(value) for value in args.keep}
-    tracked = [Path(path) for path in pack.get("materializes", [])]
+    tracked = tracked_paths(pack, inputs.entry_launcher)
     unknown = (accept | keep) - set(tracked)
     if unknown:
         raise InitError("不是内容包跟踪的文件：" + ", ".join(sorted(map(str, unknown))))
@@ -760,6 +816,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             target.parent.mkdir(parents=True, exist_ok=True)
             temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
             temporary.write_text(rendered[relative], encoding="utf-8")
+            if relative == Path(inputs.entry_launcher or "\0"):
+                temporary.chmod(0o755)
             os.replace(temporary, target)
     files = dict(baseline)
     for item in plan:
@@ -777,6 +835,125 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     return 0, result
 
 
+def _atomic_write(path: Path, text: str, mode: int | None = None) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    if mode is not None:
+        temporary.chmod(mode)
+    os.replace(temporary, path)
+
+
+def readme_plan(root: Path, name: str, launcher: str | None) -> dict | None:
+    """README.md: create it with the entry section, or append the section once (marked)."""
+    path = root / "README.md"
+    if path.is_symlink():
+        raise InitError("refusing symlinked README.md")
+    if not path.exists():
+        return {"path": "README.md", "action": "create", "text": f"# {name}\n\n{readme_block(launcher)}"}
+    current = path.read_text(encoding="utf-8")
+    if README_START in current:
+        return None
+    return {"path": "README.md", "action": "append",
+            "text": current.rstrip("\n") + "\n\n" + readme_block(launcher)}
+
+
+def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
+    """Give an initialised project its root launcher and Profile ``entry`` block.
+
+    Only the Profile, the launcher, the content lock (and README.md with
+    --readme-entry) are touched; other template files follow the normal refresh.
+    An existing file with the launcher's name is the user's: it is kept or
+    replaced only by explicit --keep / --accept, replacements backed up first.
+    """
+    if not args.entry_name:
+        raise InitError("--mode entry 需要 --entry-name")
+    name = validate_entry_name(args.entry_name)
+    profile = _read_project_json(root, PROFILE_PATH, "Project Profile")
+    entry = profile.get("entry") if isinstance(profile.get("entry"), dict) else {}
+    if entry.get("launcher") and entry["launcher"] != name:
+        raise InitError(f"项目已声明入口 ./{entry['launcher']}；改名请同时修改 Profile 的 entry.launcher 与文件名")
+    template = launcher_text()
+    target = root / name
+    if target.is_symlink():
+        raise InitError(f"refusing symlinked launcher: {name}")
+    current = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
+    if target.exists() and not target.is_file():
+        raise InitError(f"{name} 已存在且不是文件")
+    chosen = {Path(value) for value in args.accept} | {Path(value) for value in args.keep}
+    if chosen - {Path(name)}:
+        raise InitError("--mode entry 只接受启动器文件的 --accept / --keep：" + name)
+    if current is None:
+        action = "create"
+    elif current == template:
+        action = "unchanged"
+    elif name in args.accept:
+        action = "replace"
+    elif name in args.keep:
+        action = "keep"
+    else:
+        action = "blocked"
+    new_profile = {**profile, "entry": {**entry, "api": entry.get("api", ENTRY_API), "launcher": name}}
+    profile_changed = new_profile != profile
+    readme = readme_plan(root, str(profile.get("name") or root.name), name) if args.readme_entry else None
+    writes = ([name] if action in ("create", "replace") else []) + ([str(PROFILE_PATH)] if profile_changed else []) \
+        + ([readme["path"]] if readme else [])
+    if action in ("create", "replace", "unchanged"):
+        writes.append(str(CONTENT_LOCK_PATH))
+    labels = {"create": "新建启动器", "replace": "用模板替换（先备份）", "unchanged": "已是模板内容",
+              "keep": "保留你的文件（不跟踪更新）", "blocked": "已存在同名文件，需要选择"}
+    changes = [f"{name}：{labels[action]}"]
+    if profile_changed:
+        changes.append(f"Project Profile：加入 entry（api {new_profile['entry']['api']}，launcher {name}）")
+    if readme:
+        changes.append("README.md：" + ("新建并写入「怎样使用」" if readme["action"] == "create" else "追加「怎样使用」一节"))
+    result = {
+        "ok": action != "blocked", "mode": "entry", "applied": False,
+        "entry": {"name": name, "action": action, "writes": writes, "changes": changes,
+                  "collisions": [name] if action == "blocked" else [],
+                  "profile_diff": _unified_diff(str(PROFILE_PATH), json_text(profile), json_text(new_profile))
+                  if profile_changed else ""},
+        "blocked": [name] if action == "blocked" else [],
+        "readme_snippet": readme_block(name) if not readme else "",
+    }
+    if action == "blocked":
+        result["hint"] = f"{name} 已存在：--accept {name} 用模板替换（先备份到 --recovery-dir），或 --keep {name} 保留你的文件"
+    if not args.apply or action == "blocked":
+        return (0 if action != "blocked" else 1), result
+    if action == "replace":
+        if args.recovery_dir is None:
+            raise InitError("--recovery-dir is required when replacing the launcher")
+        recovery = args.recovery_dir.expanduser().resolve()
+        if recovery == root or root in recovery.parents:
+            raise InitError("--recovery-dir must be outside the project root")
+        archived = recovery / name
+        if archived.exists():
+            raise InitError(f"recovery collision: {name}")
+        archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        archived.write_bytes(target.read_bytes())
+        result["recovery"] = str(recovery)
+    if action in ("create", "replace"):
+        _atomic_write(target, template, 0o755)
+    if readme:
+        _atomic_write(root / readme["path"], readme["text"])
+    if profile_changed:
+        _atomic_write(root / PROFILE_PATH, json_text(new_profile))
+    if action in ("create", "replace", "unchanged"):
+        pack = contract_pack()
+        if pack is not None:
+            lock_path = root / CONTENT_LOCK_PATH
+            lock = _read_project_json(root, CONTENT_LOCK_PATH, "content lock") if lock_path.exists() \
+                else {"schema_version": 1, "packs": {}}
+            pack_entry = lock.setdefault("packs", {}).get(pack["id"]) or \
+                {"plugin": "agents-init", "version": UNKNOWN_PACK_VERSION, "files": {}}
+            pack_entry["files"] = dict(sorted({**pack_entry.get("files", {}),
+                                               name: hashlib.sha256(template.encode("utf-8")).hexdigest()}.items()))
+            lock["packs"][pack["id"]] = pack_entry
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(lock_path, json_text(lock))
+    result["applied"] = True
+    return 0, result
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--project", type=Path, required=True)
@@ -787,8 +964,13 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--stack", type=split_csv)
     result.add_argument("--runtime")
     result.add_argument("--agent-cli", type=split_csv)
-    result.add_argument("--mode", choices=("init", "migrate", "refresh"), default="init",
-                        help="refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件")
+    result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry"), default="init",
+                        help="refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件；"
+                             "entry：为已初始化的项目补上根目录启动器与 Profile 的 entry 段")
+    result.add_argument("--entry-name", help=f"根目录启动器文件名（init 缺省 {DEFAULT_ENTRY}；entry 模式必填）")
+    result.add_argument("--no-entry", action="store_true", help="init：不生成根目录启动器")
+    result.add_argument("--readme-entry", action="store_true",
+                        help="在已有 README.md 末尾追加「怎样使用」一节（带标记，只追加一次）；init 时 README 不存在会直接新建")
     result.add_argument("--accept", action="append", default=[], help="refresh：用新模板替换这个本地已改动的文件")
     result.add_argument("--keep", action="append", default=[], help="refresh：保留这个文件的本地内容")
     result.add_argument("--work-mode", choices=("case-workspace", "legacy"), default=None,
@@ -814,6 +996,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         root = validate_root(args.project)
+        if args.mode == "entry":
+            code, result = add_entry(args, root)
+            if args.output == "json":
+                print(json_text(result), end="")
+            else:
+                print(("Applied" if result["applied"] else "Blocked" if result["blocked"] else "Dry-run")
+                      + f": entry ./{result['entry']['name']}")
+                for change in result["entry"]["changes"]:
+                    print(f"  {change}")
+                if result.get("hint"):
+                    print(result["hint"])
+                if result.get("readme_snippet"):
+                    print("README 里可以加上：\n" + result["readme_snippet"])
+            return code
         if args.mode == "refresh":
             code, result = refresh_project(args, root)
             if args.output == "json":
@@ -846,6 +1042,8 @@ def main(argv: list[str] | None = None) -> int:
             validate_inline("--runtime", args.runtime),
             tuple(validate_inline("--agent-cli", value) for value in args.agent_cli),
             args.work_mode or ('legacy' if args.mode == 'migrate' else 'case-workspace'),
+            None if args.no_entry else validate_entry_name(args.entry_name) if args.entry_name
+            else DEFAULT_ENTRY if args.mode == "init" else None,
         )
         files = files_for(inputs)
         if args.mode == "migrate" and (root / PROFILE_PATH).exists():
@@ -894,6 +1092,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise InitError(f"{PROFILE_PATH} cannot be skipped")
             for path in requested_skip:
                 del files[path]
+        readme = None
+        if args.mode == "init" and not (root / "README.md").exists():
+            files[Path("README.md")] = f"# {inputs.name}\n\n{readme_block(inputs.entry_launcher)}"
+        elif args.readme_entry:
+            readme = readme_plan(root, inputs.name, inputs.entry_launcher)
         create, collisions, symlinked = plan_writes(
             root, files, skip_symlinked_parents=args.mode == "migrate"
         )
@@ -917,7 +1120,7 @@ def main(argv: list[str] | None = None) -> int:
         replace = [path for path in collisions if path in requested_replace]
         preserved = [path for path in collisions if path not in requested_replace]
         pack = contract_pack()
-        baseline = content_baseline(pack, files, [*create, *replace])
+        baseline = content_baseline(pack, files, [*create, *replace], inputs.entry_launcher)
         if args.mode == "init":
             applied = bool(args.apply and not collisions)
             if applied:
@@ -933,6 +1136,10 @@ def main(argv: list[str] | None = None) -> int:
                     except OSError:
                         pass
             ok = True
+        if applied and inputs.entry_launcher and Path(inputs.entry_launcher) in [*create, *replace]:
+            os.chmod(root / inputs.entry_launcher, 0o755)
+        if applied and readme:
+            _atomic_write(root / readme["path"], readme["text"])
         if applied and pack is not None and baseline:
             write_content_lock(root, pack, baseline)
         result = {
@@ -947,6 +1154,8 @@ def main(argv: list[str] | None = None) -> int:
             "retire": [str(path) for path in retire],
             "profile_upgraded_from": str(LEGACY_PROFILE_PATH) if retire else None,
             "runtime": runtime_status,
+            "entry": {"launcher": inputs.entry_launcher, "command": entry_command(inputs.entry_launcher)},
+            "readme": readme["action"] if readme else ("create" if Path("README.md") in create else "untouched"),
             "content_lock": {
                 "path": str(CONTENT_LOCK_PATH),
                 "pack": f"{pack['id']}@{pack['version']}",

@@ -61,11 +61,11 @@ python3 runtime/case.py --project <项目> validate
 `runtime/assets.py` 把 Case 与额外扫描根下的文件登记成一份只读台账，回答“文件在哪、属于哪个 Case、有哪些版本、谁引用它、改动会波及谁”。`runtime/wf.py` 是同一台账的人用入口，不需要 Agent。
 
 ```bash
-python3 runtime/assets.py --project <项目> find 周报 9月1号      # 标题、文件名、日期与同义词；同系列版本归为一组
+python3 runtime/assets.py --project <项目> find 笔记 9月1号      # 标题、文件名、日期与同义词；同系列版本归为一组
 python3 runtime/assets.py --project <项目> find 方案 --ext xlsx --kind deliverable --in alpha
 python3 runtime/assets.py --project <项目> refs cases/<CASE-ID>/docs/report.md --depth 2
 python3 runtime/assets.py --project <项目> check                 # 无人认领的交付物、断链、跨容器重复、上游更新
-python3 runtime/wf.py 周报 9月1号                                 # 在项目内任意目录运行；o1 打开、v1 看版本、r1 看引用
+python3 runtime/wf.py 笔记 9月1号                                 # 在项目内任意目录运行；o1 打开、v1 看版本、r1 看引用
 ```
 
 - 扫描范围：Case 根取 `work.case.root`（缺省 `cases`）；`work.assets.roots` 可追加项目内的额外根（例如 `["projects"]`），每个一级子目录视为一个容器；未声明时只扫 Case 根，没有 Project Profile 时按缺省值运行。Case 内文件按 `docs/`、`docs/drafts/`、`refs/`、`data/` 等目录推断角色；`CASE.md` 的 `deliverables` / `evidence` 视为声明引用，正文中的 Markdown 链接、wikilink、反引号路径、Case 编号与旧 Task 路径（`legacy_ids`）都会建立引用边。开头带 `<!-- derived:` 标记的生成视图不作为引用来源。
@@ -74,6 +74,67 @@ python3 runtime/wf.py 周报 9月1号                                 # 在项�
 - 状态与写入：台账为 SQLite，位于 `$XDG_CACHE_HOME/agenthelm/assets/<项目摘要>/`（缺省 `~/.cache`），文件清单未变时重建为 no-op；`wf` 的“上一次结果”也存于此。两者都不写项目，缓存目录落在项目内时拒绝运行。
 - 平台：macOS 上 iCloud 未下载的文件（dataless）只登记元数据，不读取、不算哈希；`wf` 的打开、在 Finder 中显示、复制路径调用 `open` / `pbcopy`，其他平台或命令缺失时打印绝对路径。
 - 两个命令都接受 `--project` 与 `--output json`，写在子命令前后均可；查找结果以文件本身与 CASE.md 为准，台账只是可重建的投影。
+
+## 项目入口（不需要 AI Agent）
+
+`runtime/project_cli.py` 是面向人的项目菜单，经 `agenthelm project` 或项目根目录的启动器（`agents-init` 生成，缺省名 `menu`）打开。它不调用模型，不需要 AI 客户端，按想做的事组织：
+
+| 菜单 | 子命令 | 来源 |
+|---|---|---|
+| 找资料 | `find <词…>`、`open <路径>`、`refs <路径>` | 交付物台账（上一节），首次查找时建立 |
+| 看进展 | `progress [词]`、`show <事项>` | 各 `CASE.md`，或下文的项目事项工具 |
+| 项目指南 | `guide` | Profile 的 `entry`、README 开头一段与目录结构 |
+| 检查项目与环境 | `health` | 运行环境、入口、索引、事项记录、记忆、项目工具；经 agent-pack 检查插件、模板、规则与运行时 |
+| 修复与更新 | `fix [项…]` | 重建索引、更新插件、更新模板（改过的文件逐个保留或采用）、安装或更新运行时、补上入口 |
+| 记录事项 | `record <事项|new>` | 默认 Case 工具或项目事项工具的写接口 |
+| 项目工具 | `tools [工具]` | 项目在 tools.json 声明的操作 |
+
+约定：
+
+- 写入类子命令默认只预览，`--apply` 才执行；菜单里输入 `yes` 才执行。执行后回读验证，并给出恢复位置。
+- 记录事项写入前核对 `CASE.md` 的内容摘要与 `updated_at`，别人在预览之后改过就拒绝写入。未知字段与其他小节原样保留。
+- 结果只呈现已记录的事实，不推断优先级、重要性或是否完成。
+- 非交互时从不等待输入；`--output json` 输出 `{"ok", "attention", "exit_code", "command", "demo", "data"}`，出错时为 `error: {code, message, next}`。
+- 退出码：0 成功；1 没有结果或有必须处理的项；2 用法错误；3 运行时缺失或与项目入口不兼容；4 能力当前不可用；5 写入冲突；6 执行失败；130 中断。
+- `--offline` 不联网：版本检查只用缓存并标注缓存时间，需要联网的维护只预览。
+- `--demo study|personal|research|blank` 使用内置的虚构项目，结果都标注「演示」，不读写真实文件。
+- 打开、显示所在目录、复制路径：macOS 用 `open` / `pbcopy`；Linux 用 `xdg-open` 与 `wl-copy` / `xclip` / `xsel`（未在桌面环境逐一验证）；做不到时打印绝对路径。设置 `AGENTHELM_OPEN=print` 总是只打印路径。
+
+### 项目入口适配
+
+项目在 Profile 的 `entry` 段声明自己的情况，公共代码不写死任何项目：
+
+```json
+"entry": {
+  "api": 1,
+  "launcher": "menu",
+  "about": "一句话说明项目做什么",
+  "guide": "docs/START.md",
+  "where": [{"label": "观察记录", "path": "observations/"}],
+  "start": ["先看进行中的事项", "需要资料用「找资料」"],
+  "tools": ".agents/moe.sakanano.agent-pack/tools.json",
+  "items": {"command": ["python3", "tools/items.py"], "write": false,
+            "status_map": {"进行中": "active", "待复核": "waiting", "归档": "done"}}
+}
+```
+
+**项目事项工具（`entry.items`）**：项目用自己的工具管理事项时声明它，`command` 是参数列表，不经过 shell，在项目根目录运行。
+
+- 只读接口（必需）：`<command> list --all --output json` 返回 `{"items": [...]}`。每项可含 `id`、`title`、`status`、`goal`、`next_action`、`waiting_for`、`resume_when`、`last_record: {at, text}`、`deliverables`、`aliases`、`legacy_ids`、`updated_at`、`path`（权威记录的项目相对路径）。`status_map` 把项目自己的状态名映射到 `active` / `waiting` / `captured` / `suspended` / `done` / `abandoned`，没映射的显示为“其他状态”。
+- 写接口（可选，`write: true` 才启用）：`<command> new --title … --goal … [--next-action …]` 与 `<command> update <id> [--log …] [--next-action …] [--waiting-for …] [--status …] [--add-deliverable <路径>] [--expect-updated-at <值>]`，都追加 `--output json`。带 `--dry-run` 时只返回 `{"preview": [行…], "path": …}`，不写；`updated_at` 不一致时以非零退出并返回 `{"code": "conflict"}`。
+- 没有声明写接口时，记录事项显示为不可用并说明缺口，入口不会绕过项目工具直接改文件。Profile 只有 `work.case.command`、没有 `entry.items` 时，进展仍按 `CASE.md` 读取，写入同样让位给项目工具。
+
+**项目工具（tools.json）**：
+
+```json
+{"schema_version": 1, "tools": [
+  {"id": "export-csv", "title": "导出观察表", "description": "把全部记录导出为 CSV",
+   "command": ["python3", "tools/obs.py", "export"], "writes": ["exports/"],
+   "network": false, "requires": {"commands": ["python3"], "env": []}}
+]}
+```
+
+只列出声明且当前可用的工具；缺命令、缺环境变量（账号令牌等只写变量名）或离线时显示为不可用并写明原因。打开菜单时从不运行任何工具；执行前展示完整命令、是否联网、需要的账号与写入范围，由人确认。私有实现与配置留在项目里。
 
 ## 迁移工具
 

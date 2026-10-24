@@ -2,18 +2,18 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-10-23",
+  "released_at": "2026-10-25",
   "plugins": {
     "agent-pack": {
-      "version": "1.6.3",
+      "version": "1.7.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.5.0",
+      "version": "6.6.0",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
-          "version": "1.0.0",
+          "version": "1.1.0",
           "kind": "template"
         }
       }
@@ -29,7 +29,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.7.0",
+      "version": "1.8.0",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -37,7 +37,7 @@
           "kind": "sample"
         },
         "project-orchestrator/asset-synonyms": {
-          "version": "1.0.0",
+          "version": "1.1.0",
           "kind": "sample"
         }
       }
@@ -122,6 +122,44 @@
       "summary": "自动找到 ChatGPT.app 自带的 Codex 命令行；migrate 一并清理 Codex 的旧 @personal 插件缓存；check 把旧方式安装单独列为待迁移，不再算作可更新。",
       "actions": [
         "Codex 命令行不在 PATH 时可用 AGENTHELM_CODEX / AGENTHELM_CLAUDE 指定"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.7.0",
+      "to": "1.8.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-25",
+      "summary": "新增不需要 AI Agent 的项目入口 runtime/project_cli.py（找资料、看进展、项目指南、检查、修复与更新、记录事项、项目工具，含 --demo 演示）；case.py 新增 plan_create / plan_update 与 --expect-sha256；同义词示例改为场景中立的词组。",
+      "actions": [
+        "已初始化的项目可运行 agenthelm project 打开菜单；生成根目录启动器见 agents-init 6.6.0 的 --mode entry",
+        "项目自己的事项工具要在菜单里显示，按 case-workspaces.md「项目入口适配」声明 entry.items"
+      ]
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.6.3",
+      "to": "1.7.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-25",
+      "summary": "新增 agenthelm runtime（install / update / use / status）用户级运行时与 agenthelm project 入口；npm 包携带全部四个插件的发布内容。",
+      "actions": [
+        "想脱离 AI 客户端与 npx 使用：运行一次 npx @sakanano-moe/agenthelm runtime install --apply（离线用 --source <发布包>）"
+      ]
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.5.0",
+      "to": "6.6.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-25",
+      "summary": "新项目默认生成根目录启动器 menu（--entry-name 可改、--no-entry 不生成）、Profile 的 entry 段与 README「怎样使用」；新增 --mode entry 为已初始化的项目补上入口；AGENTS.md 模板增加「人用入口」；项目契约模板内容包 1.1.0。",
+      "actions": [
+        "已初始化的项目：--mode entry --entry-name <名称> 预览后 --apply；已有同名文件用 --keep / --accept 选择",
+        "模板更新时 AGENTS.md 若改过，在 agenthelm update 里逐个选择 --keep 或 --accept"
       ]
     }
   ]

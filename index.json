@@ -4,14 +4,14 @@
     "name": "agenthelm",
     "description": "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。",
     "version": "0.7.0",
-    "updated_at": "2026-10-23",
+    "updated_at": "2026-10-25",
     "homepage": "./index.html",
     "domain": "agenthelm.sakanano.moe",
     "legacy_domain": "skill.sakanano.moe"
   },
   "plugin": {
     "manifest": "./plugins/agents-init/plugin.json",
-    "version": "6.5.3",
+    "version": "6.6.0",
     "install_unit": "marketplace",
     "bundled_plugins": [
       "./plugins/project-orchestrator/plugin.json",
@@ -30,7 +30,7 @@
       "id": "agents-init",
       "name": "agents-init v6 / Project Profile 初始化与迁移",
       "description": "创建或迁移项目骨架；写入前验证同包 project-orchestrator、agent-pack 与 opinion-manager。",
-      "version": "6.5.0",
+      "version": "6.6.0",
       "status": "stable",
       "entrypoints": {
         "browser": "./plugins/agents-init/skills/agents-init/index.html",
@@ -42,20 +42,20 @@
     {
       "id": "project-orchestrator",
       "name": "project-orchestrator / 项目生命周期编排",
-      "description": "按项目模式组织 Case 工作目录或兼容既有 Task/Case；提供检索、无损迁移、验证与受控 Git 交付。",
-      "version": "1.7.0",
+      "description": "按项目模式组织 Case 工作目录或兼容既有 Task/Case；提供检索、无损迁移、验证与受控 Git 交付；附不需要 AI Agent 的项目入口（找资料、看进展、指南、检查、维护与记录）。",
+      "version": "1.8.0",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",
         "metadata": "./plugins/project-orchestrator/plugin.json",
-        "runtime": "./plugins/project-orchestrator/runtime/memory.py"
+        "runtime": "./plugins/project-orchestrator/runtime/project_cli.py"
       }
     },
     {
       "id": "agent-pack",
       "name": "agent-pack / Agent 扩展能力管理",
-      "description": "在项目与 Codex / Cursor / Claude 之间盘点、校验、安装、同步、迁移与对账 Plugin、Skill、MCP。",
-      "version": "1.6.3",
+      "description": "在项目与 Codex / Cursor / Claude 之间盘点、校验、安装、同步、迁移与对账 Plugin、Skill、MCP；agenthelm 命令行与用户级运行时。",
+      "version": "1.7.0",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/agent-pack/skills/agent-pack/SKILL.md",

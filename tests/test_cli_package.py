@@ -25,12 +25,21 @@ class CliPackageTests(unittest.TestCase):
     def test_launcher_runs_the_plugin_runtime(self) -> None:
         subprocess.run(["node", "scripts/sync-runtime.mjs"], cwd=PACKAGE, check=True)
         runtime = PACKAGE / "runtime"
-        for script in (ROOT / "plugins/agent-pack/runtime").glob("*.py"):
-            self.assertEqual((runtime / script.name).read_bytes(), script.read_bytes(), script.name)
+        # The package carries the whole release content: index.json and every plugin, minus tests.
+        self.assertEqual((runtime / "index.json").read_bytes(), (ROOT / "index.json").read_bytes())
+        for plugin in ("agent-pack", "agents-init", "opinion-manager", "project-orchestrator"):
+            for script in (ROOT / "plugins" / plugin / "runtime").glob("*.py"):
+                copied = runtime / "plugins" / plugin / "runtime" / script.name
+                self.assertEqual(copied.read_bytes(), script.read_bytes(), f"{plugin}/{script.name}")
+            self.assertFalse((runtime / "plugins" / plugin / "tests").exists(), plugin)
         result = subprocess.run(["node", "bin/agenthelm.js", "check", "--help"], cwd=PACKAGE,
                                 capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--hook", result.stdout)
+        demo = subprocess.run(["node", "bin/agenthelm.js", "project", "--demo", "blank", "guide"], cwd=PACKAGE,
+                              capture_output=True, text=True, check=False, input="")
+        self.assertEqual(demo.returncode, 0, demo.stderr)
+        self.assertIn("项目指南", demo.stdout)
 
 
 if __name__ == "__main__":

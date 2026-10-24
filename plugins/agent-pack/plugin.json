@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agent-pack",
-  "version": "1.6.3",
+  "version": "1.7.0",
   "description": "Deterministic Agent-extension capability management: inventory, doctor, bootstrap, sync, transfer, and reconcile Agent Plugins / Skills / MCP servers across Codex, Cursor, Claude Code, and project sources. Ships a stdio MCP.",
   "author": {
     "name": "lc4t"

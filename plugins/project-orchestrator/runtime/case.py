@@ -9,6 +9,7 @@ Case 根目录与 CASE.md 拒绝符号链接。
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -235,8 +236,7 @@ def clean(value: str | None, label: str, *, required: bool = False) -> str:
 
 # ---------------------------------------------------------------- commands
 
-def create(project: Project, args: argparse.Namespace) -> dict:
-    project.require_writable()
+def _new_case_fields(project: Project, args: argparse.Namespace) -> tuple[str, dict]:
     slug = clean(args.slug, "--slug", required=True)
     if not SLUG_RE.fullmatch(slug) or CREDENTIAL_RE.search(slug):
         raise CaseError("--slug 只能用小写字母、数字和连字符，且不能含凭据类词语")
@@ -249,11 +249,53 @@ def create(project: Project, args: argparse.Namespace) -> dict:
         "source": clean(args.source, "--source"),
         "current_state": clean(args.current_state, "--current-state") or "刚创建",
     }
+    return slug, fields
+
+
+def _render_new_case(project: Project, args: argparse.Namespace, fields: dict, case_id: str,
+                     stamp: str) -> str:
+    data = {"schema_version": "1.0", "id": case_id, "title": fields["title"], "status": args.status,
+            "sensitivity": "shared", "source": fields["source"], "goal": fields["goal"],
+            "done_when": fields["done_when"], "current_state": fields["current_state"],
+            "next_action": fields["next_action"], "artifact_mode": "case-local",
+            "aliases": [], "legacy_ids": [], "tags": sorted(set(args.tag)), "deliverables": [], "evidence": [],
+            "created_at": stamp, "updated_at": stamp}
+    data = {key: value for key, value in data.items() if key in project.schema.get("properties", data)}
+    errors = validate_schema(data, project.schema)
+    if errors:
+        raise CaseError("新 Case 不符合 Schema：" + "；".join(errors), "schema")
+    body = TEMPLATE.read_text(encoding="utf-8")
+    for key, value in {**fields, "created_at": stamp}.items():
+        body = body.replace("{{" + key + "}}", value or "待明确")
+    return render_frontmatter(data) + "\n" + body
+
+
+def _today_sequences(project: Project, today: str) -> list[int]:
+    if not project.case_root.is_dir():
+        return []
+    return [int(match.group(2)) for path in project.case_root.iterdir()
+            if (match := CASE_DIR_RE.fullmatch(path.name)) and match.group(1) == today]
+
+
+def plan_create(project: Project, args: argparse.Namespace) -> tuple[str, str]:
+    """The Case id and CASE.md text ``create`` would write now; writes nothing.
+
+    The id is a forecast: a concurrent create may take the sequence first, and then
+    ``create`` uses the next free one.
+    """
+    project.require_writable()
+    slug, fields = _new_case_fields(project, args)
+    today = datetime.now().astimezone().strftime("%Y%m%d")
+    case_id = f"CASE-{today}-{max(_today_sequences(project, today), default=0) + 1:03d}-{slug}"
+    return case_id, _render_new_case(project, args, fields, case_id, now())
+
+
+def create(project: Project, args: argparse.Namespace) -> dict:
+    project.require_writable()
+    slug, fields = _new_case_fields(project, args)
     project.case_root.mkdir(parents=True, exist_ok=True)
     today = datetime.now().astimezone().strftime("%Y%m%d")
-    used = [int(match.group(2)) for path in project.case_root.iterdir()
-            if (match := CASE_DIR_RE.fullmatch(path.name)) and match.group(1) == today]
-    for sequence in range(max(used, default=0) + 1, 1000):
+    for sequence in range(max(_today_sequences(project, today), default=0) + 1, 1000):
         case_id = f"CASE-{today}-{sequence:03d}-{slug}"
         directory = project.case_root / case_id
         try:
@@ -263,23 +305,13 @@ def create(project: Project, args: argparse.Namespace) -> dict:
             continue
     else:
         raise CaseError("今天的 Case 序号已用完", "sequence-exhausted")
-    stamp = now()
-    data = {"schema_version": "1.0", "id": case_id, "title": fields["title"], "status": status,
-            "sensitivity": "shared", "source": fields["source"], "goal": fields["goal"],
-            "done_when": fields["done_when"], "current_state": fields["current_state"],
-            "next_action": fields["next_action"], "artifact_mode": "case-local",
-            "aliases": [], "legacy_ids": [], "tags": sorted(set(args.tag)), "deliverables": [], "evidence": [],
-            "created_at": stamp, "updated_at": stamp}
-    data = {key: value for key, value in data.items() if key in project.schema.get("properties", data)}
-    errors = validate_schema(data, project.schema)
-    if errors:
+    try:
+        text = _render_new_case(project, args, fields, case_id, now())
+    except CaseError:
         directory.rmdir()
-        raise CaseError("新 Case 不符合 Schema：" + "；".join(errors), "schema")
-    body = TEMPLATE.read_text(encoding="utf-8")
-    for key, value in {**fields, "created_at": stamp}.items():
-        body = body.replace("{{" + key + "}}", value or "待明确")
-    write_atomic(directory / "CASE.md", render_frontmatter(data) + "\n" + body)
-    return {"ok": True, "id": case_id, "path": project.relative(directory / "CASE.md"), "status": status}
+        raise
+    write_atomic(directory / "CASE.md", text)
+    return {"ok": True, "id": case_id, "path": project.relative(directory / "CASE.md"), "status": args.status}
 
 
 def summary(project: Project, directory: Path) -> dict:
@@ -323,11 +355,16 @@ def append_section(body: str, heading: str, line: str) -> str:
     return body[:section_start] + "\n" + section + "\n\n" + body[end:].lstrip("\n")
 
 
-def update(project: Project, args: argparse.Namespace) -> dict:
+def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, str, dict]:
+    """(path, current text, new text, result) for an update; writes nothing."""
     project.require_writable()
     directory = project.find(args.case)
     path = directory / "CASE.md"
     data, body = read_case(path)
+    current = path.read_text(encoding="utf-8")
+    expected_digest = getattr(args, "expect_sha256", None)
+    if expected_digest and hashlib.sha256(current.encode("utf-8")).hexdigest() != expected_digest:
+        raise CaseError("Case 在预览之后被修改过（内容摘要不一致），请重新读取", "conflict")
     if args.expect_updated_at and data.get("updated_at") != args.expect_updated_at:
         raise CaseError("Case 已被其他人修改（updated_at 不一致），请重新读取", "conflict")
     stamp = now()
@@ -368,9 +405,18 @@ def update(project: Project, args: argparse.Namespace) -> dict:
     errors = validate_schema(data, project.schema)
     if errors:
         raise CaseError("更新后不符合 Schema：" + "；".join(errors), "schema")
-    write_atomic(path, render_frontmatter(data) + body)
-    return {"ok": True, "id": data["id"], "changed": sorted(set(changed)), "updated_at": stamp,
-            "path": project.relative(path)}
+    return path, current, render_frontmatter(data) + body, {
+        "ok": True, "id": data["id"], "changed": sorted(set(changed)), "updated_at": stamp,
+        "path": project.relative(path)}
+
+
+def update(project: Project, args: argparse.Namespace) -> dict:
+    path, current, text, result = plan_update(project, args)
+    # Re-read right before replacing: a write that landed after planning must not be lost.
+    if path.read_text(encoding="utf-8") != current:
+        raise CaseError("Case 刚被其他人修改，请重新读取", "conflict")
+    write_atomic(path, text)
+    return result
 
 
 def _replace_section(body: str, heading: str, text: str) -> str:
@@ -456,6 +502,7 @@ def parser() -> argparse.ArgumentParser:
     change.add_argument("--add-tag", action="append", default=[])
     change.add_argument("--add-alias", action="append", default=[])
     change.add_argument("--expect-updated-at", help="只在 updated_at 等于该值时写入，避免覆盖并发修改")
+    change.add_argument("--expect-sha256", help="只在 CASE.md 内容摘要等于该值时写入（比 updated_at 更严格）")
     check = command("validate", "按 Schema 校验 Case")
     check.add_argument("case", nargs="?")
     return result
