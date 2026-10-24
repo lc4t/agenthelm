@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "groups": [
-    ["周报", "weekly report", "weekly"],
-    ["月报", "monthly report", "monthly"],
-    ["纪要", "minutes", "meeting notes"]
+    ["笔记", "notes", "note"],
+    ["报告", "report", "总结"],
+    ["照片", "photo", "图片", "image"]
   ]
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """agenthelm：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 插件。
 
-``check`` 只读：比较各客户端已安装的插件版本、项目里由模板渲染的文件，
+``project`` 打开不需要 AI Agent 的项目自助入口（由 project-orchestrator 实现）；``runtime``
+管理用户级运行时。``check`` 只读：比较各客户端已安装的插件版本、项目里由模板渲染的文件，
 以及 Opinion 来源与云端 ``latest.json``。``install``、``update``、``migrate``
 默认只预览，``--apply`` 才执行。通过 ``npx @sakanano-moe/agenthelm <命令>`` 或
 ``python3 <agent-pack>/runtime/agenthelm.py <命令>`` 运行。``--hook`` 供会话开始时静默调用：
@@ -1003,6 +1004,10 @@ def parser() -> argparse.ArgumentParser:
     doctor_parser = sub.add_parser("doctor", help="报告重复安装、版本不一致、旧方式残留与检查开关")
     common(doctor_parser)
 
+    sub.add_parser("runtime", add_help=False,
+                   help="用户级运行时：install / update / use / status（日常只需要 Python，不经过 npx）")
+    sub.add_parser("project", add_help=False,
+                   help="项目自助入口：找资料、看进展、项目指南、检查（不需要 AI Agent；详见 project --help）")
     locate_parser = sub.add_parser("locate", help="输出插件的已安装位置（最新优先），供下游脚本查找")
     locate_parser.add_argument("plugin")
     locate_parser.add_argument("--version", help="只要这个版本")
@@ -1034,7 +1039,43 @@ def _print_steps(results: list[dict], apply: bool) -> None:
         print("以上为预览；确认后追加 --apply 执行。")
 
 
+def run_project(argv: list[str]) -> int:
+    """``agenthelm project``: hand over to project-orchestrator's project entry, which owns it."""
+    installed = installed_plugins(current_env(), {"project-orchestrator"})
+    copies = [PLUGIN_ROOT.parent / "project-orchestrator", *(Path(item["path"]) for item in installed)]
+    # Older copies predate the project entry; only those that ship it count.
+    usable = [path for path in copies if (path / "runtime" / "project_cli.py").is_file()]
+    if not usable:
+        stale = any((path / "plugin.json").is_file() for path in copies)
+        found = "（已安装的 project-orchestrator 版本过旧）" if stale else ""
+        print(f"agenthelm project 需要 project-orchestrator 的项目入口，但没有找到{found}。\n"
+              f"  · 更新插件：{CLI} update，或从发布包安装运行时（见 INSTALL.md）", file=sys.stderr)
+        return 3
+    # Prefer the copy shipped next to this agent-pack (same release), then the newest installed one.
+    sibling = PLUGIN_ROOT.parent / "project-orchestrator"
+    newest = sibling if sibling in usable else \
+        max(usable, key=lambda path: version_key(_manifest_version(path) or "") or (0,))
+    sys.path.insert(0, str(newest / "runtime"))
+    import project_cli  # noqa: PLC0415  located at run time
+
+    project_cli.HOST = sys.modules[__name__]
+    return project_cli.main(argv)
+
+
+def run_runtime(argv: list[str]) -> int:
+    """``agenthelm runtime``: the user-level runtime that project launchers use without any AI client."""
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
+
+    return agenthelm_runtime.main(argv, sys.modules[__name__])
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["project"]:
+        return run_project(argv[1:])
+    if argv[:1] == ["runtime"]:
+        return run_runtime(argv[1:])
     args = parser().parse_args(argv)
     env = current_env(args.home)
     home = env.home

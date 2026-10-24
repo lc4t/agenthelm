@@ -110,6 +110,37 @@
         }
       }
     },
+    "entry": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "人用入口：不经过 AI Agent 打开项目菜单。缺省时仍可用 agenthelm project。",
+      "properties": {
+        "api": {"type": "integer", "minimum": 1, "description": "项目入口的接口版本；运行时不支持时启动器提示更新"},
+        "launcher": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "description": "根目录启动器的文件名"},
+        "about": {"type": "string"},
+        "guide": {"$ref": "#/$defs/relativePath"},
+        "tools": {"$ref": "#/$defs/relativePath"},
+        "where": {
+          "type": "array",
+          "items": {"type": "object", "required": ["label", "path"],
+                    "properties": {"label": {"type": "string"}, "path": {"type": "string"}}}
+        },
+        "start": {"$ref": "#/$defs/stringArray"},
+        "items": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["command"],
+          "properties": {
+            "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "write": {"type": "boolean"},
+            "status_map": {
+              "type": "object",
+              "additionalProperties": {"enum": ["active", "waiting", "captured", "suspended", "done", "abandoned"]}
+            }
+          }
+        }
+      }
+    },
     "privacy": {
       "type": "object",
       "additionalProperties": true,

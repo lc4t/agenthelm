@@ -21,7 +21,7 @@ description: 初始化仓库或将既有仓库迁移到 agents-init v6 项目骨
 
 ## 必读材料
 
-初始化或迁移项目前，完整读取 [AGENT.template.md](AGENT.template.md)。它是 v6.4 骨架契约、中文生成模板与迁移指南，也是初始化器生成 Markdown 的唯一权威源。
+初始化或迁移项目前，完整读取 [AGENT.template.md](AGENT.template.md)。它是 v6.6 骨架契约、中文生成模板与迁移指南，也是初始化器生成 Markdown 的唯一权威源。
 
 本 Skill 需要同一市场的 `project-orchestrator`、`agent-pack` 与 `opinion-manager` 一并安装。初始化器在 agents-init 旁边查找它们：仓库与 Cursor 本地插件为同级目录，Claude Code 与 Codex 为插件缓存中的同市场目录。找不到时停止初始化并报告 `runtime-required`，引导用户从 agenthelm 市场安装缺少的 Plugin；禁止生成一个无法执行的项目契约。
 
@@ -51,6 +51,15 @@ python3 scripts/init_project.py --project /path/to/project \
   --stack python --runtime local --agent-cli codex --apply
 ```
 
+新项目默认在根目录生成启动器 `menu`（人不经过 Agent 打开项目菜单），并在 Profile 写入 `entry` 段；用户想用别的名字时传 `--entry-name <名称>`，不要启动器时传 `--no-entry`。README.md 不存在时新建并写入「怎样使用」，已存在的不改动。
+
+为已初始化的项目补上入口只用 `--mode entry`，它只涉及 Profile 的 `entry` 段、启动器与内容锁；根目录已有同名文件时视为用户的文件，必须由用户选择 `--keep` 或 `--accept`（替换前备份到 `--recovery-dir`）：
+
+```bash
+python3 scripts/init_project.py --project /path/to/project --mode entry --entry-name menu
+python3 scripts/init_project.py --project /path/to/project --mode entry --entry-name menu --readme-entry --apply
+```
+
 迁移既有项目时，保留所有碰撞文件，只显式替换已审阅的路径。替换或退役旧 Profile 必须指定项目外恢复目录：
 
 ```bash
@@ -65,6 +74,8 @@ python3 scripts/init_project.py --mode migrate --project /path/to/project \
 v6 基线结构如下：
 
 ```text
+README.md        # 不存在时新建
+menu             # 根目录启动器（--entry-name 可改，--no-entry 不生成）
 AGENTS.md
 AGENT.RULES.md
 OPINION.md
