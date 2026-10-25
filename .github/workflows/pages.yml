@@ -55,6 +55,8 @@ jobs:
         uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: _site
+          # v4 起默认排除以点开头的路径；站点要发布 .claude-plugin/marketplace.json。
+          include-hidden-files: true
 
   deploy:
     name: Deploy to GitHub Pages
