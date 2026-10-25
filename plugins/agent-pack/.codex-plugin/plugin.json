@@ -1,6 +1,6 @@
 {
   "name": "agent-pack",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Deterministic Agent-extension capability management for configured workspaces.",
   "author": {
     "name": "lc4t"
@@ -9,11 +9,18 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Agent Pack",
-    "shortDescription": "盘点 / 校验 / 安装 / 同步 / 迁移 Agent Plugin、Skill 与 MCP",
-    "longDescription": "确定性的 Agent 扩展能力管理器：在项目、插件目录与 Codex / Cursor 客户端之间 inventory / doctor / bootstrap / sync / transfer / reconcile。所有写操作默认 dry-run，重名与含密钥的 MCP 条目失败关闭。项目生命周期（Task/Case/路由/验证/Git）由 project-orchestrator 承担，不在本包内。",
+    "shortDescription": "Inventory, verify, install, sync and migrate Agent Plugins, Skills and MCP servers",
+    "longDescription": "Deterministic Agent-extension capability manager: inventory / doctor / bootstrap / sync / transfer / reconcile across projects, plugin directories and Codex / Cursor clients. Writes default to dry-run; name clashes and MCP entries that contain secrets fail closed. The project lifecycle (Task/Case/routing/verification/Git) belongs to project-orchestrator, not this plugin. Also ships the agenthelm command line and the user-level runtime. 中文：确定性的 Agent 扩展能力管理器：在项目、插件目录与 Codex / Cursor 客户端之间 inventory / doctor / bootstrap / sync / transfer / reconcile。所有写操作默认 dry-run，重名与含密钥的 MCP 条目失败关闭。项目生命周期（Task/Case/路由/验证/Git）由 project-orchestrator 承担，不在本包内。",
     "developerName": "lc4t",
     "category": "Developer Tools",
-    "capabilities": ["capability-inventory", "capability-doctor", "plugin-bootstrap", "client-sync", "skill-transfer", "capability-reconcile"],
+    "capabilities": [
+      "capability-inventory",
+      "capability-doctor",
+      "plugin-bootstrap",
+      "client-sync",
+      "skill-transfer",
+      "capability-reconcile"
+    ],
     "defaultPrompt": "Use $agent-pack to inventory this project's Agent Plugins, Skills, and MCP servers and report drift against the declared contract."
   }
 }

@@ -116,5 +116,48 @@
       "已初始化的项目：--mode entry --entry-name <名称> 预览后 --apply；已有同名文件用 --keep / --accept 选择",
       "模板更新时 AGENTS.md 若改过，在 agenthelm update 里逐个选择 --keep 或 --accept"
     ]
+  },
+  {
+    "plugin": "agent-pack",
+    "from": "1.7.0",
+    "to": "1.8.0",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-10-25",
+    "summary": "Claude Code 端补齐：sync / reconcile --client claude（为 Claude 单独生成包，只增删改本包装过的 Skill 与 MCP，旧安装记录指向 Codex 包时自动迁移）；bootstrap --client claude 支持 --skill / --mcp 按组件安装；MCP 条目上的本机认证值（headers / env）默认保留，--reset-overrides 才丢弃；doctor --client 对比客户端与项目，报告缺失、多余、内容不同、悬空与本机覆盖。对外描述改为英文优先。",
+    "actions": [
+      "用 bootstrap 指向 Codex 包装过 Claude 的项目：运行一次 sync --client claude 预览后 --apply，迁到 Claude 自己的包",
+      "想核对客户端与项目是否一致：doctor --project <项目> --client claude（可重复 --client）"
+    ]
+  },
+  {
+    "plugin": "agents-init",
+    "from": "6.6.0",
+    "to": "6.6.1",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-10-25",
+    "summary": "对外描述改为英文优先：插件描述、Codex 插件简介、长描述与默认提示、Skill 触发描述与站点元数据。功能、模板与内容包不变。",
+    "actions": []
+  },
+  {
+    "plugin": "opinion-manager",
+    "from": "0.4.1",
+    "to": "0.4.2",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-10-25",
+    "summary": "对外描述改为英文优先：Codex 插件描述、简介、长描述与默认提示、Skill 触发描述。规则、模板与命令行为不变。",
+    "actions": []
+  },
+  {
+    "plugin": "project-orchestrator",
+    "from": "1.8.0",
+    "to": "1.8.1",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-10-25",
+    "summary": "对外描述改为英文优先：Codex 插件简介与长描述、Skill 触发描述。功能与内容包不变。",
+    "actions": []
   }
 ]

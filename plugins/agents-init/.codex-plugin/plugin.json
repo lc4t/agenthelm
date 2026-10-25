@@ -1,15 +1,15 @@
 {
   "name": "agents-init",
-  "version": "6.6.0",
-  "description": "初始化或迁移 Agent 项目契约；同一分发包附带 project-orchestrator、agent-pack 与 opinion-manager。",
+  "version": "6.6.1",
+  "description": "Initialize or migrate an Agent project contract; ships with project-orchestrator, agent-pack and opinion-manager.",
   "author": {
     "name": "lc4t"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Agents Init",
-    "shortDescription": "初始化或迁移项目骨架与 Project Profile",
-    "longDescription": "用 agents-init 创建或迁移可移植项目契约。project-orchestrator 管理项目生命周期，agent-pack 管理 Plugin/Skill/MCP，opinion-manager 管理用户与 Agent 之间的行为规则；三者作为独立 Plugin 随同分发。",
+    "shortDescription": "Initialize or migrate the project skeleton and Project Profile",
+    "longDescription": "Use agents-init to create or migrate a portable project contract, including a root launcher that opens the project menu without any AI agent. project-orchestrator manages the project lifecycle, agent-pack manages Plugins/Skills/MCP, and opinion-manager manages behavior rules between the user and the Agent; all three ship alongside it as separate plugins. 中文：用 agents-init 创建或迁移可移植项目契约（含不需要 AI Agent 就能打开项目菜单的根目录启动器）。project-orchestrator 管理项目生命周期，agent-pack 管理 Plugin/Skill/MCP，opinion-manager 管理用户与 Agent 之间的行为规则；三者作为独立 Plugin 随同分发。",
     "developerName": "lc4t",
     "category": "Developer Tools",
     "capabilities": [
@@ -17,6 +17,6 @@
       "project-migration",
       "opinion-configuration"
     ],
-    "defaultPrompt": "使用 $agents-init 初始化或迁移项目，并通过 $opinion-manager 配置当前环境的 Agent 行为规则。"
+    "defaultPrompt": "Use $agents-init to initialize or migrate this project, then use $opinion-manager to configure the Agent behavior rules for this environment."
   }
 }

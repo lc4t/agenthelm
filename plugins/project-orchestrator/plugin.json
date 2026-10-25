@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "project-orchestrator",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Portable lifecycle orchestration with Case workspaces, legacy Task/Case compatibility, verified migrations, discovery and scoped Git delivery.",
   "author": {
     "name": "lc4t"
