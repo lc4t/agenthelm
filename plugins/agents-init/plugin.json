@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agents-init",
-  "version": "6.6.0",
-  "description": "初始化或迁移 Agent 项目契约；同一分发包附带 project-orchestrator、agent-pack 与 opinion-manager。",
+  "version": "6.6.1",
+  "description": "Initialize or migrate an Agent project contract (AGENTS.md, Project Profile, root launcher); ships with project-orchestrator, agent-pack and opinion-manager.",
   "author": {
     "name": "lc4t"
   },

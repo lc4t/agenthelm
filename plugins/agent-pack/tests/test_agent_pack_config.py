@@ -396,25 +396,25 @@ class ProjectRuntimeConfigTests(unittest.TestCase):
     def test_reconcile_classifies_and_archives_selected_legacy_skill(self) -> None:
         project = make_project(self.root / "source", "source-project")
         home = self.root / "home"
-        legacy = home / ".cursor" / "skills" / "work-engine"
+        legacy = home / ".cursor" / "skills" / "old-helper"
         legacy.mkdir(parents=True)
         (legacy / "SKILL.md").write_text("# Legacy\n", encoding="utf-8")
         preview = reconcile_project(
-            project, "cursor", home=home, retire_skills=["work-engine"]
+            project, "cursor", home=home, retire_skills=["old-helper"]
         )
-        self.assertTrue(any(item["name"] == "work-engine" for item in preview["states"]["native_only"]))
+        self.assertTrue(any(item["name"] == "old-helper" for item in preview["states"]["native_only"]))
         recovery = self.root / "recovery"
         applied = reconcile_project(
             project,
             "cursor",
             home=home,
-            retire_skills=["work-engine"],
+            retire_skills=["old-helper"],
             recovery_root=recovery,
             apply=True,
         )
         self.assertTrue(applied["applied"])
         self.assertFalse(legacy.exists())
-        self.assertTrue(any(recovery.glob("*/skills/work-engine/SKILL.md")))
+        self.assertTrue(any(recovery.glob("*/skills/old-helper/SKILL.md")))
         second = reconcile_project(project, "cursor", home=home)
         self.assertEqual(second["operations"][0]["action"], "keep-plugin")
 

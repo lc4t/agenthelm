@@ -1,5 +1,36 @@
 # 更新记录
 
+## 2026-10-25 — agenthelm 6.7.0 / Agent Pack 1.8.0：Claude Code 端补齐、对外元数据英文优先
+
+### agent-pack 1.8.0：Claude Code 端
+
+- `sync` / `reconcile --client claude`：
+  - 按项目和 Claude 的 `mcp_client_policy` 单独生成包，放在 `~/.claude/agent-pack/packages/<包名>/`，安装记录改为指向它，不再借用 Codex 的包目录。
+  - `~/.claude/agent-pack/state/<包名>.json` 记下本包装进 Claude 的 Skill 与 MCP。项目增删改会跟着同步，被策略排除的条目会移除；用户自己配置的条目从不改动。
+  - 与用户同名条目冲突时需要 `--replace`。默认只预览；`--apply` 时旧内容进恢复目录，失败整体回滚。
+  - 旧的安装记录指向别的目录（例如用 bootstrap 指向 Codex 包）时，第一次同步自动迁移。此后 Codex 端的包怎么变、是否删除，都不影响 Claude。
+- **本机认证保留**：MCP 条目里本机才有的认证值（`headers` / `env` 中项目没有的键、占位符或凭据类键）在同步、bootstrap 与替换时默认保留；`--reset-overrides` 才丢弃。结果只列出键名，不输出值。替换下来的条目存入 `replaced-mcp.json`，权限 0600。
+- **`bootstrap --client claude` 按组件安装**：新增 `--skill` / `--mcp`（可重复），只处理选中的组件。
+- **`doctor --client codex|cursor|claude`**（可重复）：对比客户端与项目权威，报告缺失、内容不同、本包装过但项目已没有、悬空链接、安装记录依附在别的客户端包上，计入 `issues`；只差本机认证的条目计入 `warnings`；用户自己的条目和被策略排除的条目只列出。不加 `--client` 时行为不变。
+- MCP Tool 同步更新：`agent_pack_sync` / `agent_pack_reconcile` 支持 `claude`，新增 `replace` / `resetOverrides`；`agent_pack_doctor` 新增 `clients`；`agent_pack_bootstrap` 新增 `skills` / `mcps` / `resetOverrides`。
+- 核实：启动器配置文件名 `runtime/<哈希>.json` 按 MCP 名字计算，只改配置不会换名字。真正的风险是 Claude 依附在 Codex 的包上：Codex 端删除某个 MCP 或把它排除后，Claude 的条目会失效，Claude 自己的策略也不生效。这次用 Claude 专属包一并解决。
+- 文档示例里两个出自具体项目的 Skill 名换成通用示例。
+
+### 对外元数据英文优先（i18n 第一步）
+
+注册表、市场与客户端插件列表里显示的文字改为英文在前，并为以后的语言预留扩展。功能、模板与内容包不变；界面多语言在后续版本。
+
+- **npm 包**：描述改英文；README 每种语言一个文件，`README.md`（英文）与 `README.zh-CN.md`（简体中文）开头互相链接，以后加语言只需加文件（此前 npm 页面没有 README）。
+- **市场与插件描述**：市场总描述改英文（由 `scripts/release_meta.py` 生成）；agents-init 插件描述改英文。
+- **Codex 插件界面**：四个插件的简介与默认提示改英文；长描述改为 `English … 中文：…` 分段。opinion-manager 与 project-orchestrator 的 `agents/openai.yaml` 同步改英文。
+- **Skill 触发描述**：四个 SKILL.md 改为 `English … 中文：…` 分段，中英文请求都能匹配；以后的语言按同样格式追加。Skill 正文仍为中文。
+- **llms.txt**：改为英文正文，末尾按“名称 (语言标签): 链接”列出其他语言。站点 `index.json` 的描述改为英文。
+- **测试**：新增 `tests/test_public_metadata.py`，守住以上格式；Skill 描述不得含会破坏 YAML 的 `: `，长度不超过 1024。
+
+### 版本
+
+agent-pack 1.8.0、agents-init 6.6.1、opinion-manager 0.4.2、project-orchestrator 1.8.1；后三者只改描述。不兼容点：无。
+
 ## 2026-10-25 — agenthelm 6.6.0 / Project Orchestrator 1.8.0 / Agent Pack 1.7.0 / Agents Init 6.6.0
 
 不开 AI Agent 也能用：项目根目录的启动器（缺省 `./menu`）打开项目菜单，用于找资料、看进展、读项目指南、检查与维护、记录事项。它不调用模型，不需要 AI 客户端，只需要 Python 3.11+。

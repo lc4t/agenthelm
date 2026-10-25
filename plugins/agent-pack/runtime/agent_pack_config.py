@@ -1019,8 +1019,15 @@ def install_plugin(
     apply: bool = False,
     replace: bool = False,
     recovery_root: Path | None = None,
+    skills: Iterable[str] = (),
+    mcps: Iterable[str] = (),
+    reset_overrides: bool = False,
 ) -> dict[str, Any]:
-    """Bootstrap a portable plugin into a supported client without overwriting."""
+    """Bootstrap a portable plugin into a supported client without overwriting.
+
+    For Claude Code, ``skills`` / ``mcps`` limit the install to those components
+    and local credential values on MCP entries are kept unless ``reset_overrides``.
+    """
     plugin = plugin.expanduser().resolve()
     manifest, issues = validate_plugin_manifest(plugin)
     if issues:
@@ -1030,8 +1037,11 @@ def install_plugin(
     home = (home or Path.home()).expanduser().resolve()
     if client == "claude":
         return _install_plugin_claude(
-            plugin, name, home=home, apply=apply, replace=replace, recovery_root=recovery_root
+            plugin, name, home=home, apply=apply, replace=replace, recovery_root=recovery_root,
+            select_skills=set(skills), select_mcps=set(mcps), reset_overrides=reset_overrides,
         )
+    if skills or mcps:
+        raise AgentPackError("--skill / --mcp selection is supported for the claude client only")
     destination = _client_package_destination(client, home, name)
     action = "install-plugin"
     if destination.exists() or destination.is_symlink():
@@ -1103,6 +1113,9 @@ def _install_plugin_claude(
     apply: bool,
     replace: bool,
     recovery_root: Path | None,
+    select_skills: set[str] | None = None,
+    select_mcps: set[str] | None = None,
+    reset_overrides: bool = False,
 ) -> dict[str, Any]:
     """Install a plugin into Claude Code as live links plus user-scope MCP entries.
 
@@ -1112,24 +1125,42 @@ def _install_plugin_claude(
     record ``~/.claude/agent-pack/plugins/<name>`` (symlink to the source root)
     that inventory uses to report the installed version.
     """
+    import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+
+    select_skills, select_mcps = select_skills or set(), select_mcps or set()
+    selective = bool(select_skills or select_mcps)
     record = _claude_plugin_records(home) / name
     links: list[tuple[str, str, Path, Path]] = [("plugin", name, record, plugin)]
+    available_skills: set[str] = set()
     skills_root = plugin / "skills"
     if skills_root.is_dir() and not skills_root.is_symlink():
         for child in sorted(skills_root.iterdir(), key=lambda item: item.name):
             if child.is_dir() and not child.name.startswith(".") and (child / "SKILL.md").is_file():
-                links.append(("skill", child.name, home / ".claude" / "skills" / child.name, child))
+                available_skills.add(child.name)
+                if not selective or child.name in select_skills:
+                    links.append(("skill", child.name, home / ".claude" / "skills" / child.name, child))
+    unknown_skills = select_skills - available_skills
+    if unknown_skills:
+        raise AgentPackError("plugin has no such Skill: " + ", ".join(sorted(unknown_skills)))
 
     config_path = _claude_user_config(home)
     servers: dict[str, dict[str, Any]] = {}
     mcp_path = plugin / "mcp.json"
     if mcp_path.is_file():
         data_root = home / ".claude" / "agent-pack" / "data" / name
-        for server, raw in sorted(_read_json(mcp_path).get("mcpServers", {}).items()):
+        declared = _read_json(mcp_path).get("mcpServers", {})
+        unknown_mcps = select_mcps - set(declared)
+        if unknown_mcps:
+            raise AgentPackError("plugin has no such MCP server: " + ", ".join(sorted(unknown_mcps)))
+        for server, raw in sorted(declared.items()):
+            if selective and server not in select_mcps:
+                continue
             parsed = _portable_mcp(server, raw)
             if not parsed.portable:
                 raise AgentPackError(f"MCP {server} is not portable: " + "; ".join(parsed.issues))
             servers[server] = _claude_mcp_config(parsed.config, record, data_root)
+    elif select_mcps:
+        raise AgentPackError("plugin has no mcp.json: " + ", ".join(sorted(select_mcps)))
 
     config: dict[str, Any] = {}
     if servers and config_path.exists():
@@ -1151,16 +1182,17 @@ def _install_plugin_claude(
         else:
             action = "link"
         operations.append({"action": f"{action}-{kind}", "client": "claude", "name": item_name, "to": str(path)})
+    entries: dict[str, dict[str, Any]] = {}
     for server, rendered in servers.items():
-        current = existing_servers.get(server)
-        if current is None:
-            action = "add"
-        elif current == rendered:
-            action = "keep"
-        else:
-            action = "replace"
+        state, entries[server], kept = agent_pack_claude.classify_mcp(
+            rendered, existing_servers.get(server), reset=reset_overrides)
+        action = {"differ": "replace"}.get(state, state)
+        if action == "replace":
             conflicts.append(f"mcp {server}: {config_path}")
-        operations.append({"action": f"{action}-mcp", "client": "claude", "name": server, "to": str(config_path)})
+        operation = {"action": f"{action}-mcp", "client": "claude", "name": server, "to": str(config_path)}
+        if kept:
+            operation["kept_overrides"] = kept
+        operations.append(operation)
     if conflicts and not replace:
         raise AgentPackError("Claude client already has different content: " + "; ".join(conflicts))
     result: dict[str, Any] = {"ok": True, "applied": apply, "operations": operations}
@@ -1192,8 +1224,8 @@ def _install_plugin_claude(
             os.symlink(target, path, target_is_directory=True)
             created.append(path)
         changed = {
-            server: rendered for server, rendered in servers.items()
-            if existing_servers.get(server) != rendered
+            server: entry for server, entry in entries.items()
+            if existing_servers.get(server) != entry
         }
         if changed:
             replaced = {server: existing_servers[server] for server in changed if server in existing_servers}
@@ -1287,12 +1319,23 @@ def reconcile_project(
     recovery_root: Path | None = None,
     apply: bool = False,
     retire_only: bool = False,
+    replace: bool = False,
+    reset_overrides: bool = False,
 ) -> dict[str, Any]:
     """Reconcile one project package and explicitly selected legacy components.
 
     ``retire_only`` archives the selected legacy components without installing
-    or replacing the project package itself.
+    or replacing the project package itself. Claude Code is handled by
+    ``agent_pack_claude`` (dedicated package, MCP entries, Skill links);
+    ``replace`` and ``reset_overrides`` only apply there.
     """
+    if client == "claude":
+        import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+
+        return agent_pack_claude.sync_project(
+            project, home=home, apply=apply, replace=replace, reset_overrides=reset_overrides,
+            recovery_root=recovery_root, retire_skills=retire_skills, retire_plugins=retire_plugins,
+            retire_only=retire_only)
     layout = load_project_layout(project)
     authority = inventory_project(layout.root)
     package_name = _package_name(layout.root)
@@ -1402,8 +1445,12 @@ def sync_project(
     *,
     home: Path | None = None,
     apply: bool = False,
+    replace: bool = False,
+    reset_overrides: bool = False,
+    recovery_root: Path | None = None,
 ) -> dict[str, Any]:
-    return reconcile_project(project, client, home=home, apply=apply)
+    return reconcile_project(project, client, home=home, apply=apply, replace=replace,
+                             reset_overrides=reset_overrides, recovery_root=recovery_root)
 
 
 def _update_personal_marketplace(home: Path, package_name: str) -> None:
@@ -1425,7 +1472,81 @@ def _update_personal_marketplace(home: Path, package_name: str) -> None:
     _write_json_atomic(marketplace, payload)
 
 
-def doctor(project: Path) -> dict[str, Any]:
+def _skill_fingerprints(package: Path) -> dict[str, str]:
+    root = package / "skills"
+    if not root.is_dir() or root.is_symlink():
+        return {}
+    found = {}
+    for child in sorted(root.iterdir()):
+        if child.is_dir() and not child.is_symlink() and (child / "SKILL.md").is_file():
+            try:
+                found[child.name] = _tree_fingerprint(child)
+            except AgentPackError:
+                found[child.name] = "unreadable"
+    return found
+
+
+def _package_mcps(package: Path) -> dict[str, Any]:
+    path = package / "mcp.json"
+    if not path.is_file() or path.is_symlink():
+        return {}
+    try:
+        servers = _read_json(path).get("mcpServers", {})
+    except AgentPackError:
+        return {}
+    return servers if isinstance(servers, dict) else {}
+
+
+def client_drift(project: Path, client: str, home: Path | None = None) -> dict[str, Any]:
+    """Compare what a client has installed for this project with the project's authority.
+
+    Codex and Cursor load the project package directory, so the installed package
+    is compared with a freshly built one (Skills, MCP servers, the rest of the
+    files). Claude Code is compared entry by entry by ``agent_pack_claude``.
+    Same-name MCP servers configured by hand in the client are listed as native.
+    """
+    if client == "claude":
+        import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+
+        return agent_pack_claude.drift(project, home)
+    home = (home or Path.home()).expanduser().resolve()
+    layout = load_project_layout(project)
+    authority = inventory_project(layout.root)
+    name = _package_name(layout.root)
+    destination = _client_package_destination(client, home, name)
+    report: dict[str, Any] = {"client": client, "package": name, "missing": [], "different": [], "overrides": [],
+                              "stale": [], "native": [], "excluded": [], "dangling": [], "coupled": None}
+    report["excluded"] = sorted(item.name for item in authority.mcps
+                                if item.portable and not _mcp_allowed(layout, item.name, client))
+    with tempfile.TemporaryDirectory(prefix="agent-pack-drift-") as temporary:
+        expected = _build_package(authority, name, Path(temporary), client)
+        if destination.is_symlink() and not destination.exists():
+            report["dangling"].append(f"package {name}: {destination}")
+        elif not destination.is_dir():
+            report["missing"].append(f"package {name}")
+            report["missing"] += [f"skill {skill}" for skill in _skill_fingerprints(expected)]
+            report["missing"] += [f"mcp {server}" for server in _package_mcps(expected)]
+        elif _tree_fingerprint(expected) != _tree_fingerprint(destination):
+            want, have = _skill_fingerprints(expected), _skill_fingerprints(destination)
+            report["missing"] += [f"skill {skill}" for skill in sorted(set(want) - set(have))]
+            report["stale"] += [f"skill {skill}" for skill in sorted(set(have) - set(want))]
+            report["different"] += [f"skill {skill}" for skill in sorted(set(want) & set(have))
+                                    if want[skill] != have[skill]]
+            want_mcps, have_mcps = _package_mcps(expected), _package_mcps(destination)
+            report["missing"] += [f"mcp {server}" for server in sorted(set(want_mcps) - set(have_mcps))]
+            report["stale"] += [f"mcp {server}" for server in sorted(set(have_mcps) - set(want_mcps))]
+            report["different"] += [f"mcp {server}" for server in sorted(set(want_mcps) & set(have_mcps))
+                                    if want_mcps[server] != have_mcps[server]]
+            if not (report["missing"] or report["stale"] or report["different"]):
+                report["different"].append(f"package {name}: other files differ")
+        native = _codex_mcps(home) if client == "codex" else _json_client_mcps(home / ".cursor" / "mcp.json")
+        report["native"] = sorted(native)
+    report["in_sync"] = not (report["missing"] or report["different"] or report["stale"] or report["dangling"])
+    return report
+
+
+def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None) -> dict[str, Any]:
+    """Validate the project; with ``clients``, also report each client's drift from it."""
     layout = load_project_layout(project)
     inventory = inventory_project(layout.root)
     issues = list(inventory.issues)
@@ -1465,7 +1586,17 @@ def doctor(project: Path) -> dict[str, Any]:
                 issues.extend(f"credential env file missing key: {name}" for name in sorted(missing))
             except AgentPackError as exc:
                 issues.append(str(exc))
-    return {
+    reports: dict[str, Any] = {}
+    for client in dict.fromkeys(clients):
+        report = client_drift(layout.root, client, home)
+        reports[client] = report
+        for kind in ("missing", "different", "stale", "dangling"):
+            issues.extend(f"{client}: {kind} {item}" for item in report[kind])
+        if report["coupled"]:
+            issues.append(f"{client}: install record points into another package directory: {report['coupled']}")
+        warnings.extend(f"{client}: kept local override {item['name']} ({', '.join(item['keys'])})"
+                        for item in report["overrides"])
+    result: dict[str, Any] = {
         "ok": not issues,
         "source": inventory.source,
         "counts": {
@@ -1476,6 +1607,9 @@ def doctor(project: Path) -> dict[str, Any]:
         "issues": sorted(set(issues)),
         "warnings": sorted(set(warnings)),
     }
+    if reports:
+        result["clients"] = reports
+    return result
 
 
 def _print(value: dict[str, Any], output: str) -> None:
@@ -1508,6 +1642,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = sub.add_parser("doctor")
     doctor_parser.add_argument("--project", type=Path, default=Path.cwd())
+    doctor_parser.add_argument("--client", action="append", default=[], choices=("codex", "cursor", "claude"),
+                               help="also compare this client's installed capabilities with the project (repeatable)")
+    doctor_parser.add_argument("--home", type=Path)
 
     transfer_parser = sub.add_parser("transfer")
     transfer_parser.add_argument("--from", dest="source", required=True)
@@ -1519,9 +1656,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync_parser = sub.add_parser("sync")
     sync_parser.add_argument("--project", type=Path, default=Path.cwd())
-    sync_parser.add_argument("--client", choices=("codex", "cursor"), required=True)
+    sync_parser.add_argument("--client", choices=("codex", "cursor", "claude"), required=True)
     sync_parser.add_argument("--home", type=Path)
     sync_parser.add_argument("--apply", action="store_true")
+    sync_parser.add_argument("--replace", action="store_true",
+                             help="claude: also replace Skills / MCP entries this package did not install")
+    sync_parser.add_argument("--reset-overrides", action="store_true",
+                             help="claude: drop local credential values (headers / env) instead of keeping them")
+    sync_parser.add_argument("--recovery-root", type=Path)
 
     bootstrap_parser = sub.add_parser("bootstrap")
     bootstrap_parser.add_argument("--plugin", type=Path, required=True)
@@ -1530,10 +1672,18 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap_parser.add_argument("--apply", action="store_true")
     bootstrap_parser.add_argument("--replace", action="store_true")
     bootstrap_parser.add_argument("--recovery-root", type=Path)
+    bootstrap_parser.add_argument("--skill", action="append", default=[], help="claude: install only this Skill")
+    bootstrap_parser.add_argument("--mcp", action="append", default=[], help="claude: install only this MCP server")
+    bootstrap_parser.add_argument("--reset-overrides", action="store_true",
+                                  help="claude: drop local credential values (headers / env) instead of keeping them")
 
     reconcile_parser = sub.add_parser("reconcile")
     reconcile_parser.add_argument("--project", type=Path, default=Path.cwd())
-    reconcile_parser.add_argument("--client", choices=("codex", "cursor"), required=True)
+    reconcile_parser.add_argument("--client", choices=("codex", "cursor", "claude"), required=True)
+    reconcile_parser.add_argument("--replace", action="store_true",
+                                  help="claude: also replace Skills / MCP entries this package did not install")
+    reconcile_parser.add_argument("--reset-overrides", action="store_true",
+                                  help="claude: drop local credential values (headers / env) instead of keeping them")
     reconcile_parser.add_argument("--home", type=Path)
     reconcile_parser.add_argument("--retire-skill", action="append", default=[])
     reconcile_parser.add_argument("--retire-plugin", action="append", default=[])
@@ -1554,7 +1704,7 @@ def main(argv: list[str] | None = None) -> int:
             result = inventory_source(args.source, args.home).to_dict()
             result["ok"] = not result["issues"]
         elif args.command == "doctor":
-            result = doctor(args.project)
+            result = doctor(args.project, args.client, args.home)
         elif args.command == "transfer":
             if not args.skill and not args.mcp:
                 raise AgentPackError("select at least one --skill or --mcp")
@@ -1567,7 +1717,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "sync":
             result = sync_project(
-                args.project, args.client, home=args.home, apply=args.apply
+                args.project, args.client, home=args.home, apply=args.apply, replace=args.replace,
+                reset_overrides=args.reset_overrides, recovery_root=args.recovery_root,
             )
         elif args.command == "bootstrap":
             result = install_plugin(
@@ -1577,6 +1728,9 @@ def main(argv: list[str] | None = None) -> int:
                 apply=args.apply,
                 replace=args.replace,
                 recovery_root=args.recovery_root,
+                skills=args.skill,
+                mcps=args.mcp,
+                reset_overrides=args.reset_overrides,
             )
         else:
             result = reconcile_project(
@@ -1588,6 +1742,8 @@ def main(argv: list[str] | None = None) -> int:
                 recovery_root=args.recovery_root,
                 apply=args.apply,
                 retire_only=args.retire_only,
+                replace=args.replace,
+                reset_overrides=args.reset_overrides,
             )
         _print(result, args.output)
         return 0 if result.get("ok", True) else 1

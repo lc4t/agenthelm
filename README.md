@@ -129,6 +129,10 @@ npx @sakanano-moe/agenthelm migrate --install --apply
 - 版本门禁 `python3 scripts/release_meta.py --since <上一个 tag>`：插件或内容包改动未升版本即失败；升版本须在 `release/migrations.json` 写明 `change_kind`（code / content / both）、`breaking` 与 `actions`。
 - 分支：功能分支 → `dev`（集成与测试）→ `main`（发布基线）。客户端市场跟随 `main`：合进 `main` 且版本号上升，市场用户就能更新到，所以未发布的改动只进 `dev`。在 `main` 上打 `v*` tag 触发发布：构建发布包、上传摘要、按需发布 `@sakanano-moe/agenthelm`、刷新站点。
 - 上线前试用 `dev` 的内容：在本地检出 `dev`，用 `python3 plugins/agent-pack/runtime/agenthelm.py runtime install --apply` 装成运行时，或用 `install --source <检出目录>`、`--marketplace-source <检出目录>` 装进客户端；用隔离的 `HOME` 时不影响日常环境。
+- 对外文字英文优先，并为以后的语言预留：
+  - 文档每种语言一个文件（例如 npm 包的 `README.md` 与 `README.zh-CN.md`），开头互相链接；
+  - 只有一个字段可用的长描述与 Skill 触发描述用 `English … 中文：…` 分段；
+  - 由 `tests/test_public_metadata.py` 检查。用户自己的内容（例如 Opinion 规则正文）不做翻译。
 - `tests/test_public_privacy.py` 扫描全部已跟踪文件，拦截本机路径、私钥与私有项目标识。公开 Opinion 模板须经内容检查、测试和用户逐文件明确同意；个人规则不得进入公开模板、示例、测试与文档。
 - push 前完成单元测试、Plugin 校验、端到端初始化与公开敏感信息审计；版本、结构或入口变化记录到 [`CHANGELOG.md`](CHANGELOG.md)。
 

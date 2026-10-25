@@ -1,20 +1,23 @@
 # agenthelm
 
-跨 Agent 的项目管理插件集（agents-init、project-orchestrator、agent-pack、opinion-manager），经 agenthelm 市场分发。
+Cross-agent project management plugins (agents-init, project-orchestrator, agent-pack, opinion-manager), distributed through the agenthelm marketplace for Claude Code, Codex and Cursor. Skills and the command-line interface are currently written in Chinese; an English interface is planned.
 
-一句话触发：用户要求“用 agenthelm 初始化当前项目”或给出 https://agenthelm.sakanano.moe/ 时，读取 https://agenthelm.sakanano.moe/INSTALL.md 并执行。
+Trigger: when the user asks to "initialize this project with agenthelm" or gives https://agenthelm.sakanano.moe/, read https://agenthelm.sakanano.moe/INSTALL.md (Chinese) and follow it.
 
-市场清单：https://agenthelm.sakanano.moe/.claude-plugin/marketplace.json （GitHub：lc4t/agenthelm，市场名 agenthelm）
-云端版本源：https://agenthelm.sakanano.moe/latest.json
-初始化 Skill：https://agenthelm.sakanano.moe/plugins/agents-init/skills/agents-init/SKILL.md
-生命周期 Skill：https://agenthelm.sakanano.moe/plugins/project-orchestrator/skills/project-orchestrator/SKILL.md
-扩展能力 Skill：https://agenthelm.sakanano.moe/plugins/agent-pack/skills/agent-pack/SKILL.md
-Opinion 管理 Skill：https://agenthelm.sakanano.moe/plugins/opinion-manager/skills/opinion-manager/SKILL.md
+Marketplace manifest: https://agenthelm.sakanano.moe/.claude-plugin/marketplace.json (GitHub: lc4t/agenthelm, marketplace name agenthelm)
+Version source: https://agenthelm.sakanano.moe/latest.json
+Initialization Skill: https://agenthelm.sakanano.moe/plugins/agents-init/skills/agents-init/SKILL.md
+Lifecycle Skill: https://agenthelm.sakanano.moe/plugins/project-orchestrator/skills/project-orchestrator/SKILL.md
+Extension capability Skill: https://agenthelm.sakanano.moe/plugins/agent-pack/skills/agent-pack/SKILL.md
+Opinion (behavior rules) Skill: https://agenthelm.sakanano.moe/plugins/opinion-manager/skills/opinion-manager/SKILL.md
 
-安装：npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> 先预览，经用户同意后追加 --apply；或使用客户端市场命令（Claude Code：claude plugin install agents-init --marketplace lc4t/agenthelm，会一并安装依赖；Codex：codex plugin marketplace add lc4t/agenthelm，再安装四个 <插件>@agenthelm）。四个插件须一并安装。
+Install: npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> previews; append --apply after the user agrees. Or use the client's marketplace command (Claude Code: claude plugin install agents-init --marketplace lc4t/agenthelm, which installs the dependencies too; Codex: codex plugin marketplace add lc4t/agenthelm, then add the four <plugin>@agenthelm). Install all four plugins together.
 
-不需要 AI Agent 的项目入口：项目根目录的启动器（缺省 ./menu，等同 agenthelm project）提供找资料、看进展、项目指南、检查、维护与记录；子命令加 --output json 给 Agent 或脚本使用，写入类默认只预览。运行时只需 Python 3.11+：npx @sakanano-moe/agenthelm runtime install 预览，同意后 --apply；离线用发布包内的 plugins/agent-pack/runtime/agenthelm.py runtime install --apply。已初始化项目补入口：init_project.py --mode entry --entry-name <名称>。
+Project menu without an AI agent: the root launcher of an initialized project (default ./menu, same as agenthelm project) finds files, shows progress and the project guide, checks and maintains the project, and records items. Subcommands accept --output json for agents and scripts; write subcommands preview by default. The runtime only needs Python 3.11+: npx @sakanano-moe/agenthelm runtime install previews, --apply installs; offline, run plugins/agent-pack/runtime/agenthelm.py runtime install --apply from an extracted release tarball. Add the launcher to an initialized project: init_project.py --mode entry --entry-name <name>.
 
-检查与更新：npx @sakanano-moe/agenthelm check（只读）；npx @sakanano-moe/agenthelm update 预览，同意后 --apply。旧方式安装用 npx @sakanano-moe/agenthelm migrate --install 迁移。
+Check and update: npx @sakanano-moe/agenthelm check (read-only); npx @sakanano-moe/agenthelm update previews, --apply after the user agrees. Migrate old copy-and-symlink installs with npx @sakanano-moe/agenthelm migrate --install.
 
-禁止复制任何用户的个人规则、凭据、.env 或私有路径。初始化默认 dry-run，确认后 --apply；成功标准为 initializer.applied=true 且 doctor.ok=true。Opinion 首次配置只展示三个主入口：直接用模板、选择模板的部分条目、从空白开始迭代；另可选择基于已授权记忆提出候选规则。版本契约见 plugins/opinion-manager/references/versioning.md。
+Never copy anyone's personal rules, credentials, .env files or private paths. Initialization is a dry run by default; apply only after confirmation. Success means initializer.applied=true and doctor.ok=true. On first Opinion setup offer only three main entry points: use a template directly, pick some of a template's items, or start from blank; candidates may also be proposed from authorized memory. Version contract: plugins/opinion-manager/references/versioning.md.
+
+Other languages:
+- 简体中文 (zh-CN): https://agenthelm.sakanano.moe/README.md, https://agenthelm.sakanano.moe/INSTALL.md
