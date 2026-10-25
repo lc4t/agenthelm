@@ -34,6 +34,10 @@ class SiteReleaseTests(unittest.TestCase):
         ):
             self.assertIn(required, workflow)
         self.assertNotIn("runtime", workflow)
+        # upload-pages-artifact v4+ drops dot-paths unless asked, which silently removed
+        # .claude-plugin/ from the site (llms.txt and INSTALL.md link to it).
+        upload = workflow.split("actions/upload-pages-artifact@", 1)[1].split("\n      - ", 1)[0]
+        self.assertIn("include-hidden-files: true", upload)
 
     def test_bundled_plugins_match_manifests(self) -> None:
         index = json.loads((ROOT / "index.json").read_text(encoding="utf-8"))
