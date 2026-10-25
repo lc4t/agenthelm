@@ -42,7 +42,7 @@ CLI_PACKAGE = "packages/cli/package.json"
 CATEGORY = "Developer Tools"
 POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
 OWNER = {"name": "lc4t"}
-DESCRIPTION = "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。"
+DESCRIPTION = "Cross-agent project management plugins: project contract, lifecycle, extension capabilities and behavior rules."
 # Installing agents-init alone must bring its companions (Claude Code installs
 # marketplace-entry dependencies; other clients ignore the field).
 DEPENDENCIES = {"agents-init": ["project-orchestrator", "agent-pack", "opinion-manager"]}

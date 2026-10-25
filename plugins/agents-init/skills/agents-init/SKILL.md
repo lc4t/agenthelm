@@ -1,6 +1,6 @@
 ---
 name: agents-init
-description: 初始化仓库或将既有仓库迁移到 agents-init v6 项目骨架。用户要求初始化 Agent 协作、创建 AGENTS.md、增加 Project Profile（项目配置）或迁移旧版 agents-init 结构（含 v5 的 project-runtime Profile）时使用。本 Skill 只负责结构；project-orchestrator 负责项目生命周期，agent-pack 负责 Plugin/Skill/MCP，opinion-manager 负责用户确认的 Agent 行为规则。
+description: Initialize a repository, or migrate an existing one, to the agents-init v6 project skeleton. Use when the user asks to set up Agent collaboration, create AGENTS.md, add a Project Profile, add a root launcher for the project menu, or migrate an older agents-init layout (including the v5 project-runtime Profile). This Skill only handles structure; project-orchestrator owns the project lifecycle, agent-pack owns Plugins/Skills/MCP, and opinion-manager owns user-confirmed Agent behavior rules. 中文：初始化仓库或将既有仓库迁移到 agents-init v6 项目骨架。用户要求初始化 Agent 协作、创建 AGENTS.md、增加 Project Profile（项目配置）或迁移旧版 agents-init 结构（含 v5 的 project-runtime Profile）时使用。本 Skill 只负责结构；project-orchestrator 负责项目生命周期，agent-pack 负责 Plugin/Skill/MCP，opinion-manager 负责用户确认的 Agent 行为规则。
 ---
 
 # Agents Init（项目初始化）

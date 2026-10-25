@@ -1,6 +1,6 @@
 ---
 name: agent-pack
-description: 确定性地盘点、校验、安装、同步、迁移与对账 Agent Plugin、Skill 与 MCP server——在项目、插件目录与 Codex / Cursor / Claude 等客户端之间。当需要发现、导入、导出、同步或验证 Agent 能力，或诊断某台机器的扩展安装漂移时使用。项目生命周期（Task/Case/路由/验证/Git）不在本 Skill 内——那是 project-orchestrator。
+description: Deterministically inventory, verify, install, sync, migrate and reconcile Agent Plugins, Skills and MCP servers across projects, plugin directories and clients such as Codex, Cursor and Claude. Use when discovering, importing, exporting, syncing or verifying Agent capabilities, or diagnosing extension drift on a machine. The project lifecycle (Task/Case/routing/verification/Git) is not part of this Skill; that is project-orchestrator. 中文：确定性地盘点、校验、安装、同步、迁移与对账 Agent Plugin、Skill 与 MCP server——在项目、插件目录与 Codex / Cursor / Claude 等客户端之间。当需要发现、导入、导出、同步或验证 Agent 能力，或诊断某台机器的扩展安装漂移时使用。项目生命周期（Task/Case/路由/验证/Git）不在本 Skill 内——那是 project-orchestrator。
 ---
 
 # Agent Pack（Agent 扩展能力管理）
@@ -29,7 +29,7 @@ description: 确定性地盘点、校验、安装、同步、迁移与对账 Age
 6. 只应用明确选择的组件；
 7. 对目标运行 `doctor`。
 
-目标客户端尚未安装某包时，从可信本地插件根目录使用 `bootstrap`。`bootstrap` 支持 `codex` / `cursor` / `claude`；Claude 端写入 `~/.claude/skills` 符号链接与 `~/.claude.json` user-scope MCP，装完需重启 Claude Code。处理已有客户端时优先使用 `reconcile`：审阅组件状态，明确列出要退役的旧 Skill/plugin，再执行应用。只退役、不安装项目包时加 `--retire-only`。用户验收迁移前，已退役或替换的内容必须保留在报告的恢复目录（`~/.agent-pack/recovery/`）中。
+目标客户端尚未安装某包时，从可信本地插件根目录使用 `bootstrap`。`bootstrap` 支持 `codex` / `cursor` / `claude`；Claude 端写入 `~/.claude/skills` 符号链接与 `~/.claude.json` user-scope MCP，可用 `--skill` / `--mcp` 只装选中的组件，本机认证值默认保留（`--reset-overrides` 才丢弃），装完需重启 Claude Code。把项目能力同步到 Claude 用 `sync --client claude`：它为 Claude 单独生成包，只增删改本包装过的条目，不要用 `bootstrap` 指向 Codex 的包。核对客户端是否与项目一致用 `doctor --client <客户端>`。处理已有客户端时优先使用 `reconcile`：审阅组件状态，明确列出要退役的旧 Skill/plugin，再执行应用。只退役、不安装项目包时加 `--retire-only`。用户验收迁移前，已退役或替换的内容必须保留在报告的恢复目录（`~/.agent-pack/recovery/`）中。
 
 ## 打包与协议
 

@@ -43,7 +43,7 @@ TOOLS = [
     {
         "name": "agent_pack_bootstrap",
         "title": "Install Agent Plugin",
-        "description": "Dry-run or install a portable plugin, including agent-pack itself, into Codex, Cursor, or Claude Code without overwriting an existing package.",
+        "description": "Dry-run or install a portable plugin, including agent-pack itself, into Codex, Cursor, or Claude Code without overwriting an existing package. For Claude Code, skills / mcps limit the install to those components, and local credential values on MCP entries are kept unless resetOverrides.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -53,6 +53,9 @@ TOOLS = [
                 "apply": {"type": "boolean", "default": False},
                 "replace": {"type": "boolean", "default": False},
                 "recoveryRoot": {"type": "string"},
+                "skills": {"type": "array", "items": {"type": "string"}, "default": []},
+                "mcps": {"type": "array", "items": {"type": "string"}, "default": []},
+                "resetOverrides": {"type": "boolean", "default": False},
             },
             "required": ["plugin", "client"],
             "additionalProperties": False,
@@ -62,12 +65,14 @@ TOOLS = [
     {
         "name": "agent_pack_reconcile",
         "title": "Reconcile Project and Client Capabilities",
-        "description": "Classify capability drift, safely replace the managed project package, and archive explicitly selected legacy Skills or plugins with rollback. apply defaults to false.",
+        "description": "Classify capability drift, safely replace the managed project package, and archive explicitly selected legacy Skills or plugins with rollback. Claude Code gets its own package, MCP entries and Skill links; local credential values are kept unless resetOverrides. apply defaults to false.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
-                "client": {"type": "string", "enum": ["codex", "cursor"]},
+                "client": {"type": "string", "enum": ["codex", "cursor", "claude"]},
+                "replace": {"type": "boolean", "default": False},
+                "resetOverrides": {"type": "boolean", "default": False},
                 "home": {"type": "string"},
                 "retireSkills": {"type": "array", "items": {"type": "string"}, "default": []},
                 "retirePlugins": {"type": "array", "items": {"type": "string"}, "default": []},
@@ -97,10 +102,15 @@ TOOLS = [
     {
         "name": "agent_pack_doctor",
         "title": "Validate Project Capabilities",
-        "description": "Validate an initialized project's Agent Plugin, Skill, MCP, duplicate-name, portability, and secret boundaries.",
+        "description": "Validate an initialized project's Agent Plugin, Skill, MCP, duplicate-name, portability, and secret boundaries. With clients, also report each client's missing, stale and different components and kept local overrides.",
         "inputSchema": {
             "type": "object",
-            "properties": {"project": {"type": "string"}},
+            "properties": {
+                "project": {"type": "string"},
+                "clients": {"type": "array", "items": {"type": "string", "enum": ["codex", "cursor", "claude"]},
+                            "default": []},
+                "home": {"type": "string"},
+            },
             "required": ["project"],
             "additionalProperties": False,
         },
@@ -127,14 +137,17 @@ TOOLS = [
     {
         "name": "agent_pack_sync",
         "title": "Sync Project Capabilities to an Agent Client",
-        "description": "Dry-run or install a project's portable capability package into Codex or Cursor. apply defaults to false and existing targets are never overwritten.",
+        "description": "Dry-run or install a project's portable capability package into Codex, Cursor or Claude Code. apply defaults to false; replaced content goes to the recovery directory. Claude Code keeps local credential values unless resetOverrides, and only replaces entries it did not install with replace.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
-                "client": {"type": "string", "enum": ["codex", "cursor"]},
+                "client": {"type": "string", "enum": ["codex", "cursor", "claude"]},
                 "home": {"type": "string"},
                 "apply": {"type": "boolean", "default": False},
+                "replace": {"type": "boolean", "default": False},
+                "resetOverrides": {"type": "boolean", "default": False},
+                "recoveryRoot": {"type": "string"},
             },
             "required": ["project", "client"],
             "additionalProperties": False,
@@ -174,6 +187,9 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             apply=bool(arguments.get("apply", False)),
             replace=bool(arguments.get("replace", False)),
             recovery_root=recovery,
+            skills=arguments.get("skills", []),
+            mcps=arguments.get("mcps", []),
+            reset_overrides=bool(arguments.get("resetOverrides", False)),
         )
     if name == "agent_pack_reconcile":
         recovery_value = arguments.get("recoveryRoot")
@@ -187,6 +203,8 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             recovery_root=recovery,
             apply=bool(arguments.get("apply", False)),
             retire_only=bool(arguments.get("retireOnly", False)),
+            replace=bool(arguments.get("replace", False)),
+            reset_overrides=bool(arguments.get("resetOverrides", False)),
         )
     if name == "agent_pack_inventory":
         inventory = inventory_source(arguments["source"], home)
@@ -194,7 +212,7 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         payload["ok"] = not payload["issues"]
         return payload
     if name == "agent_pack_doctor":
-        return doctor(Path(arguments["project"]))
+        return doctor(Path(arguments["project"]), arguments.get("clients", []), home)
     if name == "agent_pack_transfer":
         source = inventory_source(arguments["source"], home)
         return transfer_to_project(
@@ -205,11 +223,15 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             apply=bool(arguments.get("apply", False)),
         )
     if name == "agent_pack_sync":
+        recovery_value = arguments.get("recoveryRoot")
         return sync_project(
             Path(arguments["project"]),
             arguments["client"],
             home=home,
             apply=bool(arguments.get("apply", False)),
+            replace=bool(arguments.get("replace", False)),
+            reset_overrides=bool(arguments.get("resetOverrides", False)),
+            recovery_root=Path(recovery_value) if isinstance(recovery_value, str) else None,
         )
     raise AgentPackError(f"unknown tool: {name}")
 

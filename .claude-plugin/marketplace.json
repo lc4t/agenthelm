@@ -4,14 +4,14 @@
     "name": "lc4t"
   },
   "metadata": {
-    "description": "跨 Agent 的项目管理插件集：项目契约、生命周期、扩展能力与行为规则。"
+    "description": "Cross-agent project management plugins: project contract, lifecycle, extension capabilities and behavior rules."
   },
   "plugins": [
     {
       "name": "agent-pack",
       "source": "./plugins/agent-pack",
       "description": "Deterministic Agent-extension capability management: inventory, doctor, bootstrap, sync, transfer, and reconcile Agent Plugins / Skills / MCP servers across Codex, Cursor, Claude Code, and project sources. Ships a stdio MCP.",
-      "version": "1.7.0",
+      "version": "1.8.0",
       "author": {
         "name": "lc4t"
       },
@@ -35,8 +35,8 @@
     {
       "name": "agents-init",
       "source": "./plugins/agents-init",
-      "description": "初始化或迁移 Agent 项目契约；同一分发包附带 project-orchestrator、agent-pack 与 opinion-manager。",
-      "version": "6.6.0",
+      "description": "Initialize or migrate an Agent project contract (AGENTS.md, Project Profile, root launcher); ships with project-orchestrator, agent-pack and opinion-manager.",
+      "version": "6.6.1",
       "author": {
         "name": "lc4t"
       },
@@ -65,7 +65,7 @@
       "name": "opinion-manager",
       "source": "./plugins/opinion-manager",
       "description": "Manage Agent behavior rules through templates, partial selection, blank iteration, and authorized-memory candidates, with complete previews and exact version locks.",
-      "version": "0.4.1",
+      "version": "0.4.2",
       "author": {
         "name": "lc4t"
       },
@@ -88,7 +88,7 @@
       "name": "project-orchestrator",
       "source": "./plugins/project-orchestrator",
       "description": "Portable lifecycle orchestration with Case workspaces, legacy Task/Case compatibility, verified migrations, discovery and scoped Git delivery.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": {
         "name": "lc4t"
       },

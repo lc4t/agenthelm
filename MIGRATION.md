@@ -66,3 +66,12 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 模板内容包 `agents-init/project-contract` 升到 1.1.0（`AGENTS.md` 增加「人用入口」，并开始跟踪启动器）。`agenthelm update` 或菜单「修复与更新」会列出受影响的文件：未改动的先备份再替换；你改过的逐个选择保留（`--keep`）或采用（`--accept`）。
 
 项目自己管理事项（不用默认 Case 工具）时，按 [case-workspaces.md「项目入口适配」](plugins/project-orchestrator/references/case-workspaces.md#项目入口适配) 在 `entry.items` 声明只读接口；没有声明写接口时，菜单里的记录事项会显示为不可用，不会绕过项目工具改文件。项目专用操作写进 `.agents/moe.sakanano.agent-pack/tools.json`。
+
+## 6.7.0：Claude Code 端的项目能力同步
+
+以前用 `bootstrap --plugin ~/.agents/plugins/plugins/<项目包> --client claude` 把项目能力装进 Claude 的，Claude 依附在 Codex 的包上。Codex 端删除或排除某个 MCP 后，Claude 的条目会失效，Claude 自己的 `mcp_client_policy` 也不生效。改为：
+
+1. 预览：`python3 <agent-pack>/runtime/agent_pack_config.py --output json sync --project <项目> --client claude`。会列出要新建的 Claude 专属包、要改指向的安装记录、要更新的 Skill 链接和 MCP 条目。本机认证值（如 `headers.Authorization`）默认保留，结果里只出现键名。
+2. 确认后加 `--apply`。旧内容进入 `~/.agent-pack/recovery/<时间>-claude-<包名>/`，其中 `record.json` 记着旧记录原来指向哪里。
+3. 核对：`doctor --project <项目> --client claude`，`clients.claude.in_sync` 应为 true。
+4. 以后项目 MCP 有增减，重新运行第 1、2 步即可，不再需要手工从恢复目录还原认证头。

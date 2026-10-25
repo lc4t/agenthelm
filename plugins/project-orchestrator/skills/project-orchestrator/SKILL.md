@@ -1,6 +1,6 @@
 ---
 name: project-orchestrator
-description: 按项目契约统一执行会话发现、Task/Case 选择、能力路由、文件落位、验证、进度更新和限定范围的 Git 交付。当项目在 AGENTS.md 中声明 project-orchestrator，且当前工作可能创建或修改项目文件时使用。Agent 扩展（Plugin/Skill/MCP）的盘点、迁移与同步不在本 Skill 内——那是 agent-pack。
+description: Run session discovery, Task/Case selection, capability routing, file placement, verification, progress updates and scoped Git delivery according to the project contract. Use when a project declares project-orchestrator in AGENTS.md and the current work may create or modify project files. Inventory, migration and sync of Agent extensions (Plugin/Skill/MCP) are not part of this Skill; that is agent-pack. 中文：按项目契约统一执行会话发现、Task/Case 选择、能力路由、文件落位、验证、进度更新和限定范围的 Git 交付。当项目在 AGENTS.md 中声明 project-orchestrator，且当前工作可能创建或修改项目文件时使用。Agent 扩展（Plugin/Skill/MCP）的盘点、迁移与同步不在本 Skill 内——那是 agent-pack。
 ---
 
 # Project Orchestrator（项目编排器）

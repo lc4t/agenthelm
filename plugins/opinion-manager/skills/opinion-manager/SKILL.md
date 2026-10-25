@@ -1,6 +1,6 @@
 ---
 name: opinion-manager
-description: 生成、组合、审查和维护用户与 Agent 之间的行为规则。用户要求创建或更新 OPINION.md、导入既有说明、直接用模板、选择部分条目、从空白开始、基于已授权记忆提出候选规则、维护个人 Profile、检查升级与冲突或按当前 Opinion 审查交付物时使用。
+description: Generate, compose, review and maintain behavior rules between the user and the Agent. Use when the user asks to create or update OPINION.md, import existing instructions, apply a template directly, pick some of its items, start from blank, propose rule candidates from authorized memory, maintain a personal Profile, check upgrades and conflicts, or review a deliverable against the current Opinion. 中文：生成、组合、审查和维护用户与 Agent 之间的行为规则。用户要求创建或更新 OPINION.md、导入既有说明、直接用模板、选择部分条目、从空白开始、基于已授权记忆提出候选规则、维护个人 Profile、检查升级与冲突或按当前 Opinion 审查交付物时使用。
 ---
 
 # Opinion Manager（Agent 行为规则管理）

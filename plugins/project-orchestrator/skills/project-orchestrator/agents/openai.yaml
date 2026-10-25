@@ -1,4 +1,4 @@
 interface:
   display_name: "Project Orchestrator"
-  short_description: "按项目契约编排 Task/Case、路由工具与叶子 Skill、验证与受控 Git 交付"
-  default_prompt: "使用 $project-orchestrator 读取当前项目契约，并以满足请求所需的最小生命周期推进工作。"
+  short_description: "Run Task/Case work by the project contract: route tools and leaf Skills, verify, and deliver scoped Git changes"
+  default_prompt: "Use $project-orchestrator to discover this project's contract and run the current request through the smallest valid lifecycle."
