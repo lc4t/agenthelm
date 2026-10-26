@@ -75,3 +75,31 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 2. 确认后加 `--apply`。旧内容进入 `~/.agent-pack/recovery/<时间>-claude-<包名>/`，其中 `record.json` 记着旧记录原来指向哪里。
 3. 核对：`doctor --project <项目> --client claude`，`clients.claude.in_sync` 应为 true。
 4. 以后项目 MCP 有增减，重新运行第 1、2 步即可，不再需要手工从恢复目录还原认证头。
+
+## 6.8.0：脚手架一致性与多机使用
+
+不用改任何东西也能继续使用；升级后在项目里运行 `agenthelm check` 会多出“脚手架”项（建议处理，不改变 `health` 的退出码）：
+
+1. 看有哪些差异：`agenthelm check`。每项带 ID（`skel:<路径>`、`content:<路径>`、`profile:<字段>`、`lock:<包>`、`case-naming`）。
+2. 逐项处理或跳过：
+   - 缺失的骨架文件：`agenthelm fix add-skeleton`（预览）→ `--apply`。只新建，已有文件不动。
+   - 与新模板不同的文件（旧项目没有内容锁基线）：`agenthelm fix update-content`，逐个 `--keep <文件>` 或 `--accept <文件>`；`--keep` 会被记住，同样的模板内容不再追问。
+   - Profile 缺字段：`agenthelm fix profile`（预览里有 diff，替换前备份）。你自己的字段不会被改动。
+   - 内容锁里的 `0.0.0`：`agenthelm fix repair-lock`。如果基线与当前模板不同，会提示改用 `update-content` 逐文件选择。
+   - 不想要的：`agenthelm fix --skip <ID> --reason "…" --apply`。决定写入 `.agents/moe.sakanano.agent-pack/check-decisions.json`，随项目同步，换一台机器不会再提示；`--unskip <ID>` 撤销。
+3. 项目用自己的 Case 目录命名（例如 `YYYYMMDD-主题`）时，在 Profile 声明 `work.case.directory_naming`，否则 `check` 会按默认的 `CASE-日期-序号-主题` 报告不符：
+
+   ```json
+   "work": {"case": {"directory_naming": {"style": "date-topic"}}}
+   ```
+
+   `fix case-naming` 只给改名计划和受影响的引用，不会移动目录。
+4. 两台机器的脚手架是否一致：各自运行 `agenthelm check --fingerprint`，指纹相同即一致；不同时在一台保存 `--output json`，在另一台用 `--explain <文件>` 看差在哪里。
+
+不兼容点：
+
+- `--mode entry` 之后内容锁里的版本是当前包版本，不再是 `0.0.0`。已有的 `0.0.0` 需要 `fix repair-lock`，不会被自动改写。
+- `agenthelm check --strict` 与会话开始的一行提示会把未解决的脚手架差异算作未处理。
+- Profile 的 `runtime.source_ref`、`plugin_version`、`source_commit`、`capability_manager_version`、`opinion.tool_version` 现在在 schema 里声明为审计字段：只作记录，运行时不读取，也不参与比较。以前 MIGRATION 里让你改的 `source_ref` 等仍可保留或更新，两者都不影响 `check`。
+
+多机与同步盘的说明见 [README「多机与同步盘」](README.md#多机与同步盘)。

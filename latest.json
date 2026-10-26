@@ -2,19 +2,23 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-10-25",
+  "released_at": "2026-10-27",
   "plugins": {
     "agent-pack": {
-      "version": "1.8.0",
+      "version": "1.9.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.6.1",
+      "version": "6.7.0",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
           "version": "1.1.0",
           "kind": "template"
+        },
+        "agents-init/project-skeleton": {
+          "version": "1.0.0",
+          "kind": "manifest"
         }
       }
     },
@@ -29,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.8.1",
+      "version": "1.9.0",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -203,6 +207,42 @@
       "breaking": false,
       "date": "2026-10-25",
       "summary": "对外描述改为英文优先：Codex 插件简介与长描述、Skill 触发描述。功能与内容包不变。",
+      "actions": []
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.6.1",
+      "to": "6.7.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-27",
+      "summary": "脚手架一致性：新增内容包 agents-init/project-skeleton（期望骨架清单）与 scaffold.py；init_project.py 新增 --mode check / add-skeleton / profile / repair-lock / decide / case-naming；--mode entry 新建内容锁条目时写当前包版本而不是 0.0.0；refresh 把 --keep 记入决定文件；project.schema.json 声明审计字段、work.case.directory_naming 与 work.case.command。",
+      "actions": [
+        "已存在的 0.0.0 内容锁：运行 agenthelm fix repair-lock 预览，确认后 --apply",
+        "项目首次 agenthelm check 会列出脚手架差异；不想要的用 agenthelm fix --skip <ID> --reason … 永久跳过，决定写入 .agents/moe.sakanano.agent-pack/check-decisions.json 并随项目同步"
+      ]
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.8.0",
+      "to": "1.9.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-27",
+      "summary": "agenthelm check 纳入项目脚手架与本机状态（只读）：新增 --show-skipped / --reprompt / --fingerprint / --explain；新增 agenthelm fix（转交 project fix）；运行时未安装的提示说明 agenthelm / wf 命令是否可用；检测项目是否位于 iCloud / Dropbox / OneDrive / Google Drive 同步盘。",
+      "actions": [
+        "check --strict 在存在未解决的脚手架差异时也返回 1",
+        "需要两台机器比较脚手架：各自运行 check --fingerprint --output json，再用 --explain <对方的文件> 对比"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.8.1",
+      "to": "1.9.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-27",
+      "summary": "health 汇总脚手架差异（建议处理，不改变退出码）；fix 新增 add-skeleton / profile / repair-lock / case-naming / sync-folder，--skip <ID> --reason / --unskip <ID> 记录决定；交互时每项可选 采用 / 永久跳过 / 稍后 / 查看差异；update-content 的 --keep 持久化到决定文件。",
       "actions": []
     }
   ]

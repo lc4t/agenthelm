@@ -1,5 +1,61 @@
 # 更新记录
 
+## 2026-10-27 — agenthelm 6.8.0 / Agents Init 6.7.0 / Agent Pack 1.9.0 / Project Orchestrator 1.9.0：脚手架一致性
+
+在多台机器、多个客户端上使用同一个项目（例如放在同步盘里）时，只要装好 agenthelm，在任意机器运行 `agenthelm check`（或项目里的 `./menu health`）就能知道：这台机器和这个项目的脚手架是否与最新版一致，两台机器得出同样的结论；有差异时有配套工具修复。不同项目的 Opinion、Profile 里的自有字段与审计字段不参与比较，也不要求统一。
+
+### agents-init 6.7.0
+
+- 新增内容包 `agents-init/project-skeleton` 1.0.0：期望骨架清单（`skills/agents-init/skeleton.json`）声明项目应有的文件（是否必需、比较方式 `exists` / `dir` / `lock` / 不比较 Opinion）、Profile 受检字段，以及不参与比较的审计字段与 Opinion 设置。它不写进项目内容锁，所以不会让已有项目出现新的“可更新”。
+- 新增 `scripts/scaffold.py`，`init_project.py` 新增模式：
+  - `--mode check`：只读，列出缺失的骨架文件、与当前模板不同且没有基线的模板文件、缺失或不符的 Profile 字段、内容锁版本未知、Case 目录命名不符，附脚手架指纹；
+  - `--mode add-skeleton [--target <路径>]`：按模板创建缺失文件，已存在的不动；
+  - `--mode profile [--target <字段>]`：只改所选字段，输出 diff，替换前备份；
+  - `--mode repair-lock`：把内容锁里的 `0.0.0` 换成真实版本（只在记录的基线都等于当前模板时）；
+  - `--mode decide`：记录 / 撤销对某个发现的决定；
+  - `--mode case-naming`：只输出 Case 目录改名计划和受影响的引用，不移动任何目录。
+  以上默认只预览，`--apply` 才写入。
+- **修复**：`--mode entry --apply` 在项目还没有该内容包的锁条目时，不再写入 `0.0.0`（这会让 `check` 立刻提示“0.0.0 → x.y.z 可更新”），而是写当前包版本。已存在的 `0.0.0` 用 `repair-lock` 修复。
+- `refresh` 的 `--keep` 记入决定文件：同样的模板内容以后不再逐个追问，模板对该文件的渲染结果实质变化时才再问。
+- `project.schema.json`：声明 `runtime.source_*` / `plugin_version` / `capability_manager_version` 与 `opinion.tool_version` 为审计字段（运行时不读取、不比较）；声明 `work.case.directory_naming`（`style`: `case-id` / `date-topic` / `custom`，`pattern`）与 `work.case.command`。其余自定义字段照常保留。
+
+### agent-pack 1.9.0
+
+- `agenthelm check` 纳入项目脚手架（仍然只读，只写版本缓存）：
+  - 发现按 ID 列出（`skel:<路径>`、`content:<路径>`、`profile:<字段>`、`lock:<包>`、`case-naming`）；
+  - `--show-skipped` 列出被跳过的项和理由；`--reprompt` 忽略已记录的决定重新评估；`--strict` 在有未解决的脚手架差异时也返回 1；
+  - `--fingerprint` 输出脚手架指纹与逐项明细（骨架状态 + 受检 Profile 字段 + 内容锁 + 命名规则；不含 Opinion、项目自有字段、已跳过项）；`--explain` 逐项列出明细，带另一台机器 `check --fingerprint --output json` 的输出文件时指出两台差在哪里（有差异退出码 1）。
+- 新增 `agenthelm fix`，等同 `agenthelm project fix`。
+- 本机状态：运行时未安装的提示现在说明 `agenthelm` 与 `wf` 命令在 PATH 上是否可用（运行时的 `--link-bin` 只链接 `agenthelm`，不提供 `wf`；`./menu` 通过客户端插件兜底）；检测项目是否位于 iCloud / Dropbox / OneDrive / Google Drive 目录（按路径判断，不读取、不改动任何文件）。本机类发现的决定存在用户状态目录（`$XDG_STATE_HOME` 或 `~/.local/state` 下的 `agenthelm/decisions/`），不进项目。
+
+### project-orchestrator 1.9.0
+
+- `health` 汇总脚手架差异，级别为“建议处理”，不改变退出码；每项给出 ID 和 `fix --skip` 的写法；`--show-skipped` / `--reprompt`。
+- `fix` 与发现一一对应：
+
+  | 发现 | 工具 |
+  | --- | --- |
+  | 骨架文件缺失 | `fix add-skeleton [路径…]` |
+  | Profile 缺字段或不符 | `fix profile [字段…]` |
+  | 模板文件与新版不同 | `fix update-content`（`--keep` / `--accept`；没有内容锁或模板包版本未变时也能处理；`--keep` 持久化） |
+  | 内容锁版本不对 | `fix repair-lock` |
+  | Case 命名与声明不符 | `fix case-naming`（只给计划，不移动目录） |
+  | 运行时未安装 | `fix install-runtime`（提示说明命令可用性与 `--link-bin`） |
+  | 位于同步盘 | `fix sync-folder`（只给指引与 `.gitignore` / `.nosync` 方案，不删除、不移动任何内容） |
+
+- 决定：`fix --skip <ID> --reason <文本>` / `--unskip <ID>` 写入 `.agents/moe.sakanano.agent-pack/check-decisions.json`（随项目同步，一次决定对所有机器生效）；默认只有期望内容的指纹变化才再次提示。交互菜单里每项可选 采用 / 永久跳过 / 稍后 / 查看差异。
+- 退出码沿用原约定：`--skip` 了现在不存在的发现为 2；决定文件损坏为 4；决定文件刚被另一台机器同步更新为 5。
+
+### 不兼容点与注意
+
+- 没有决定文件、没有脚手架差异的项目，`check` / `health` 的输出与退出码不变。有差异的旧项目会多出“建议处理”的脚手架项；`agenthelm check --strict` 与会话开始的一行提示会把它们算作未处理。
+- `--mode entry` 之后写入的内容锁版本从 `0.0.0` 变为当前包版本。依赖 `0.0.0` 的脚本需要调整（已有的 `0.0.0` 不会被自动改写，需 `fix repair-lock`）。
+- `wf` 仍是单独的查找命令，运行时不提供它。
+
+### 版本
+
+agenthelm 6.8.0、agents-init 6.7.0、agent-pack 1.9.0、project-orchestrator 1.9.0；opinion-manager 0.4.2 不变。
+
 ## 2026-10-25 — agenthelm 6.7.0 / Agent Pack 1.8.0：Claude Code 端补齐、对外元数据英文优先
 
 ### agent-pack 1.8.0：Claude Code 端

@@ -157,6 +157,25 @@ def release_version(latest: dict | None) -> str | None:
     return tag[1:] if isinstance(tag, str) and tag.startswith("v") else tag
 
 
+def command_status() -> dict:
+    """Which of the commands people type are on PATH right now (``wf`` is never installed by the runtime)."""
+    return {"agenthelm": shutil.which("agenthelm"), "wf": shutil.which("wf")}
+
+
+def missing_text(data: dict, commands: dict) -> dict:
+    """Wording for “no user-level runtime installed”: says which commands work, instead of leaving “wf: not found” unexplained."""
+    def state(name: str) -> str:
+        return f"{name} 在 PATH 上（{commands[name]}）" if commands.get(name) else f"终端里的 {name} 命令目前不可用"
+    return {
+        "reason": f"本次由 {data['running_from']} 提供；{state('agenthelm')}，{state('wf')}。",
+        "impact": "项目根目录的 ./menu 会通过客户端插件兜底，所以现在能用；"
+                  "没有 AI 客户端或客户端插件被移除时打不开。wf 是单独的查找命令，运行时不会提供它："
+                  "用 ./menu find 词 或 agenthelm project find 词 代替",
+        "label": "安装运行时（agenthelm runtime install --apply，只写用户数据目录）；"
+                 "要在终端直接输入 agenthelm 时加 --link-bin ~/.local/bin（只链接 agenthelm，不含 wf）",
+    }
+
+
 def report(env: Any, latest: dict | None = None) -> dict:
     active = current(env)
     newest = release_version(latest)

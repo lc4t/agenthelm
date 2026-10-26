@@ -715,6 +715,17 @@ def _profile_launcher(profile: dict) -> str | None:
     return validate_entry_name(launcher) if isinstance(launcher, str) else None
 
 
+def _scaffold():
+    """scaffold.py 与本文件同目录；绑定到正在运行的本模块，保证异常类一致。"""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import scaffold  # noqa: PLC0415
+
+    scaffold.bind(sys.modules[__name__])
+    return scaffold
+
+
 def _unified_diff(relative: str, current: str, new: str, limit: int = 200) -> str:
     lines = list(difflib.unified_diff(
         current.splitlines(keepends=True), new.splitlines(keepends=True),
@@ -756,6 +767,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     if accept & keep:
         raise InitError("同一文件不能同时 --accept 与 --keep：" + ", ".join(sorted(map(str, accept & keep))))
     plan: list[dict] = []
+    kept_before = _scaffold().keep_fingerprints(root)
     for relative in tracked:
         new = rendered[relative]
         new_digest = hashlib.sha256(new.encode("utf-8")).hexdigest()
@@ -776,7 +788,10 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             state, action = "clean", "keep" if relative in keep else "replace"
         else:
             state = "modified"
-            action = "replace" if relative in accept else "keep" if relative in keep else "blocked"
+            decided = kept_before.get(relative.as_posix()) == new_digest  # 之前选过保留，且期望内容没变
+            action = "replace" if relative in accept else "keep" if relative in keep or decided else "blocked"
+            if decided and relative not in accept:
+                state = "kept-by-decision"
         item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
         if action in {"replace", "blocked", "create"} or (state == "clean" and action == "keep"):
             item["diff"] = _unified_diff(relative.as_posix(), current or "", new)
@@ -831,6 +846,12 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     temporary = lock_path.with_name(f".{lock_path.name}.{os.getpid()}.tmp")
     temporary.write_text(json_text(lock), encoding="utf-8")
     os.replace(temporary, lock_path)
+    # 显式 --keep 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
+    for item in plan:
+        if Path(item["path"]) in keep and item["state"] in {"modified", "local-only", "kept-by-decision"}:
+            _scaffold().decide(root, f"content:{item['path']}", "keep", reason="refresh --keep",
+                               fingerprint=item["new_sha256"], scope="project", apply=True)
+            result.setdefault("decisions", []).append(f"content:{item['path']}")
     result["applied"] = True
     return 0, result
 
@@ -943,8 +964,10 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             lock_path = root / CONTENT_LOCK_PATH
             lock = _read_project_json(root, CONTENT_LOCK_PATH, "content lock") if lock_path.exists() \
                 else {"schema_version": 1, "packs": {}}
+            # 新条目只记录刚写入的启动器，它与当前模板一致，所以版本就是当前包版本；
+            # 不再写占位的 0.0.0（那会让 check 永远提示“可更新”）。
             pack_entry = lock.setdefault("packs", {}).get(pack["id"]) or \
-                {"plugin": "agents-init", "version": UNKNOWN_PACK_VERSION, "files": {}}
+                {"plugin": "agents-init", "version": pack["version"], "files": {}}
             pack_entry["files"] = dict(sorted({**pack_entry.get("files", {}),
                                                name: hashlib.sha256(template.encode("utf-8")).hexdigest()}.items()))
             lock["packs"][pack["id"]] = pack_entry
@@ -964,9 +987,20 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--stack", type=split_csv)
     result.add_argument("--runtime")
     result.add_argument("--agent-cli", type=split_csv)
-    result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry"), default="init",
+    result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry", "check", "add-skeleton", "profile",
+                                           "repair-lock", "decide", "case-naming"), default="init",
                         help="refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件；"
-                             "entry：为已初始化的项目补上根目录启动器与 Profile 的 entry 段")
+                             "entry：为已初始化的项目补上根目录启动器与 Profile 的 entry 段；"
+                             "check：只读，对比期望骨架清单；add-skeleton：按模板补上缺失的骨架文件；"
+                             "profile：把缺失或不符的受检字段改为模板值；repair-lock：修复内容锁的 0.0.0 版本；"
+                             "decide：记录或撤销对某个发现的决定；case-naming：只输出 Case 目录改名计划与受影响的引用，不移动任何目录")
+    result.add_argument("--target", action="append", default=[],
+                        help="add-skeleton：骨架路径；profile：字段；decide：发现 ID（可重复；省略则处理全部可处理项）")
+    result.add_argument("--decision", choices=("skip", "keep", "later", "unskip"), help="decide：决定；unskip 撤销")
+    result.add_argument("--reason", help="decide：理由（建议写，随项目同步）")
+    result.add_argument("--fingerprint", help="decide：期望指纹（缺省取该发现当前的指纹）")
+    result.add_argument("--reprompt", action="store_true", help="check：忽略已记录的决定，重新评估全部发现")
+    result.add_argument("--state-dir", type=Path, help="机器本地决定的状态目录（缺省 $XDG_STATE_HOME 或 ~/.local/state）")
     result.add_argument("--entry-name", help=f"根目录启动器文件名（init 缺省 {DEFAULT_ENTRY}；entry 模式必填）")
     result.add_argument("--no-entry", action="store_true", help="init：不生成根目录启动器")
     result.add_argument("--readme-entry", action="store_true",
@@ -996,6 +1030,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         root = validate_root(args.project)
+        if args.mode in ("check", "add-skeleton", "profile", "repair-lock", "decide", "case-naming"):
+            scaffold = _scaffold()
+            code, result = scaffold.run_mode(args, root)
+            print(json_text(result), end="") if args.output == "json" else print(scaffold.render_text(result), end="")
+            return code
         if args.mode == "entry":
             code, result = add_entry(args, root)
             if args.output == "json":

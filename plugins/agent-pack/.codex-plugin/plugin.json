@@ -1,6 +1,6 @@
 {
   "name": "agent-pack",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Deterministic Agent-extension capability management for configured workspaces.",
   "author": {
     "name": "lc4t"
