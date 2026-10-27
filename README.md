@@ -89,10 +89,48 @@ npx @sakanano-moe/agenthelm update --apply   # 执行
 ```
 
 - 云端版本源是 [`latest.json`](latest.json)。`check` 分别标出插件代码更新、只改模板或样例的更新，以及含不兼容变更的版本和需要做的动作。
+- 在项目目录里运行时，`check`（或项目里的 `./menu health`）还会对比项目的**脚手架**和最新版：缺失的骨架文件、模板文件与新版不同、Profile 受检字段缺失、内容锁版本未知、Case 目录命名与声明不符。Opinion、Profile 里的自有字段和审计字段（`source_ref`、`plugin_version` 等）不参与比较。`check` 始终只读，修复用 `fix`（默认预览，`--apply` 才写入）。
 - 插件更新调用 `claude plugin update`、`codex plugin marketplace upgrade`；Cursor 个人安装从带摘要的发布包更新。
 - 项目里由模板生成的文件：未改动的先备份再替换，你改过的逐个选择 `--accept <文件>`（用新模板）或 `--keep <文件>`（保留本地）。
 - 会话开始时 agent-pack 每天至多联网检查一次，有更新才提示一行，离线不报错。关闭：设置 `AGENTHELM_NO_UPDATE_CHECK=1`，或在 `~/.config/agenthelm/config.json` 写 `{"update_check": false}`。
 - Claude Code 的第三方市场默认不自动更新；要让客户端自动更新，可在 `/plugin` → Marketplaces 里为 `agenthelm` 打开 Enable auto-update。
+
+### 脚手架差异：修复与跳过
+
+```bash
+npx @sakanano-moe/agenthelm check                      # 每项差异带一个 ID，例如 skel:docs/refs/README.md
+npx @sakanano-moe/agenthelm fix add-skeleton           # 按模板补上缺失的骨架文件（已有文件不动）；--apply 写入
+npx @sakanano-moe/agenthelm fix profile                # 只改所选 Profile 字段，预览里有 diff，替换前备份
+npx @sakanano-moe/agenthelm fix repair-lock            # 内容锁里的 0.0.0 换成真实版本
+npx @sakanano-moe/agenthelm fix case-naming            # 只给改名计划和受影响的引用，不移动目录
+npx @sakanano-moe/agenthelm fix --skip <ID> --reason "…" --apply   # 永久跳过；--unskip <ID> 撤销
+npx @sakanano-moe/agenthelm check --show-skipped       # 列出被跳过的项和理由
+```
+
+- 决定记在 `.agents/moe.sakanano.agent-pack/check-decisions.json`，随项目同步：一次决定，所有机器生效。默认只有“期望内容”实质变化（指纹不同）时才再次提示；`--reprompt` 强制重新评估。
+- 只和这台机器有关的发现（例如“本机没装运行时”“项目在同步盘里”，ID 以 `local:` 开头）的决定存在用户状态目录，不进项目。
+- `check --fingerprint` 输出脚手架指纹：两台机器的脚手架一致时相同。要知道差在哪里：在另一台机器运行 `check --fingerprint --output json > other.json`，在这台运行 `check --fingerprint --explain other.json`。
+- 项目有自己的 Case 目录命名时，在 Profile 声明：`"work": {"case": {"directory_naming": {"style": "date-topic"}}}`（`style` 为 `case-id`（缺省）/ `date-topic` / `custom` + `pattern` 正则），`check` 按声明检查。
+
+## 多机与同步盘
+
+项目放在 iCloud、Dropbox、OneDrive 等同步盘里、在多台机器上使用时，哪些东西跟着项目走，哪些每台机器各一份：
+
+| 内容 | 位置 | 随项目同步？ |
+| --- | --- | --- |
+| 项目文件、Profile（`project.json`）、内容锁（`content.lock.json`） | 项目里 `.agents/moe.sakanano.agent-pack/` 等 | 是 |
+| 脚手架差异的决定（跳过、保留） | `.agents/moe.sakanano.agent-pack/check-decisions.json` | 是：一次决定，所有机器生效 |
+| 本机决定（运行时未装、项目在同步盘） | `$XDG_STATE_HOME` 或 `~/.local/state` 下的 `agenthelm/decisions/` | 否 |
+| 用户级运行时 | `~/.local/share/agenthelm/`（`runtime install`） | 否：每台机器各装一次 |
+| AI 客户端里的插件 | 各客户端自己的插件目录 | 否 |
+| 版本缓存 | `$XDG_CACHE_HOME` 或 `~/.cache` 下的 `agenthelm/latest.json` | 否 |
+| `wf` / 找资料的交付物台账 | `~/.cache/agenthelm/assets/<项目绝对路径的摘要>/` | 否：路径不同就是两份台账，各自重建 |
+
+- **`wf` 的结果为什么可能不同**：台账按项目的绝对路径各存一份；查找行为还取决于这台机器装的 project-orchestrator 版本，以及项目里可选的 `asset-synonyms.json`（同义词，随项目同步）。要排查，先用 `check --fingerprint` 确认两台机器的脚手架一致，再用 `fix rebuild-index` 重建本机台账。
+- **`which wf` / `which agenthelm` 为空**：运行时没装时 `./menu` 仍通过客户端插件运行；`wf` 是单独的查找命令，运行时不提供它，用 `./menu find 词` 或 `agenthelm project find 词` 代替。`agenthelm runtime install --link-bin ~/.local/bin` 只建 `agenthelm` 的命令链接。
+- **同步盘提示**：`health` 检测到项目位于同步盘时给出一条本机提示（不改任何文件）；`fix sync-folder` 列出项目里的可重建目录（`node_modules`、`.venv`、`__pycache__` 等）和处理方案（`.gitignore`、iCloud 的 `.nosync`、其他服务的选择性同步），**不会替你移动或删除任何内容**。
+- 同步服务可能留下 `check-decisions 2.json` 之类的冲突副本；`check` 会提示，合并到 `check-decisions.json` 后删除副本。
+- 日期 Case 目录、macOS 的 iCloud 未下载占位文件：台账不读取这些文件的内容，不触发下载。
 
 ## 从旧安装方式迁移
 
