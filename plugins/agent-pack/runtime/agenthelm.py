@@ -73,6 +73,10 @@ def write_json_atomic(path: Path, data: Any) -> None:
     os.replace(temporary, path)
 
 
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -98,6 +102,11 @@ class Env:
     def cache_dir(self) -> Path:
         base = self.get("XDG_CACHE_HOME")
         return (Path(base) if base else self.home / ".cache") / "agenthelm"
+
+    @property
+    def state_dir(self) -> Path:
+        base = self.get("XDG_STATE_HOME")
+        return Path(base) if base else self.home / ".local" / "state"
 
     @property
     def config_file(self) -> Path:
@@ -356,10 +365,132 @@ def opinion_findings(project: Path, installed: list[dict]) -> list[dict]:
     return [{"status": "update-available" if result["updates"] else "current", "updates": result["updates"]}]
 
 
+# ---------------------------------------------------------------- project scaffold
+
+PROFILE_FILE = Path(".agents/moe.sakanano.agent-pack/project.json")
+_SCAFFOLD_CACHE: dict[str, Any] = {}
+
+
+def profile_root(project: Path | None) -> Path | None:
+    """The project root that holds the Project Profile, searching upwards from ``project``."""
+    if project is None:
+        return None
+    base = project.expanduser().resolve()
+    return next((path for path in [base, *base.parents] if (path / PROFILE_FILE).is_file()), None)
+
+
+def scaffold_module(env: Env) -> Any | None:
+    """agents-init's scaffold module (the sibling copy first, then the newest installed one); None when too old."""
+    installed = installed_plugins(env, {"agents-init"})
+    copies = [PLUGIN_ROOT.parent / "agents-init", *(Path(item["path"]) for item in installed)]
+    usable = [path for path in copies if (path / "skills/agents-init/scripts/scaffold.py").is_file()]
+    if not usable:
+        return None
+    sibling = PLUGIN_ROOT.parent / "agents-init"
+    root = sibling if sibling in usable else max(usable, key=lambda p: version_key(_manifest_version(p) or "") or (0,))
+    scripts = root / "skills/agents-init/scripts"
+    key = str(scripts)
+    if key not in _SCAFFOLD_CACHE:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(f"agenthelm_scaffold_{len(_SCAFFOLD_CACHE)}", scripts / "scaffold.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        _SCAFFOLD_CACHE[key] = module
+    return _SCAFFOLD_CACHE[key]
+
+
+def scaffold_report(env: Env, project: Path | None, *, reprompt: bool = False) -> dict | None:
+    """Read-only comparison of the project with the expected scaffold; None outside a project."""
+    root = profile_root(project)
+    if root is None:
+        return None
+    base = {"available": False, "root": str(root), "findings": [], "skipped": [], "error": ""}
+    module = scaffold_module(env)
+    if module is None:
+        return {**base, "error": "已安装的 agents-init 没有脚手架检查（更新 agents-init 后再检查）"}
+    try:
+        return {**module.check(root, state_dir=env.state_dir, reprompt=reprompt), "available": True,
+                "root": str(root), "error": ""}
+    except Exception as exc:  # noqa: BLE001 - a broken Profile must not break plugin and content checks
+        return {**base, "error": str(exc)}
+
+
+SYNC_SERVICES = (
+    ("iCloud Drive", re.compile(r"^(com~apple~CloudDocs|Mobile Documents|iCloud Drive|iCloudDrive)$")),
+    ("Dropbox", re.compile(r"^Dropbox( \(.*\))?$")),
+    ("OneDrive", re.compile(r"^OneDrive( - .*|-.*)?$")),
+    ("Google Drive", re.compile(r"^(GoogleDrive(-.*)?|Google Drive|My Drive)$")),
+)
+REBUILDABLE_DIRS = {"node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".cache", "dist", "build", "target",
+                    ".tox", ".next", ".gradle"}
+
+
+def sync_folder(root: Path) -> dict | None:
+    """The sync service whose folder holds the project (by path), and the rebuildable directories inside it."""
+    resolved = root.resolve()
+    service = next((name for name, pattern in SYNC_SERVICES if any(pattern.match(part) for part in resolved.parts)), None)
+    if service is None:
+        return None
+    found: list[str] = []
+    for current, directories, _files in os.walk(resolved):
+        depth = len(Path(current).relative_to(resolved).parts)
+        descend = []
+        for name in directories:
+            if name in REBUILDABLE_DIRS:
+                found.append((Path(current) / name).relative_to(resolved).as_posix())
+            elif name != ".git" and depth < 1:  # 只看根目录和它的下一层
+                descend.append(name)
+        directories[:] = descend
+    return {"service": service, "path": str(resolved), "rebuildable": sorted(found)}
+
+
+def machine_findings(env: Env, project: Path | None, *, reprompt: bool = False) -> dict:
+    """Findings about this machine only (no user-level runtime ...); their decisions live in the user state directory."""
+    root = profile_root(project)
+    result: dict = {"findings": [], "skipped": []}
+    if root is None:
+        return result
+    import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
+
+    findings = []
+    data = agenthelm_runtime.report(env, None)
+    if data["current"] is None:
+        text = agenthelm_runtime.missing_text(data, agenthelm_runtime.command_status())
+        findings.append({"id": "local:runtime-missing", "kind": "runtime-missing", "level": "suggest", "scope": "machine",
+                         "title": "这台机器还没有安装用户级运行时", "reason": text["reason"], "impact": text["impact"],
+                         "fingerprint": "runtime-missing", "fix": "install-runtime", "next": text["label"]})
+    where = sync_folder(root)
+    if where is not None:
+        extra = f"；其中有可重建目录：{'、'.join(where['rebuildable'][:6])}" if where["rebuildable"] else ""
+        findings.append({"id": "local:sync-folder", "kind": "sync-folder", "level": "suggest", "scope": "machine",
+                         "title": f"项目位于同步盘（{where['service']}）",
+                         "reason": f"{where['path']}{extra}",
+                         "impact": "多台机器共用同一份项目时：项目文件随同步盘走，但运行时、缓存与 wf 的台账是每台机器各一份；"
+                                   "可重建目录（依赖、构建产物）同步很慢，也容易产生冲突副本",
+                         "fingerprint": sha256_text(where["service"]), "fix": "sync-folder",
+                         "next": "运行 agenthelm fix sync-folder 查看指引（只给方案，不改文件、不删内容）；不需要就 fix --skip local:sync-folder",
+                         "sync": where})
+    module = scaffold_module(env)
+    if module is None or not findings:
+        result["findings"] = findings
+        return result
+    decisions = module.load_decisions(root, env.state_dir)
+    result["findings"], result["skipped"] = module.partition(findings, decisions, reprompt=reprompt)
+    return result
+
+
 # ---------------------------------------------------------------- report
 
+def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
+    module = scaffold_module(env)
+    if scaffold is None or module is None or not scaffold.get("available"):
+        return None
+    return module.fingerprint(scaffold)
+
+
 def run_check(env: Env, project: Path | None, *, latest_source: str | None = None, offline: bool = False,
-              max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False) -> dict:
+              max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False) -> dict:
     latest, origin = load_latest(
         env, latest_source, offline=offline, max_age=max_age,
         timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS, backoff=hook_mode,
@@ -369,6 +500,9 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     plugins = plugin_findings(latest, installed)
     content = content_findings(project, latest) if project else []
     opinion = opinion_findings(project, installed) if project else []
+    scaffold = scaffold_report(env, project, reprompt=reprompt)
+    machine = machine_findings(env, project, reprompt=reprompt)
+    scaffold_active = len(scaffold["findings"]) if scaffold else 0
     behind = [item for item in plugins if item["status"] == "behind"]
     legacy = [item for item in plugins if item["client"] == "legacy"]
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
@@ -380,14 +514,18 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "plugins": plugins,
         "content": content,
         "opinion": opinion,
+        "scaffold": scaffold,
+        "machine": machine,
         "summary": {
+            "scaffold_findings": scaffold_active,
+            "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
             "plugins_behind": len(behind),
             "breaking": any(item["breaking"] for item in behind),
             "content_updates": len(content_updates),
             "content_conflicts": sum(1 for item in content if item["status"] == "conflict"),
             "opinion_updates": len(opinion_updates),
             "legacy_installs": len(legacy),
-            "up_to_date": not (behind or content_updates or opinion_updates or legacy),
+            "up_to_date": not (behind or content_updates or opinion_updates or legacy or scaffold_active),
         },
     }
 
@@ -414,10 +552,52 @@ def one_line(report: dict) -> str | None:
         parts.append("Opinion 有新版本模板或规则")
     if summary["legacy_installs"]:
         parts.append(f"{summary['legacy_installs']} 个旧方式安装待迁移")
+    if summary["scaffold_findings"]:
+        parts.append(f"项目脚手架有 {summary['scaffold_findings']} 项差异")
     return "agenthelm：" + "，".join(parts) + f"。运行 `{CLI} check` 查看详情；更新前会先预览，由你决定。"
 
 
-def render_text(report: dict) -> str:
+def render_scaffold(report: dict, show_skipped: bool) -> list[str]:
+    scaffold = report.get("scaffold")
+    lines = []
+    if scaffold is None:
+        return lines
+    if scaffold.get("error"):
+        lines.append(f"  [脚手架] 无法检查：{scaffold['error']}")
+        return lines
+    for item in scaffold["findings"]:
+        mark = "（稍后）" if item.get("deferred") else "（期望内容已变化，重新提示）" if item.get("changed_since_decision") else ""
+        fix = f"  处理：fix {item['fix']}" if item.get("fix") else "  需要你自己处理"
+        lines.append(f"  [脚手架] {item['title']}{mark}：{item['reason']}\n      ID {item['id']}{fix}")
+    for message in scaffold["decisions"]["errors"]:
+        lines.append(f"  [脚手架] 决定文件有问题：{message}")
+    if scaffold["decisions"]["conflict_copies"]:
+        lines.append("  [脚手架] 同步服务留下了决定文件的冲突副本："
+                     + "、".join(scaffold["decisions"]["conflict_copies"]) + "（合并到 check-decisions.json 后删除）")
+    if not scaffold["findings"] and not scaffold["decisions"]["errors"]:
+        lines.append("  [脚手架] 与期望一致" + (f"（{len(scaffold['skipped'])} 项已跳过）" if scaffold["skipped"] else ""))
+    skipped = [*scaffold["skipped"], *report.get("machine", {}).get("skipped", [])]
+    if show_skipped:
+        for item in skipped:
+            decision = item["decision"]
+            lines.append(f"  [已跳过·{decision['decision']}] {item['id']}：{decision.get('reason') or '（未写理由）'}"
+                         f"  {decision.get('decided_at', '')}")
+        if not skipped:
+            lines.append("  没有被跳过的项。")
+    elif skipped:
+        lines.append(f"  （另有 {len(skipped)} 项已被你跳过：check --show-skipped 查看）")
+    return lines
+
+
+def render_machine(report: dict) -> list[str]:
+    lines = []
+    for item in report.get("machine", {}).get("findings", []):
+        lines.append(f"  [本机] {item['title']}：{item['reason']}\n      影响：{item['impact']}\n      处理：{item['next']}"
+                     f"\n      ID {item['id']}（只记在这台机器上；fix --skip {item['id']} --reason …）")
+    return lines
+
+
+def render_text(report: dict, *, show_skipped: bool = False) -> str:
     lines = []
     origin = report["latest"]["source"]
     lines.append(f"云端版本源：{origin.get('source')}" + ("（缓存）" if origin.get("cached") else ""))
@@ -460,6 +640,8 @@ def render_text(report: dict) -> str:
             lines.append(f"  [Opinion] 有新版本：{refs}（用 opinion-manager 预览后确认）")
         elif item["status"] in {"error", "unknown"}:
             lines.append(f"  [Opinion] {item.get('error')}")
+    lines += render_scaffold(report, show_skipped)
+    lines += render_machine(report)
     if not report["plugins"]:
         lines.append(f"运行 `{CLI} install` 预览安装。")
     else:
@@ -974,7 +1156,14 @@ def parser() -> argparse.ArgumentParser:
     check.add_argument("--refresh", action="store_true", help="忽略一天的缓存，立即联网")
     check.add_argument("--hook", action="store_true", help="会话开始时静默调用：有更新才输出一行")
     check.add_argument("--hook-format", choices=("text", "claude-hook"), default="text")
-    check.add_argument("--strict", action="store_true", help="有可更新项时退出码为 1（CI 用）")
+    check.add_argument("--strict", action="store_true", help="有可更新项或脚手架差异时退出码为 1（CI 用）")
+    check.add_argument("--show-skipped", action="store_true", help="列出被你跳过的项及理由")
+    check.add_argument("--reprompt", action="store_true", help="忽略已记录的决定，重新评估全部脚手架差异")
+    check.add_argument("--fingerprint", action="store_true",
+                       help="输出脚手架指纹（骨架状态 + 受检 Profile 字段 + 内容锁 + 命名规则；不含 Opinion、自有字段、已跳过项）")
+    check.add_argument("--explain", nargs="?", const="-", metavar="对方的 JSON",
+                       help="与 --fingerprint 合用：不带参数时逐项列出这台的明细；带另一台机器 check --fingerprint "
+                            "--output json 的输出文件时，指出两台差在哪里（有差异退出码 1）")
 
     install = sub.add_parser("install", help="经各客户端的原生市场安装 agenthelm 插件（默认预览）")
     common(install, project=False)
@@ -1004,6 +1193,8 @@ def parser() -> argparse.ArgumentParser:
     doctor_parser = sub.add_parser("doctor", help="报告重复安装、版本不一致、旧方式残留与检查开关")
     common(doctor_parser)
 
+    sub.add_parser("fix", add_help=False,
+                   help="修复项目脚手架差异与更新（等同 project fix；默认预览，--apply 写入；--skip/--unskip 记录决定）")
     sub.add_parser("runtime", add_help=False,
                    help="用户级运行时：install / update / use / status（日常只需要 Python，不经过 npx）")
     sub.add_parser("project", add_help=False,
@@ -1070,10 +1261,48 @@ def run_runtime(argv: list[str]) -> int:
     return agenthelm_runtime.main(argv, sys.modules[__name__])
 
 
+def print_fingerprint(env: Env, report: dict, args: argparse.Namespace) -> int:
+    """``check --fingerprint [--explain [file]]``: the scaffold fingerprint, and where two machines differ."""
+    result = scaffold_fingerprint(env, report.get("scaffold"))
+    if result is None:
+        reason = (report.get("scaffold") or {}).get("error") or "当前目录不在 agenthelm 项目里"
+        print(json.dumps({"ok": False, "error": reason}, ensure_ascii=False) if args.output == "json"
+              else f"无法计算脚手架指纹：{reason}", file=sys.stderr if args.output != "json" else sys.stdout)
+        return 4
+    payload: dict = {"ok": True, "fingerprint": result["fingerprint"], "detail": result["detail"]}
+    lines = [f"脚手架指纹 {result['fingerprint']}"]
+    differences: list[str] = []
+    if args.explain and args.explain != "-":
+        try:
+            other = read_json(Path(args.explain).expanduser())
+        except (OSError, ValueError) as exc:
+            print(f"读不了对方的输出：{exc}", file=sys.stderr)
+            return 2
+        theirs = other.get("detail") or (other.get("scaffold_fingerprint") or {}).get("detail") or other.get("fingerprint", {}).get("detail")
+        if not isinstance(theirs, dict):
+            print("对方的文件里没有指纹明细：请在对方机器运行 agenthelm check --fingerprint --output json 并保存输出", file=sys.stderr)
+            return 2
+        module = scaffold_module(env)
+        differences = module.explain(result["detail"], theirs)
+        payload["same"] = not differences
+        payload["differences"] = differences
+        lines.append("两台机器的脚手架一致。" if not differences else f"有 {len(differences)} 处不同：")
+        lines += [f"  {item}" for item in differences]
+    elif args.explain:
+        lines += [f"  {key} = {value}" for key, value in result["detail"].items()]
+    if args.output == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print("\n".join(lines))
+    return 1 if differences else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["project"]:
         return run_project(argv[1:])
+    if argv[:1] == ["fix"]:
+        return run_project(["fix", *argv[1:]])
     if argv[:1] == ["runtime"]:
         return run_runtime(argv[1:])
     args = parser().parse_args(argv)
@@ -1094,12 +1323,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "check":
             report = run_check(env, project, latest_source=args.latest, offline=args.offline,
-                               max_age=0 if args.refresh else CACHE_TTL_SECONDS)
+                               max_age=0 if args.refresh else CACHE_TTL_SECONDS, reprompt=args.reprompt)
             report.pop("_latest")
+            if args.fingerprint or args.explain:
+                return print_fingerprint(env, report, args)
             if args.output == "json":
                 print(json.dumps(report, ensure_ascii=False, indent=2))
             else:
-                sys.stdout.write(render_text(report))
+                sys.stdout.write(render_text(report, show_skipped=args.show_skipped))
             return 1 if args.strict and not report["summary"]["up_to_date"] else 0
         if args.command == "doctor":
             result = doctor(env, run_check(env, project, latest_source=args.latest))

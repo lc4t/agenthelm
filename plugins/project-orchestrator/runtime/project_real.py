@@ -69,6 +69,8 @@ class RealProvider:
         self.via_launcher = via_launcher
         self._health: dict | None = None
         self._items: dict | None = None
+        self.reprompt = False  # health/check：忽略已记录的决定，重新评估
+        self._skipped: list[dict] = []
 
     # -------------------------------------------------------------- shared pieces
 
@@ -330,7 +332,8 @@ class RealProvider:
         self._check_memory(findings, ok)
         project_write.check_tools(self, findings, ok)
         source = project_maintain.check_updates(self, findings, ok)
-        self._health = {"findings": findings, "ok": ok, "read_at": now_iso(), "update_source": source}
+        self._health = {"findings": findings, "ok": ok, "read_at": now_iso(), "update_source": source,
+                        "skipped": self._skipped}
         return self._health
 
     def _check_environment(self, findings: list[dict], ok: list[str]) -> None:
@@ -451,6 +454,9 @@ class RealProvider:
 
     def apply_fix(self, plan: dict, choices: dict[str, str]) -> dict:
         return project_maintain.apply(self, plan, choices)
+
+    def decide(self, skip: list[str], unskip: list[str], reason: str, apply: bool) -> dict:
+        return project_maintain.decide_ids(self, skip, unskip, reason, apply)
 
     def record_preview(self, target: str | None, change: dict) -> dict:
         return project_write.preview(self, target, change)

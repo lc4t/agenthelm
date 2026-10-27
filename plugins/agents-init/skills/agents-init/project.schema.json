@@ -34,7 +34,12 @@
         "distribution": {"enum": ["marketplace", "bundled", "external"]},
         "required": {"type": "boolean"},
         "commit_policy": {"enum": ["explicit", "project-policy"]},
-        "push_policy": {"enum": ["explicit", "project-policy"]}
+        "push_policy": {"enum": ["explicit", "project-policy"]},
+        "source_repository": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用的来源仓库。运行时代码不读取，check 不比较，也不进脚手架指纹。"},
+        "source_ref": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用的发布 tag。同上，仅作记录。"},
+        "source_commit": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用的提交。同上，仅作记录。"},
+        "plugin_version": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用时的 project-orchestrator 版本。同上，仅作记录。"},
+        "capability_manager_version": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用时的 agent-pack 版本。同上，仅作记录。"}
       }
     },
     "opinion": {
@@ -45,7 +50,8 @@
         "provider": {"type": ["string", "null"]},
         "project_overlay": {"type": ["string", "null"]},
         "strict_mode": {"enum": ["smart", "strict", "disabled"]},
-        "loading_mode": {"enum": ["tiered", "full"]}
+        "loading_mode": {"enum": ["tiered", "full"]},
+        "tool_version": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：生成该 Opinion 时的工具版本；不参与比较。"}
       }
     },
     "memory": {
@@ -99,7 +105,16 @@
           "type": ["object", "null"], "additionalProperties": true,
           "properties": {
             "root": {"$ref": "#/$defs/relativePath"},
-            "artifact_mode": {"enum": ["case-local", "external-references"]}
+            "artifact_mode": {"enum": ["case-local", "external-references"]},
+            "command": {"type": ["array", "string"], "description": "项目自己的 Case 工具命令；声明后项目入口不绕过它写 Case。"},
+            "directory_naming": {
+              "type": "object", "additionalProperties": true,
+              "description": "Case 目录命名规则，check 据此检查目录名；缺省按 CASE-日期-序号-主题。fix case-naming 只给改名计划，不移动目录。",
+              "properties": {
+                "style": {"enum": ["case-id", "date-topic", "custom"]},
+                "pattern": {"type": "string", "description": "匹配整个目录名的正则；style 为 custom 时必填。"}
+              }
+            }
           }
         },
         "assets": {

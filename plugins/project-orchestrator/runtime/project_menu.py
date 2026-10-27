@@ -256,6 +256,12 @@ def fix_screen(provider, preset: list[str] | None = None) -> None:
         for item in step["custom"]:
             if step["blocked"]:
                 continue
+            if item.get("options"):
+                choices[item["path"]] = _decide_item(item, step["payload"].get("diffs", {}).get(item["path"], ""))
+                if choices[item["path"]] == "skip" and "_reason" not in choices:
+                    choices["_reason"] = choose("永久跳过的理由（回车略过；会随项目同步，换一台机器也看得到）", "")
+                asked = True
+                continue
             answer = choose(f"{item['path']} {item['state']}：k 不改（默认）/ a 采用", "k") \
                 if item["path"] == "README.md" else \
                 choose(f"{item['path']} {item['state']}：k 保留你的版本（默认）/ a 采用新模板", "k")
@@ -273,6 +279,18 @@ def fix_screen(provider, preset: list[str] | None = None) -> None:
         return
     print(S.bold("5. 验证结果"))
     show(cli.render_apply(provider.apply_fix(plan, choices)))
+
+
+def _decide_item(item: dict, diff: str) -> str:
+    """每项四选一：采用 / 永久跳过 / 稍后 / 查看差异（看完再选）。"""
+    while True:
+        answer = choose(f"{item['path']}（{item['state']}）：a 采用（默认）/ s 永久跳过 / l 稍后 / d 查看差异", "a")
+        if answer == "d":
+            print(S.dim(diff or "（没有差异内容可显示）"))
+            continue
+        if answer in ("a", "s", "l"):
+            return {"a": "accept", "s": "skip", "l": "later"}[answer]
+        print(S.yellow("请输入 a、s、l 或 d。"))
 
 
 def record_screen(provider, target: str | None = None) -> None:

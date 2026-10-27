@@ -8,8 +8,11 @@
     agenthelm project progress [词]     看进展：按状态分组；--status 只看一种，--all 含已完成
     agenthelm project show <事项>       事项详情：编号、旧编号、别名或标题片段都可以
     agenthelm project guide            项目指南
-    agenthelm project health           检查项目与环境；有必须处理的项时退出码为 1
+    agenthelm project health           检查项目与环境（含脚手架是否与最新版一致）；有必须处理的项时退出码为 1
     agenthelm project fix [项…]         修复与更新：默认只预览，--apply 执行；--keep / --accept 选择定制文件
+    agenthelm project fix add-skeleton [路径…]   按模板补上缺少的骨架文件（已有文件不动）
+    agenthelm project fix profile [字段…]        只改所选 Profile 字段，预览里有 diff
+    agenthelm project fix --skip <ID> --reason …  永久跳过某个发现（记入随项目同步的决定文件）；--unskip <ID> 撤销
     agenthelm project record <事项|new> 记录事项：默认只预览，--apply 写入
     agenthelm project tools [工具]      项目自行声明的工具；--run --apply 执行
     agenthelm project capabilities     各项能力当前是否可用、为什么
@@ -19,8 +22,10 @@
 --demo study|personal|research|blank 使用内置的虚构项目体验，可加 --demo-fault
 index-broken|offline|runtime-old|conflict；演示结果都标注「演示」，不读写真实文件。
 
-退出码：0 成功；1 没有结果或有必须处理的项；2 用法错误；3 运行时与项目入口不兼容；
-4 能力当前不可用；5 写入冲突（别人刚改过）；6 执行失败；130 中断。
+退出码：0 成功；1 没有结果或有必须处理的项；2 用法错误（含 --skip 了现在不存在的发现 ID）；
+3 运行时与项目入口不兼容；4 能力当前不可用（含决定文件损坏）；5 写入冲突（别人刚改过，
+含决定文件刚被另一台机器同步更新）；6 执行失败；130 中断。
+脚手架差异只算“建议处理”，不会让 health 退出码变成 1。
 """
 from __future__ import annotations
 
@@ -231,7 +236,7 @@ def render_guide(guide: dict) -> list[str]:
     return lines
 
 
-def render_health(health: dict) -> tuple[list[str], list[dict]]:
+def render_health(health: dict, show_skipped: bool = False) -> tuple[list[str], list[dict]]:
     lines, numbered = [], []
     source = health["update_source"]
     if source["status"] == "online":
@@ -258,6 +263,18 @@ def render_health(health: dict) -> tuple[list[str], list[dict]]:
             lines.append(f"     影响：{finding['impact']}")
             for step in finding["next"]:
                 lines.append(f"     下一步：{step['label']}" + S.dim(command_hint(step["action"])))
+            if finding.get("decision"):
+                where = "只记在这台机器上" if finding["decision"]["scope"] == "machine" else "记入项目，所有机器生效"
+                lines.append(S.dim(f"     不需要？fix --skip {finding['decision']['id']} --reason …（{where}）"))
+    skipped = health.get("skipped") or []
+    if show_skipped:
+        lines.append(S.bold(f"已跳过（{len(skipped)}）") if skipped else S.dim("没有被跳过的项。"))
+        for item in skipped:
+            decision = item["decision"]
+            lines.append(f"     {item['id']}：{decision.get('reason') or '（未写理由）'} "
+                         + S.dim(f"[{decision['decision']} {decision.get('decided_at', '')}]"))
+    elif skipped:
+        lines.append(S.dim(f"另有 {len(skipped)} 项已被跳过：health --show-skipped 查看"))
     if health["ok"]:
         lines.append(S.green("正常：") + "、".join(health["ok"]))
     return lines, numbered
@@ -280,7 +297,10 @@ def render_plan(plan: dict, choices: dict[str, str] | None = None) -> list[str]:
         for item in step["custom"]:
             chosen = (choices or {}).get(item["path"])
             decision = chosen or item["default"]
-            if item["path"] == "README.md":
+            if item.get("options"):
+                label = ("" if chosen else "默认") + {"accept": "采用（按模板处理）", "skip": "永久跳过（记入决定文件）",
+                                                    "later": "稍后（本次不处理）"}.get(decision, decision)
+            elif item["path"] == "README.md":
                 label = ("" if chosen else "默认") + ("不改" if decision == "keep" else "追加「怎样使用」")
             else:
                 label = ("" if chosen else "默认") + ("保留你的版本" if decision == "keep" else "采用新模板")
@@ -397,23 +417,58 @@ def cmd_guide(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, l
 
 
 def cmd_health(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
+    provider.reprompt = bool(getattr(args, "reprompt", False))
     health = provider.health()
-    lines, _ = render_health(health)
+    lines, _ = render_health(health, bool(getattr(args, "show_skipped", False)))
     must = any(finding["level"] == "must" for finding in health["findings"])
     return (EXIT_ATTENTION if must else EXIT_OK), health, header(provider, "检查项目与环境") + lines
 
 
 def cmd_fix(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
+    if args.skip or args.unskip:
+        return _fix_decisions(provider, args)
     choices = {path: "keep" for path in args.keep} | {path: "accept" for path in args.accept}
     if args.entry_name:
         choices["entry-name"] = args.entry_name
-    plan = provider.fix_plan(args.ids, choices)
+    ids, targets = _split_targets(args.ids)
+    if targets:
+        choices["_targets"] = "\n".join(targets)
+    if args.reason:
+        choices["_reason"] = args.reason
+    plan = provider.fix_plan(ids, choices)
     lines = header(provider, "修复与更新") + render_plan(plan, choices)
     if not args.apply:
         lines.append(S.dim("以上为预览，没有写入。确认后加 --apply；定制文件用 --keep / --accept 指定。"))
+        if any(item.get("options") for step in plan["steps"] for item in step["custom"]):
+            lines.append(S.dim("不想要其中某项：fix --skip <ID> --reason …（ID 见 health / check）；只处理几项：在处理项后列出路径或字段。"))
         return EXIT_OK, {"plan": plan, "applied": False}, lines
     result = provider.apply_fix(plan, choices)
     return EXIT_OK, {"plan": plan, "applied": True, **result}, lines + render_apply(result)
+
+
+def _split_targets(ids: list[str]) -> tuple[list[str], list[str]]:
+    if ids and ids[0] in ("add-skeleton", "profile"):
+        return ids[:1], ids[1:]
+    return ids, []
+
+
+def _fix_decisions(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
+    """--skip / --unskip: write only the decision file; the check itself stays read-only."""
+    if not hasattr(provider, "decide"):
+        raise EntryError("演示项目没有决定文件", "usage")
+    result = provider.decide(args.skip, args.unskip, args.reason or "", args.apply)
+    lines = header(provider, "记录决定")
+    for item in result["decisions"]:
+        if item["mode"] == "decide":
+            verb = "已记录" if item["applied"] else "将记录"
+            lines.append(f"  {verb}：{item['id']} → {item['entry']['decision']}"
+                         + (f"（{item['entry']['reason']}）" if item["entry"].get("reason") else "（没有写理由）")
+                         + f"，写入 {item['file']}（{'随项目同步' if item['scope'] == 'project' else '只在这台机器'}）")
+        else:
+            lines.append(f"  {'已撤销' if item['applied'] else '将撤销'}：{item['id']}（{item['file']}）")
+    if not args.apply:
+        lines.append(S.dim("以上为预览，没有写入。确认后加 --apply。"))
+    return EXIT_OK, result, lines
 
 
 def _record_change(args: argparse.Namespace) -> dict:
@@ -527,9 +582,14 @@ def parser() -> argparse.ArgumentParser:
     progress.add_argument("--all", action="store_true", help="同时列出已完成与放弃的事项")
     add("show", "事项详情").add_argument("item")
     add("guide", "项目指南")
-    add("health", "检查项目与环境")
+    health = add("health", "检查项目与环境")
+    health.add_argument("--show-skipped", action="store_true", help="列出被你跳过的项及理由")
+    health.add_argument("--reprompt", action="store_true", help="忽略已记录的决定，重新评估全部差异")
     fix = add("fix", "修复与更新")
-    fix.add_argument("ids", nargs="*")
+    fix.add_argument("ids", nargs="*", help="处理项；add-skeleton / profile 后可跟路径 / 字段")
+    fix.add_argument("--skip", action="append", default=[], metavar="ID", help="永久跳过这个发现（记入决定文件）")
+    fix.add_argument("--unskip", action="append", default=[], metavar="ID", help="撤销对这个发现的跳过")
+    fix.add_argument("--reason", help="--skip 的理由（建议写；随项目同步，换一台机器也看得到）")
     fix.add_argument("--apply", action="store_true")
     fix.add_argument("--keep", action="append", default=[])
     fix.add_argument("--accept", action="append", default=[])

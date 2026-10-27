@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "description": "agents-init 发布的期望骨架清单：项目应有哪些脚手架文件、Profile 字段，以及各自怎样比较。",
+  "files": [
+    {"path": "AGENTS.md", "required": true, "compare": "lock"},
+    {"path": "AGENT.RULES.md", "required": true, "compare": "lock"},
+    {"path": "CLAUDE.md", "required": true, "compare": "lock"},
+    {"path": "AGENT.md", "required": true, "compare": "lock"},
+    {"path": "OPINION.md", "required": false, "compare": "opinion"},
+    {"path": ".agents/plugin.json", "required": true, "compare": "exists"},
+    {"path": ".agents/mcp.json", "required": true, "compare": "exists"},
+    {"path": ".agents/skills/.gitkeep", "required": true, "compare": "dir"},
+    {"path": ".agent-doc/plan.md", "required": true, "compare": "exists"},
+    {"path": ".agent-doc/progress.md", "required": true, "compare": "exists"},
+    {"path": ".agent-doc/chat-summary.md", "required": true, "compare": "exists"},
+    {"path": "{memory_root}/.gitkeep", "required": true, "compare": "dir"},
+    {"path": "docs/refs/README.md", "required": true, "compare": "lock"},
+    {"path": "docs/drafts/.gitkeep", "required": true, "compare": "dir"},
+    {"path": "{case_root}/.gitkeep", "required": true, "compare": "dir", "when": "case-workspace"},
+    {"path": "{launcher}", "required": true, "compare": "lock", "when": "entry"}
+  ],
+  "profile": [
+    {"path": "schema_version", "type": "string", "mode": "equal"},
+    {"path": "name", "type": "string", "mode": "manual"},
+    {"path": "runtime.skill", "type": "string", "mode": "equal"},
+    {"path": "runtime.plugin", "type": "string", "mode": "equal"},
+    {"path": "runtime.capability_manager", "type": "string", "mode": "equal"},
+    {"path": "runtime.distribution", "type": "string", "mode": "default", "enum": ["marketplace", "bundled", "external"]},
+    {"path": "runtime.required", "type": "boolean", "mode": "default"},
+    {"path": "runtime.commit_policy", "type": "string", "mode": "default"},
+    {"path": "runtime.push_policy", "type": "string", "mode": "default"},
+    {"path": "opinion.provider", "type": "string", "mode": "default"},
+    {"path": "opinion.project_overlay", "type": "string", "mode": "default"},
+    {"path": "memory.provider", "type": "string", "mode": "default"},
+    {"path": "memory.root", "type": "string", "mode": "default"},
+    {"path": "capabilities.plugin_roots", "type": "array", "mode": "default"},
+    {"path": "capabilities.skill_roots", "type": "array", "mode": "default"},
+    {"path": "capabilities.mcp_sources", "type": "array", "mode": "default"},
+    {"path": "capabilities.destination_skill_root", "type": "string", "mode": "default"},
+    {"path": "capabilities.destination_mcp", "type": "string", "mode": "default"},
+    {"path": "work.mode", "type": "string", "mode": "manual"},
+    {"path": "work.case.root", "type": "string", "mode": "default", "when": "case-workspace"},
+    {"path": "work.case.artifact_mode", "type": "string", "mode": "default", "when": "case-workspace"},
+    {"path": "privacy.forbidden_default_reads", "type": "array", "mode": "default"},
+    {"path": "privacy.generated_outputs", "type": "array", "mode": "default"}
+  ],
+  "audit_fields": [
+    "$schema",
+    "initializer_version",
+    "runtime.source_repository",
+    "runtime.source_ref",
+    "runtime.source_commit",
+    "runtime.plugin_version",
+    "runtime.capability_manager_version",
+    "opinion.tool_version"
+  ],
+  "opinion_fields": [
+    "opinion.strict_mode",
+    "opinion.loading_mode"
+  ],
+  "legacy_paths": [
+    ".agents/moe.sakanano.project-runtime/project.json"
+  ]
+}

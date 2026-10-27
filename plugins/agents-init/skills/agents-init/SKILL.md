@@ -69,6 +69,19 @@ python3 scripts/init_project.py --mode migrate --project /path/to/project \
   --replace AGENTS.md --recovery-dir /safe/recovery/example-v6 --apply
 ```
 
+已初始化的项目对照最新脚手架用 `--mode check`（只读）；其余模式默认只预览，`--apply` 才写入，已有文件不被覆盖，替换前备份到 `--recovery-dir`：
+
+```bash
+python3 scripts/init_project.py --project /path/to/project --mode check
+python3 scripts/init_project.py --project /path/to/project --mode add-skeleton [--target docs/refs/README.md]
+python3 scripts/init_project.py --project /path/to/project --mode profile [--target runtime.commit_policy] --recovery-dir /safe/recovery/example
+python3 scripts/init_project.py --project /path/to/project --mode repair-lock
+python3 scripts/init_project.py --project /path/to/project --mode decide --target skel:docs/drafts/.gitkeep --decision skip --reason "…" --apply
+python3 scripts/init_project.py --project /path/to/project --mode case-naming   # 只给改名计划，不移动目录
+```
+
+期望骨架清单是 [skeleton.json](skeleton.json)（内容包 `agents-init/project-skeleton`）；Opinion、Profile 里的项目自有字段与审计字段不参与比较。用户的跳过 / 保留决定写入 `.agents/moe.sakanano.agent-pack/check-decisions.json`，随项目同步。日常入口是 `agenthelm check` 与 `agenthelm fix`。
+
 ## 输出契约
 
 v6 基线结构如下：
