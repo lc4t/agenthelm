@@ -3,10 +3,10 @@
   "packs": [
     {
       "id": "project-orchestrator/case-template",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "sample",
       "title": "默认 Case 模板与 Schema",
-      "description": "runtime/case.py 新建 Case 时使用的 CASE.md 正文模板与默认 Frontmatter Schema；只影响之后新建的 Case，已有 Case 不会被改写。",
+      "description": "runtime/case.py 新建 Case 时使用的 CASE.md 正文模板与默认 Frontmatter Schema；只影响之后新建的 Case，已有 Case 不会被改写。（1.1.0：Schema 增加可选字段 sop，记录这个 Case 是哪个 SOP 的一次执行。）",
       "sources": [
         "templates",
         "references/case.schema.json"
@@ -14,7 +14,7 @@
       "materializes": [],
       "project_lock": "none",
       "files": {
-        "references/case.schema.json": "7e56e407926a3e49434102ca87bcd5e48174357f527afd8952ab9af993732205",
+        "references/case.schema.json": "ecb37f084b901786bdc878cdc7f1e5d74c2eb31722d6a10fe24f6d88768bcbde",
         "templates/CASE.md": "a33ffcec5c239cbcf4c0828f08336c578d6d184363b01db1419f74fcdc9e1086"
       }
     },
@@ -31,6 +31,24 @@
       "project_lock": "none",
       "files": {
         "references/asset-synonyms.example.json": "a3338b98addd2b0fa386829850e0dd2667dff593ac7aa7f8e70b91372b3439c9"
+      }
+    },
+    {
+      "id": "project-orchestrator/sop-samples",
+      "version": "1.0.0",
+      "kind": "sample",
+      "title": "SOP 样例",
+      "description": "runtime/sop.py new --template 使用的 SOP 样例：blank（空白，带填写说明）、video-to-transcript（视频转文字稿，展示工具清单、替代方案与中间产物）、weekly-review（周期性复盘，展示周期触发与附带模板）。样例创建的都是草稿，需要与用户谈清各项约定后才能启用；已创建的 SOP 不会被改写。",
+      "sources": [
+        "sop-templates"
+      ],
+      "materializes": [],
+      "project_lock": "none",
+      "files": {
+        "sop-templates/blank/SOP.md": "efec23ad29102590bdd16268c79222eb6f14fa8a1352deb27a5e55d35c413704",
+        "sop-templates/video-to-transcript/SOP.md": "eb04847674674e6257a94eadff7033e03b6ad3fea28f98b1e91571bce996be01",
+        "sop-templates/weekly-review/SOP.md": "a6bb1e740d32d470bc2f4bb85b5c8a99c2bf74854be9b81b8e390468005db5d2",
+        "sop-templates/weekly-review/templates/review.md": "cf8321a1739cecf6286d591e88a6af86831b01c12e77834a873ea497a5db127c"
       }
     }
   ]

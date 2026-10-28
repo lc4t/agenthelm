@@ -116,6 +116,17 @@ Case 自有输入放 `refs/`，交付物放 `docs/`（草稿 `docs/drafts/`）�
 
 Project Profile 声明了 `memory` 时，恢复状态后读取记忆索引：`provider` 为 `project-orchestrator` 时运行随包的 `runtime/memory.py index --project <项目>`，为 `project` 时运行其 `index_command`。索引每条一行，说明何时应当想起该条记忆；只在当前任务命中时读取条目正文。依据某条记忆行动前，核对其中提到的文件、命令与外部对象仍然存在；标注为可能过期的条目先核实再使用。
 
+### 3.1 流程（SOP）
+
+用户可以把常用流程固化成 SOP（Standard Operating Procedure，标准作业流程）。契约与命令见 [SOP 契约](../../references/sop.md)，与用户一起建立见 [建立 SOP](../../references/sop-interview.md)。
+
+- **读索引**：存在 `sops/` 目录或用户级 SOP 时，恢复状态后运行随包的 `runtime/sop.py index --project <项目>`（一行一个已启用的 SOP，写明触发与不触发条件）。没有 SOP 时静默跳过。
+- **判断触发**：用户明确指定、事件（Case 新建 / 关闭，`sop.py events`）、周期到期（`sop.py due`）、意图对照触发与不触发条件，按这个优先级。命中后默认先问用户一次是否按它执行；多个命中合并成一次编号提问；到期只是提醒。只读被命中的那一个 SOP 的正文。
+- **执行**：`sop.py preflight` 检查所需程序与环境，缺失项一次性列给用户并等待处理，**不自行安装软件**；`sop.py run`（预览 → 用户确认 → `--apply`）建立执行 Case；逐步执行并用 `sop.py step --apply` 记录结果与中间产物；出错、缺工具、花钱或耗时步骤按 Case 里固化的“执行约定”处理；收尾用 `sop.py status` 与完成标准核对。
+- **授权不变**：SOP 不放宽任何授权，写入、外发、删除、push、安装、花钱类步骤仍须用户当次同意；与用户当次请求冲突时以请求为准并说明偏离。
+- **创建与修改**：SOP 里的工具、出错处理、中间产物位置等是用户的习惯，只提问、整理、校验，不替用户决定；`decided` 只在用户确认后用 `sop.py decide` 写入；修改后用 `sop.py revise` 登记版本。
+- 一次执行的状态只写在 Case 里，不在 SOP 目录里另记；SOP 不是 Opinion（表达偏好）也不是记忆（事实），不要写错位置。
+
 ## 4. 路由能力
 
 根据三项输入构建执行路由：

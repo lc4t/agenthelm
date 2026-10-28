@@ -53,7 +53,7 @@ DEFAULT_ENTRY = "menu"
 ENTRY_API = 1
 ENTRY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 RESERVED_ENTRY_NAMES = {"AGENTS.md", "AGENT.md", "CLAUDE.md", "AGENT.RULES.md", "OPINION.md", "README.md",
-                        "cases", "docs", "memory", ".agents", ".git"}
+                        "cases", "docs", "memory", "sops", ".agents", ".git"}
 README_START = "<!-- agenthelm:entry -->"
 README_END = "<!-- /agenthelm:entry -->"
 # 内容锁里没有记录模板版本时（早于内容锁的项目），补登的条目使用这个版本，检查会提示刷新。
@@ -359,6 +359,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
             "check_command": None,
             "policy": None,
         },
+        "sop": {"root": "sops"},
         "capabilities": {
             "plugin_roots": [".agents"],
             "plugin_dirs": [],
@@ -414,6 +415,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
         Path(".agent-doc/progress.md"): render_template(templates[".agent-doc/progress.md"], replacements),
         Path(".agent-doc/chat-summary.md"): render_template(templates[".agent-doc/chat-summary.md"], replacements),
         Path("memory/.gitkeep"): "",
+        Path("sops/.gitkeep"): "",
         Path("docs/refs/README.md"): render_template(templates["docs/refs/README.md"], replacements),
         Path("docs/drafts/.gitkeep"): "",
     }

@@ -29,7 +29,7 @@
     },
     {
       "id": "agents-init/project-skeleton",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "manifest",
       "title": "期望骨架清单",
       "description": "项目脚手架应有的文件、Profile 受检字段与不参与比较的字段（审计字段、Opinion 设置）；agenthelm check 据此对比项目，不写入项目。",
@@ -39,7 +39,7 @@
       "materializes": [],
       "project_lock": "none",
       "files": {
-        "skills/agents-init/skeleton.json": "70ea5e360f018c0d840d5d7aa022f811d665642a2d127f254f7a76335b4e77da"
+        "skills/agents-init/skeleton.json": "99e7ab8dcb38485d77204ca7110fddbe01dc808a18b2384e3103459db237748d"
       }
     }
   ]

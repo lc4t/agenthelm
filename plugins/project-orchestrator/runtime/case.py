@@ -30,7 +30,7 @@ CREDENTIAL_RE = re.compile(r"(credential|secret|token|password|passwd|private-?k
 STATUS_ORDER = {"active": 0, "waiting": 1, "captured": 2, "suspended": 3, "done": 4, "abandoned": 5}
 CLOSED = {"done", "abandoned"}
 FIELD_ORDER = ("schema_version", "id", "title", "status", "sensitivity", "source", "goal", "done_when",
-               "current_state", "next_action", "waiting_for", "resume_when", "artifact_mode")
+               "current_state", "next_action", "waiting_for", "resume_when", "artifact_mode", "sop")
 LIST_FIELDS = ("aliases", "legacy_ids", "tags", "deliverables", "evidence")
 MAX_CASE_BYTES = 2 * 1024 * 1024
 
@@ -258,9 +258,12 @@ def _render_new_case(project: Project, args: argparse.Namespace, fields: dict, c
             "sensitivity": "shared", "source": fields["source"], "goal": fields["goal"],
             "done_when": fields["done_when"], "current_state": fields["current_state"],
             "next_action": fields["next_action"], "artifact_mode": "case-local",
+            "sop": (getattr(args, "sop", None) or ""),
             "aliases": [], "legacy_ids": [], "tags": sorted(set(args.tag)), "deliverables": [], "evidence": [],
             "created_at": stamp, "updated_at": stamp}
     data = {key: value for key, value in data.items() if key in project.schema.get("properties", data)}
+    if not data.get("sop"):
+        data.pop("sop", None)
     errors = validate_schema(data, project.schema)
     if errors:
         raise CaseError("新 Case 不符合 Schema：" + "；".join(errors), "schema")
@@ -481,6 +484,7 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--source")
     new.add_argument("--current-state")
     new.add_argument("--tag", action="append", default=[])
+    new.add_argument("--sop", help="这个 Case 是 SOP 的一次执行：<sop-id>@<版本>（通常由 sop.py run 填写）")
     listing = command("list", "列出 Case（默认不含已关闭）")
     listing.add_argument("--status", choices=tuple(STATUS_ORDER))
     listing.add_argument("--all", action="store_true")

@@ -547,5 +547,46 @@ class FingerprintTests(ScaffoldCase):
         self.assertTrue(report["fingerprint"]["fingerprint"].startswith("sha256:"))
 
 
+class SopSkeletonTests(ScaffoldCase):
+    def profile_data(self) -> dict:
+        return json.loads((self.root / PROFILE).read_text(encoding="utf-8"))
+
+    def test_new_project_declares_the_sop_section_and_has_the_directory(self) -> None:
+        self.init()
+        self.assertEqual(self.profile_data()["sop"], {"root": "sops"})
+        self.assertTrue((self.root / "sops/.gitkeep").is_file())
+        self.assertEqual(self.check()["findings"], [])
+
+    def test_a_project_without_the_sop_section_gets_no_new_findings(self) -> None:
+        self.init()
+        before = scaffold.fingerprint(self.check())["fingerprint"]
+        data = self.profile_data()
+        del data["sop"]
+        (self.root / PROFILE).write_text(json.dumps(data), encoding="utf-8")
+        (self.root / "sops/.gitkeep").unlink()
+        (self.root / "sops").rmdir()
+        report = self.check()
+        self.assertFalse([item for item in self.ids(report) if "sops" in item], report["findings"])
+        self.assertNotEqual(scaffold.fingerprint(report)["fingerprint"], before)  # 期望清单少了一项，指纹随之不同
+        self.assertEqual(report["findings"], [])
+
+    def test_a_declared_but_missing_sop_directory_is_found_and_fixed(self) -> None:
+        self.init()
+        (self.root / "sops/.gitkeep").unlink()
+        (self.root / "sops").rmdir()
+        report = self.check()
+        self.assertIn("skel:sops/.gitkeep", self.ids(report))
+        code, result = self.run_mode("add-skeleton", "--target", "sops/.gitkeep", "--apply")
+        self.assertEqual(code, 0, result)
+        self.assertTrue((self.root / "sops/.gitkeep").is_file())
+
+    def test_a_custom_sop_root_is_honoured(self) -> None:
+        self.init()
+        data = self.profile_data()
+        data["sop"] = {"root": "flows"}
+        (self.root / PROFILE).write_text(json.dumps(data), encoding="utf-8")
+        self.assertIn("skel:flows/.gitkeep", self.ids(self.check()))
+
+
 if __name__ == "__main__":
     unittest.main()
