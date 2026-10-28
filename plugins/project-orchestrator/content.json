@@ -38,7 +38,7 @@
       "version": "1.0.0",
       "kind": "sample",
       "title": "SOP 样例",
-      "description": "runtime/sop.py new --template 使用的 SOP 样例：blank（空白，带填写说明）、video-to-transcript（视频转文字稿，展示工具清单、条件性前置、替代方案与中间产物）、weekly-review（周期性复盘，展示复盘范围与私密敏感度）、knowledge-digest（知识整理，展示可共享的流程与规则候选的交接）。样例只含流程结构，不含任何个人进度或数据；创建的都是草稿，需要与用户谈清各项约定后才能启用；已创建的 SOP 不会被改写。",
+      "description": "runtime/sop.py new --template 使用的 SOP 样例：blank（空白，带填写说明）、video-to-transcript（视频转文字稿，展示工具清单、条件性前置、替代方案与中间产物）、weekly-review（周期性复盘，展示先确定复盘范围）、knowledge-digest（知识整理，展示可共享的流程与规则候选的交接）。样例只含流程结构，不含任何个人进度或数据；创建的都是草稿，需要与用户谈清各项约定后才能启用；已创建的 SOP 不会被改写。",
       "sources": [
         "sop-templates"
       ],
@@ -46,10 +46,10 @@
       "project_lock": "none",
       "files": {
         "sop-templates/blank/SOP.md": "efec23ad29102590bdd16268c79222eb6f14fa8a1352deb27a5e55d35c413704",
-        "sop-templates/knowledge-digest/SOP.md": "437ce9d93ad4281dbd7d6d6a8658e288426343c2ce6929ddba2ffd1b321c7009",
+        "sop-templates/knowledge-digest/SOP.md": "eaa8d7eb2338fe71b7a05fec662230a7e0b2e36f4727657558f2b51ed0a98027",
         "sop-templates/knowledge-digest/templates/digest.md": "0741e5a8008119528c5fc71cc9c3c8064dc1173d61465643e8dc5745883ccb9a",
         "sop-templates/video-to-transcript/SOP.md": "b8dfb1ecb0e2cf2a13d4acad78ee759f6c402776443cf5a70e2d6390a120ba4e",
-        "sop-templates/weekly-review/SOP.md": "53e79f557b5d79a1b0e7b6acf8e0d591d766110571f837be1cbcb804903f5e1c",
+        "sop-templates/weekly-review/SOP.md": "9dee7bcbf351e395a66e042929eede0bb425a92a88db14944b4348f2de656b1b",
         "sop-templates/weekly-review/templates/review.md": "cf8321a1739cecf6286d591e88a6af86831b01c12e77834a873ea497a5db127c"
       }
     }

@@ -334,14 +334,14 @@ class DemoProvider:
     def _seed_sops(self, root: Path) -> None:
         """三个已启用的样例流程：让 list / preflight / run / step 马上有东西可看。"""
         habits = ("--set", "on_error=ask", "--set", "on_missing_tool=ask", "--set", "artifact_keep=ask",
-                  "--set", "resume=from-failed-step", "--set", "confirm_costly=ask", "--set", "sensitivity=shared")
+                  "--set", "resume=from-failed-step", "--set", "confirm_costly=ask")
         with _sop_home(root):
             sop_call(["defaults", *habits, "--apply"], root)
             for slug in ("knowledge-digest", "weekly-review", "video-to-transcript"):
                 sop_call(["new", "--slug", slug, "--template", slug, "--apply"], root)
                 path = root / "sops" / slug / "SOP.md"
                 path.write_text(path.read_text(encoding="utf-8").replace("【待补充】", "演示"), encoding="utf-8")
-                sop_call(["decide", slug, "--confirm", "trigger", "--confirm", "requires", "--apply"], root)
+                sop_call(["decide", slug, "--confirm", "trigger", "--confirm", "requires", "--confirm", "scope", "--apply"], root)
                 sop_call(["activate", slug, "--apply"], root)
 
     # -------------------------------------------------------------- overview

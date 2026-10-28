@@ -36,8 +36,7 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 | `artifact_dir` `artifact_keep` | 中间产物放哪（空 = 本次 Case 的 `data/`）；完成后：`all` · `final-only` · `on-error` · `ask` |
 | `resume` | 失败后重新执行：`from-failed-step` · `restart` · `ask` |
 | `confirm_costly` | 花钱、耗时或大流量步骤前：`ask` · `never` |
-| `sensitivity` | 执行记录的敏感度：`shared`（缺省）· `private`（执行记录不进资料索引，产物只放本 Case 目录内）；涉及个人进度、学习记录、账号、原始素材的流程用 `private` |
-| `decided` | **用户已确认的事项**：`trigger` `requires` `on_error` `on_missing_tool` `artifacts` `resume` `confirm_costly` `privacy` |
+| `decided` | **用户已确认的事项**：`trigger` `requires` `on_error` `on_missing_tool` `artifacts` `resume` `confirm_costly` `scope`（读取哪些事项、产物放哪个项目、该项目是否公开） |
 | `created` `verified_at` `review_after` `origin` `outputs` `sources` | 日期与来源 |
 
 正文固定小节：`目的`、`前置条件`、`步骤`、`完成标准`、`例外与回退`、`修订记录`。
@@ -116,11 +115,12 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 - 清理属于删除操作：除非用户已经在 `artifact_keep` 里明确约定（`final-only` / `on-error`），清理前仍须确认。
 - 含个人或敏感内容的中间产物（原始录音、转录原文）不得提交到版本库；提示用户把目录加入 `.gitignore`。
 
-## 隐私与范围协议
+## 范围与公开边界协议
 
-- **公开与私密分开**：知识整理、规则整理这类不含个人进度的流程可以共享；涉及个人进度、学习记录、账号、原始素材的流程用 `sensitivity: private`。随包的公开样例只含流程结构，不含任何个人进度或数据；你自己的 SOP 放在项目或用户级目录里，不要提交到公开仓库。
-- **范围先于读取**：会读取多个事项的流程（复盘、汇总）必须先确定范围，由用户明确给出标签、事项名或编号，**不默认纳入全部事项**。未被纳入的事项不读、不写进产物；`private` 的事项只在用户明确纳入时才读取。范围写在产物开头。
-- **private 的执行**：执行 Case 的 `sensitivity` 为 `private`，不进资料索引；产物放在本 Case 目录内。`sop.py step --artifact` 登记了本 Case 目录以外的路径时会给出警告。要把其中的内容公开或分享，先由用户逐段确认，再复制出去，不直接移动原文件。
+- **SOP 工具不提供访问控制**。Case 的 `sensitivity: private` 在本仓库里只有一个效果：该 Case 的文件不进资料索引（`find` 找不到）；它不阻止提交、同步，也不阻止 Agent 读取。所以 SOP 不使用它，也不把它当作保护手段。
+- **内容会不会公开，取决于 SOP 和执行记录所在的项目**（及其远端仓库）。涉及个人进度、学习记录、账号、原始素材的流程，只放在不公开的项目里运行，或放在用户级目录；随包的公开样例只含流程结构，不含任何个人进度或数据。知识整理、规则整理这类流程可以放在可公开的项目里。
+- **范围先于读取**：会读取多个事项的流程（复盘、汇总）必须先确定范围，由用户明确给出标签、事项名或编号，**不默认纳入全部事项**。未被纳入的事项不读、不写进产物。范围写在产物开头。
+- 创建时的 `scope` 事项就是把这三件事谈清：读取哪些事项、产物放进哪个项目、那个项目会不会公开。要把复盘之类的内容公开或分享时，先由用户逐段确认，再复制出去，不直接移动原文件。
 
 ## 版本与修改
 

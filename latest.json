@@ -269,7 +269,7 @@
       "change_kind": "both",
       "breaking": false,
       "date": "2026-10-28",
-      "summary": "新增 SOP（标准作业流程）管理：runtime/sop.py（创建、谈清约定、执行前检查、版本快照、触发索引、周期到期、按 SOP 建立执行 Case 并逐步记录）、agenthelm project sop 子命令与菜单项、health 汇总流程问题与到期提醒；Case Schema 新增可选字段 sop（内容包 case-template 1.1.0）；新增样例内容包 sop-samples 1.0.0；事件触发（case.created / case.closed，可按标签过滤，case.py 与 record 在结果里带 sop_events）；SOP 的 sensitivity（shared / private）与复盘范围约定，case.py new --sensitivity；样例 knowledge-digest；前置条件支持“仅当”；演示模式支持 SOP；新增 references/sop.md 与 sop-interview.md。",
+      "summary": "新增 SOP（标准作业流程）管理：runtime/sop.py（创建、谈清约定、执行前检查、版本快照、触发索引、周期到期、按 SOP 建立执行 Case 并逐步记录）、agenthelm project sop 子命令与菜单项、health 汇总流程问题与到期提醒；Case Schema 新增可选字段 sop（内容包 case-template 1.1.0）；新增样例内容包 sop-samples 1.0.0；事件触发（case.created / case.closed，可按标签过滤，case.py 与 record 在结果里带 sop_events）；创建时必须谈清“范围与公开边界”（scope）；样例 knowledge-digest；前置条件支持“仅当”；演示模式支持 SOP；新增 references/sop.md 与 sop-interview.md。",
       "actions": [
         "已有项目无需改动；没有 sops/ 目录时 SOP 相关功能静默跳过",
         "自定义了 work.case.schema 的项目：想让 Case 记录 SOP 来源，需在自己的 Schema 增加可选字符串字段 sop（格式 <id>@<主.次.修订>）"

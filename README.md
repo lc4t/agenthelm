@@ -73,7 +73,7 @@ codex plugin add opinion-manager@agenthelm
 
 ```bash
 ./menu sop new --slug video-to-transcript --template video-to-transcript   # 预览；加 --apply 创建草稿
-./menu sop interview video-to-transcript    # 还要和你谈清哪些事（编号问题清单，含隐私与范围）
+./menu sop interview video-to-transcript    # 还要和你谈清哪些事（编号问题清单，含范围与公开边界）
 ./menu sop preflight video-to-transcript    # 执行前检查所需的程序、模型、环境变量是否就绪
 ./menu sop activate video-to-transcript     # 谈清并确认后启用；加 --apply 写入
 ./menu sop run video-to-transcript          # 按它建立一次执行（一个 Case），加 --apply 写入
@@ -84,7 +84,7 @@ codex plugin add opinion-manager@agenthelm
 - **工具检查**：前置条件按种类声明（命令、Python 模块、环境变量、路径、技能、MCP、手动确认），写明安装方式与替代方案；因输入而异的工具写 `仅当`（例如 B 站视频用 yutto、其他站点用 yt-dlp）。执行前 `preflight` 列出就绪 / 缺失 / 待核对；缺失项一次性交给你处理，Agent 不会自行安装软件。API 密钥只写环境变量名。
 - **触发**：用户明确指定、Case 事件、周期到期、对话意图，命中后默认先问你；到期只是提醒。草稿不会被触发。事件指新建或关闭 Case，可限定只对带某些标签的 Case 生效；流程自己的执行记录不会再触发事件。
 - **执行记录**：一次执行是一个 Case，里面有步骤清单、固化的执行约定、每步结果和登记过的中间产物；SOP 目录里不记执行状态。SOP 不放宽任何授权：写入、外发、删除、花钱类步骤仍需你当次同意。
-- **隐私**：流程有 `sensitivity`（共享 / 私密）：涉及个人进度、学习记录、账号、原始素材的用私密，执行记录不进资料索引，产物只放本次执行的目录内；会读取多个事项的流程（复盘、汇总）先由你指定范围，不默认读取全部。你自己的流程放在项目或用户级目录，不要提交到公开仓库。
+- **范围与公开边界**：内容会不会公开取决于流程和执行记录所在的项目，SOP 不提供访问控制。涉及个人进度、学习记录、账号、原始素材的流程，请只在不公开的项目里运行；会读取多个事项的流程（复盘、汇总）先由你指定范围，不默认读取全部。你自己的流程不要提交到公开仓库，公开的只有通用样例。
 - **位置**：项目级 `sops/<id>/SOP.md`（随项目同步），用户级 `~/.config/agenthelm/sops/`（每台机器各一份）。改过内容用 `sop revise` 登记版本，每个执行 Case 记着它用的版本。
 - 契约与命令见 [sop.md](plugins/project-orchestrator/references/sop.md)，与用户一起建立的流程见 [sop-interview.md](plugins/project-orchestrator/references/sop-interview.md)；随包样例 `blank`、`video-to-transcript`、`weekly-review`、`knowledge-digest`（样例只含流程结构，不含任何个人进度或数据）。
 

@@ -61,9 +61,8 @@ class SopTestCase(unittest.TestCase):
                 text = text.replace("decided: []", "event_tags:\n" + "\n".join(f'  - "{item}"' for item in tags) + "\ndecided: []")
             path.write_text(text, encoding="utf-8")
         self.run_sop("defaults", "--set", "on_missing_tool=ask", "--set", "artifact_keep=on-error",
-                     "--set", "resume=from-failed-step", "--set", "confirm_costly=ask", "--set", "on_error=ask",
-                     "--set", "sensitivity=shared", "--apply")
-        code, result = self.run_sop("decide", slug, "--confirm", "trigger", "--confirm", "requires", "--apply")
+                     "--set", "resume=from-failed-step", "--set", "confirm_costly=ask", "--set", "on_error=ask", "--apply")
+        code, result = self.run_sop("decide", slug, "--confirm", "trigger", "--confirm", "requires", "--confirm", "scope", "--apply")
         self.assertEqual(code, 0, result)
         code, result = self.run_sop("activate", slug, "--apply")
         self.assertEqual(code, 0, result)
@@ -124,7 +123,7 @@ class NegotiationTests(SopTestCase):
         self.assertEqual(code, 0)
         self.assertEqual([item["no"] for item in result["questions"]], list(range(1, 9)))
         self.assertEqual({item["key"] for item in result["questions"]},
-                         {"trigger", "requires", "on_error", "on_missing_tool", "artifacts", "resume", "confirm_costly", "privacy"})
+                         {"trigger", "requires", "on_error", "on_missing_tool", "artifacts", "resume", "confirm_costly", "scope"})
 
     def test_activation_is_blocked_until_the_user_has_decided(self) -> None:
         self.create()
@@ -141,9 +140,9 @@ class NegotiationTests(SopTestCase):
         self.assertEqual(code, 1)
         self.assertEqual(len(before["questions"]), 8)
         self.run_sop("defaults", "--set", "on_error=retry", "--set", "max_retries=3", "--set", "on_missing_tool=ask",
-                     "--set", "artifact_keep=final-only", "--set", "resume=restart", "--set", "confirm_costly=ask", "--set", "sensitivity=shared", "--apply")
+                     "--set", "artifact_keep=final-only", "--set", "resume=restart", "--set", "confirm_costly=ask", "--apply")
         _, after = self.run_sop("interview", "video-to-transcript")
-        self.assertEqual([item["key"] for item in after["questions"]], ["trigger", "requires"])
+        self.assertEqual([item["key"] for item in after["questions"]], ["trigger", "requires", "scope"])
         _, shown = self.run_sop("show", "video-to-transcript")
         self.assertEqual(shown["conventions"]["on_error"], {"value": "retry", "source": "project-default"})
 
@@ -700,23 +699,13 @@ class EventTests(SopTestCase):
         self.assertIn("event-tags-without-event", {item["code"] for item in checked["results"][0]["issues"]})
 
 
-class PrivacyTests(SopTestCase):
-    def run_case(self, *args: str) -> tuple[int, dict]:
-        output = io.StringIO()
-        with mock.patch("sys.stdout", output):
-            code = case.main(["--project", str(self.root), "--output", "json", *args])
-        return code, json.loads(output.getvalue())
-
-    def test_public_samples_declare_sensitivity_and_contain_no_dated_progress(self) -> None:
-        declared = {}
+class ScopeBoundaryTests(SopTestCase):
+    def test_public_samples_contain_no_dated_progress_or_percentages(self) -> None:
         for template in ("video-to-transcript", "weekly-review", "knowledge-digest"):
             self.create(f"s-{template}", template)
-            meta, body = sop.parse_sop_text(self.file(f"s-{template}").read_text(encoding="utf-8"))
-            declared[template] = meta.get("sensitivity")
+            _, body = sop.parse_sop_text(self.file(f"s-{template}").read_text(encoding="utf-8"))
             self.assertNotRegex(body, r"\d{4}-\d{2}-\d{2}", f"{template} 不应带具体日期的记录")
             self.assertNotRegex(body, r"\d+\s*%", f"{template} 不应带具体的百分比进度")
-        self.assertEqual(declared["weekly-review"], "private")
-        self.assertEqual(declared["knowledge-digest"], "shared")
 
     def test_review_sample_asks_for_scope_before_reading_anything(self) -> None:
         self.create("review", "weekly-review")
@@ -725,36 +714,7 @@ class PrivacyTests(SopTestCase):
         self.assertTrue(shown["steps"][0]["confirm"])
         self.assertIn("不默认纳入全部事项", shown["steps"][0]["checkpoint"])
 
-    def start(self, sensitivity: str | None) -> dict:
-        self.create("review", "weekly-review")
-        self.fill_placeholders("review")
-        self.run_sop("defaults", "--set", "on_error=ask", "--set", "on_missing_tool=ask", "--set", "artifact_keep=ask",
-                     "--set", "resume=ask", "--set", "confirm_costly=ask", *(["--set", f"sensitivity={sensitivity}"] if sensitivity else []), "--apply")
-        self.run_sop("decide", "review", "--confirm", "trigger", "--confirm", "requires", *([] if sensitivity else ["--set", "sensitivity=shared"]), "--apply")
-        self.assertEqual(self.run_sop("activate", "review", "--apply")[0], 0)
-        code, ran = self.run_sop("run", "review", "--apply")
-        self.assertEqual(code, 0, ran)
-        return ran
-
-    def test_private_run_makes_a_private_case_and_says_so_in_the_checklist(self) -> None:
-        ran = self.start("private")
-        text = (self.root / ran["path"]).read_text(encoding="utf-8")
-        self.assertIn('sensitivity: "private"', text)
-        self.assertIn("- 敏感度：private（执行记录不进资料索引", text)
-
-    def test_shared_is_the_default_when_the_user_chose_shared(self) -> None:
-        ran = self.start(None)
-        self.assertIn('sensitivity: "shared"', (self.root / ran["path"]).read_text(encoding="utf-8"))
-
-    def test_private_run_warns_about_artifacts_outside_its_own_directory(self) -> None:
-        ran = self.start("private")
-        case_id = ran["case_id"]
-        _, outside = self.run_sop("step", case_id, "1", "--done", "--artifact", "../../docs/review.md:放错位置", "--apply")
-        self.assertTrue(outside["warnings"] and "private" in outside["warnings"][0])
-        _, inside = self.run_sop("step", case_id, "2", "--done", "--artifact", "docs/review.md:正确位置", "--apply")
-        self.assertEqual(inside["warnings"], [])
-
-    def test_undecided_privacy_blocks_activation(self) -> None:
+    def test_activation_needs_the_user_to_have_settled_scope_and_publication_boundary(self) -> None:
         self.create("review", "weekly-review")
         self.fill_placeholders("review")
         self.run_sop("defaults", "--set", "on_error=ask", "--set", "on_missing_tool=ask", "--set", "artifact_keep=ask",
@@ -762,15 +722,18 @@ class PrivacyTests(SopTestCase):
         self.run_sop("decide", "review", "--confirm", "trigger", "--confirm", "requires", "--apply")
         code, result = self.run_sop("activate", "review", "--apply")
         self.assertEqual(code, 1)
-        self.assertTrue(any("privacy" in item["message"] for item in result["blockers"]))
+        self.assertTrue(any("scope" in item["message"] for item in result["blockers"]))
+        self.run_sop("decide", "review", "--confirm", "scope", "--apply")
+        self.assertEqual(self.run_sop("activate", "review", "--apply")[0], 0)
 
-    def test_case_tool_accepts_only_known_sensitivities(self) -> None:
-        self.assertEqual(self.run_case("new", "--title", "t", "--slug", "t", "--goal", "g", "--next-action", "n", "--sensitivity", "private")[0], 0)
-        output = io.StringIO()
-        with mock.patch("sys.stdout", output), mock.patch("sys.stderr", io.StringIO()):
-            with self.assertRaises(SystemExit):
-                case.main(["--project", str(self.root), "new", "--title", "t", "--slug", "u", "--goal", "g",
-                           "--next-action", "n", "--sensitivity", "secret"])
+    def test_project_defaults_cannot_answer_scope_for_every_flow(self) -> None:
+        self.assertEqual(sop.read_defaults(self.root)["conventions"], {})
+        self.assertEqual(self.run_sop("defaults", "--set", "scope=all")[0], 2)
+
+    def test_execution_cases_do_not_use_the_case_sensitivity_flag(self) -> None:
+        self.make_active("review", "weekly-review")
+        _, ran = self.run_sop("run", "review", "--apply")
+        self.assertIn('sensitivity: "shared"', (self.root / ran["path"]).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

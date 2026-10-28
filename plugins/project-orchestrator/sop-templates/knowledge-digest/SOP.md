@@ -10,7 +10,6 @@ exclude: "只是查找某一份资料"
 schedule: "weekly:sat"
 confirm: "ask"
 creates_case: "always"
-sensitivity: "shared"
 created: "{{date}}"
 aliases:
   - "知识整理"
