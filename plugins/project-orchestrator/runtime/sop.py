@@ -49,7 +49,7 @@ PLACEHOLDER = "【待补充】"
 STATUSES = ("draft", "active", "retired")
 SCALARS = ("schema_version", "id", "title", "status", "version", "description", "trigger", "exclude", "schedule",
            "confirm", "creates_case", "on_error", "max_retries", "on_missing_tool", "artifact_dir", "artifact_keep",
-           "resume", "confirm_costly", "created", "verified_at", "review_after", "origin")
+           "resume", "confirm_costly", "sensitivity", "created", "verified_at", "review_after", "origin")
 LISTS = ("aliases", "examples_hit", "examples_miss", "on_events", "event_tags", "outputs", "sources", "decided")
 REQUIRED = ("schema_version", "id", "title", "status", "version", "description", "created")
 SECTIONS = ("目的", "前置条件", "步骤", "完成标准", "例外与回退", "修订记录")
@@ -74,6 +74,9 @@ CHOICES: dict[str, dict[str, Any]] = {
     "confirm_costly": {"values": ("ask", "never"), "default": "ask",
                        "labels": {"ask": "调用付费 API、下载大文件、预计耗时数分钟以上的步骤前先问我（推荐）",
                                   "never": "不用问，直接执行"}},
+    "sensitivity": {"values": ("shared", "private"), "default": "shared",
+                    "labels": {"shared": "可以共享：纯知识整理、规则整理等，不含个人进度或私人素材",
+                               "private": "私密（推荐用于涉及个人进度、学习记录、账号、原始素材的流程）：执行记录不进资料索引，产物只放本 Case 目录内"}},
     "confirm": {"values": ("ask", "auto"), "default": "ask",
                 "labels": {"ask": "命中触发后先问我是否按它执行（推荐）", "auto": "命中后直接执行（只适合没有外部副作用的流程）"}},
     "creates_case": {"values": ("always", "ask", "never"), "default": "always"},
@@ -92,13 +95,15 @@ DECISIONS = (
                                        "缺省放在本次 Case 的 data/ 目录；体积很大的文件可以指定项目外的目录。"),
     ("resume", ("resume",), "中途失败后重新执行时，从哪里开始？"),
     ("confirm_costly", ("confirm_costly",), "遇到花钱、占用大量时间或网络流量的步骤，要不要先问你？"),
+    ("privacy", ("sensitivity",), "这个流程的执行记录和产物，能不能出现在会公开或共享的地方？涉及你个人的进度、学习记录、账号或原始素材的，"
+                                  "建议选私密；纯知识整理、规则整理这类可以共享。流程要读取哪些事项（范围）也请一起定下，不要默认纳入全部。"),
 )
 # 习惯项 -> 它所属的“创建时必须确认”事项；设置这些项等于用户确认了对应事项。
 FIELD_DECISION = {"on_error": "on_error", "max_retries": "on_error", "on_missing_tool": "on_missing_tool",
                   "artifact_keep": "artifacts", "artifact_dir": "artifacts", "resume": "resume",
-                  "confirm_costly": "confirm_costly"}
+                  "confirm_costly": "confirm_costly", "sensitivity": "privacy"}
 DECISION_OPTIONS = {"on_error": "on_error", "on_missing_tool": "on_missing_tool", "artifacts": "artifact_keep",
-                    "resume": "resume", "confirm_costly": "confirm_costly"}
+                    "resume": "resume", "confirm_costly": "confirm_costly", "privacy": "sensitivity"}
 
 STEP_KEYS = {"工具": "tools", "输入": "inputs", "中间产物": "intermediates", "最终产物": "finals", "检查点": "checkpoint",
              "失败时": "on_failure", "需确认": "confirm", "说明": "note"}
@@ -471,7 +476,8 @@ def check_sop(sop: dict, defaults: dict, *, strict: bool | None = None) -> list[
         add("error", "invalid-status", f"status 必须为：{'、'.join(STATUSES)}")
     if meta.get("version") and not VERSION_RE.fullmatch(str(meta["version"])):
         add("error", "invalid-version", "version 必须是 主.次.修订，例如 1.0.0")
-    for key in ("confirm", "creates_case", "on_error", "on_missing_tool", "artifact_keep", "resume", "confirm_costly"):
+    for key in ("confirm", "creates_case", "on_error", "on_missing_tool", "artifact_keep", "resume", "confirm_costly",
+                "sensitivity"):
         value = meta.get(key)
         if value not in (None, "") and value not in CHOICES[key]["values"]:
             add("error", "invalid-choice", f"{key} 只能是：{' / '.join(CHOICES[key]['values'])}")
@@ -900,7 +906,7 @@ def cmd_show(ctx: Context) -> tuple[int, dict, list[str]]:
     lines += ["", "前置条件："] + [f"  {KIND_LABEL[req['kind']]}：{req['name']}"
                                   + (f"（{req['purpose']}）" if req["purpose"] else "") for req in info["requires"]]
     lines += ["", "执行约定（来源）："] + [f"  {key} = {item['value'] or '（Case 的 data/）'}（{item['source']}）"
-                                          for key, item in habit.items() if key in ("on_error", "on_missing_tool", "artifact_dir", "artifact_keep", "resume", "confirm_costly")]
+                                          for key, item in habit.items() if key in ("on_error", "on_missing_tool", "artifact_dir", "artifact_keep", "resume", "confirm_costly", "sensitivity")]
     if data["gaps"]:
         lines += ["", f"尚有 {len(data['gaps'])} 项没有与用户确认：" + "、".join(gap["key"] for gap in data["gaps"])]
     return 0, data, lines
@@ -1229,7 +1235,9 @@ def checklist_text(sop: dict, info: dict, habit: dict, params: list[str], runtim
     lines = ["## SOP 执行清单", "", f"来源：`{sop['id']}@{version}`（{runtime_note}）", "", "执行约定（开始时从 SOP 与项目习惯固化，执行中不随 SOP 改动）：",
              f"- 出错时：{habit['on_error']['value']}" + (f"（最多重试 {habit['max_retries']['value']} 次）" if habit["on_error"]["value"] == "retry" else ""),
              f"- 缺少工具时：{habit['on_missing_tool']['value']}", f"- 中间产物：放在 {place}；完成后：{keep}",
-             f"- 失败后重新执行：{habit['resume']['value']}", f"- 花钱或耗时的步骤：{habit['confirm_costly']['value']}", ""]
+             f"- 失败后重新执行：{habit['resume']['value']}", f"- 花钱或耗时的步骤：{habit['confirm_costly']['value']}",
+             f"- 敏感度：{habit['sensitivity']['value']}" + ("（执行记录不进资料索引；产物只放本 Case 目录内，不要提交到公开仓库）"
+                                                        if habit["sensitivity"]["value"] == "private" else ""), ""]
     if params:
         lines += ["参数："] + [f"- {item}" for item in params] + [""]
     lines += ["步骤："] + [f"- [ ] {step['n']}. {step['title']}" + (f"（工具：{'、'.join(step['tools'])}）" if step["tools"] else "")
@@ -1284,7 +1292,8 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
                                    status="active", done_when=done_when,
                                    source=f"SOP {sop['id']}@{version}" + (f"；{event_note}" if event_note else ""),
                                    current_state=f"SOP 进度 0/{len(info['steps'])}",
-                                   tag=["sop", *(["sop-trial"] if status != "active" else [])], sop=f"{sop['id']}@{version}")
+                                   tag=["sop", *(["sop-trial"] if status != "active" else [])], sop=f"{sop['id']}@{version}",
+                                   sensitivity=habit["sensitivity"]["value"])
     try:
         cases = case_tool.Project(ctx.project)
         case_id, case_text = case_tool.plan_create(cases, case_args)
@@ -1357,8 +1366,11 @@ def cmd_step(ctx: Context) -> tuple[int, dict, list[str]]:
     stamp = case_tool.now()
     note = f"：{args.note.strip()}" if args.note else ""
     body = case_tool.append_section(body, "工作记录", f"{stamp} SOP 步骤 {args.n}「{wanted['text'].split('（工具')[0]}」{label}{note}")
+    warnings = []
     for item in args.artifact or []:
         location, _, what = item.partition(":")
+        if data.get("sensitivity") == "private" and not (path.parent / Path(location.strip()).expanduser()).resolve().is_relative_to(path.parent.resolve()):
+            warnings.append(f"这次执行是 private，但产物 {location.strip()} 不在本 Case 目录内：请确认它不会被提交到公开位置")
         body = case_tool.append_section(body, "中间产物", f"步骤 {args.n}：`{location.strip()}`" + (f"（{what.strip()}）" if what.strip() else ""))
     states = {step["n"]: step["mark"] for step in steps}
     states[args.n] = mark
@@ -1381,13 +1393,14 @@ def cmd_step(ctx: Context) -> tuple[int, dict, list[str]]:
         fail("更新后 Case 不符合 Schema：" + "；".join(errors), "invalid")
     text = case_tool.render_frontmatter(data) + body
     result = {"case": data["id"], "step": args.n, "state": state, "next_action": next_action, "progress": f"{finished}/{len(steps)}",
-              "applied": False, "sha256_before": sha(current)}
+              "applied": False, "sha256_before": sha(current), "warnings": warnings}
     if args.apply:
         if path.read_text(encoding="utf-8") != current:
             fail("Case 刚被其他人修改，请重新读取", "conflict")
         case_tool.write_atomic(path, text)
         result["applied"] = True
     return 0, result, [f"{data['id']} 步骤 {args.n} {label}；进度 {finished}/{len(steps)}；下一步：{next_action}"] + \
+        [f"注意：{warning}" for warning in warnings] + \
         ([] if args.apply else ["以上为预览，没有写入。确认后加 --apply（用户已确认执行该 SOP 时，步骤记录属于这次授权的范围）。"])
 
 
@@ -1487,7 +1500,8 @@ def parser() -> argparse.ArgumentParser:
     for name in ("done", "skip", "fail", "pending"):
         step.add_argument(f"--{name}", action="store_true")
     step.add_argument("--note")
-    step.add_argument("--artifact", action="append", metavar="路径[:说明]")
+    step.add_argument("--artifact", action="append", metavar="路径[:说明]",
+                      help="登记中间产物；路径相对本 Case 目录（目录外的用绝对路径或 ../）")
     step.add_argument("--expect-sha256")
     add("status", "一次执行的进度与中间产物").add_argument("case")
     add("init", "创建 SOP 目录", write=True)

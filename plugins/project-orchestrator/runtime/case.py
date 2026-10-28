@@ -255,7 +255,7 @@ def _new_case_fields(project: Project, args: argparse.Namespace) -> tuple[str, d
 def _render_new_case(project: Project, args: argparse.Namespace, fields: dict, case_id: str,
                      stamp: str) -> str:
     data = {"schema_version": "1.0", "id": case_id, "title": fields["title"], "status": args.status,
-            "sensitivity": "shared", "source": fields["source"], "goal": fields["goal"],
+            "sensitivity": (getattr(args, "sensitivity", None) or "shared"), "source": fields["source"], "goal": fields["goal"],
             "done_when": fields["done_when"], "current_state": fields["current_state"],
             "next_action": fields["next_action"], "artifact_mode": "case-local",
             "sop": (getattr(args, "sop", None) or ""),
@@ -503,6 +503,8 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--source")
     new.add_argument("--current-state")
     new.add_argument("--tag", action="append", default=[])
+    new.add_argument("--sensitivity", choices=("shared", "private"), default="shared",
+                     help="private 的 Case 不进资料索引；涉及个人进度、学习记录、账号或原始素材的建议用 private")
     new.add_argument("--sop", help="这个 Case 是 SOP 的一次执行：<sop-id>@<版本>（通常由 sop.py run 填写）")
     listing = command("list", "列出 Case（默认不含已关闭）")
     listing.add_argument("--status", choices=tuple(STATUS_ORDER))

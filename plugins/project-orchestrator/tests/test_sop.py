@@ -61,7 +61,8 @@ class SopTestCase(unittest.TestCase):
                 text = text.replace("decided: []", "event_tags:\n" + "\n".join(f'  - "{item}"' for item in tags) + "\ndecided: []")
             path.write_text(text, encoding="utf-8")
         self.run_sop("defaults", "--set", "on_missing_tool=ask", "--set", "artifact_keep=on-error",
-                     "--set", "resume=from-failed-step", "--set", "confirm_costly=ask", "--set", "on_error=ask", "--apply")
+                     "--set", "resume=from-failed-step", "--set", "confirm_costly=ask", "--set", "on_error=ask",
+                     "--set", "sensitivity=shared", "--apply")
         code, result = self.run_sop("decide", slug, "--confirm", "trigger", "--confirm", "requires", "--apply")
         self.assertEqual(code, 0, result)
         code, result = self.run_sop("activate", slug, "--apply")
@@ -70,7 +71,7 @@ class SopTestCase(unittest.TestCase):
 
 class CreationTests(SopTestCase):
     def test_every_bundled_template_creates_a_valid_draft(self) -> None:
-        for template in ("blank", "video-to-transcript", "weekly-review"):
+        for template in ("blank", "video-to-transcript", "weekly-review", "knowledge-digest"):
             with self.subTest(template=template):
                 self.create(f"demo-{template}", template)
                 code, checked = self.run_sop("validate", f"demo-{template}")
@@ -121,9 +122,9 @@ class NegotiationTests(SopTestCase):
     def test_interview_lists_every_question_with_numbers(self) -> None:
         code, result = self.run_sop("interview")
         self.assertEqual(code, 0)
-        self.assertEqual([item["no"] for item in result["questions"]], list(range(1, 8)))
+        self.assertEqual([item["no"] for item in result["questions"]], list(range(1, 9)))
         self.assertEqual({item["key"] for item in result["questions"]},
-                         {"trigger", "requires", "on_error", "on_missing_tool", "artifacts", "resume", "confirm_costly"})
+                         {"trigger", "requires", "on_error", "on_missing_tool", "artifacts", "resume", "confirm_costly", "privacy"})
 
     def test_activation_is_blocked_until_the_user_has_decided(self) -> None:
         self.create()
@@ -138,9 +139,9 @@ class NegotiationTests(SopTestCase):
         self.create()
         code, before = self.run_sop("interview", "video-to-transcript")
         self.assertEqual(code, 1)
-        self.assertEqual(len(before["questions"]), 7)
+        self.assertEqual(len(before["questions"]), 8)
         self.run_sop("defaults", "--set", "on_error=retry", "--set", "max_retries=3", "--set", "on_missing_tool=ask",
-                     "--set", "artifact_keep=final-only", "--set", "resume=restart", "--set", "confirm_costly=ask", "--apply")
+                     "--set", "artifact_keep=final-only", "--set", "resume=restart", "--set", "confirm_costly=ask", "--set", "sensitivity=shared", "--apply")
         _, after = self.run_sop("interview", "video-to-transcript")
         self.assertEqual([item["key"] for item in after["questions"]], ["trigger", "requires"])
         _, shown = self.run_sop("show", "video-to-transcript")
@@ -562,12 +563,12 @@ class ProjectEntryTests(SopTestCase):
         payload = json.loads(out.getvalue())
         self.assertEqual(code, 0, payload)
         self.assertTrue(payload["demo"])
-        self.assertEqual({row["id"] for row in payload["data"]["sops"]}, {"video-to-transcript", "weekly-review"})
+        self.assertEqual({row["id"] for row in payload["data"]["sops"]}, {"video-to-transcript", "weekly-review", "knowledge-digest"})
         self.assertFalse((self.root / "sops").exists())  # 没有碰测试项目
         self.assertEqual(os.environ["AGENTHELM_SOP_HOME"], str(self.user_home))  # 环境变量已恢复
 
     def test_demo_writes_stay_in_the_sandbox_and_blank_demo_is_empty(self) -> None:
-        for scenario, expected in (("blank", 0), ("personal", 2)):
+        for scenario, expected in (("blank", 0), ("personal", 3)):
             out = io.StringIO()
             with mock.patch("sys.stdout", out):
                 project_cli.main(["--demo", scenario, "--output", "json", "sop", "list"])
@@ -575,7 +576,7 @@ class ProjectEntryTests(SopTestCase):
         provider = project_cli.DemoProvider("study")
         provider.sop(["run", "weekly-review", "--apply"])
         _, status, _ = provider.sop(["list"])
-        self.assertEqual(len(status["sops"]), 2)
+        self.assertEqual(len(status["sops"]), 3)
         self.assertFalse((self.root / "cases").exists())
 
     def test_health_stays_quiet_without_sops_then_reports_problems_and_due_items(self) -> None:
@@ -697,6 +698,79 @@ class EventTests(SopTestCase):
         path.write_text(path.read_text(encoding="utf-8").replace("decided: []", 'event_tags:\n  - "x"\ndecided: []'), encoding="utf-8")
         _, checked = self.run_sop("validate", "lonely")
         self.assertIn("event-tags-without-event", {item["code"] for item in checked["results"][0]["issues"]})
+
+
+class PrivacyTests(SopTestCase):
+    def run_case(self, *args: str) -> tuple[int, dict]:
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            code = case.main(["--project", str(self.root), "--output", "json", *args])
+        return code, json.loads(output.getvalue())
+
+    def test_public_samples_declare_sensitivity_and_contain_no_dated_progress(self) -> None:
+        declared = {}
+        for template in ("video-to-transcript", "weekly-review", "knowledge-digest"):
+            self.create(f"s-{template}", template)
+            meta, body = sop.parse_sop_text(self.file(f"s-{template}").read_text(encoding="utf-8"))
+            declared[template] = meta.get("sensitivity")
+            self.assertNotRegex(body, r"\d{4}-\d{2}-\d{2}", f"{template} 不应带具体日期的记录")
+            self.assertNotRegex(body, r"\d+\s*%", f"{template} 不应带具体的百分比进度")
+        self.assertEqual(declared["weekly-review"], "private")
+        self.assertEqual(declared["knowledge-digest"], "shared")
+
+    def test_review_sample_asks_for_scope_before_reading_anything(self) -> None:
+        self.create("review", "weekly-review")
+        _, shown = self.run_sop("show", "review")
+        self.assertEqual(shown["steps"][0]["title"], "确定复盘范围")
+        self.assertTrue(shown["steps"][0]["confirm"])
+        self.assertIn("不默认纳入全部事项", shown["steps"][0]["checkpoint"])
+
+    def start(self, sensitivity: str | None) -> dict:
+        self.create("review", "weekly-review")
+        self.fill_placeholders("review")
+        self.run_sop("defaults", "--set", "on_error=ask", "--set", "on_missing_tool=ask", "--set", "artifact_keep=ask",
+                     "--set", "resume=ask", "--set", "confirm_costly=ask", *(["--set", f"sensitivity={sensitivity}"] if sensitivity else []), "--apply")
+        self.run_sop("decide", "review", "--confirm", "trigger", "--confirm", "requires", *([] if sensitivity else ["--set", "sensitivity=shared"]), "--apply")
+        self.assertEqual(self.run_sop("activate", "review", "--apply")[0], 0)
+        code, ran = self.run_sop("run", "review", "--apply")
+        self.assertEqual(code, 0, ran)
+        return ran
+
+    def test_private_run_makes_a_private_case_and_says_so_in_the_checklist(self) -> None:
+        ran = self.start("private")
+        text = (self.root / ran["path"]).read_text(encoding="utf-8")
+        self.assertIn('sensitivity: "private"', text)
+        self.assertIn("- 敏感度：private（执行记录不进资料索引", text)
+
+    def test_shared_is_the_default_when_the_user_chose_shared(self) -> None:
+        ran = self.start(None)
+        self.assertIn('sensitivity: "shared"', (self.root / ran["path"]).read_text(encoding="utf-8"))
+
+    def test_private_run_warns_about_artifacts_outside_its_own_directory(self) -> None:
+        ran = self.start("private")
+        case_id = ran["case_id"]
+        _, outside = self.run_sop("step", case_id, "1", "--done", "--artifact", "../../docs/review.md:放错位置", "--apply")
+        self.assertTrue(outside["warnings"] and "private" in outside["warnings"][0])
+        _, inside = self.run_sop("step", case_id, "2", "--done", "--artifact", "docs/review.md:正确位置", "--apply")
+        self.assertEqual(inside["warnings"], [])
+
+    def test_undecided_privacy_blocks_activation(self) -> None:
+        self.create("review", "weekly-review")
+        self.fill_placeholders("review")
+        self.run_sop("defaults", "--set", "on_error=ask", "--set", "on_missing_tool=ask", "--set", "artifact_keep=ask",
+                     "--set", "resume=ask", "--set", "confirm_costly=ask", "--apply")
+        self.run_sop("decide", "review", "--confirm", "trigger", "--confirm", "requires", "--apply")
+        code, result = self.run_sop("activate", "review", "--apply")
+        self.assertEqual(code, 1)
+        self.assertTrue(any("privacy" in item["message"] for item in result["blockers"]))
+
+    def test_case_tool_accepts_only_known_sensitivities(self) -> None:
+        self.assertEqual(self.run_case("new", "--title", "t", "--slug", "t", "--goal", "g", "--next-action", "n", "--sensitivity", "private")[0], 0)
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output), mock.patch("sys.stderr", io.StringIO()):
+            with self.assertRaises(SystemExit):
+                case.main(["--project", str(self.root), "new", "--title", "t", "--slug", "u", "--goal", "g",
+                           "--next-action", "n", "--sensitivity", "secret"])
 
 
 if __name__ == "__main__":

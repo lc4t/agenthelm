@@ -8,17 +8,18 @@
 
 - 新增 `runtime/sop.py`（标准库；也可用 `agenthelm project sop <子命令>`）。一个 SOP 一个目录 `sops/<id>/SOP.md`，用户级 SOP 在 `~/.config/agenthelm/sops/`（`AGENTHELM_SOP_HOME` 可改），同 id 时项目级覆盖用户级。
   - **创建**：`new` 从样例、现成文件或已完成的 Case 生成草稿；草稿不会被触发。
-  - **谈清约定**：`interview` 给出编号问题清单（触发、前置条件、出错、缺工具、中间产物、失败后恢复、花钱步骤）；`defaults --set` 把项目习惯一次谈好，新 SOP 沿用；`decide` 记录用户已确认的事项；有未确认的事项时 `activate` 拒绝启用。
+  - **谈清约定**：`interview` 给出编号问题清单（触发、前置条件、出错、缺工具、中间产物、失败后恢复、花钱步骤、隐私与范围）；`defaults --set` 把项目习惯一次谈好，新 SOP 沿用；`decide` 记录用户已确认的事项；有未确认的事项时 `activate` 拒绝启用。
   - **工具检查**：前置条件按种类声明（命令、Python 模块、环境变量、路径、技能、MCP、手动确认），可写安装方式、替代方案与缺失时的处理；`preflight` 检查就绪 / 缺失 / 待核对，环境变量只报告有无、不显示值；步骤里用到但没声明的工具在校验中报错；SOP 中疑似密钥会被拒绝。
   - **触发**：`index`（每个已启用的 SOP 一行）、`match`（关键词预筛）、`due`（周期到期，依据执行 Case 的创建日期）、`events`；默认命中后先问用户，到期只提醒，不自动执行。
   - **事件触发**：SOP 用 `on_events`（`case.created` / `case.closed`）声明监听，`event_tags` 限定只对带某些标签的 Case 触发。默认 Case 工具新建 Case、把 Case 关闭时，`case.py` 与项目入口的 `record` 在结果里带 `sop_events` 和一段提示，列出命中的 SOP 与可直接运行的命令；`sop events <事件> --case <Case>` 供自有 Case 工具的项目查询；`sop run --event … --event-case …` 把触发它的 Case 记进执行记录。SOP 自己的执行 Case 不再触发事件，避免循环；草稿与已退役的 SOP 不监听；SOP 目录有问题时不影响 Case 的写入。
+  - **隐私与范围**：SOP 新增 `sensitivity`（`shared` / `private`），作为创建时必须谈清的第 8 项；`private` 的执行 Case 不进资料索引，`step --artifact` 登记了本 Case 目录以外的产物会警告；`case.py new --sensitivity`。会读取多个事项的流程（复盘）必须先由用户指定范围，不默认纳入全部。公开样例只含流程结构，不含任何个人进度或数据。
   - **条件性前置**：前置条件可写 `仅当：<条件>`，例如 B 站视频用 yutto、其他站点用 yt-dlp。条件项缺失不影响“就绪”判断，`preflight` 单独列出，由 Agent 对照本次输入判断是否成立。
   - **执行**：`run` 建立一个 Case，固化执行约定与步骤清单；`step` 记录每步完成 / 跳过 / 失败、登记中间产物并更新下一动作；`status` 核对进度。一次执行的状态只记在 Case 里。
   - **版本**：`revise` 升版本号、写修订记录、保存快照；内容变了但没升版本时 `validate` 警告，`run` 拒绝执行。
   - 写入类命令默认只预览，`--apply` 才写入，写后读回；`--expect-sha256` 防止覆盖别人刚改的内容。
 - `agenthelm project sop …` 与菜单第 8 项「流程（SOP）」；`health` 汇总流程的校验问题与到期提醒（建议处理，不改变退出码）。
 - 演示模式（`--demo`）也支持流程：直接运行真实的 `sop.py`，但项目、SOP 与 Case 都在用完即删的临时目录里，不碰任何真实文件；非空场景预置 `weekly-review` 与 `video-to-transcript` 两个已启用的流程。唯一读取真实环境的是“执行前检查”（看这台机器上有没有对应命令与环境变量）。
-- Case Schema 新增可选字段 `sop`（`<id>@<版本>`）；`case.py new --sop`。内容包 `project-orchestrator/case-template` 1.1.0，新增样例内容包 `project-orchestrator/sop-samples` 1.0.0（`blank`、`video-to-transcript`、`weekly-review`，创建的都是草稿；视频样例按 yutto 官方文档写了 B 站下载：`yutto <链接>`，`--audio-only` 只取音频，`-d` 指定目录，依赖 FFmpeg，登录信息用其 `--auth` / `yutto auth login`，凭据不进 SOP）。
+- Case Schema 新增可选字段 `sop`（`<id>@<版本>`）；`case.py new --sop`。内容包 `project-orchestrator/case-template` 1.1.0，新增样例内容包 `project-orchestrator/sop-samples` 1.0.0（`blank`、`video-to-transcript`、`weekly-review`、`knowledge-digest`，创建的都是草稿；视频样例按 yutto 官方文档写了 B 站下载：`yutto <链接>`，`--audio-only` 只取音频，`-d` 指定目录，依赖 FFmpeg，登录信息用其 `--auth` / `yutto auth login`，凭据不进 SOP）。
 - 新增 `references/sop.md`（契约与执行协议）与 `references/sop-interview.md`（与用户建立 SOP 的谈话流程）；`SKILL.md` 增加 3.1「流程（SOP）」。Agent 协议要点：缺工具时一次性列给用户并等待，不自行安装软件；SOP 不放宽任何授权；只清理登记过的中间产物。
 
 ### agents-init 6.8.0
