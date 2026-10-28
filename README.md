@@ -81,8 +81,8 @@ codex plugin add opinion-manager@agenthelm
 ```
 
 - **每个人的习惯由你定**：触发场景、用到哪些工具及替代方案、缺工具怎么办、出错怎么办、中间产物放哪里和完成后是否清理、失败后从哪里重来、花钱或耗时的步骤要不要先问你。创建时逐项谈清；项目级的习惯（`sop defaults`）只需谈一次，新流程沿用。有没谈清的事项，`activate` 拒绝启用。
-- **工具检查**：前置条件按种类声明（命令、Python 模块、环境变量、路径、技能、MCP、手动确认），写明安装方式与替代方案。执行前 `preflight` 列出就绪 / 缺失 / 待核对；缺失项一次性交给你处理，Agent 不会自行安装软件。API 密钥只写环境变量名。
-- **触发**：用户明确指定、Case 事件、周期到期、对话意图，命中后默认先问你；到期只是提醒。草稿不会被触发。
+- **工具检查**：前置条件按种类声明（命令、Python 模块、环境变量、路径、技能、MCP、手动确认），写明安装方式与替代方案；因输入而异的工具写 `仅当`（例如 B 站视频用 yutto、其他站点用 yt-dlp）。执行前 `preflight` 列出就绪 / 缺失 / 待核对；缺失项一次性交给你处理，Agent 不会自行安装软件。API 密钥只写环境变量名。
+- **触发**：用户明确指定、Case 事件、周期到期、对话意图，命中后默认先问你；到期只是提醒。草稿不会被触发。事件指新建或关闭 Case，可限定只对带某些标签的 Case 生效；流程自己的执行记录不会再触发事件。
 - **执行记录**：一次执行是一个 Case，里面有步骤清单、固化的执行约定、每步结果和登记过的中间产物；SOP 目录里不记执行状态。SOP 不放宽任何授权：写入、外发、删除、花钱类步骤仍需你当次同意。
 - **位置**：项目级 `sops/<id>/SOP.md`（随项目同步），用户级 `~/.config/agenthelm/sops/`（每台机器各一份）。改过内容用 `sop revise` 登记版本，每个执行 Case 记着它用的版本。
 - 契约与命令见 [sop.md](plugins/project-orchestrator/references/sop.md)，与用户一起建立的流程见 [sop-interview.md](plugins/project-orchestrator/references/sop-interview.md)；随包样例 `blank`、`video-to-transcript`、`weekly-review`。

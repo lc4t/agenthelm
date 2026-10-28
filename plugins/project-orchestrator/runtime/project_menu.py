@@ -372,9 +372,6 @@ def tools_screen(provider) -> None:
 
 
 def sop_screen(provider) -> None:
-    if getattr(provider, "simulated", False):
-        print(S.yellow("演示项目没有 SOP。"))
-        return
     while True:
         code, data, lines = provider.sop(["list", "--all"])
         show(cli.header(provider, "流程（SOP）") + lines)

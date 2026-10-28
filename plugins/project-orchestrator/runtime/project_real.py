@@ -26,7 +26,7 @@ import project_maintain
 import project_write
 import sop as sop_tool
 from project_base import (GROUP_KEYS, LAUNCHER_API, EntryError, entry_section, find_profile_root, inside,
-                          read_profile)
+                          read_profile, sop_call)
 
 RECORD_STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2}T[0-9:]{5,8}(?:Z|[+-]\d{2}:\d{2})?)\s+(.*)$")
 TOOL_TIMEOUT_SECONDS = 30
@@ -483,14 +483,7 @@ class RealProvider:
                              "next": [{"label": "让 Agent 按它执行，或运行 sop run <id>", "action": ""}]})
 
     def sop(self, argv: list[str]) -> tuple[int, dict, list[str]]:
-        try:
-            return sop_tool.execute([*argv, "--project", str(self.root)])
-        except sop_tool.SopError as exc:
-            raise EntryError(str(exc), {"usage": "usage", "invalid": "usage", "conflict": "conflict",
-                                        "unavailable": "unavailable", "failed": "failed"}.get(exc.code, exc.code),
-                             exc.next_steps) from exc
-        except SystemExit as exc:
-            raise EntryError("命令参数不正确，用 sop <子命令> --help 查看写法", "usage") from exc
+        return sop_call(argv, self.root)
 
     # -------------------------------------------------------------- maintenance and writes
 

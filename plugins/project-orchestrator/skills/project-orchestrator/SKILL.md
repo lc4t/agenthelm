@@ -121,7 +121,7 @@ Project Profile 声明了 `memory` 时，恢复状态后读取记忆索引：`pr
 用户可以把常用流程固化成 SOP（Standard Operating Procedure，标准作业流程）。契约与命令见 [SOP 契约](../../references/sop.md)，与用户一起建立见 [建立 SOP](../../references/sop-interview.md)。
 
 - **读索引**：存在 `sops/` 目录或用户级 SOP 时，恢复状态后运行随包的 `runtime/sop.py index --project <项目>`（一行一个已启用的 SOP，写明触发与不触发条件）。没有 SOP 时静默跳过。
-- **判断触发**：用户明确指定、事件（Case 新建 / 关闭，`sop.py events`）、周期到期（`sop.py due`）、意图对照触发与不触发条件，按这个优先级。命中后默认先问用户一次是否按它执行；多个命中合并成一次编号提问；到期只是提醒。只读被命中的那一个 SOP 的正文。
+- **判断触发**：用户明确指定、事件（新建或关闭 Case 时，`case.py` 与项目入口的结果带 `sop_events`；自有 Case 工具用 `sop.py events <事件> --case <Case>` 查询）、周期到期（`sop.py due`）、意图对照触发与不触发条件，按这个优先级。命中后默认先问用户一次是否按它执行；多个命中合并成一次编号提问；到期只是提醒。只读被命中的那一个 SOP 的正文。
 - **执行**：`sop.py preflight` 检查所需程序与环境，缺失项一次性列给用户并等待处理，**不自行安装软件**；`sop.py run`（预览 → 用户确认 → `--apply`）建立执行 Case；逐步执行并用 `sop.py step --apply` 记录结果与中间产物；出错、缺工具、花钱或耗时步骤按 Case 里固化的“执行约定”处理；收尾用 `sop.py status` 与完成标准核对。
 - **授权不变**：SOP 不放宽任何授权，写入、外发、删除、push、安装、花钱类步骤仍须用户当次同意；与用户当次请求冲突时以请求为准并说明偏离。
 - **创建与修改**：SOP 里的工具、出错处理、中间产物位置等是用户的习惯，只提问、整理、校验，不替用户决定；`decided` 只在用户确认后用 `sop.py decide` 写入；修改后用 `sop.py revise` 登记版本。

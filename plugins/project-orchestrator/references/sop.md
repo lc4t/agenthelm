@@ -28,7 +28,7 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 | `trigger` `exclude` | 什么场景触发 / 哪些相近场景不触发（自然语言，给 Agent 判断） |
 | `aliases` `examples_hit` `examples_miss` | 口语叫法；应触发 / 不应触发的示例话术（校准识别，也供关键词预筛） |
 | `schedule` | `daily` · `weekly:mon..sun` · `monthly:1..28` · `every:14d` |
-| `on_events` | `case.created` · `case.closed` |
+| `on_events` `event_tags` | `case.created` · `case.closed`；`event_tags` 非空时只对带其中任一标签的 Case 触发（缺省对所有 Case 触发） |
 | `confirm` | `ask`（缺省，命中后先问用户）· `auto`（只适合没有外部副作用的流程） |
 | `creates_case` | `always`（缺省）· `ask` · `never`（没有执行记录，无法判断周期是否到期） |
 | `on_error` `max_retries` | 出错怎么办：`ask` · `stop` · `retry`（自动重试次数 1–9）· `skip-step` |
@@ -44,10 +44,10 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 **前置条件**，每行一项，`｜` 分隔（不要在值里用全角竖线）：
 
 ```text
-- 命令：ffmpeg｜用途：从视频提取音频｜安装：`brew install ffmpeg`｜替代：另一项的名称｜缺失时：询问用户
+- 命令：ffmpeg｜用途：从视频提取音频｜安装：`brew install ffmpeg`｜替代：另一项的名称｜仅当：本次输入符合的条件｜缺失时：询问用户
 ```
 
-种类：`命令` `模块`（Python 模块）`环境变量` `路径` `技能` `MCP` `手动确认`。缺失时：`询问用户` `停止` `跳过该步` `使用替代`（不写则用 `on_missing_tool`）。API 密钥只写环境变量名；SOP 里出现疑似密钥会被校验拒绝。确实不需要任何工具时写“无”。
+种类：`命令` `模块`（Python 模块）`环境变量` `路径` `技能` `MCP` `手动确认`。缺失时：`询问用户` `停止` `跳过该步` `使用替代`（不写则用 `on_missing_tool`）。`仅当` 写“只有本次输入符合这个描述才需要它”，例如下载 B 站视频用 yutto、其他站点用 yt-dlp：两者都声明，各写自己的 `仅当`。API 密钥只写环境变量名；SOP 里出现疑似密钥会被校验拒绝。确实不需要任何工具时写“无”。
 
 **步骤**，编号步骤加缩进子项（工具、输入、中间产物、最终产物、检查点、失败时、需确认、说明）：
 
@@ -78,9 +78,15 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 4. 只读被命中的那一个 SOP 的正文（`sop.py show`），不展开其他 SOP。
 5. 不要为了凑触发而硬套 SOP；用户当次请求与 SOP 冲突时，以用户当次请求为准，并告知偏离了哪一步。
 
+## 事件触发协议
+
+- **发出提示的地方**：用默认 Case 工具新建 Case 或把 Case 关闭（`done` / `abandoned`）时，`case.py` 与项目入口的 `record` 会在结果里带 `sop_events`（以及一段文字提示）：哪些已启用的 SOP 监听这个事件、触发说明、可直接运行的命令。项目用自己的 Case 工具时没有这个提示，用 `sop.py events <事件> --case <Case>` 自行查询。
+- **过滤**：SOP 的 `event_tags` 非空时，只对带其中任一标签的 Case 提示。**SOP 自己的执行 Case 不再触发事件**，避免“复盘关闭 → 再触发复盘”的循环。
+- **怎么处理**：`sop_events` 非空时，按触发协议处理：默认先问用户是否按它执行（多个合并成一次提问），用户同意后运行 `sop.py run <SOP> --event <事件> --event-case <Case>`（预览 → 确认 → `--apply`）。触发它的 Case 会记在执行 Case 的参数、来源和工作记录里。事件只是提示，不会自动执行。
+
 ## 执行协议
 
-1. **执行前检查**：`sop.py preflight <SOP>`。结果分三种：`ok` 就绪；`missing` 确认缺失；`unknown` 本工具无法确认（技能、MCP、其他 Python 环境、手动确认项）——你必须对照当前会话的可用技能与工具列表自己核对，仍无法确认就当作缺失处理。
+1. **执行前检查**：`sop.py preflight <SOP>`。结果分三种：`ok` 就绪；`missing` 确认缺失；`unknown` 本工具无法确认（技能、MCP、其他 Python 环境、手动确认项）——你必须对照当前会话的可用技能与工具列表自己核对，仍无法确认就当作缺失处理。带 `仅当` 的缺失项单独列在“条件项”里，不影响就绪判断：工具无法判断输入，你要对照本次输入判断条件是否成立，成立就按缺失处理，不成立就忽略（例如本次是 B 站链接，缺 yt-dlp 无关紧要）。
 2. **缺工具**（见下节）处理完，再 `sop.py run <SOP>`（预览）→ 用户确认 → `--apply`，建立执行 Case。执行约定在此刻固化进 Case，执行中不随 SOP 修改而变化。
 3. **逐步执行**。每步完成后 `sop.py step <Case> <n> --done --apply`，写明产物：`--artifact 路径:说明`（登记到 Case 的“中间产物”）。用户确认执行该 SOP 即覆盖这些步骤记录的写入。
 4. **检查点**：步骤写了检查点就必须核对；核对不过按失败处理，不得记为完成。

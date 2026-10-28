@@ -494,7 +494,14 @@ def cmd_record(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, 
         lines.append(S.dim("以上为预览，没有写入。确认后加 --apply。"))
         return EXIT_OK, {"preview": preview, "applied": False}, lines
     result = provider.record_apply(preview)
-    return EXIT_OK, {"preview": preview, "applied": True, **result}, lines + [S.green(result["verify"])]
+    lines += [S.green(result["verify"])]
+    events = result.get("sop_events") or []
+    if events:
+        lines += ["", S.bold("命中流程（SOP）：")]
+        for event in events:
+            lines.append(f"  {event['id']}（{event['title']}）：{event['trigger']}")
+            lines.append(S.dim(f"    是否按它执行由你决定；确认后运行：{event['command']}"))
+    return EXIT_OK, {"preview": preview, "applied": True, **result}, lines
 
 
 def cmd_tools(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
@@ -518,8 +525,6 @@ SOP_EXIT_CODES = {"usage": "usage", "invalid": "usage", "not-found": "not-found"
 
 
 def cmd_sop(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
-    if provider.simulated:
-        raise EntryError("演示项目没有 SOP", "unavailable", ["在真实项目里运行：agenthelm project sop list"])
     rest = list(args.sop_args)
     for flag in ("--output",):  # 子命令后面的 --output 交给本入口处理，保持与其他子命令一致
         if flag in rest and rest.index(flag) + 1 < len(rest):

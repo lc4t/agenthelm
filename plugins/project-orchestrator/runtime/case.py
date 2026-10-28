@@ -314,7 +314,20 @@ def create(project: Project, args: argparse.Namespace) -> dict:
         directory.rmdir()
         raise
     write_atomic(directory / "CASE.md", text)
-    return {"ok": True, "id": case_id, "path": project.relative(directory / "CASE.md"), "status": args.status}
+    result = {"ok": True, "id": case_id, "path": project.relative(directory / "CASE.md"), "status": args.status}
+    hints = sop_hints(project, "case.created", read_case(directory / "CASE.md")[0])
+    if hints:
+        result["sop_events"] = hints
+    return result
+
+
+def sop_hints(project: Project, event: str, data: dict) -> list[dict]:
+    """哪些已启用的 SOP 在监听这个事件；尽力而为，SOP 目录有问题时不能让 Case 的写入失败。"""
+    try:
+        import sop as sop_tool  # noqa: PLC0415 - sop.py 反过来依赖本模块，延迟导入避免循环
+        return sop_tool.event_hints(project.root, event, data)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def summary(project: Project, directory: Path) -> dict:
@@ -418,7 +431,13 @@ def update(project: Project, args: argparse.Namespace) -> dict:
     # Re-read right before replacing: a write that landed after planning must not be lost.
     if path.read_text(encoding="utf-8") != current:
         raise CaseError("Case 刚被其他人修改，请重新读取", "conflict")
+    was_closed = read_case(path)[0].get("status") in CLOSED
     write_atomic(path, text)
+    data, _ = read_case(path)
+    if data.get("status") in CLOSED and not was_closed:
+        hints = sop_hints(project, "case.closed", data)
+        if hints:
+            result["sop_events"] = hints
     return result
 
 
@@ -525,7 +544,10 @@ def render_text(command: str, result: dict) -> str:
         return "\n".join(lines) or "没有 Case。"
     if command == "show":
         return result["content"]
-    return json.dumps(result, ensure_ascii=False, indent=2)
+    text = json.dumps(result, ensure_ascii=False, indent=2)
+    for hint in result.get("sop_events") or []:
+        text += f"\n命中流程 {hint['id']}（{hint['title']}）：{hint['trigger']}\n  是否按它执行由用户决定；确认后运行：{hint['command']}"
+    return text
 
 
 def main(argv: list[str] | None = None) -> int:

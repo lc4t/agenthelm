@@ -50,7 +50,7 @@ STATUSES = ("draft", "active", "retired")
 SCALARS = ("schema_version", "id", "title", "status", "version", "description", "trigger", "exclude", "schedule",
            "confirm", "creates_case", "on_error", "max_retries", "on_missing_tool", "artifact_dir", "artifact_keep",
            "resume", "confirm_costly", "created", "verified_at", "review_after", "origin")
-LISTS = ("aliases", "examples_hit", "examples_miss", "on_events", "outputs", "sources", "decided")
+LISTS = ("aliases", "examples_hit", "examples_miss", "on_events", "event_tags", "outputs", "sources", "decided")
 REQUIRED = ("schema_version", "id", "title", "status", "version", "description", "created")
 SECTIONS = ("目的", "前置条件", "步骤", "完成标准", "例外与回退", "修订记录")
 STRICT_SECTIONS = ("前置条件", "步骤", "完成标准")
@@ -81,7 +81,8 @@ CHOICES: dict[str, dict[str, Any]] = {
 # 创建时必须与用户确认的事项（编号顺序即提问顺序）。defaults 项表示可由项目习惯（defaults.json）代为回答。
 DECISIONS = (
     ("trigger", None, "什么情况下应该用这个流程？请写：①触发场景（一句话）；②明确不该触发的相近场景；"
-                      "③有没有固定周期（每天 / 每周几 / 每月几号 / 每 N 天）或由某类事件触发（新建 Case / 关闭 Case）；"
+                      "③有没有固定周期（每天 / 每周几 / 每月几号 / 每 N 天），或由事件触发（新建 Case / 关闭 Case；"
+                      "要不要只对带某些标签的 Case 触发，否则每个 Case 新建或关闭都会提示）；"
                       "④再给 1–2 句你平时会怎么说的话（用来校准识别）。"),
     ("requires", None, "这个流程用到哪些程序、Python 模块、脚本、模型、账号或 MCP？逐项确认：名称、做什么用、"
                         "没有时怎么安装、有没有替代方案、缺了怎么办。API 密钥只写环境变量名，不写密钥本身。"),
@@ -105,7 +106,8 @@ KIND_MAP = {"命令": "command", "模块": "module", "环境变量": "env", "路
             "mcp": "mcp", "手动确认": "manual", "手动": "manual"}
 KIND_LABEL = {"command": "命令", "module": "Python 模块", "env": "环境变量", "path": "路径", "skill": "技能",
               "mcp": "MCP", "manual": "手动确认"}
-REQ_KEYS = {"用途": "purpose", "安装": "install", "替代": "alternative", "缺失时": "if_missing", "版本": "version"}
+REQ_KEYS = {"用途": "purpose", "安装": "install", "替代": "alternative", "缺失时": "if_missing", "版本": "version",
+            "仅当": "when"}
 MISSING_MAP = {"询问用户": "ask", "询问": "ask", "停止": "stop", "跳过该步": "skip-step", "跳过": "skip-step",
                "使用替代": "alternative", "替代": "alternative"}
 SECRET_PATTERNS = (re.compile(r"sk-[A-Za-z0-9_-]{20,}"), re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"),
@@ -341,7 +343,7 @@ def parse_requirements(text: str) -> tuple[list[dict], list[str]]:
             problems.append(f"无法识别的前置条件：{stripped[:40]}（写法：- 命令：名称｜用途：…｜安装：…｜缺失时：询问用户）")
             continue
         req = {"kind": KIND_MAP[head.group(1)], "name": head.group(2).strip().strip("`"), "purpose": "", "install": "",
-               "alternative": "", "if_missing": "", "version": ""}
+               "alternative": "", "if_missing": "", "version": "", "when": ""}
         for part in parts[1:]:
             pair = re.match(r"^([^：:]{1,8})[：:]\s*(.*)$", part)
             key = REQ_KEYS.get(pair.group(1)) if pair else None
@@ -480,6 +482,8 @@ def check_sop(sop: dict, defaults: dict, *, strict: bool | None = None) -> list[
     for event in meta.get("on_events") or []:
         if event not in EVENTS:
             add("error", "invalid-event", f"on_events 只支持：{'、'.join(EVENTS)}")
+    if meta.get("event_tags") and not meta.get("on_events"):
+        add("warn", "event-tags-without-event", "设了 event_tags 但没有 on_events：标签过滤不会生效")
     for key in ("created", "verified_at", "review_after"):
         if meta.get(key):
             try:
@@ -582,7 +586,8 @@ def index_line(sop: dict, due: dict | None = None) -> str:
     if meta.get("schedule"):
         parts.append(f"周期：{meta['schedule']}")
     if meta.get("on_events"):
-        parts.append("事件：" + "、".join(meta["on_events"]))
+        tags = meta.get("event_tags") or []
+        parts.append("事件：" + "、".join(meta["on_events"]) + (f"（仅标签 {'、'.join(tags)}）" if tags else ""))
     if (meta.get("confirm") or "ask") == "auto":
         parts.append("命中即执行")
     if due and due.get("due"):
@@ -642,6 +647,27 @@ def due_info(sop: dict, runs: dict[str, dict], now: date) -> dict | None:
             "last_run": last["date"] if last else "", "last_case": last["case"] if last else "",
             "next": following.isoformat(), "due": following <= now,
             "overdue_days": max(0, (now - following).days)}
+
+
+def event_hints(project: Path, event: str, case_data: dict, sops: list[dict] | None = None) -> list[dict]:
+    """某个 Case 发生事件时，哪些已启用的 SOP 在监听。SOP 自己的执行 Case 不再触发事件，避免循环；
+    SOP 声明了 event_tags 时，只对带其中任一标签的 Case 触发。命中只是提示，是否执行默认先问用户。"""
+    if case_data.get("sop"):
+        return []
+    tags = set(case_data.get("tags") or [])
+    hints = []
+    for sop in sops if sops is not None else load_all(project):
+        meta = sop["meta"]
+        if sop["shadowed"] or meta.get("status") != "active" or event not in (meta.get("on_events") or []):
+            continue
+        wanted = set(meta.get("event_tags") or [])
+        if wanted and not wanted & tags:
+            continue
+        case_id = str(case_data.get("id", ""))
+        hints.append({"id": sop["id"], "title": meta.get("title", ""), "version": meta.get("version", ""),
+                      "trigger": meta.get("trigger", ""), "confirm": meta.get("confirm") or "ask", "event": event,
+                      "case": case_id, "command": f"sop run {sop['id']} --event {event} --event-case {case_id}"})
+    return hints
 
 
 def bigrams(text: str) -> set[str]:
@@ -753,11 +779,17 @@ def preflight(sop: dict, project: Path, defaults: dict) -> dict:
         row["resolved_by"] = alternative["name"] if row["status"] != "ok" and row["if_missing"] == "alternative" \
             and alternative and alternative["status"] == "ok" else ""
     open_rows = [row for row in rows if row["status"] != "ok" and not row["optional"] and not row["resolved_by"]]
+    # 带“仅当”的前置条件只在本次输入符合条件时才需要：工具无法判断输入，列出来由 Agent 对照本次输入判断。
+    conditional = [row for row in open_rows if row["when"]]
+    blocking = [row for row in open_rows if not row["when"]]
     counts = {"ok": sum(row["status"] == "ok" for row in rows),
-              "missing": sum(row["status"] == "missing" for row in open_rows),
-              "unknown": sum(row["status"] == "unknown" for row in open_rows)}
+              "missing": sum(row["status"] == "missing" for row in blocking),
+              "unknown": sum(row["status"] == "unknown" for row in blocking),
+              "conditional": len(conditional)}
     return {"id": sop["id"], "version": sop["meta"].get("version", ""), "requires": rows, "counts": counts,
-            "ready": not open_rows, "on_missing_tool": habit["on_missing_tool"]["value"]}
+            "ready": not blocking, "conditional": [{"name": row["name"], "label": row["label"], "when": row["when"],
+                                                    "status": row["status"], "install": row["install"]} for row in conditional],
+            "on_missing_tool": habit["on_missing_tool"]["value"]}
 
 
 # ---------------------------------------------------------------- 写入计划
@@ -941,17 +973,22 @@ def cmd_preflight(ctx: Context) -> tuple[int, dict, list[str]]:
     sop = ctx.one(ctx.args.sop)
     report = preflight(sop, ctx.project, ctx.defaults)
     lines = [f"{sop['id']}@{report['version']} 执行前检查：{report['counts']['ok']} 项就绪，{report['counts']['missing']} 项缺失，"
-             f"{report['counts']['unknown']} 项需要核对"]
+             f"{report['counts']['unknown']} 项需要核对" + (f"，{report['counts']['conditional']} 项条件项待判断" if report["counts"]["conditional"] else "")]
     for row in report["requires"]:
-        tag = "不需要" if row["optional"] else "已由替代项解决" if row["resolved_by"] else {"ok": "就绪", "missing": "缺失", "unknown": "待核对"}[row["status"]]
+        tag = "不需要" if row["optional"] else "已由替代项解决" if row["resolved_by"] else \
+            f"条件项·{ {'missing': '缺失', 'unknown': '待核对'}[row['status']] }" if row["when"] and row["status"] != "ok" else \
+            {"ok": "就绪", "missing": "缺失", "unknown": "待核对"}[row["status"]]
         lines.append(f"  [{tag}] {row['label']}：{row['name']}"
-                     + (f"（{row['purpose']}）" if row["purpose"] else "") + (f" — {row['detail']}" if row["status"] != "ok" else ""))
+                     + (f"（{row['purpose']}）" if row["purpose"] else "") + (f" — {row['detail']}" if row["status"] != "ok" else "")
+                     + (f"｜仅当：{row['when']}" if row["when"] else ""))
         if row["status"] != "ok" and not row["optional"] and not row["resolved_by"]:
             if row["install"]:
                 lines.append(f"        安装/获取方式：{row['install']}")
             if row["alternative"]:
                 lines.append(f"        替代方案：{row['alternative']}")
             lines.append(f"        缺失时的约定：{row['if_missing']}")
+    if report["counts"]["conditional"]:
+        lines.append(f"其中 {report['counts']['conditional']} 项是条件项：只有本次输入符合“仅当”的描述才需要，请对照本次输入判断；符合就按缺失处理。")
     if not report["ready"]:
         lines.append("需要先处理缺失与待核对项；不要在用户未同意时自行安装软件。")
     return (0 if report["ready"] else 1), report, lines
@@ -1158,11 +1195,29 @@ def cmd_due(ctx: Context) -> tuple[int, dict, list[str]]:
 def cmd_events(ctx: Context) -> tuple[int, dict, list[str]]:
     if ctx.args.event not in EVENTS:
         fail(f"事件只支持：{'、'.join(EVENTS)}")
+    if ctx.args.case:
+        data = read_event_case(ctx, ctx.args.case)
+        hints = event_hints(ctx.project, ctx.args.event, data, ctx.sops())
+        note = "这个 Case 本身是 SOP 的一次执行，不再触发事件。" if data.get("sop") else ""
+        lines = [f"{hint['id']}：{hint['trigger']}（运行：{hint['command']}）" for hint in hints]
+        return 0, {"event": ctx.args.event, "case": data.get("id"), "sops": hints, "note": note}, \
+            lines or [note or "没有 SOP 对这个 Case 的该事件感兴趣。"]
     found = [sop for sop in ctx.sops() if sop["meta"].get("status") == "active" and not sop["shadowed"]
              and ctx.args.event in (sop["meta"].get("on_events") or [])]
-    return 0, {"event": ctx.args.event, "sops": [{"id": sop["id"], "title": sop["meta"].get("title", ""),
-                                                  "trigger": sop["meta"].get("trigger", "")} for sop in found]}, \
-        [f"{sop['id']}：{sop['meta'].get('trigger', '')}" for sop in found] or ["没有 SOP 监听这个事件。"]
+    rows = [{"id": sop["id"], "title": sop["meta"].get("title", ""), "trigger": sop["meta"].get("trigger", ""),
+             "event_tags": sop["meta"].get("event_tags") or []} for sop in found]
+    return 0, {"event": ctx.args.event, "sops": rows}, \
+        [f"{row['id']}：{row['trigger']}" + (f"（仅标签 {'、'.join(row['event_tags'])}）" if row["event_tags"] else "")
+         for row in rows] or ["没有 SOP 监听这个事件。"]
+
+
+def read_event_case(ctx: Context, token: str) -> dict:
+    try:
+        cases = case_tool.Project(ctx.project)
+        data, _ = case_tool.read_case(cases.find(token) / "CASE.md")
+    except case_tool.CaseError as exc:
+        raise SopError(f"读不了 Case：{exc}", "not-found") from exc
+    return data
 
 
 # ---------------------------------------------------------------- 执行：一次执行 = 一个 Case
@@ -1210,11 +1265,24 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
              [f"先 sop.py revise {sop['id']} --bump patch --note …，再执行"])
     snapshot = snapshot_write(sop["dir"], version, sop["text"])
     note = f"快照 {display(sop['dir'] / SNAPSHOTS / (version + '.md'), ctx.project)}"
+    event_note = ""
+    params = list(ctx.args.param or [])
+    if ctx.args.event:
+        if ctx.args.event not in (sop["meta"].get("on_events") or []):
+            fail(f"{sop['id']} 没有声明监听 {ctx.args.event}", "conflict", ["在 SOP 的 on_events 里声明后用 sop.py revise 登记"])
+        if not ctx.args.event_case:
+            fail("--event 需要同时给出 --event-case（触发它的 Case）")
+        trigger = read_event_case(ctx, ctx.args.event_case)
+        if trigger.get("sop"):
+            fail("SOP 自己的执行 Case 不能再触发事件", "conflict")
+        event_note = f"由 {ctx.args.event} 触发（{trigger.get('id')}）"
+        params.insert(0, f"触发事件：{ctx.args.event}（{trigger.get('id')}：{trigger.get('title', '')}）")
     goal = (info["sections"].get("目的", "").strip().splitlines() or [sop["meta"].get("title", sop["id"])])[0]
     done_when = "；".join(line.strip("- ").strip() for line in info["sections"].get("完成标准", "").splitlines() if line.strip())[:300]
     title = ctx.args.title or f"{sop['meta'].get('title', sop['id'])} {today().isoformat()}"
     case_args = argparse.Namespace(title=title, slug=sop["id"], goal=goal, next_action=f"步骤 1：{info['steps'][0]['title']}",
-                                   status="active", done_when=done_when, source=f"SOP {sop['id']}@{version}",
+                                   status="active", done_when=done_when,
+                                   source=f"SOP {sop['id']}@{version}" + (f"；{event_note}" if event_note else ""),
                                    current_state=f"SOP 进度 0/{len(info['steps'])}",
                                    tag=["sop", *(["sop-trial"] if status != "active" else [])], sop=f"{sop['id']}@{version}")
     try:
@@ -1222,7 +1290,7 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
         case_id, case_text = case_tool.plan_create(cases, case_args)
     except case_tool.CaseError as exc:
         raise SopError(f"不能建立执行记录：{exc}", "unavailable", ["执行记录需要项目启用 case-workspace（Profile work.mode）"]) from exc
-    section = checklist_text(sop, info, habit, ctx.args.param or [], note)
+    section = checklist_text(sop, info, habit, params, note)
     preview = {"case_id": case_id, "title": title, "steps": [step["title"] for step in info["steps"]],
                "preflight": {"ready": report["ready"], "counts": report["counts"]}, "snapshot": bool(snapshot),
                "checklist": section}
@@ -1237,7 +1305,7 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
     path = ctx.project / created["path"]
     data, body = case_tool.read_case(path)
     body = insert_before(body, "阻塞与恢复条件", section + "\n\n## 中间产物\n\n暂无。")
-    body = case_tool.append_section(body, "工作记录", f"{case_tool.now()} 按 {sop['id']}@{version} 开始执行；执行前检查：就绪 {report['counts']['ok']}、缺失 {report['counts']['missing']}、待核对 {report['counts']['unknown']}")
+    body = case_tool.append_section(body, "工作记录", f"{case_tool.now()} 按 {sop['id']}@{version} 开始执行{('，' + event_note) if event_note else ''}；执行前检查：就绪 {report['counts']['ok']}、缺失 {report['counts']['missing']}、待核对 {report['counts']['unknown']}")
     case_tool.write_atomic(path, case_tool.render_frontmatter(data) + body)
     return 0, {"applied": True, **preview, "case_id": created["id"], "path": created["path"]}, \
         lines + [f"已建立：{created['path']}"]
@@ -1403,12 +1471,16 @@ def parser() -> argparse.ArgumentParser:
     revise.add_argument("--note")
     add("match", "关键词预筛").add_argument("text", nargs="+")
     add("due", "哪些有周期的 SOP 到期了")
-    add("events", "监听某事件的 SOP").add_argument("event")
+    events = add("events", "监听某事件的 SOP；加 --case 只看对这个 Case 会触发的")
+    events.add_argument("event")
+    events.add_argument("--case", help="发生事件的 Case：按它的标签过滤，SOP 自己的执行 Case 不触发")
     run = add("run", "按 SOP 建立一次执行（Case）", write=True)
     run.add_argument("sop")
     run.add_argument("--title")
     run.add_argument("--param", action="append", metavar="名称=值")
     run.add_argument("--trial", action="store_true", help="试跑草稿")
+    run.add_argument("--event", choices=EVENTS, help="由哪个事件触发（需同时给 --event-case）")
+    run.add_argument("--event-case", help="触发事件的 Case")
     step = add("step", "记录某一步的结果", write=True)
     step.add_argument("case")
     step.add_argument("n", type=int)

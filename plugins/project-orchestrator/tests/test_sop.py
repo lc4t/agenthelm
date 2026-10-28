@@ -50,9 +50,16 @@ class SopTestCase(unittest.TestCase):
         path = self.file(slug)
         path.write_text(path.read_text(encoding="utf-8").replace(sop.PLACEHOLDER, "已填写"), encoding="utf-8")
 
-    def make_active(self, slug: str = "video-to-transcript", template: str = "video-to-transcript") -> None:
+    def make_active(self, slug: str = "video-to-transcript", template: str = "video-to-transcript",
+                    events: tuple[str, ...] = (), tags: tuple[str, ...] = ()) -> None:
         self.create(slug, template)
         self.fill_placeholders(slug)
+        if events:
+            path = self.file(slug)
+            text = path.read_text(encoding="utf-8").replace("on_events: []", "on_events:\n" + "\n".join(f'  - "{item}"' for item in events))
+            if tags:
+                text = text.replace("decided: []", "event_tags:\n" + "\n".join(f'  - "{item}"' for item in tags) + "\ndecided: []")
+            path.write_text(text, encoding="utf-8")
         self.run_sop("defaults", "--set", "on_missing_tool=ask", "--set", "artifact_keep=on-error",
                      "--set", "resume=from-failed-step", "--set", "confirm_costly=ask", "--set", "on_error=ask", "--apply")
         code, result = self.run_sop("decide", slug, "--confirm", "trigger", "--confirm", "requires", "--apply")
@@ -296,6 +303,28 @@ class PreflightTests(SopTestCase):
         code, report = self.preflight()
         self.assertEqual(code, 0, report)
 
+    def test_conditional_requirements_do_not_block_but_are_listed_for_the_agent(self) -> None:
+        self.setup_requirements("- 命令：python3｜用途：运行脚本\n"
+                                "- 命令：no-bilibili-tool-xyz｜用途：B 站｜安装：pipx install demo｜仅当：输入是 B 站视频｜缺失时：询问用户\n"
+                                "- 命令：no-other-site-tool-xyz｜用途：其他站点｜仅当：输入不是 B 站视频")
+        code, report = self.preflight()
+        self.assertEqual(code, 0, report)
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["counts"]["conditional"], 2)
+        self.assertEqual({item["when"] for item in report["conditional"]}, {"输入是 B 站视频", "输入不是 B 站视频"})
+        _, shown = self.run_sop("show", "tooling")
+        self.assertEqual([req["when"] for req in shown["requires"]], ["", "输入是 B 站视频", "输入不是 B 站视频"])
+
+    def test_bundled_video_sample_declares_yutto_for_bilibili_and_yt_dlp_for_other_sites(self) -> None:
+        self.create()
+        _, shown = self.run_sop("show", "video-to-transcript")
+        by_name = {req["name"]: req for req in shown["requires"]}
+        self.assertIn("B 站", by_name["yutto"]["when"])
+        self.assertIn("B 站以外", by_name["yt-dlp"]["when"])
+        self.assertEqual(by_name["ffmpeg"]["when"], "")
+        _, checked = self.run_sop("validate", "video-to-transcript")
+        self.assertNotIn("undeclared-tool", {item["code"] for item in checked["results"][0]["issues"]})
+
     def test_modules_skills_mcp_and_manual_items_need_confirmation_when_not_found(self) -> None:
         self.setup_requirements("- 模块：json\n- 模块：no_such_module_xyz\n- 技能：no-such-skill\n- MCP：no-such-server\n- 手动确认：本地模型已下载")
         code, report = self.preflight()
@@ -379,7 +408,7 @@ class ExecutionTests(SopTestCase):
         self.assertEqual(code, 0, ran)
         text = (self.root / ran["path"]).read_text(encoding="utf-8")
         self.assertIn('sop: "video-to-transcript@1.0.0"', text)
-        self.assertIn("- [ ] 2. 取得视频文件（工具：yt-dlp）", text)
+        self.assertIn("- [ ] 2. 取得视频文件（工具：yutto、yt-dlp）", text)
         self.assertIn("出错时：ask", text)
         self.assertIn("## 中间产物", text)
         self.assertEqual(self.run_case("validate")[0], 0)
@@ -526,11 +555,28 @@ class ProjectEntryTests(SopTestCase):
         self.create("dup", "blank")
         self.assertEqual(self.cli("sop", "new", "--slug", "dup", "--apply")[0], 5)
 
-    def test_demo_projects_have_no_sop(self) -> None:
+    def test_demo_projects_run_the_real_sop_tool_in_a_sandbox(self) -> None:
         out = io.StringIO()
         with mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()):
             code = project_cli.main(["--demo", "study", "--output", "json", "sop", "list"])
-        self.assertEqual(code, 4)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(code, 0, payload)
+        self.assertTrue(payload["demo"])
+        self.assertEqual({row["id"] for row in payload["data"]["sops"]}, {"video-to-transcript", "weekly-review"})
+        self.assertFalse((self.root / "sops").exists())  # 没有碰测试项目
+        self.assertEqual(os.environ["AGENTHELM_SOP_HOME"], str(self.user_home))  # 环境变量已恢复
+
+    def test_demo_writes_stay_in_the_sandbox_and_blank_demo_is_empty(self) -> None:
+        for scenario, expected in (("blank", 0), ("personal", 2)):
+            out = io.StringIO()
+            with mock.patch("sys.stdout", out):
+                project_cli.main(["--demo", scenario, "--output", "json", "sop", "list"])
+            self.assertEqual(len(json.loads(out.getvalue())["data"]["sops"]), expected, scenario)
+        provider = project_cli.DemoProvider("study")
+        provider.sop(["run", "weekly-review", "--apply"])
+        _, status, _ = provider.sop(["list"])
+        self.assertEqual(len(status["sops"]), 2)
+        self.assertFalse((self.root / "cases").exists())
 
     def test_health_stays_quiet_without_sops_then_reports_problems_and_due_items(self) -> None:
         _, quiet = self.cli("health")
@@ -549,6 +595,108 @@ class ProjectEntryTests(SopTestCase):
     def test_capabilities_list_the_sop_entry(self) -> None:
         _, payload = self.cli("capabilities")
         self.assertIn("sop", {item["id"] for item in payload["data"]})
+
+
+class EventTests(SopTestCase):
+    def run_case(self, *args: str) -> tuple[int, dict]:
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            code = case.main(["--project", str(self.root), "--output", "json", *args])
+        return code, json.loads(output.getvalue())
+
+    def new_case(self, slug: str = "work", *extra: str) -> dict:
+        code, made = self.run_case("new", "--title", "一件事", "--slug", slug, "--goal", "g", "--next-action", "n", *extra)
+        self.assertEqual(code, 0, made)
+        return made
+
+    def test_closing_a_case_reports_the_listening_sops(self) -> None:
+        self.make_active("closer", "weekly-review", events=("case.closed",))
+        made = self.new_case()
+        self.assertNotIn("sop_events", made)
+        code, closed = self.run_case("update", made["id"], "--status", "done", "--result", "完成")
+        self.assertEqual(code, 0, closed)
+        (hint,) = closed["sop_events"]
+        self.assertEqual((hint["id"], hint["event"], hint["case"], hint["confirm"]), ("closer", "case.closed", made["id"], "ask"))
+        self.assertIn(f"sop run closer --event case.closed --event-case {made['id']}", hint["command"])
+        code, again = self.run_case("update", made["id"], "--log", "补一条记录")
+        self.assertNotIn("sop_events", again)  # 只在“变为关闭”的那一次提示
+
+    def test_creating_a_case_reports_listeners_for_case_created(self) -> None:
+        self.make_active("starter", "weekly-review", events=("case.created",))
+        made = self.new_case()
+        self.assertEqual([hint["id"] for hint in made["sop_events"]], ["starter"])
+
+    def test_event_tags_limit_which_cases_trigger(self) -> None:
+        self.make_active("project-retro", "weekly-review", events=("case.closed",), tags=("项目",))
+        plain = self.new_case("plain")
+        tagged = self.new_case("tagged", "--tag", "项目")
+        self.assertNotIn("sop_events", self.run_case("update", plain["id"], "--status", "done")[1])
+        self.assertEqual([hint["id"] for hint in self.run_case("update", tagged["id"], "--status", "done")[1]["sop_events"]],
+                         ["project-retro"])
+        _, listed = self.run_sop("events", "case.closed")
+        self.assertEqual(listed["sops"][0]["event_tags"], ["项目"])
+        _, filtered = self.run_sop("events", "case.closed", "--case", plain["id"])
+        self.assertEqual(filtered["sops"], [])
+
+    def test_draft_and_retired_sops_do_not_listen(self) -> None:
+        self.create("sleeper", "weekly-review")
+        path = self.file("sleeper")
+        path.write_text(path.read_text(encoding="utf-8").replace("on_events: []", 'on_events:\n  - "case.closed"'), encoding="utf-8")
+        made = self.new_case()
+        self.assertNotIn("sop_events", self.run_case("update", made["id"], "--status", "done")[1])
+
+    def test_sop_execution_cases_never_trigger_events(self) -> None:
+        self.make_active("loop", "weekly-review", events=("case.created", "case.closed"))
+        code, ran = self.run_sop("run", "loop", "--apply")
+        self.assertEqual(code, 0, ran)
+        closed = self.run_case("update", ran["case_id"], "--status", "done", "--result", "完成")[1]
+        self.assertNotIn("sop_events", closed)
+        _, filtered = self.run_sop("events", "case.closed", "--case", ran["case_id"])
+        self.assertEqual(filtered["sops"], [])
+        self.assertIn("不再触发", filtered["note"])
+
+    def test_run_records_the_triggering_case(self) -> None:
+        self.make_active("closer", "weekly-review", events=("case.closed",))
+        trigger = self.new_case("trigger")["id"]
+        code, ran = self.run_sop("run", "closer", "--event", "case.closed", "--event-case", trigger, "--apply")
+        self.assertEqual(code, 0, ran)
+        text = (self.root / ran["path"]).read_text(encoding="utf-8")
+        self.assertIn(f"触发事件：case.closed（{trigger}", text)
+        self.assertIn(f"由 case.closed 触发（{trigger}）", text)
+
+    def test_run_rejects_events_the_sop_does_not_listen_to_or_without_a_case(self) -> None:
+        self.make_active("quiet", "weekly-review")
+        trigger = self.new_case("trigger")["id"]
+        self.assertEqual(self.run_sop("run", "quiet", "--event", "case.closed", "--event-case", trigger)[0], 5)
+        self.make_active("closer", "weekly-review", events=("case.closed",))
+        self.assertEqual(self.run_sop("run", "closer", "--event", "case.closed")[0], 2)
+        self.assertEqual(self.run_sop("run", "closer", "--event", "case.closed", "--event-case", "CASE-nope")[0], 1)
+
+    def test_a_broken_sop_directory_never_blocks_case_writes(self) -> None:
+        (self.root / "sops" / "broken").mkdir(parents=True)
+        (self.root / "sops" / "broken" / "SOP.md").write_text("not a sop", encoding="utf-8")
+        made = self.new_case()
+        self.assertEqual(self.run_case("update", made["id"], "--status", "done")[0], 0)
+
+    def test_record_through_the_entry_prints_the_hint(self) -> None:
+        self.make_active("closer", "weekly-review", events=("case.closed",))
+        made = self.new_case()
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()):
+            code = project_cli.main(["--project", str(self.root), "--offline", "record", made["id"], "--close", "--apply"])
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertIn("命中流程（SOP）", out.getvalue())
+        self.assertIn("sop run closer --event case.closed", out.getvalue())
+
+    def test_event_tags_without_events_warn_and_index_shows_the_filter(self) -> None:
+        self.make_active("closer", "weekly-review", events=("case.closed",), tags=("项目",))
+        _, index = self.run_sop("index")
+        self.assertIn("事件：case.closed（仅标签 项目）", index["entries"][0]["line"])
+        self.create("lonely", "weekly-review")
+        path = self.file("lonely")
+        path.write_text(path.read_text(encoding="utf-8").replace("decided: []", 'event_tags:\n  - "x"\ndecided: []'), encoding="utf-8")
+        _, checked = self.run_sop("validate", "lonely")
+        self.assertIn("event-tags-without-event", {item["code"] for item in checked["results"][0]["issues"]})
 
 
 if __name__ == "__main__":
