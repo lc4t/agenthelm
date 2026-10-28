@@ -12,7 +12,7 @@
   - **工具检查**：前置条件按种类声明（命令、Python 模块、环境变量、路径、技能、MCP、手动确认），可写安装方式、替代方案与缺失时的处理；`preflight` 检查就绪 / 缺失 / 待核对，环境变量只报告有无、不显示值；步骤里用到但没声明的工具在校验中报错；SOP 中疑似密钥会被拒绝。
   - **触发**：`index`（每个已启用的 SOP 一行）、`match`（关键词预筛）、`due`（周期到期，依据执行 Case 的创建日期）、`events`；默认命中后先问用户，到期只提醒，不自动执行。
   - **事件触发**：SOP 用 `on_events`（`case.created` / `case.closed`）声明监听，`event_tags` 限定只对带某些标签的 Case 触发。默认 Case 工具新建 Case、把 Case 关闭时，`case.py` 与项目入口的 `record` 在结果里带 `sop_events` 和一段提示，列出命中的 SOP 与可直接运行的命令；`sop events <事件> --case <Case>` 供自有 Case 工具的项目查询；`sop run --event … --event-case …` 把触发它的 Case 记进执行记录。SOP 自己的执行 Case 不再触发事件，避免循环；草稿与已退役的 SOP 不监听；SOP 目录有问题时不影响 Case 的写入。
-  - **范围与公开边界**：创建时必须谈清第 8 项 `scope`——流程读取哪些事项、产物放进哪个项目、那个项目会不会公开。会读取多个事项的流程（复盘）必须先由用户指定范围，不默认纳入全部。SOP 工具不提供访问控制，也不使用 Case 的 `sensitivity`（它在本仓库只让文件不进资料索引，不阻止提交或读取）：内容是否公开取决于所在项目。公开样例只含流程结构，不含任何个人进度或数据（有测试检查）。
+  - **范围与私有目录**：创建时必须谈清第 8 项 `scope`——读取哪些事项、是否用到私有目录、产物放进哪个项目、那个项目会不会公开。会读取多个事项的流程（复盘）必须先由用户指定范围，不默认纳入全部。私有目录（`privacy.forbidden_default_reads`，缺省约定 `private/`）三条约定：读取前须经用户确认（`sop confirm-read` 记入 Case 的决策记录）；内容默认不进入 git（目录里的 `.gitignore`，`sop private --apply` 补上，`health` 提示未忽略或已被跟踪的文件）；用到它的 Case 标为 `sensitivity: private`（SOP 引用私有路径时 `run` 自动标，`case.py update` 登记私有路径的交付物或证据时自动标，也可 `--sensitivity`）。这是协议级约束，工具层挡不住 Agent 直接读文件；`find` 不做特殊处理。公开样例只含流程结构，不含任何个人进度或数据（有测试检查）。
   - **条件性前置**：前置条件可写 `仅当：<条件>`，例如 B 站视频用 yutto、其他站点用 yt-dlp。条件项缺失不影响“就绪”判断，`preflight` 单独列出，由 Agent 对照本次输入判断是否成立。
   - **执行**：`run` 建立一个 Case，固化执行约定与步骤清单；`step` 记录每步完成 / 跳过 / 失败、登记中间产物并更新下一动作；`status` 核对进度。一次执行的状态只记在 Case 里。
   - **版本**：`revise` 升版本号、写修订记录、保存快照；内容变了但没升版本时 `validate` 警告，`run` 拒绝执行。
@@ -24,6 +24,7 @@
 
 ### agents-init 6.8.0
 
+- 新项目的 Profile 声明 `privacy.forbidden_default_reads: ["private/"]` 并建立 `private/.gitignore`；骨架清单对声明了 `private` 的项目才检查它，已有项目不多出差异。
 - 新项目的 Profile 带 `sop: {"root": "sops"}` 并建立 `sops/`；`project.schema.json` 声明 `sop` 段。
 - 骨架清单（内容包 `agents-init/project-skeleton` 1.1.0）新增 `{sop_root}/.gitkeep`，条件为 `sop`：只有 Profile 声明了 `sop` 段的项目才检查它，没有声明的已有项目 `check` / `health` 不会多出任何差异（两台机器的期望清单版本不同时，指纹仍会因版本不同而不同，这是既有行为）。
 

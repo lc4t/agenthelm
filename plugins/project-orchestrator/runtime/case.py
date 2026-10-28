@@ -19,6 +19,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import private_paths  # noqa: E402
+
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SCHEMA = PLUGIN_ROOT / "references" / "case.schema.json"
 TEMPLATE = PLUGIN_ROOT / "templates" / "CASE.md"
@@ -255,7 +258,7 @@ def _new_case_fields(project: Project, args: argparse.Namespace) -> tuple[str, d
 def _render_new_case(project: Project, args: argparse.Namespace, fields: dict, case_id: str,
                      stamp: str) -> str:
     data = {"schema_version": "1.0", "id": case_id, "title": fields["title"], "status": args.status,
-            "sensitivity": "shared", "source": fields["source"], "goal": fields["goal"],
+            "sensitivity": (getattr(args, "sensitivity", None) or "shared"), "source": fields["source"], "goal": fields["goal"],
             "done_when": fields["done_when"], "current_state": fields["current_state"],
             "next_action": fields["next_action"], "artifact_mode": "case-local",
             "sop": (getattr(args, "sop", None) or ""),
@@ -398,6 +401,13 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
             if item not in data.setdefault(key, []):
                 data[key].append(item)
                 changed.append(key)
+    if getattr(args, "sensitivity", None):
+        if data.get("sensitivity", "shared") != args.sensitivity:
+            data["sensitivity"] = args.sensitivity
+            changed.append("sensitivity")
+    elif data.get("sensitivity") != "private" and _touches_private(project, directory, args):
+        data["sensitivity"] = "private"  # 用到了私有目录里的内容：默认标为 private（要改回去用 --sensitivity shared）
+        changed.append("sensitivity")
     if data.get("status") == "active" and not data.get("next_action"):
         raise CaseError("active 的 Case 需要 next_action")
     if data.get("status") == "waiting" and not data.get("waiting_for"):
@@ -424,6 +434,18 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
     return path, current, render_frontmatter(data) + body, {
         "ok": True, "id": data["id"], "changed": sorted(set(changed)), "updated_at": stamp,
         "path": project.relative(path)}
+
+
+def _touches_private(project: Project, directory: Path, args: argparse.Namespace) -> bool:
+    """这次登记的交付物或证据是否在私有目录里（路径可以相对项目根，也可以相对 Case 目录）。"""
+    dirs = private_paths.declared(project.root)
+    if not dirs:
+        return False
+    for value in [*getattr(args, "add_deliverable", []), *getattr(args, "add_evidence", [])]:
+        for candidate in (value, str(directory / value)):
+            if private_paths.is_private(project.root, candidate, dirs):
+                return True
+    return False
 
 
 def update(project: Project, args: argparse.Namespace) -> dict:
@@ -503,6 +525,8 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--source")
     new.add_argument("--current-state")
     new.add_argument("--tag", action="append", default=[])
+    new.add_argument("--sensitivity", choices=("shared", "private"), default="shared",
+                     help="用到私有目录（privacy.forbidden_default_reads，缺省 private/）里内容的 Case 用 private")
     new.add_argument("--sop", help="这个 Case 是 SOP 的一次执行：<sop-id>@<版本>（通常由 sop.py run 填写）")
     listing = command("list", "列出 Case（默认不含已关闭）")
     listing.add_argument("--status", choices=tuple(STATUS_ORDER))
@@ -522,6 +546,8 @@ def parser() -> argparse.ArgumentParser:
     change.add_argument("--decision", help="向「决策记录」追加一条")
     change.add_argument("--add-deliverable", action="append", default=[])
     change.add_argument("--add-evidence", action="append", default=[])
+    change.add_argument("--sensitivity", choices=("shared", "private"),
+                        help="改 Case 的敏感度；登记私有目录里的交付物或证据时会自动改为 private")
     change.add_argument("--add-tag", action="append", default=[])
     change.add_argument("--add-alias", action="append", default=[])
     change.add_argument("--expect-updated-at", help="只在 updated_at 等于该值时写入，避免覆盖并发修改")

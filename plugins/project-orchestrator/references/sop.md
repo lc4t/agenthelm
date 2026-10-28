@@ -67,7 +67,7 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 `python3 runtime/sop.py --project <项目> <子命令>`，也可用 `agenthelm project sop <子命令>`。加 `--output json` 得到结构化结果。**写入类默认只预览，`--apply` 才执行**，写后读回核对；`--expect-sha256` 防止覆盖别人刚改的内容。
 
 - 读：`list` · `index` · `show` · `validate` · `interview` · `defaults` · `preflight` · `match` · `due` · `events` · `status`
-- 写：`init` · `new` · `decide` · `activate` · `revise` · `retire` / `restore` · `defaults --set` · `run` · `step`
+- 写：`init` · `new` · `decide` · `activate` · `revise` · `retire` / `restore` · `defaults --set` · `run` · `step` · `private` · `confirm-read`
 - 退出码：0 成功；1 有待处理项（校验有错、前置条件未就绪、还有未谈清的事项、步骤未完成）或无结果；2 用法错误；4 不可用（例如项目没有启用 case-workspace）；5 写入冲突；6 执行失败。
 
 ## 触发协议（Agent 怎么用）
@@ -115,12 +115,16 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 - 清理属于删除操作：除非用户已经在 `artifact_keep` 里明确约定（`final-only` / `on-error`），清理前仍须确认。
 - 含个人或敏感内容的中间产物（原始录音、转录原文）不得提交到版本库；提示用户把目录加入 `.gitignore`。
 
-## 范围与公开边界协议
+## 范围与私有目录协议
 
-- **SOP 工具不提供访问控制**。Case 的 `sensitivity: private` 在本仓库里只有一个效果：该 Case 的文件不进资料索引（`find` 找不到）；它不阻止提交、同步，也不阻止 Agent 读取。所以 SOP 不使用它，也不把它当作保护手段。
-- **内容会不会公开，取决于 SOP 和执行记录所在的项目**（及其远端仓库）。涉及个人进度、学习记录、账号、原始素材的流程，只放在不公开的项目里运行，或放在用户级目录；随包的公开样例只含流程结构，不含任何个人进度或数据。知识整理、规则整理这类流程可以放在可公开的项目里。
+私有目录的完整约定见 `SKILL.md` 3.2，这里是 SOP 相关的部分：
+
+- **私有目录**：Profile 的 `privacy.forbidden_default_reads` 声明（缺省约定为项目根的 `private/`，新项目自动建好）。读取前须经用户确认；内容默认不进入 git（目录里的 `.gitignore`，云同步盘同步不受影响）；其余照常，`find` 等命令不做特殊处理。
+- **SOP 用到私有目录**：SOP 正文里把私有路径当路径用（如 `private/notes/`），`sop.py run` 会在预览里说明，并把执行 Case 自动标为 `sensitivity: private`，在步骤清单里写明“读取前须经用户确认”。执行时先向用户列出要读的路径和用途，确认后 `sop.py confirm-read <Case> <路径…> --apply` 记入决策记录。确认只覆盖当次列出的路径。
+- **`sensitivity: private` 的含义**：它是“这个 Case 用到了私有内容”的标记。注意它在资料索引里的既有行为：该 Case 的文件不进索引（`find` 找不到），`progress` / `show` 照常列出。
 - **范围先于读取**：会读取多个事项的流程（复盘、汇总）必须先确定范围，由用户明确给出标签、事项名或编号，**不默认纳入全部事项**。未被纳入的事项不读、不写进产物。范围写在产物开头。
-- 创建时的 `scope` 事项就是把这三件事谈清：读取哪些事项、产物放进哪个项目、那个项目会不会公开。要把复盘之类的内容公开或分享时，先由用户逐段确认，再复制出去，不直接移动原文件。
+- 创建时的 `scope` 事项把这几件事谈清：读取哪些事项、是否用到私有目录、产物放进哪个项目、那个项目会不会公开。公开仓库里只放通用样例；涉及个人进度的 SOP 放在不公开的项目或用户级目录。要把复盘之类的内容公开时，先由用户逐段确认，再复制出去。
+- 命令：`sop.py private`（状态；`--apply` 补 `.gitignore`；`--create` 创建 `private/`）、`sop.py confirm-read`。
 
 ## 版本与修改
 

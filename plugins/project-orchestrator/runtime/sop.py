@@ -28,6 +28,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import case as case_tool  # noqa: E402
+import private_paths  # noqa: E402
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = PLUGIN_ROOT / "sop-templates"
@@ -92,8 +93,9 @@ DECISIONS = (
                                        "缺省放在本次 Case 的 data/ 目录；体积很大的文件可以指定项目外的目录。"),
     ("resume", ("resume",), "中途失败后重新执行时，从哪里开始？"),
     ("confirm_costly", ("confirm_costly",), "遇到花钱、占用大量时间或网络流量的步骤，要不要先问你？"),
-    ("scope", None, "这个流程会读取哪些事项或资料？是每次由你指定，还是固定范围（不要默认纳入全部）？产物会放进哪个项目，"
-                    "那个项目会不会公开？涉及你个人的进度、学习记录、账号或原始素材的流程，请只在不公开的项目里运行。"),
+    ("scope", None, "这个流程会读取哪些事项或资料？是每次由你指定，还是固定范围（不要默认纳入全部）？会不会用到私有目录"
+                    "（private/）里的内容？用到的话，每次读取前都会请你确认，执行记录自动标为 private，内容默认不进 git。"
+                    "产物会放进哪个项目，那个项目会不会公开？"),
 )
 # 习惯项 -> 它所属的“创建时必须确认”事项；设置这些项等于用户确认了对应事项。
 FIELD_DECISION = {"on_error": "on_error", "max_retries": "on_error", "on_missing_tool": "on_missing_tool",
@@ -893,7 +895,8 @@ def cmd_show(ctx: Context) -> tuple[int, dict, list[str]]:
     habit = effective(sop["meta"], ctx.defaults)
     data = {"id": sop["id"], "scope": sop["scope"], "path": display(sop["path"], ctx.project), "meta": sop["meta"],
             "steps": info["steps"], "requires": info["requires"], "conventions": habit,
-            "gaps": gaps(sop["meta"], ctx.defaults), "issues": check_sop(sop, ctx.defaults)}
+            "gaps": gaps(sop["meta"], ctx.defaults), "issues": check_sop(sop, ctx.defaults),
+            "private": private_paths.mentions(sop["text"], private_paths.declared(ctx.project))}
     meta = sop["meta"]
     lines = [f"{meta.get('title')}（{sop['id']}@{meta.get('version')}，{meta.get('status')}，{'项目' if sop['scope'] == 'project' else '用户'}级）",
              f"文件：{data['path']}", f"触发：{meta.get('trigger', '')}", f"不触发：{meta.get('exclude', '')}"]
@@ -1224,14 +1227,19 @@ def read_event_case(ctx: Context, token: str) -> dict:
 
 # ---------------------------------------------------------------- 执行：一次执行 = 一个 Case
 
-def checklist_text(sop: dict, info: dict, habit: dict, params: list[str], runtime_note: str) -> str:
+def checklist_text(sop: dict, info: dict, habit: dict, params: list[str], runtime_note: str,
+                   private_hits: list[str] | None = None) -> str:
     version = sop["meta"]["version"]
     keep = habit["artifact_keep"]["value"]
     place = habit["artifact_dir"]["value"] or "本 Case 的 data/ 目录"
     lines = ["## SOP 执行清单", "", f"来源：`{sop['id']}@{version}`（{runtime_note}）", "", "执行约定（开始时从 SOP 与项目习惯固化，执行中不随 SOP 改动）：",
              f"- 出错时：{habit['on_error']['value']}" + (f"（最多重试 {habit['max_retries']['value']} 次）" if habit["on_error"]["value"] == "retry" else ""),
              f"- 缺少工具时：{habit['on_missing_tool']['value']}", f"- 中间产物：放在 {place}；完成后：{keep}",
-             f"- 失败后重新执行：{habit['resume']['value']}", f"- 花钱或耗时的步骤：{habit['confirm_costly']['value']}", ""]
+             f"- 失败后重新执行：{habit['resume']['value']}", f"- 花钱或耗时的步骤：{habit['confirm_costly']['value']}"]
+    if private_hits:
+        lines.append(f"- 私有目录：本次会用到 {'、'.join(private_hits)}；读取前须经用户确认（用 sop confirm-read 记录），"
+                     "内容默认不进入 git；本 Case 已标为 private")
+    lines.append("")
     if params:
         lines += ["参数："] + [f"- {item}" for item in params] + [""]
     lines += ["步骤："] + [f"- [ ] {step['n']}. {step['title']}" + (f"（工具：{'、'.join(step['tools'])}）" if step["tools"] else "")
@@ -1260,6 +1268,10 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
         fail("SOP 没有可执行的步骤", "invalid")
     habit = effective(sop["meta"], ctx.defaults)
     report = preflight(sop, ctx.project, ctx.defaults)
+    private_dirs = private_paths.declared(ctx.project)
+    private_hits = private_paths.mentions(sop["text"], private_dirs)
+    private_warnings = [f"{item} 尚未被 git 忽略：先运行 sop private --apply"
+                        for item in private_hits if private_paths.git_state(ctx.project, item)["ignored"] is False]
     version = str(sop["meta"]["version"])
     existing = sop["dir"] / SNAPSHOTS / f"{version}.md"
     if status == "active" and existing.is_file() and existing.read_text(encoding="utf-8") != sop["text"]:
@@ -1286,19 +1298,23 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
                                    status="active", done_when=done_when,
                                    source=f"SOP {sop['id']}@{version}" + (f"；{event_note}" if event_note else ""),
                                    current_state=f"SOP 进度 0/{len(info['steps'])}",
-                                   tag=["sop", *(["sop-trial"] if status != "active" else [])], sop=f"{sop['id']}@{version}")
+                                   tag=["sop", *(["sop-trial"] if status != "active" else [])], sop=f"{sop['id']}@{version}",
+                                   sensitivity="private" if private_hits else "shared")
     try:
         cases = case_tool.Project(ctx.project)
         case_id, case_text = case_tool.plan_create(cases, case_args)
     except case_tool.CaseError as exc:
         raise SopError(f"不能建立执行记录：{exc}", "unavailable", ["执行记录需要项目启用 case-workspace（Profile work.mode）"]) from exc
-    section = checklist_text(sop, info, habit, params, note)
+    section = checklist_text(sop, info, habit, params, note, private_hits)
     preview = {"case_id": case_id, "title": title, "steps": [step["title"] for step in info["steps"]],
                "preflight": {"ready": report["ready"], "counts": report["counts"]}, "snapshot": bool(snapshot),
-               "checklist": section}
+               "checklist": section, "private": private_hits, "private_warnings": private_warnings}
     lines = [f"将建立 Case：{case_id}（{title}）", "", section, "", "中间产物：执行中用 sop.py step … --artifact 路径:说明 登记。",
              f"执行前检查：{report['counts']['ok']} 项就绪，{report['counts']['missing']} 项缺失，{report['counts']['unknown']} 项待核对"
              + ("" if report["ready"] else "（先处理：sop.py preflight " + sop["id"] + "）")]
+    if private_hits:
+        lines.append(f"这个流程会用到私有目录 {'、'.join(private_hits)}：执行 Case 将标为 private，读取前须你逐次确认。")
+    lines += [f"注意：{item}" for item in private_warnings]
     if not ctx.args.apply:
         return 0, {"applied": False, **preview}, lines + ["以上为预览，没有写入。确认后加 --apply。"]
     if snapshot:
@@ -1410,6 +1426,59 @@ def cmd_status(ctx: Context) -> tuple[int, dict, list[str]]:
                                     "keep_policy": section_value(body, "SOP 执行清单", "- 中间产物：")}, lines
 
 
+def cmd_confirm_read(ctx: Context) -> tuple[int, dict, list[str]]:
+    """记录“用户已确认读取这些私有路径”：写进 Case 的决策记录，并把 Case 标为 private。确认本身必须先问过用户。"""
+    dirs = private_paths.declared(ctx.project)
+    outside = [item for item in ctx.args.paths if not private_paths.is_private(ctx.project, item, dirs)]
+    if outside:
+        fail(f"这些路径不在私有目录里，无需确认：{'、'.join(outside)}", "usage",
+             ["私有目录：" + ("、".join(dirs) or "（无；在 Profile 的 privacy.forbidden_default_reads 声明，或使用项目根的 private/）")])
+    try:
+        cases = case_tool.Project(ctx.project)
+        path = cases.find(ctx.args.case) / "CASE.md"
+        data, body = case_tool.read_case(path)
+    except case_tool.CaseError as exc:
+        raise SopError(str(exc), "not-found") from exc
+    current = path.read_text(encoding="utf-8")
+    stamp = case_tool.now()
+    note = f"；{ctx.args.note.strip()}" if ctx.args.note else ""
+    body = case_tool.append_section(body, "决策记录", f"{stamp} 用户确认读取私有路径：{'、'.join(ctx.args.paths)}{note}")
+    marked = data.get("sensitivity") != "private"
+    data.update({"sensitivity": "private", "updated_at": stamp})
+    errors = case_tool.validate_schema(data, cases.schema)
+    if errors:
+        fail("更新后 Case 不符合 Schema：" + "；".join(errors), "invalid")
+    result = plan_result(ctx.project, [{"path": path, "content": case_tool.render_frontmatter(data) + body, "expect": sha(current)}],
+                         ctx.args.apply, {"case": data["id"], "paths": ctx.args.paths, "marked_private": marked})
+    return 0, result, [f"{data['id']}：用户确认读取 {'、'.join(ctx.args.paths)}" + ("；Case 已标为 private" if marked else "")] + \
+        ([result["verify"]] if result["applied"] else ["以上为预览，没有写入。确认后加 --apply（只有用户确实确认过才写）。"])
+
+
+def cmd_private(ctx: Context) -> tuple[int, dict, list[str]]:
+    """私有目录现状：哪些路径、是否被 git 忽略、是否已有文件被跟踪；--apply 补上缺失的 .gitignore。"""
+    dirs = private_paths.declared(ctx.project)
+    if not dirs and ctx.args.create:
+        dirs = [private_paths.CONVENTION]
+    rows, writes, lines = [], [], []
+    for item in dirs:
+        state = private_paths.git_state(ctx.project, item)
+        plan = private_paths.plan_ignore(ctx.project, item) if (ctx.project / item).is_dir() or ctx.args.create else []
+        writes += plan
+        rows.append({**state, "needs_gitignore": bool(plan)})
+        status = "不在 git 仓库里或没有 git" if state["ignored"] is None else "已被 git 忽略" if state["ignored"] else "未被 git 忽略"
+        lines.append(f"{item}/：{'存在' if state['exists'] else '不存在'}；{status}"
+                     + (f"；已有 {len(state['tracked'])} 个文件被 git 跟踪" if state["tracked"] else "")
+                     + ("；将创建 .gitignore" if plan else ""))
+        if state["tracked"]:
+            lines.append(f"  已被跟踪的文件不会因为 .gitignore 而消失：确认后用 git rm -r --cached {item} 取消跟踪（历史里的内容仍在）")
+    if not dirs:
+        lines.append("没有私有目录。把私有内容放进项目根的 private/，或在 Profile 的 privacy.forbidden_default_reads 声明路径；"
+                     "运行 sop private --create --apply 创建 private/。")
+    result = plan_result(ctx.project, writes, ctx.args.apply, {"dirs": rows})
+    return (1 if any(row["ignored"] is False or row["tracked"] for row in rows) and not result["applied"] else 0), result, \
+        lines + ([] if result["applied"] or not writes else ["以上为预览，没有写入。确认后加 --apply。"])
+
+
 def cmd_init(ctx: Context) -> tuple[int, dict, list[str]]:
     root = project_root(ctx.project)
     writes = [] if root.is_dir() else [{"path": root / ".gitkeep", "content": "", "expect": None}]
@@ -1422,7 +1491,8 @@ def cmd_init(ctx: Context) -> tuple[int, dict, list[str]]:
 COMMANDS = {"list": cmd_list, "index": cmd_index, "show": cmd_show, "validate": cmd_validate, "interview": cmd_interview,
             "defaults": cmd_defaults, "preflight": cmd_preflight, "new": cmd_new, "activate": cmd_activate,
             "retire": cmd_retire, "restore": cmd_retire, "decide": cmd_decide, "revise": cmd_revise, "match": cmd_match, "due": cmd_due,
-            "events": cmd_events, "run": cmd_run, "step": cmd_step, "status": cmd_status, "init": cmd_init}
+            "events": cmd_events, "run": cmd_run, "step": cmd_step, "status": cmd_status, "init": cmd_init,
+            "confirm-read": cmd_confirm_read, "private": cmd_private}
 
 
 def parser() -> argparse.ArgumentParser:
@@ -1494,6 +1564,12 @@ def parser() -> argparse.ArgumentParser:
     step.add_argument("--expect-sha256")
     add("status", "一次执行的进度与中间产物").add_argument("case")
     add("init", "创建 SOP 目录", write=True)
+    confirm = add("confirm-read", "记录用户已确认读取某些私有路径（写入 Case 的决策记录，Case 标为 private）", write=True)
+    confirm.add_argument("case")
+    confirm.add_argument("paths", nargs="+")
+    confirm.add_argument("--note")
+    private = add("private", "私有目录现状：是否被 git 忽略；--apply 补上 .gitignore", write=True)
+    private.add_argument("--create", action="store_true", help="没有私有目录时创建项目根的 private/")
     return result
 
 

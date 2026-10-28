@@ -145,6 +145,9 @@ class Context:
         self.case_root = case.get("root") if _relative_ok(case.get("root")) else "cases"
         self.memory_root = memory.get("root") if _relative_ok(memory.get("root")) else "memory"
         sop = self.profile.get("sop") if isinstance(self.profile.get("sop"), dict) else None
+        privacy = self.profile.get("privacy") if isinstance(self.profile.get("privacy"), dict) else {}
+        reads = privacy.get("forbidden_default_reads") if isinstance(privacy.get("forbidden_default_reads"), list) else []
+        self.private_declared = any(isinstance(item, str) and item.strip().strip("/") == "private" for item in reads)
         self.sop_declared = sop is not None
         self.sop_root = sop.get("root") if sop is not None and _relative_ok(sop.get("root")) else "sops"
         self.rendered = self._rendered()
@@ -174,6 +177,8 @@ class Context:
         files.pop(Path("cases/.gitkeep"), None)
         files.pop(Path("memory/.gitkeep"), None)
         files.pop(Path("sops/.gitkeep"), None)
+        if not self.private_declared:
+            files.pop(Path("private/.gitignore"), None)  # 老项目没有声明私有目录：不要求，也不产生新差异
         if self.sop_declared:
             files[Path(self.sop_root) / ".gitkeep"] = ""
         if self.inputs.work_mode == "case-workspace":
@@ -189,6 +194,8 @@ class Context:
             if when == "case-workspace" and self.inputs.work_mode != "case-workspace":
                 continue
             if when == "entry" and not self.inputs.entry_launcher:
+                continue
+            if when == "private" and not self.private_declared:
                 continue
             if when == "sop" and not self.sop_declared:
                 continue  # 旧项目没有声明 sop 段：不要求 sops/，也不产生新的差异
