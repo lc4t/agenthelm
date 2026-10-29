@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 from i18n_orchestrator import _  # noqa: E402
+from i18n_orchestrator import _  # noqa: E402
 
 # 运行时支持的项目入口接口版本范围；项目在 Profile 的 entry.api 声明自己需要的版本。
 RUNTIME_API = (1, 1)
@@ -106,3 +107,19 @@ def entry_section(profile: dict) -> dict:
     return {"declared": True, "api": api, "launcher": launcher, "about": str(entry.get("about") or ""),
             "guide": entry.get("guide"), "tools": entry.get("tools"), "items": items,
             "where": where, "start": start}
+
+
+SOP_ERROR_CODES = {"usage": "usage", "invalid": "usage", "not-found": "not-found", "ambiguous": "ambiguous",
+                   "conflict": "conflict", "unavailable": "unavailable", "failed": "failed"}
+
+
+def sop_call(argv: list[str], root: Path) -> tuple[int, dict, list[str]]:
+    """在项目 ``root`` 上运行 sop.py 的子命令；真实与演示两种来源共用，错误转成入口的 EntryError。"""
+    import sop as sop_tool  # noqa: PLC0415 - 只有用到 SOP 时才加载
+
+    try:
+        return sop_tool.execute([*argv, "--project", str(root)])
+    except sop_tool.SopError as exc:
+        raise EntryError(str(exc), SOP_ERROR_CODES.get(exc.code, "usage"), exc.next_steps) from exc
+    except SystemExit as exc:
+        raise EntryError(_("命令参数不正确，用 sop <子命令> --help 查看写法"), "usage") from exc

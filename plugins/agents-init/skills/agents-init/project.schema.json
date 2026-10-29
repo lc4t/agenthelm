@@ -226,6 +226,13 @@
         }
       }
     },
+    "sop": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "root": {"$ref": "#/$defs/relativePath"}
+      }
+    },
     "capabilities": {
       "type": "object",
       "additionalProperties": false,

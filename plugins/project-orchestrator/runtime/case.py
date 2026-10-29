@@ -21,6 +21,10 @@ from typing import Any
 import case_structure as structure  # noqa: E402
 from i18n_orchestrator import _  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import private_paths  # noqa: E402
+from i18n_orchestrator import _  # noqa: E402
+
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SCHEMA = PLUGIN_ROOT / "references" / "case.schema.json"
 TEMPLATES = {"zh": PLUGIN_ROOT / "templates" / "CASE.md", "en": PLUGIN_ROOT / "templates" / "CASE.en.md"}
@@ -32,7 +36,7 @@ CREDENTIAL_RE = re.compile(r"(credential|secret|token|password|passwd|private-?k
 STATUS_ORDER = {"active": 0, "waiting": 1, "captured": 2, "suspended": 3, "done": 4, "abandoned": 5}
 CLOSED = {"done", "abandoned"}
 FIELD_ORDER = ("schema_version", "id", "title", "status", "sensitivity", "source", "goal", "done_when",
-               "current_state", "next_action", "waiting_for", "resume_when", "artifact_mode")
+               "current_state", "next_action", "waiting_for", "resume_when", "artifact_mode", "sop")
 LIST_FIELDS = ("aliases", "legacy_ids", "tags", "deliverables", "evidence")
 MAX_CASE_BYTES = 2 * 1024 * 1024
 
@@ -258,12 +262,15 @@ def _new_case_fields(project: Project, args: argparse.Namespace) -> tuple[str, d
 def _render_new_case(project: Project, args: argparse.Namespace, fields: dict, case_id: str,
                      stamp: str) -> str:
     data = {"schema_version": "1.0", "id": case_id, "title": fields["title"], "status": args.status,
-            "sensitivity": "shared", "source": fields["source"], "goal": fields["goal"],
+            "sensitivity": (getattr(args, "sensitivity", None) or "shared"), "source": fields["source"], "goal": fields["goal"],
             "done_when": fields["done_when"], "current_state": fields["current_state"],
             "next_action": fields["next_action"], "artifact_mode": "case-local",
+            "sop": (getattr(args, "sop", None) or ""),
             "aliases": [], "legacy_ids": [], "tags": sorted(set(args.tag)), "deliverables": [], "evidence": [],
             "created_at": stamp, "updated_at": stamp}
     data = {key: value for key, value in data.items() if key in project.schema.get("properties", data)}
+    if not data.get("sop"):
+        data.pop("sop", None)
     errors = validate_schema(data, project.schema)
     if errors:
         raise CaseError(_("新 Case 不符合 Schema：") + _("；").join(errors), "schema")
@@ -314,7 +321,20 @@ def create(project: Project, args: argparse.Namespace) -> dict:
         directory.rmdir()
         raise
     write_atomic(directory / "CASE.md", text)
-    return {"ok": True, "id": case_id, "path": project.relative(directory / "CASE.md"), "status": args.status}
+    result = {"ok": True, "id": case_id, "path": project.relative(directory / "CASE.md"), "status": args.status}
+    hints = sop_hints(project, "case.created", read_case(directory / "CASE.md")[0])
+    if hints:
+        result["sop_events"] = hints
+    return result
+
+
+def sop_hints(project: Project, event: str, data: dict) -> list[dict]:
+    """哪些已启用的 SOP 在监听这个事件；尽力而为，SOP 目录有问题时不能让 Case 的写入失败。"""
+    try:
+        import sop as sop_tool  # noqa: PLC0415 - sop.py 反过来依赖本模块，延迟导入避免循环
+        return sop_tool.event_hints(project.root, event, data)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def summary(project: Project, directory: Path) -> dict:
@@ -387,6 +407,13 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
             if item not in data.setdefault(key, []):
                 data[key].append(item)
                 changed.append(key)
+    if getattr(args, "sensitivity", None):
+        if data.get("sensitivity", "shared") != args.sensitivity:
+            data["sensitivity"] = args.sensitivity
+            changed.append("sensitivity")
+    elif data.get("sensitivity") != "private" and _touches_private(project, directory, args):
+        data["sensitivity"] = "private"  # 用到了私有目录里的内容：默认标为 private（要改回去用 --sensitivity shared）
+        changed.append("sensitivity")
     if data.get("status") == "active" and not data.get("next_action"):
         raise CaseError(_("active 的 Case 需要 next_action"))
     if data.get("status") == "waiting" and not data.get("waiting_for"):
@@ -416,12 +443,30 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
         "path": project.relative(path)}
 
 
+def _touches_private(project: Project, directory: Path, args: argparse.Namespace) -> bool:
+    """这次登记的交付物或证据是否在私有目录里（路径可以相对项目根，也可以相对 Case 目录）。"""
+    dirs = private_paths.declared(project.root)
+    if not dirs:
+        return False
+    for value in [*getattr(args, "add_deliverable", []), *getattr(args, "add_evidence", [])]:
+        for candidate in (value, str(directory / value)):
+            if private_paths.is_private(project.root, candidate, dirs):
+                return True
+    return False
+
+
 def update(project: Project, args: argparse.Namespace) -> dict:
     path, current, text, result = plan_update(project, args)
     # Re-read right before replacing: a write that landed after planning must not be lost.
     if path.read_text(encoding="utf-8") != current:
         raise CaseError(_("Case 刚被其他人修改，请重新读取"), "conflict")
+    was_closed = read_case(path)[0].get("status") in CLOSED
     write_atomic(path, text)
+    data, _unused = read_case(path)
+    if data.get("status") in CLOSED and not was_closed:
+        hints = sop_hints(project, "case.closed", data)
+        if hints:
+            result["sop_events"] = hints
     return result
 
 
@@ -487,6 +532,9 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--source")
     new.add_argument("--current-state")
     new.add_argument("--tag", action="append", default=[])
+    new.add_argument("--sensitivity", choices=("shared", "private"), default="shared",
+                     help=_("用到私有目录（privacy.forbidden_default_reads，缺省 private/）里内容的 Case 用 private"))
+    new.add_argument("--sop", help=_("这个 Case 是 SOP 的一次执行：<sop-id>@<版本>（通常由 sop.py run 填写）"))
     listing = command("list", _("列出 Case（默认不含已关闭）"))
     listing.add_argument("--status", choices=tuple(STATUS_ORDER))
     listing.add_argument("--all", action="store_true")
@@ -505,6 +553,8 @@ def parser() -> argparse.ArgumentParser:
     change.add_argument("--decision", help=_("向「决策记录」追加一条"))
     change.add_argument("--add-deliverable", action="append", default=[])
     change.add_argument("--add-evidence", action="append", default=[])
+    change.add_argument("--sensitivity", choices=("shared", "private"),
+                        help=_("改 Case 的敏感度；登记私有目录里的交付物或证据时会自动改为 private"))
     change.add_argument("--add-tag", action="append", default=[])
     change.add_argument("--add-alias", action="append", default=[])
     change.add_argument("--expect-updated-at", help=_("只在 updated_at 等于该值时写入，避免覆盖并发修改"))
@@ -527,7 +577,10 @@ def render_text(command: str, result: dict) -> str:
         return "\n".join(lines) or _("没有 Case。")
     if command == "show":
         return result["content"]
-    return json.dumps(result, ensure_ascii=False, indent=2)
+    text = json.dumps(result, ensure_ascii=False, indent=2)
+    for hint in result.get("sop_events") or []:
+        text += _("\n命中流程 {0}（{1}）：{2}\n  是否按它执行由用户决定；确认后运行：{3}").format(hint['id'], hint['title'], hint['trigger'], hint['command'])
+    return text
 
 
 def main(argv: list[str] | None = None) -> int:

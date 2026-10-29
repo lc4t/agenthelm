@@ -300,6 +300,83 @@ class SyncFolderHealthTests(ScaffoldCase):
         self.assertNotIn("sync-folder", self.ids(payload))
 
 
+class LocalOnlyHealthTests(ScaffoldCase):
+    """同步盘里的 .venv：health 给出带选项的建议，fix local-only 只展示预览，真正的移动由 agenthelm local-only fix 完成。"""
+
+    def synced_project(self) -> Path:
+        base = self.base / "iCloud Drive"
+        base.mkdir()
+        root = base / "sample-notes"
+        root.mkdir()
+        done = subprocess.run([sys.executable, str(INIT), "--project", str(root), "--name", "Sample Notes",
+                               "--slug", "sample-notes", "--project-type", "notes", "--vcs", "none", "--stack", "none",
+                               "--runtime", "local", "--agent-cli", "none", "--no-entry", "--apply", "--output", "json"],
+                              capture_output=True, text=True, check=False, env=self.env)
+        self.assertEqual(done.returncode, 0, done.stdout)
+        (root / ".venv/bin").mkdir(parents=True)
+        (root / ".venv/pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+        (root / ".venv/bin/pip").write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+        return root
+
+    def local_only(self, root: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(AGENTHELM), "local-only", *args, "--project", str(root)],
+                              capture_output=True, text=True, check=False, env=env or self.env, timeout=120)
+
+    def finding(self, payload: dict, identifier: str) -> dict | None:
+        return next((f for f in payload["data"]["findings"] if f["id"] == identifier), None)
+
+    def test_health_lists_the_directory_with_choices_and_keeps_the_exit_code(self) -> None:
+        root = self.synced_project()
+        before = tree_digest(root)
+        code, payload = self.health(root)
+        self.assertEqual(code, 0)
+        found = self.finding(payload, "local:real:.venv")
+        self.assertEqual((found["area"], found["level"]), ("同步盘", "suggest"))
+        self.assertEqual(found["decision"]["scope"], "machine")
+        self.assertEqual(found["next"][0]["action"], "fix:local-only")
+        self.assertIn("local-only fix --externalize .venv", found["next"][0]["label"])
+        self.assertEqual(tree_digest(root), before)
+
+    def test_fix_local_only_only_shows_the_preview(self) -> None:
+        root = self.synced_project()
+        code, preview = self.fix(root, "local-only", "--apply")
+        step = preview["data"]["plan"]["steps"][0]
+        text = "\n".join(step["changes"])
+        for expected in (".venv", "local-only fix --apply"):
+            self.assertIn(expected, text)
+        self.assertEqual(step["writes"], [])
+        self.assertEqual(preview["data"]["results"][0]["status"], "skipped")
+        self.assertTrue((root / ".venv").is_dir() and not (root / ".venv").is_symlink())
+
+    def test_after_externalizing_health_is_clean_here_and_flags_a_machine_with_another_home(self) -> None:
+        root = self.synced_project()
+        done = self.local_only(root, "fix", "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertTrue((root / ".venv").is_symlink())
+        _, payload = self.health(root)
+        self.assertFalse([f for f in payload["data"]["findings"] if f["id"].startswith("local:real")])
+        self.assertIsNone(self.finding(payload, "local:link:.venv"))
+        _, other = self.health(root, env=self.other_machine())
+        mismatch = self.finding(other, "local:home-mismatch")
+        self.assertIsNotNone(mismatch)
+        self.assertIn("HOME", mismatch["title"])
+
+    def test_it_can_be_dismissed_on_this_machine_only(self) -> None:
+        root = self.synced_project()
+        self.fix(root, "--skip", "local:real:.venv", "--reason", "managed by hand", "--apply")
+        _, payload = self.health(root)
+        self.assertIsNone(self.finding(payload, "local:real:.venv"))
+        _, other = self.health(root, env=self.other_machine())
+        self.assertIsNotNone(self.finding(other, "local:real:.venv"))
+
+    def test_a_project_outside_sync_folders_gets_no_local_only_findings(self) -> None:
+        root = self.old_project("plain-notes")
+        (root / ".venv").mkdir()
+        (root / ".venv/pyvenv.cfg").write_text("x\n", encoding="utf-8")
+        _, payload = self.health(root)
+        self.assertFalse([f for f in payload["data"]["findings"] if f["id"].startswith("local:")])
+
+
 class CaseNamingFixTests(ScaffoldCase):
     def test_naming_mismatch_is_found_and_the_fix_only_plans(self) -> None:
         root = self.make_project("sample-notes", "notes", "--no-entry")

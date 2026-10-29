@@ -225,6 +225,16 @@ class AssetRegistryTests(AssetTestCase):
         self.assertEqual(assets.find(self.project(), ["db-password"])["total"], 0)
         self.assertIn("CASE-20261003-001-private", [item["id"] for item in assets.cases(self.project())["results"]])
 
+    def test_non_shared_case_is_indexed_like_any_other(self) -> None:
+        """台账只是本机缓存里的索引，sensitivity 不过滤；私密事项的文件也能被找到。"""
+        for sensitivity in ("private", "local-only"):
+            case_record(self.root, f"CASE-20261003-00{1 if sensitivity == 'private' else 2}-{sensitivity}", "私密专项",
+                        sensitivity=sensitivity, files={f"docs/{sensitivity}-plan.md": "x"})
+        project = self.project()
+        for sensitivity in ("private", "local-only"):
+            found = assets.find(project, [f"{sensitivity}-plan"])
+            self.assertEqual(found["total"], 1, sensitivity)
+
     def test_refresh_status_and_no_refresh(self) -> None:
         project = self.project()
         with self.assertRaises(assets.AssetError) as raised:

@@ -26,6 +26,7 @@ from typing import Any
 import assets
 from project_base import DEFAULT_LAUNCHER, LAUNCHER_RE, EntryError
 from i18n_orchestrator import _, N_  # noqa: E402
+from i18n_orchestrator import _  # noqa: E402
 
 CLIENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "cursor": "Cursor", "legacy": N_("旧方式安装")}
 
@@ -79,6 +80,18 @@ def _scaffold_findings(scaffold: dict | None, findings: list[dict], ok: list[str
         ok.append(_("项目脚手架（与期望一致") + (_("，{0} 项已跳过").format(len(scaffold['skipped'])) if scaffold["skipped"] else "") + _("）"))
 
 
+def _local_only_finding(item: dict) -> dict:
+    """agent-pack 的 local-only 发现 -> 健康检查里的一项；选项里第一个带命令的对应 fix local-only。"""
+    steps, linked = [], False
+    for option in item.get("options") or []:
+        action = "fix:local-only" if option.get("command") and not linked else ""
+        linked = linked or bool(action)
+        steps.append({"label": option["label"], "action": action})
+    return {"id": item["id"], "level": "unavailable" if item.get("kind") == "error" else "suggest", "area": _("同步盘"),
+            "title": item["title"], "reason": item["reason"], "impact": item["impact"], "next": steps,
+            "decision": {"id": item["id"], "fingerprint": item["fingerprint"], "scope": "machine"}}
+
+
 def check_updates(provider: Any, findings: list[dict], ok: list[str]) -> dict:
     host = provider.host
     if host is None:
@@ -96,6 +109,8 @@ def check_updates(provider: Any, findings: list[dict], ok: list[str]) -> dict:
                              "reason": item["reason"], "impact": item["impact"],
                              "next": [{"label": _("查看同步盘使用指引（只给方案，不改文件、不删内容）"), "action": "fix:sync-folder"}],
                              "decision": {"id": item["id"], "fingerprint": item["fingerprint"], "scope": "machine"}})
+        elif item.get("fix") == "local-only" or item.get("kind") == "error":
+            findings.append(_local_only_finding(item))
     try:
         report = host.run_check(env, provider.root, offline=provider.offline)
     except (host.CheckError, OSError, ValueError) as exc:
@@ -222,7 +237,7 @@ def _check_runtime(provider: Any, env: Any, latest: dict | None, findings: list[
 # ---------------------------------------------------------------- plan
 
 FIXES = ("rebuild-index", "update-plugins", "update-content", "install-runtime", "update-runtime", "add-entry",
-         "add-skeleton", "profile", "repair-lock", "case-naming", "sync-folder")
+         "add-skeleton", "profile", "repair-lock", "case-naming", "sync-folder", "local-only")
 # 可以带目标的处理项：fix add-skeleton <路径…>、fix profile <字段…>
 TARGETED = ("add-skeleton", "profile")
 
@@ -278,7 +293,7 @@ def _plan_step(provider: Any, fix_id: str, choices: dict[str, str]) -> dict:
         return _plan_entry(provider, choices)
     if fix_id in ("add-skeleton", "profile", "repair-lock"):
         return _plan_scaffold(provider, fix_id, choices)
-    if fix_id in ("case-naming", "sync-folder"):
+    if fix_id in ("case-naming", "sync-folder", "local-only"):
         return _plan_guidance(provider, fix_id)
     blocked = _need_host(provider, fix_id, fix_id)
     if blocked:
@@ -626,6 +641,8 @@ def _plan_guidance(provider: Any, fix_id: str) -> dict:
         changes.append(_("每个 Case 的 CASE.md 里的 id 字段也要和新目录名保持一致"))
         return _step(fix_id, title, changes=changes, recovery=_("本处理项不移动、不改写任何文件"),
                      verify=_("按计划改名并更新引用后，重新运行检查"), blocked=_(PLAN_ONLY) + _("（不会移动目录）"))
+    if fix_id == "local-only":
+        return _plan_local_only(provider)
     title = _("同步盘使用指引")
     host = provider.host
     where = host.sync_folder(provider.root) if host is not None and hasattr(host, "sync_folder") else None
@@ -640,15 +657,33 @@ def _plan_guidance(provider: Any, fix_id: str) -> dict:
     if where["rebuildable"]:
         listed = _("、").join(where["rebuildable"][:8])
         changes.append(_("项目里有可重建目录：{0}。它们不需要同步，可以：").format(listed))
+        changes.append(_("  · 推荐：agenthelm local-only check 逐项查看，agenthelm local-only fix 把 .venv、node_modules 等"
+                       "外置到本机（~/.local/share/agenthelm/local-only/…）并在原位置建软链接；yarn 经典版、bun、uv 实测可用，"
+                       "npm 会把链接换回真实目录、pnpm 会安装失败，同步目录里请尽量避免它们"))
         changes.append(_("  · 写进 .gitignore（版本管理忽略它们，不影响同步盘）"))
-        if where["service"] == "iCloud Drive":
-            changes.append(_("  · iCloud：把目录改名为 <名字>.nosync，再建同名符号链接——例如 "
-                           "mv node_modules node_modules.nosync && ln -s node_modules.nosync node_modules（需要你自己执行）"))
-        else:
-            changes.append(_("  · {0}：在它的设置里把这些目录设为不同步（选择性同步）").format(where['service']))
+        changes.append(_("  · 或在 {0} 的设置里把这些目录设为不同步（选择性同步）").format(where['service']))
     changes.append(_("本工具不会替你移动、改名或删除任何内容"))
     return _step(fix_id, title, changes=changes, recovery=_("本处理项不改任何文件"), verify=_("不涉及"),
                  blocked=_(PLAN_ONLY))
+
+
+def _plan_local_only(provider: Any) -> dict:
+    """只展示 agenthelm local-only fix 的预览：移动目录属于用户的同步盘内容，由它自带预览与回滚的命令执行。"""
+    title = _("本机专属目录：外置到本机")
+    host = provider.host
+    if host is None or not hasattr(host, "local_only_plan"):
+        return _step("local-only", title, blocked=_("需要带 local-only 的 agent-pack（更新插件或运行时后再试）"))
+    try:
+        plan = host.local_only_plan(host.current_env(), provider.root)
+    except Exception as exc:  # noqa: BLE001 - LocalOnlyError 等：把原因原样给用户
+        return _step("local-only", title, blocked=str(exc))
+    changes = [step["detail"] for step in plan["steps"]] + [_("不处理：{0}").format(message) for message in plan["blocked"]]
+    if not plan["steps"]:
+        return _step("local-only", title, changes=changes,
+                     blocked=_("没有可以自动处理的项；体积阈值等需要你选择，见 health 里各项给出的选项"))
+    changes.append(_("执行：agenthelm local-only fix --apply（先预览；移动失败整体撤销）"))
+    return _step("local-only", title, changes=changes, recovery=_("移动失败整体撤销；旧配置备份在 ~/.agent-pack/recovery/"),
+                 verify=_("重新运行 health，或 agenthelm local-only check"), blocked=PLAN_ONLY + _("（这里只展示预览）"))
 
 
 def record_decisions(provider: Any, items: dict[str, str], reason: str, *, prefix: str, apply: bool) -> list[str]:

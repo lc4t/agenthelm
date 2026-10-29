@@ -11,7 +11,7 @@
       "name": "agent-pack",
       "source": "./plugins/agent-pack",
       "description": "Deterministic Agent-extension capability management: inventory, doctor, bootstrap, sync, transfer, and reconcile Agent Plugins / Skills / MCP servers across Codex, Cursor, Claude Code, and project sources. Ships a stdio MCP.",
-      "version": "1.10.0",
+      "version": "1.11.0",
       "author": {
         "name": "lc4t"
       },
@@ -88,7 +88,7 @@
       "name": "project-orchestrator",
       "source": "./plugins/project-orchestrator",
       "description": "Portable lifecycle orchestration with Case workspaces, legacy Task/Case compatibility, verified migrations, discovery and scoped Git delivery.",
-      "version": "1.9.1",
+      "version": "1.11.1",
       "author": {
         "name": "lc4t"
       },

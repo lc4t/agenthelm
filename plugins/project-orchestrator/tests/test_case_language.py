@@ -131,6 +131,12 @@ class CaseLanguageTests(unittest.TestCase):
         self.assertEqual(project_real.last_record(chinese)["text"], "第二")
         self.assertIsNone(project_real.last_record("## Result\n\nx\n"))
 
+    def test_headings_outside_the_case_vocabulary_are_used_as_written(self) -> None:
+        """SOP 往 Case 里加自己的小节（如「修订记录」）：不属于 Case 词表的标题原样使用，不随项目语言变化。"""
+        self.assertEqual(structure.resolve("## 中间产物\n", "中间产物", "en"), "中间产物")
+        body = case.append_section("## Work log\n\n- first\n", "修订记录", "x", "en")
+        self.assertIn("## 修订记录", body)
+
     def test_the_vocabulary_is_consistent(self) -> None:
         for key, (chinese, english) in structure.SECTIONS.items():
             self.assertEqual(structure.key_of(chinese), key)

@@ -146,6 +146,7 @@ def apply(provider: Any, planned: dict) -> dict:
             data, _body = case_tool.read_case(provider.root / result["path"])
             verified = data.get("title") == change.get("title")
             return {"path": result["path"], "id": result["id"], "simulated": False,
+                    "sop_events": result.get("sop_events", []),
                     "verify": (_("写入后重新读取：已建立 ") if verified else _("写入后读回不一致：")) + result["path"]}
         before, _body = case_tool.read_case(provider.root / planned["path"])
         result = case_tool.update(project, _case_args(change, case=planned["target"],
@@ -159,6 +160,7 @@ def apply(provider: Any, planned: dict) -> dict:
         raise EntryError(str(exc), "usage") from exc
     kept = [key for key in before if key in after]
     return {"path": planned["path"], "id": result["id"], "simulated": False, "changed": result["changed"],
+            "sop_events": result.get("sop_events", []),
             "verify": _("写入后重新读取：已更新 {0}；原有 {1} 个字段与其他小节保留").format(_('、').join(result['changed']), len(kept))}
 
 

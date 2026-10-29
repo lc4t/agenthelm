@@ -3,14 +3,25 @@
 用来在没有项目时体验菜单，也是界面测试的固定数据。数据形状与真实来源（project_real）
 一致：资料结果沿用 ``assets.find`` 的字段，事项沿用 ``case.py`` 的 Frontmatter 字段。所有
 “执行”都只返回模拟结果，并带 ``simulated: True``。
+
+流程（SOP）的演示不同：它直接运行真实的 sop.py，但项目、SOP 与 Case 都在一个用完即删的
+临时目录里（进程结束自动清理），不碰任何真实项目文件。唯一读取真实环境的是“执行前检查”：
+它看的是这台机器上有没有对应的命令与环境变量，这正是它要演示的东西。
 """
 from __future__ import annotations
 
+import contextlib
 import copy
+import json
+import os
 import re
+import shutil
+import tempfile
+import weakref
+from pathlib import Path
 from typing import Any
 
-from project_base import EntryError
+from project_base import EntryError, sop_call
 from i18n_orchestrator import _  # noqa: E402
 
 DEMO_NOW = "2026-10-25T09:12:00+08:00"
@@ -279,6 +290,20 @@ def translate_tree(value: Any, key: str | None = None) -> Any:
     return _(value) if isinstance(value, str) else value
 
 
+@contextlib.contextmanager
+def _sop_home(root: Path):
+    """演示期间把用户级 SOP 目录指到临时目录，结束后原样恢复环境变量。"""
+    previous = os.environ.get("AGENTHELM_SOP_HOME")
+    os.environ["AGENTHELM_SOP_HOME"] = str(root.parent / "user-sops")
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("AGENTHELM_SOP_HOME", None)
+        else:
+            os.environ["AGENTHELM_SOP_HOME"] = previous
+
+
 class DemoProvider:
     """内存里的虚构项目；所有结果带 demo 标记，所有写入只模拟。"""
 
@@ -298,6 +323,41 @@ class DemoProvider:
         self.name = self.data["name"]
         self.entry_api = 2 if fault == "runtime-old" else 1
         self.resolved: set[str] = set()  # fixes simulated in this session
+        self._sandbox: Path | None = None
+
+    # -------------------------------------------------------------- 流程（SOP）：临时目录里的真实代码
+
+    def sop(self, argv: list[str]) -> tuple[int, dict, list[str]]:
+        root = self._sop_sandbox()
+        with _sop_home(root):
+            return sop_call(argv, root)
+
+    def _sop_sandbox(self) -> Path:
+        if self._sandbox is not None:
+            return self._sandbox / "project"
+        self._sandbox = Path(tempfile.mkdtemp(prefix="agenthelm-demo-"))
+        weakref.finalize(self, shutil.rmtree, self._sandbox, True)  # 进程结束或对象回收时清理
+        root = self._sandbox / "project"
+        profile = root / ".agents" / "moe.sakanano.agent-pack" / "project.json"
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({"schema_version": "1.0", "name": self.name, "sop": {"root": "sops"},
+                                       "work": {"mode": "case-workspace", "case": {"root": "cases"}}}), encoding="utf-8")
+        if self.scenario_id != "blank":
+            self._seed_sops(root)
+        return root
+
+    def _seed_sops(self, root: Path) -> None:
+        """三个已启用的样例流程：让 list / preflight / run / step 马上有东西可看。"""
+        habits = ("--set", "on_error=ask", "--set", "on_missing_tool=ask", "--set", "artifact_keep=ask",
+                  "--set", "resume=from-failed-step", "--set", "confirm_costly=ask")
+        with _sop_home(root):
+            sop_call(["defaults", *habits, "--apply"], root)
+            for slug in ("knowledge-digest", "weekly-review", "video-to-transcript"):
+                sop_call(["new", "--slug", slug, "--template", slug, "--apply"], root)
+                path = root / "sops" / slug / "SOP.md"
+                path.write_text(path.read_text(encoding="utf-8").replace("【待补充】", "演示"), encoding="utf-8")
+                sop_call(["decide", slug, "--confirm", "trigger", "--confirm", "requires", "--confirm", "scope", "--apply"], root)
+                sop_call(["activate", slug, "--apply"], root)
 
     # -------------------------------------------------------------- overview
 
@@ -400,6 +460,8 @@ class DemoProvider:
             {"id": "tools", "title": _("项目工具"),
              "state": "available" if self.data["tools"] else "unavailable",
              "reason": "" if self.data["tools"] else _("项目没有声明专用工具"), "offline": True},
+            {"id": "sop", "title": _("流程（SOP）"), "state": "available", "offline": True,
+             "reason": _("演示：在临时目录里运行，结束后自动清理")},
         ]
 
     def health(self) -> dict:

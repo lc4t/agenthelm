@@ -56,8 +56,13 @@ def existing_heading(body: str, key: str) -> str | None:
 
 
 def resolve(body: str, name: str, language: str) -> str:
-    """The heading to use for a section: the file's own spelling, else the project language's."""
-    key = key_of(name)
+    """The heading to use for a section: the file's own spelling, else the project language's.
+
+    A heading outside the Case vocabulary (for example the ones SOP adds) is used as written."""
+    try:
+        key = key_of(name)
+    except KeyError:
+        return name
     return existing_heading(body, key) or heading(key, language)
 
 

@@ -122,7 +122,11 @@ class CatalogTests(unittest.TestCase):
                 self.assertFalse(CJK.search(english), f"{name}: {english!r} 里有漏翻的中文")
                 self.assertTrue(english.strip() or not original.strip(), f"{name}: {original!r} 的译文为空")
                 if PLACEHOLDER.search(plain) or "{{" in original:
-                    english.format(*["x"] * (1 + max(int(item[0]) for item in PLACEHOLDER.findall(english.replace("{{", "").replace("}}", "")) or [(-1,)])))
+                    count = 1 + max(int(item[0]) for item in PLACEHOLDER.findall(english.replace("{{", "").replace("}}", "")) or [(-1,)])
+                    try:
+                        english.format(*["x"] * count)
+                    except ValueError:  # numeric format specs such as {0:.0%} need numbers
+                        english.format(*[0.5] * count)
 
     def test_no_function_shadows_the_translation_function(self) -> None:
         class Collector(ast.NodeVisitor):
@@ -341,6 +345,47 @@ class EnglishOutputTests(unittest.TestCase):
             self.assertEnglish(self.run_command(*step), " ".join(step[1:4]))
         case_file = next((project / "cases").glob("CASE-*/CASE.md"))
         self.assertFalse(CJK.search(case_file.read_text(encoding="utf-8")), "an English project writes an English CASE.md")
+
+    def test_sop_commands_speak_english(self) -> None:
+        """SOP 的命令行输出与 --help。SOP.md 本身是中文文件，其中的占位标记【待补充】原样出现在英文提示里。"""
+        project = Path(self.directory.name) / "sop-project"
+        profile = project / ".agents/moe.sakanano.agent-pack/project.json"
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({"schema_version": "2.0", "language": "en", "work": {"mode": "case-workspace", "case": {"root": "cases"}}}),
+                           encoding="utf-8")
+        sop_home = Path(self.directory.name) / "user-sops"
+        self.environment["AGENTHELM_SOP_HOME"] = str(sop_home)
+        base = [str(AGENTHELM), "project", "--project", str(project), "--no-input", "sop"]
+        for tail in (["--help"], ["new", "--help"], ["step", "--help"], ["list"], ["index"], ["due"], ["private"], ["defaults"], ["interview"],
+                     ["new", "--slug", "demo", "--template", "blank", "--apply"], ["list"], ["validate", "demo"], ["preflight", "demo"],
+                     ["interview", "demo"], ["activate", "demo"], ["match", "hello"], ["run", "demo"]):
+            completed = self.run_command(*base, *tail)
+            masked = subprocess.CompletedProcess(completed.args, completed.returncode, completed.stdout.replace("【待补充】", "<placeholder>"), completed.stderr)
+            if tail[0] in ("show", "preflight"):
+                continue  # these print the SOP.md text itself, which is a Chinese file
+            self.assertEnglish(masked, "sop " + " ".join(tail))
+
+    def test_local_only_speaks_english_and_keeps_the_same_facts(self) -> None:
+        project = Path(self.directory.name) / "synced"
+        (project / "node_modules").mkdir(parents=True)
+        (project / "__pycache__").mkdir()
+        (project / "package-lock.json").write_text("{}", encoding="utf-8")
+        (project / "package.json").write_text("{}", encoding="utf-8")
+        runtime = [str(AGENTHELM), "local-only"]
+        for tail in (["--help"], ["check", "--help"], ["fix", "--help"], ["fix", "--service", "dropbox", "--apply"], ["check"],
+                     ["fix", "--externalize", "node_modules"], ["config"], ["check", "--fingerprint"]):
+            completed = self.run_command(*runtime, *tail, "--project", str(project)) if tail[0] != "--help" else self.run_command(*runtime, *tail)
+            self.assertEnglish(completed, "local-only " + " ".join(tail))
+
+        def facts(language: str) -> dict:
+            completed = self.run_command(*runtime, "check", "--project", str(project), "--output", "json", language=language)
+            return json.loads(completed.stdout)
+
+        chinese, english = facts("zh"), facts("en")
+        self.assertEqual([item["id"] for item in chinese["findings"]], [item["id"] for item in english["findings"]])
+        self.assertEqual([item["fingerprint"] for item in chinese["findings"]], [item["fingerprint"] for item in english["findings"]])
+        self.assertEqual(chinese["fingerprint"], english["fingerprint"])
+        self.assertNotEqual([item["title"] for item in chinese["findings"]], [item["title"] for item in english["findings"]])
 
     def test_the_language_changes_only_the_words_never_the_facts(self) -> None:
         """同一个项目在两种语言下：发现 ID、脚手架指纹与已记录的决定完全一致；决定在一种语言下写、另一种语言下读。"""

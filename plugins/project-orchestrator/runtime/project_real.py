@@ -24,9 +24,12 @@ import assets
 import case_structure as structure
 import case as case_tool
 import project_maintain
+import private_paths
 import project_write
+import sop as sop_tool
 from project_base import (GROUP_KEYS, LAUNCHER_API, EntryError, entry_section, find_profile_root, inside,
-                          read_profile)
+                          read_profile, sop_call)
+from i18n_orchestrator import _  # noqa: E402
 from i18n_orchestrator import _  # noqa: E402
 
 RECORD_STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2}T[0-9:]{5,8}(?:Z|[+-]\d{2}:\d{2})?)\s+(.*)$")
@@ -278,7 +281,7 @@ class RealProvider:
                 where.append((_("事项与各自资料"), f"{self._case_root_text()}/"))
             for root in ((work.get("assets") or {}).get("roots") or []):
                 where.append((_("资料"), f"{root}/"))
-            for label, relative in ((_("参考资料"), "docs/refs"), (_("草稿"), "docs/drafts"), (_("记忆"), "memory")):
+            for label, relative in ((_("参考资料"), "docs/refs"), (_("草稿"), "docs/drafts"), (_("记忆"), "memory"), (_("流程（SOP）"), "sops")):
                 if (self.root / relative).is_dir():
                     where.append((label, f"{relative}/"))
         start = self.entry["start"] or [_("「看进展」先看进行中和等待中的事项"), _("需要哪份资料，用「找资料」输入关键词"),
@@ -311,6 +314,8 @@ class RealProvider:
             tools_state = ("unavailable", _("项目没有声明专用工具"))
         index_reason = {"missing": _("首次查找时建立索引"), "stale": _("查找时自动更新索引"),
                         "broken": _("索引损坏：查找时会尝试重建，也可在「修复与更新」里重建")}.get(index, "")
+        sops = {"id": "sop", "title": _("流程（SOP）"), "state": "available", "offline": True,
+                "reason": "" if any(True for _unused in sop_tool.load_all(self.root)) else _("还没有流程：sop new 创建，或让 Agent 带你谈清")}
         return [
             {"id": "find", "title": _("找资料"), "state": "available", "reason": index_reason, "offline": True},
             {"id": "progress", "title": _("看进展"), "state": progress[0], "reason": progress[1], "offline": True},
@@ -321,6 +326,7 @@ class RealProvider:
              "reason": _("需要联网的项离线时只能预览"), "offline": False},
             {"id": "record", "title": _("记录事项"), "state": record[0], "reason": record[1], "offline": True},
             {"id": "tools", "title": _("项目工具"), "state": tools_state[0], "reason": tools_state[1], "offline": True},
+            sops,
         ]
 
     # -------------------------------------------------------------- health
@@ -333,6 +339,8 @@ class RealProvider:
         self._check_index(findings, ok)
         self._check_items(findings, ok)
         self._check_memory(findings, ok)
+        self._check_sop(findings, ok)
+        self._check_private(findings, ok)
         project_write.check_tools(self, findings, ok)
         source = project_maintain.check_updates(self, findings, ok)
         self._health = {"findings": findings, "ok": ok, "read_at": now_iso(), "update_source": source,
@@ -448,6 +456,75 @@ class RealProvider:
                              "impact": _("只影响 AI Agent 召回记忆"), "next": [{"label": _("在 Agent 会话中运行记忆检查并处理"), "action": ""}]})
         else:
             ok.append(_("记忆条目"))
+
+    def _check_sop(self, findings: list[dict], ok: list[str]) -> None:
+        try:
+            sops = sop_tool.load_all(self.root)
+            if not sops:
+                return
+            defaults = sop_tool.read_defaults(self.root)
+            results = sop_tool.check_all(sops, defaults, self.root)
+            runs, _unused = sop_tool.last_runs(self.root)
+            due = [info for sop in sops if not sop["shadowed"] and (info := sop_tool.due_info(sop, runs, sop_tool.today())) and info["due"]]
+        except (sop_tool.SopError, OSError) as exc:
+            findings.append({"id": "sop", "level": "suggest", "area": _("流程"), "title": _("流程（SOP）读取失败"),
+                             "reason": str(exc)[:160], "impact": _("AI Agent 和本入口都读不到流程"),
+                             "next": [{"label": _("运行 sop validate 查看原因"), "action": ""}]})
+            return
+        broken = [result for result in results if not result["valid"]]
+        if broken:
+            first = next(item for result in broken for item in result["issues"] if item["level"] == "error")
+            findings.append({"id": "sop", "level": "suggest", "area": _("流程"), "title": _("{0} 个流程有错误").format(len(broken)),
+                             "reason": f"{broken[0]['id']}：{first['message']}"[:160],
+                             "impact": _("有错误的 active 流程仍会被索引，Agent 可能照着不完整的步骤执行"),
+                             "next": [{"label": _("运行 sop validate 查看全部问题"), "action": ""}]})
+        else:
+            active = sum(1 for sop in sops if sop["meta"].get("status") == "active" and not sop["shadowed"])
+            ok.append(_("流程（{0} 个，{1} 个已启用）").format(len(sops), active))
+        if due:
+            names = _("、").join(_("{0}（{1}，上次 {2}）").format(info['id'], info['schedule'], info['last_run'] or _('从未')) for info in due)
+            findings.append({"id": "sop-due", "level": "suggest", "area": _("流程"), "title": _("{0} 个流程已到期").format(len(due)),
+                             "reason": names[:160], "impact": _("只是提醒：到期不会自动执行"),
+                             "next": [{"label": _("让 Agent 按它执行，或运行 sop run <id>"), "action": ""}]})
+
+    def _check_private(self, findings: list[dict], ok: list[str]) -> None:
+        """私有目录：内容默认不进 git；用到它的事项应标为 private。"""
+        dirs = private_paths.declared(self.root)
+        if not dirs:
+            return
+        for item in dirs:
+            state = private_paths.git_state(self.root, item)
+            if state["ignored"] is False:
+                findings.append({"id": f"private-ignore:{item}", "level": "suggest", "area": _("私有目录"),
+                                 "title": _("{0}/ 没有被 git 忽略").format(item), "reason": _("私有目录的内容默认不应进入 git"),
+                                 "impact": _("git add 时可能把私有内容一起提交"),
+                                 "next": [{"label": _("运行 sop private --apply，在 {0}/ 里创建 .gitignore（先预览）").format(item), "action": ""}]})
+            elif state["tracked"]:
+                findings.append({"id": f"private-tracked:{item}", "level": "suggest", "area": _("私有目录"),
+                                 "title": _("{0}/ 下有 {1} 个文件已被 git 跟踪").format(item, len(state['tracked'])),
+                                 "reason": _("例如 {0}").format(state['tracked'][0]), "impact": _("它们会随提交一起上传；.gitignore 对已跟踪的文件无效"),
+                                 "next": [{"label": _("确认后运行 git rm -r --cached {0} 取消跟踪（历史里的内容仍在）").format(item), "action": ""}]})
+            else:
+                ok.append(_("私有目录 {0}/（").format(item) + (_("已被 git 忽略") if state["ignored"] else _("不在 git 仓库里")) + _("；读取前须经你确认）"))
+        loose = []
+        try:
+            for directory in case_tool.Project(self.root).case_dirs():
+                data, _unused = case_tool.read_case(directory / "CASE.md")
+                refs = [*(data.get("deliverables") or []), *(data.get("evidence") or [])]
+                if data.get("sensitivity") != "private" and any(
+                        private_paths.is_private(self.root, value, dirs) or private_paths.is_private(self.root, str(directory / value), dirs)
+                        for value in refs):
+                    loose.append(data.get("id", directory.name))
+        except (case_tool.CaseError, OSError, UnicodeDecodeError):
+            return
+        if loose:
+            findings.append({"id": "private-cases", "level": "suggest", "area": _("私有目录"),
+                             "title": _("{0} 个事项用到了私有目录，但没有标为 private").format(len(loose)), "reason": _("、").join(loose[:3]),
+                             "impact": _("按约定，用到私有目录的事项应标为 private"),
+                             "next": [{"label": _("运行 case.py update <事项> --sensitivity private"), "action": ""}]})
+
+    def sop(self, argv: list[str]) -> tuple[int, dict, list[str]]:
+        return sop_call(argv, self.root)
 
     # -------------------------------------------------------------- maintenance and writes
 

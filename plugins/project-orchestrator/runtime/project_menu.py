@@ -19,6 +19,7 @@ MENU = (
     ("5", N_("修复与更新"), N_("重建索引、安装与更新"), "fix"),
     ("6", N_("记录事项"), N_("新建、追加记录、更新状态"), "record"),
     ("7", N_("项目工具"), N_("项目自行声明的操作"), "tools"),
+    ("8", N_("流程（SOP）"), N_("自己定义的步骤序列：查看、检查所需工具、按它执行"), "sop"),
 )
 ACTION_RE = re.compile(r"^([ofcvr])\s*(\d+)$")
 RECORD_ACTIONS = (("1", N_("追加一条记录"), "log"), ("2", N_("更新下一动作"), "next_action"),
@@ -93,7 +94,7 @@ def home(provider) -> None:
             continue
         key, title, hint, capability = entry
         title, hint = _(title), _(hint)
-        state = capabilities[capability]
+        state = capabilities.get(capability) or {"state": "unavailable", "reason": _("演示项目没有这一项")}
         if capability == "health" and any(health.values()):
             hint = " · ".join(_("{0} 项{1}").format(health[k], _(label)) for k, label in cli.LEVELS if health.get(k))
         if state["state"] != "available":
@@ -372,6 +373,55 @@ def tools_screen(provider) -> None:
         ask(_("回车返回"))
 
 
+def sop_screen(provider) -> None:
+    while True:
+        code, data, lines = provider.sop(["list", "--all"])
+        show(cli.header(provider, _("流程（SOP）")) + lines)
+        rows = data["sops"]
+        print(S.dim(_("序号看详情 · d 哪些到期了 · n 新建草稿 · 回车返回")))
+        line = ask(_("流程"))
+        if line == "d":
+            show(provider.sop(["due"])[2])
+        elif line == "n":
+            sub(sop_new_screen, provider)
+        elif line.isdigit() and 1 <= int(line) <= len(rows):
+            sub(sop_detail_screen, provider, rows[int(line) - 1]["id"])
+        else:
+            print(S.yellow(_("没有这一项。")))
+
+
+def sop_new_screen(provider) -> None:
+    slug = ask(_("英文短名（小写字母、数字、连字符）"))
+    template = choose(_("样例：blank 空白 / video-to-transcript 视频转文字 / weekly-review 周复盘（回车用 blank）"), "blank")
+    argv = ["new", "--slug", slug, "--template", template]
+    show(provider.sop(argv)[2])
+    if confirm():
+        show(provider.sop([*argv, "--apply"])[2])
+        print(S.dim(_("下一步：让 Agent 带你谈清触发、工具、出错和中间产物的约定，或运行 sop interview ") + slug))
+
+
+def sop_detail_screen(provider, sop_id: str) -> None:
+    show(provider.sop(["show", sop_id])[2])
+    actions = {"c": _("执行前检查"), "q": _("还要谈清的事"), "v": _("校验"), "r": _("按它执行（先预览）"), "a": _("启用草稿（先预览）")}
+    while True:
+        print(S.dim(" · ".join(f"{key} {label}" for key, label in actions.items()) + _(" · 回车返回")))
+        line = ask(_("流程"))
+        if line == "c":
+            show(provider.sop(["preflight", sop_id])[2])
+        elif line == "q":
+            show(provider.sop(["interview", sop_id])[2])
+        elif line == "v":
+            show(provider.sop(["validate", sop_id])[2])
+        elif line in ("r", "a"):
+            argv = ["run", sop_id] if line == "r" else ["activate", sop_id]
+            code, _unused, lines = provider.sop(argv)
+            show(lines)
+            if code == 0 and confirm():
+                show(provider.sop([*argv, "--apply"])[2])
+        else:
+            print(S.yellow(_("没有这个操作。")))
+
+
 def help_text() -> str:
     bold, cyan = S.bold, S.cyan
     return (bold(_("怎么用")) + "\n"
@@ -380,12 +430,12 @@ def help_text() -> str:
                 cyan("o1"), cyan("f1"), cyan("c1"), cyan("v1"), cyan("r1")) + "\n"
             + _("  写入类操作（修复、记录、工具）都先显示影响，输入 yes 才执行。") + "\n"
             + bold(_("不进菜单也可以")) + "\n"
-            + _("  ./<启动器> find 词 · progress · show 事项 · guide · health · fix · record · tools") + "\n"
+            + _("  ./<启动器> find 词 · progress · show 事项 · guide · health · fix · record · tools · sop 子命令") + "\n"
             + _("  加 --output json 得到结构化结果；脚本里从不等待输入。完整说明：--help"))
 
 
 SCREENS = {"1": find_screen, "2": progress_screen, "3": guide_screen, "4": health_screen,
-           "5": fix_screen, "6": record_screen, "7": tools_screen}
+           "5": fix_screen, "6": record_screen, "7": tools_screen, "8": sop_screen}
 
 
 def run(provider) -> int:
