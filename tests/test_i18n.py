@@ -28,7 +28,6 @@ LAYOUT = {
     "agents-init": ("i18n_init", PLUGINS / "agents-init/skills/agents-init/scripts"),
 }
 CJK = re.compile(r"[　-〿一-鿿＀-￯]")
-QUOTED = re.compile(r"[“「][^”」]*[”」]")
 PLACEHOLDER = re.compile(r"\{(\d+)(![rsa])?(:[^{}]*)?\}")
 SKIP_FILES = {"inbox_text.py", "nudge_text.py", "constants.py"}  # 这两份有自己的中英对照表；constants 是写进项目文件的占位正文
 
@@ -59,10 +58,6 @@ def message_calls(path: Path) -> list[tuple[int, str, str]]:
                 and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
             found.append((node.lineno, node.func.id, node.args[0].value))
     return found
-
-
-def strip_quoted(text: str) -> str:
-    return QUOTED.sub("", text)
 
 
 class ResolverTests(unittest.TestCase):
@@ -124,7 +119,7 @@ class CatalogTests(unittest.TestCase):
                                  f"{name}: {original!r}")
                 self.assertEqual(sum(original.count(token) for token in ("%s", "%d", "%r")),
                                  sum(english.count(token) for token in ("%s", "%d", "%r")), f"{name}: {original!r}")
-                self.assertFalse(CJK.search(strip_quoted(english)), f"{name}: {english!r} 里有漏翻的中文")
+                self.assertFalse(CJK.search(english), f"{name}: {english!r} 里有漏翻的中文")
                 self.assertTrue(english.strip() or not original.strip(), f"{name}: {original!r} 的译文为空")
                 if PLACEHOLDER.search(plain) or "{{" in original:
                     english.format(*["x"] * (1 + max(int(item[0]) for item in PLACEHOLDER.findall(english.replace("{{", "").replace("}}", "")) or [(-1,)])))
@@ -265,7 +260,7 @@ class EnglishOutputTests(unittest.TestCase):
             visible = line
             for token in (*self.CONTENT, *content):
                 visible = visible.replace(token, "")
-            self.assertFalse(CJK.search(strip_quoted(visible)), f"{label}: 英文输出里有漏翻的中文：{line[:160]}")
+            self.assertFalse(CJK.search(visible), f"{label}: 英文输出里有漏翻的中文：{line[:160]}")
 
     def test_the_demo_projects_speak_english(self) -> None:
         for scenario in ("study", "personal", "research", "blank"):
@@ -285,13 +280,13 @@ class EnglishOutputTests(unittest.TestCase):
             code, text = drive([sys.executable, str(AGENTHELM), "project", "--demo", scenario], inputs, self.environment)
             self.assertEqual(code, 0, text[-400:])
             for line in text.splitlines():
-                self.assertFalse(CJK.search(strip_quoted(line)), f"menu {scenario}: 英文菜单里有漏翻的中文：{line[:160]}")
+                self.assertFalse(CJK.search(line), f"menu {scenario}: 英文菜单里有漏翻的中文：{line[:160]}")
         code, text = drive([sys.executable, str(AGENTHELM), "project", "--demo", "study", "--demo-fault", "index-broken"],
                            ["summary", "5", "yes", "", "q"], self.environment)
         self.assertEqual(code, 0, text[-400:])
         self.assertIn("Rebuild the file index", text)
         for line in text.splitlines():
-            self.assertFalse(CJK.search(strip_quoted(line)), f"menu fix: 英文菜单里有漏翻的中文：{line[:160]}")
+            self.assertFalse(CJK.search(line), f"menu fix: 英文菜单里有漏翻的中文：{line[:160]}")
 
     def test_every_help_screen_speaks_english(self) -> None:
         orchestrator = PLUGINS / "project-orchestrator/runtime"
