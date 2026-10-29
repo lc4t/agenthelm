@@ -41,6 +41,15 @@ SF_DATALESS = 0x40000000
 init: Any = None  # init_project 模块；由 bind() 或首次使用时加载
 
 
+def _regions() -> Any:
+    here = str(HERE)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import regions  # noqa: PLC0415
+
+    return regions
+
+
 def _load_default() -> Any:
     name = "agenthelm_init_project"
     path = HERE / "init_project.py"
@@ -260,6 +269,41 @@ def _skeleton_state(ctx: Context, entry: dict, baseline: dict[str, str]) -> str:
         if current is not None and expected is not None and current != sha(expected):
             return "differs"
     return "ok"
+
+
+def _text_of(path: Path) -> str | None:
+    if _lstat(path) is None or path.is_symlink() or not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def region_rows(root: Path, pack_entry: dict | None) -> list[dict]:
+    """State of every managed region the lock says this tool put into a file the user owns."""
+    module, regions = _init(), _regions()
+    templates = module.load_templates()
+    rows = []
+    for path, ids in sorted(((pack_entry or {}).get("regions") or {}).items()):
+        text = _text_of(root / path)
+        for region_id, recorded in sorted(ids.items()):
+            template = templates.get(f"region/{region_id}")
+            if template is None:
+                continue
+            expected = regions.digest(template)
+            region = regions.get(text, region_id) if text is not None else None
+            if region is None:
+                state = "missing"
+            elif not region.intact or region.digest != recorded:
+                state = "modified"
+            elif region.digest != expected:
+                state = "outdated"
+            else:
+                state = "ok"
+            rows.append({"path": path, "id": region_id, "state": state, "expected": expected,
+                         "fingerprint": sha(f"{path}#{region_id}:{expected}")})
+    return rows
 
 
 def _check_profile(ctx: Context) -> list[dict]:
@@ -543,6 +587,9 @@ def fingerprint(report: dict) -> dict:
     for row in report["profile"]:
         if f"profile:{row['field']}" not in skipped:
             detail[f"profile:{row['field']}"] = row["state"]
+    for row in report.get("regions", []):
+        if f"region:{row['path']}#{row['id']}" not in skipped:
+            detail[f"region:{row['path']}#{row['id']}"] = row["state"]
     lock = report["lock"]
     if lock["pack"] and f"lock:{lock['pack']}" not in skipped:
         detail["lock:version"] = f"{lock['status']}@{lock['version']}"
@@ -603,6 +650,20 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
                                      _("内容锁里没有它的基线，无法判断是你改过还是模板变了"),
                                      entry["fingerprint"], "update-content", path=entry["path"]))
 
+    region_state = region_rows(root, pack_entry)
+    for row in region_state:
+        identifier = f"region:{row['path']}#{row['id']}"
+        if row["state"] == "missing":
+            findings.append(_finding(identifier, "region-missing", _("{0} 里的受管区块 {1} 不见了").format(row['path'], row['id']),
+                                     _("区块被移除；若是有意移除，可永久跳过"), row["fingerprint"], None, path=row["path"]))
+        elif row["state"] == "modified":
+            findings.append(_finding(identifier, "region-modified", _("{0} 里的受管区块 {1} 被改过").format(row['path'], row['id']),
+                                     _("区块内部有你的改动，升级不会覆盖；--mode region 里选择保留或采用模板"),
+                                     row["fingerprint"], "update-region", path=row["path"]))
+        elif row["state"] == "outdated":
+            findings.append(_finding(identifier, "region-outdated", _("{0} 里的受管区块 {1} 有新版本").format(row['path'], row['id']),
+                                     _("区块完好，可以更新（先备份）"), row["fingerprint"], "update-region", path=row["path"]))
+
     profile_rows = _check_profile(ctx)
     for row in profile_rows:
         if row["state"] == "ok":
@@ -645,7 +706,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     decisions = load_decisions(root, state_dir)
     active, skipped = partition(findings, decisions, reprompt=reprompt)
     return {"ok": not active, "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
-            "lock": lock_state, "case_naming": naming, "extras": extras, "findings": active, "skipped": skipped,
+            "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras, "findings": active, "skipped": skipped,
             "decisions": {"path": DECISIONS_PATH.as_posix(), "errors": decisions["errors"],
                           "conflict_copies": decisions["conflict_copies"], "local_path": decisions["local_path"]}}
 
@@ -821,6 +882,74 @@ def repair_lock(root: Path, *, apply: bool = False) -> dict:
     module._atomic_write(root / module.CONTENT_LOCK_PATH, module.json_text(new_lock))
     result["applied"] = True
     return result
+
+
+# ---------------------------------------------------------------- managed regions
+
+def update_regions(root: Path, *, accept: list[str], keep: list[str], apply: bool = False,
+                   recovery_dir: Path | None = None, state_dir: Path | None = None) -> tuple[int, dict]:
+    """Bring managed regions to the current template body.
+
+    A region nobody touched is replaced (after a backup); one the user edited is only replaced with ``--accept
+    <file>#<id>`` and kept with ``--keep <file>#<id>`` (recorded as a decision). Text outside regions is never read
+    for writing.
+    """
+    module, regions = _init(), _regions()
+    lock, _lock_error = read_lock(root)
+    ctx = Context(root)
+    entry = ((lock or {}).get("packs") or {}).get(ctx.pack["id"]) if ctx.pack else None
+    rows = [row for row in region_rows(root, entry) if row["state"] != "ok"]
+    known = {f"{row['path']}#{row['id']}" for row in rows}
+    unknown = (set(accept) | set(keep)) - known
+    if unknown:
+        raise _fail(_("不是需要处理的受管区块：") + ", ".join(sorted(unknown)))
+    if set(accept) & set(keep):
+        raise _fail(_("同一区块不能同时 --accept 与 --keep：") + ", ".join(sorted(set(accept) & set(keep))))
+    templates = module.load_templates()
+    plan = []
+    for row in rows:
+        key = f"{row['path']}#{row['id']}"
+        if row["state"] == "outdated":
+            action = "keep" if key in keep else "replace"
+        elif row["state"] == "modified":
+            action = "replace" if key in accept else "keep" if key in keep else "blocked"
+        else:
+            action = "skip"
+        plan.append({"path": row["path"], "id": row["id"], "state": row["state"], "action": action,
+                     "fingerprint": row["fingerprint"]})
+    blocked = [f"{i['path']}#{i['id']}" for i in plan if i["action"] == "blocked"]
+    replacing = [i for i in plan if i["action"] == "replace"]
+    result = {"ok": not blocked, "mode": "region", "applied": False, "regions": plan, "blocked": "",
+              "changes": [f"{i['action']:8} {i['path']}#{i['id']} [{i['state']}]" for i in plan]}
+    if blocked:
+        result["blocked"] = _("区块内部有你的改动，需逐个选择：--accept <文件>#<ID> 用模板替换（先备份），或 --keep <文件>#<ID> 保留")
+    if not apply or blocked:
+        return (0 if not blocked else 1), result
+    if replacing and recovery_dir is None:
+        raise _fail(_("替换区块前需要 --recovery-dir"))
+    backed_up: set[str] = set()
+    for item in replacing:
+        if item["path"] not in backed_up:
+            result["recovery"] = _backup(root, recovery_dir, Path(item["path"]))
+            backed_up.add(item["path"])
+    new_digests: dict[str, dict[str, str]] = {}
+    for item in replacing:
+        path = root / item["path"]
+        mode = os.stat(path).st_mode & 0o7777
+        text, _state = regions.upsert(path.read_text(encoding="utf-8"), item["id"], templates[f"region/{item['id']}"], force=True)
+        module._atomic_write(path, text, mode)
+        new_digests.setdefault(item["path"], {})[item["id"]] = regions.digest(templates[f"region/{item['id']}"])
+    if new_digests:
+        fresh = copy.deepcopy(lock)
+        for path_, ids in new_digests.items():
+            fresh["packs"][ctx.pack["id"]]["regions"][path_].update(ids)
+        module._atomic_write(root / module.CONTENT_LOCK_PATH, module.json_text(fresh))
+    for item in plan:
+        if item["action"] == "keep":
+            decide(root, f"region:{item['path']}#{item['id']}", "keep", reason="region --keep",
+                   fingerprint=item["fingerprint"], scope="project", apply=True, state_dir=state_dir)
+    result["applied"] = True
+    return 0, result
 
 
 # ---------------------------------------------------------------- recording decisions

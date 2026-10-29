@@ -100,7 +100,7 @@ python3 plugins/agents-init/skills/agents-init/scripts/init_project.py \
   --runtime local --agent-cli claude
 ```
 
-审阅后追加 `--apply`。新项目会生成根目录启动器 `menu`（`--entry-name` 改名，`--no-entry` 不生成）；README.md 不存在时新建并写入「怎样使用」，已有的不改动。已初始化的项目用 `--mode entry --entry-name <名称>` 补上入口（加 `--readme-entry` 在 README 末尾追加说明）。已有 v5 项目使用 `--mode migrate --recovery-dir <项目外目录>`。新项目默认 `work.mode=case-workspace`：持久工作、资料与交付物归入 Case，见 [Case 工作目录](plugins/project-orchestrator/references/case-workspaces.md)。
+审阅后追加 `--apply`。新项目会生成根目录启动器 `menu`（`--entry-name` 改名，`--no-entry` 不生成）；README.md 不存在时新建并写入「怎样使用」，已有的不改动。已初始化的项目用 `--mode entry --entry-name <名称>` 补上入口（加 `--readme-entry` 在 README 末尾追加说明）。已有 v5 项目使用 `--mode migrate --recovery-dir <项目外目录>`。目录里已有自己的文件（没有 Project Profile）时，先 `--mode scan` 看冲突与推荐，再 `--mode adopt` 预览：已有文件原样保留，只补缺失的骨架，改动已有文件须显式选择并先备份，见 [agents-init 的 SKILL](plugins/agents-init/skills/agents-init/SKILL.md)。新项目默认 `work.mode=case-workspace`：持久工作、资料与交付物归入 Case，见 [Case 工作目录](plugins/project-orchestrator/references/case-workspaces.md)。
 
 ## 检查与更新
 

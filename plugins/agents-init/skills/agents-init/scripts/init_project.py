@@ -19,7 +19,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path 
 from i18n_init import _, resolve_language  # noqa: E402
 
 
-INITIALIZER_VERSION = "6.6.0"
+INITIALIZER_VERSION = "6.8.0"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
@@ -74,6 +74,9 @@ REQUIRED_TEMPLATES = {
     "AGENT.RULES.md",
     "OPINION.md",
     "ROUTE.md",
+    "CLAUDE.md",
+    "region/claude-import",
+    "region/agents-contract",
     ".agent-doc/plan.md",
     ".agent-doc/progress.md",
     ".agent-doc/chat-summary.md",
@@ -422,7 +425,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
         Path("AGENTS.md"): agents,
         Path("AGENT.RULES.md"): render_template(templates["AGENT.RULES.md"], replacements),
         Path("OPINION.md"): render_template(templates["OPINION.md"], replacements),
-        Path("CLAUDE.md"): route,
+        Path("CLAUDE.md"): render_template(templates["CLAUDE.md"], replacements),
         Path("AGENT.md"): route,
         Path(".agents/plugin.json"): json_text({
             "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
@@ -679,8 +682,20 @@ def content_baseline(pack: dict | None, files: dict[Path, str], written: Iterabl
     }
 
 
-def write_content_lock(root: Path, pack: dict, baseline: dict[str, str]) -> None:
-    """Merge this run's baseline into the project's content lock, atomically."""
+def render_inputs(inputs: Inputs) -> dict:
+    """The inputs a project's template files were rendered with; with the pack version they rebuild the baseline."""
+    return {"name": inputs.name, "slug": inputs.slug, "project_type": list(inputs.project_type), "vcs": inputs.vcs,
+            "stack": list(inputs.stack), "runtime": inputs.runtime, "agent_cli": list(inputs.agent_cli),
+            "work_mode": inputs.work_mode, "entry_launcher": inputs.entry_launcher, "language": inputs.language}
+
+
+def write_content_lock(root: Path, pack: dict, baseline: dict[str, str], *, inputs: Inputs | None = None,
+                       regions: dict[str, dict[str, str]] | None = None) -> None:
+    """Merge this run's baseline into the project's content lock, atomically.
+
+    ``regions`` maps a file to ``{region id: body digest}`` for blocks this tool manages inside a file the user
+    owns; ``render_inputs`` records what the templates were rendered with. Keys the lock already has stay.
+    """
     path = root / CONTENT_LOCK_PATH
     for parent in [*reversed(CONTENT_LOCK_PATH.parents[:-1])]:
         if (root / parent).is_symlink():
@@ -695,7 +710,15 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str]) -> None
             raise InitError(_("content lock 无法解析：{0}").format(CONTENT_LOCK_PATH), code="profile-invalid") from exc
     entry = lock.setdefault("packs", {}).get(pack["id"], {})
     files = {**entry.get("files", {}), **baseline}
-    lock["packs"][pack["id"]] = {"plugin": "agents-init", "version": pack["version"], "files": dict(sorted(files.items()))}
+    updated = {**entry, "plugin": "agents-init", "version": pack["version"], "files": dict(sorted(files.items()))}
+    if inputs is not None:
+        updated["render_inputs"] = render_inputs(inputs)
+    if regions:
+        merged = {path_: dict(ids) for path_, ids in (entry.get("regions") or {}).items()}
+        for path_, ids in regions.items():
+            merged[path_] = {**merged.get(path_, {}), **ids}
+        updated["regions"] = dict(sorted(merged.items()))
+    lock["packs"][pack["id"]] = updated
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(json_text(lock), encoding="utf-8")
@@ -868,8 +891,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         if item["action"] in {"replace", "create"} or item["state"] == "unchanged":
             files[item["path"]] = item["new_sha256"]
         # Files kept on purpose keep their old baseline: the tool did not write them.
-    lock.setdefault("packs", {})[pack["id"]] = {"plugin": "agents-init", "version": pack["version"],
-                                               "files": dict(sorted(files.items()))}
+    lock.setdefault("packs", {})[pack["id"]] = {**entry, "plugin": "agents-init", "version": pack["version"],
+                                               "files": dict(sorted(files.items())), "render_inputs": render_inputs(inputs)}
     lock_path = root / CONTENT_LOCK_PATH
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = lock_path.with_name(f".{lock_path.name}.{os.getpid()}.tmp")
@@ -883,6 +906,16 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             result.setdefault("decisions", []).append(f"content:{item['path']}")
     result["applied"] = True
     return 0, result
+
+
+def _adopt():
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import adopt  # noqa: PLC0415
+
+    adopt.bind(sys.modules[__name__])
+    return adopt
 
 
 def _atomic_write(path: Path, text: str, mode: int | None = None) -> None:
@@ -1006,6 +1039,36 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     return 0, result
 
 
+def _adopt_text(result: dict) -> str:
+    lines = []
+    if result["mode"] == "scan":
+        lines.append(_("Scan（只读）"))
+    else:
+        lines.append(f"{'Applied' if result.get('applied') else 'Dry-run'}: {result['mode']}")
+    for blocker in result.get("blockers", []):
+        lines.append(f"  blocked [{blocker['code']}] {blocker['message']}")
+    scan = result.get("scan", result)
+    for item in scan.get("findings", []):
+        lines.append(f"  [{item['id']}] {item['summary']}")
+        for option in item["options"]:
+            mark = _("（推荐）") if option["id"] == item["recommended"] else ""
+            lines.append(f"      - {option['label']}{mark}" + (f"  {option['flag']}" if option["flag"] else ""))
+    for key, title in (("create", "create"), ("preserve", "preserve")):
+        for path in result.get(key, []):
+            lines.append(f"  {title} {path}")
+    for item in result.get("modify", []):
+        lines.append(f"  {item['action']} {item['path']}" + (_("（区块 {0}）").format(item['region']) if item.get("region") else ""))
+    for note in result.get("notes", []):
+        lines.append(f"  note: {note}")
+    if result.get("needs_recovery_dir") and not result.get("applied"):
+        lines.append("  " + _("改动已有文件需要 --recovery-dir（项目外的备份目录）"))
+    if scan.get("recommended_flags"):
+        lines.append("  " + _("推荐选项：") + " ".join(scan["recommended_flags"]))
+    if result.get("check_after"):
+        lines.append("  " + _("接管后检查：") + (_("一致") if result["check_after"]["ok"] else _("仍有 ") + ", ".join(result["check_after"]["findings"])))
+    return "\n".join(lines) + "\n"
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=_("使用 agents-init v6 中文模板安全创建或迁移项目骨架。"))
     result.add_argument("--project", type=Path, required=True)
@@ -1017,12 +1080,16 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--runtime")
     result.add_argument("--agent-cli", type=split_csv)
     result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry", "check", "add-skeleton", "profile",
-                                           "repair-lock", "decide", "case-naming"), default="init",
+                                           "repair-lock", "decide", "case-naming", "scan", "adopt", "region"),
+                        default="init",
                         help=_("refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件；"
                              "entry：为已初始化的项目补上根目录启动器与 Profile 的 entry 段；"
                              "check：只读，对比期望骨架清单；add-skeleton：按模板补上缺失的骨架文件；"
                              "profile：把缺失或不符的受检字段改为模板值；repair-lock：修复内容锁的 0.0.0 版本；"
-                             "decide：记录或撤销对某个发现的决定；case-naming：只输出 Case 目录改名计划与受影响的引用，不移动任何目录"))
+                             "decide：记录或撤销对某个发现的决定；case-naming：只输出 Case 目录改名计划与受影响的引用，不移动任何目录；"
+                             "scan：只读，扫描已有内容与骨架的冲突并给出选项和推荐；"
+                             "adopt：接管非空目录（已有文件原样保留，只补骨架；改动已有文件须显式选择并备份）；"
+                             "region：更新受管区块（--accept / --keep <文件>#<区块ID>）"))
     result.add_argument("--target", action="append", default=[],
                         help=_("add-skeleton：骨架路径；profile：字段；decide：发现 ID（可重复；省略则处理全部可处理项）"))
     result.add_argument("--decision", choices=("skip", "keep", "later", "unskip"), help=_("decide：决定；unskip 撤销"))
@@ -1043,6 +1110,16 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--replace", action="append", default=[], help="known skeleton path to replace in migrate mode")
     result.add_argument("--skip", action="append", default=[], help="known skeleton path the project does not want (migrate mode)")
     result.add_argument("--recovery-dir", type=Path, help="outside-project backup directory required for replacements")
+    result.add_argument("--agents-policy", choices=("keep", "append", "split", "side-by-side"), default=None,
+                        help=_("adopt：已有 AGENTS.md 怎么处理（缺省 keep，不改动）"))
+    result.add_argument("--claude-policy", choices=("keep", "add-import"), default=None,
+                        help=_("adopt：已有 CLAUDE.md 没导入 AGENTS.md 时是否追加导入区块（缺省 keep）"))
+    result.add_argument("--route", action="append", default=[],
+                        help=_("adopt split：<章节序号>=<agents|rules|user|opinion|sop>，未指定的章节留在 AGENTS.md"))
+    result.add_argument("--register-root", action="append", default=[],
+                        help=_("adopt：把已有的工作容器目录登记到 work.assets.roots（只读登记，不动内容）"))
+    result.add_argument("--case-root", help=_("adopt：新 Case 放的目录（缺省 cases）"))
+    result.add_argument("--memory-root", help=_("adopt：记忆条目放的目录（缺省 memory）"))
     result.add_argument(
         "--runtime-plugin-root",
         type=Path,
@@ -1061,6 +1138,23 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         root = validate_root(args.project)
+        if args.mode == "scan":
+            placeholder = Inputs(root, args.name or root.name, "project", tuple(args.project_type or ("code",)),
+                                 args.vcs or "git", tuple(args.stack or ("unknown",)), args.runtime or "local",
+                                 tuple(args.agent_cli or ("codex",)), args.work_mode or "case-workspace",
+                                 None if args.no_entry else validate_entry_name(args.entry_name or DEFAULT_ENTRY),
+                                 file_language(args))
+            adopt = _adopt()
+            report = adopt.scan(root, placeholder, case_root=args.case_root or "cases",
+                                memory_root=args.memory_root or "memory")
+            result = {"ok": not report["blockers"], "mode": "scan", "applied": False, **report}
+            print(json_text(result), end="") if args.output == "json" else print(_adopt_text(result), end="")
+            return 0 if result["ok"] else 1
+        if args.mode == "region":
+            code, result = _scaffold().update_regions(root, accept=args.accept, keep=args.keep, apply=args.apply,
+                                                      recovery_dir=args.recovery_dir, state_dir=args.state_dir)
+            print(json_text(result), end="") if args.output == "json" else print(_scaffold().render_text(result), end="")
+            return code
         if args.mode in ("check", "add-skeleton", "profile", "repair-lock", "decide", "case-naming"):
             scaffold = _scaffold()
             code, result = scaffold.run_mode(args, root)
@@ -1113,9 +1207,13 @@ def main(argv: list[str] | None = None) -> int:
             tuple(validate_inline("--agent-cli", value) for value in args.agent_cli),
             args.work_mode or ('legacy' if args.mode == 'migrate' else 'case-workspace'),
             None if args.no_entry else validate_entry_name(args.entry_name) if args.entry_name
-            else DEFAULT_ENTRY if args.mode == "init" else None,
+            else DEFAULT_ENTRY if args.mode in ("init", "adopt") else None,
             file_language(args),
         )
+        if args.mode == "adopt":
+            code, result = _adopt().run(args, root, inputs)
+            print(json_text(result), end="") if args.output == "json" else print(_adopt_text(result), end="")
+            return code
         files = files_for(inputs)
         if args.mode == "migrate" and (root / PROFILE_PATH).exists():
             profile_file = root / PROFILE_PATH
@@ -1216,7 +1314,7 @@ def main(argv: list[str] | None = None) -> int:
         if applied and readme:
             _atomic_write(root / readme["path"], readme["text"])
         if applied and pack is not None and baseline:
-            write_content_lock(root, pack, baseline)
+            write_content_lock(root, pack, baseline, inputs=inputs)
         result = {
             "ok": ok,
             "mode": args.mode,

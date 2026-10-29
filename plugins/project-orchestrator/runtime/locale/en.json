@@ -1404,5 +1404,6 @@
  "{0} 必须为 YYYY-MM-DD": "{0} must be YYYY-MM-DD",
  "演示": "demo",
  "新 SOP 的文件语言（缺省取项目 Profile 的 language，再缺省为 zh）": "language of the new SOP's file (default: the Profile's language, then zh)",
- "## {0} 下至少要有一个编号步骤": "The \"{0}\" section needs at least one numbered step"
+ "## {0} 下至少要有一个编号步骤": "The \"{0}\" section needs at least one numbered step",
+ "更新受管区块：运行 init_project.py --mode region（改过的区块逐个 --keep / --accept）": "Update the managed regions: run init_project.py --mode region (choose --keep / --accept for each edited region)"
 }

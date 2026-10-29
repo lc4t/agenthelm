@@ -3,7 +3,7 @@
   "packs": [
     {
       "id": "agents-init/project-contract",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "kind": "template",
       "title": "项目契约模板",
       "description": "初始化时渲染为项目入口文件的中文模板与根目录启动器；更新后由用户逐文件选择是否重新渲染。",
@@ -20,7 +20,7 @@
       ],
       "project_lock": "agenthelm",
       "files": {
-        "skills/agents-init/AGENT.template.md": "cb35f9a20b845686f24823c03bc71c5b93683dc750b61bd4eae733da2085b056",
+        "skills/agents-init/AGENT.template.md": "780f32a1137044274ab9d8b8f736dc59875acfca58ff3963611182131398cbc1",
         "skills/agents-init/launcher.sh": "cf27d6cca786905a192446ea4eefe5635942914c3358c78d12117af912107cad"
       },
       "materializes_from_profile": [
