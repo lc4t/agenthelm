@@ -211,10 +211,15 @@ class AssetRegistryTests(AssetTestCase):
             self.assertEqual(assets.find(project, ["report"], refresh=False)["results"][0]["git"], "none")
             self.assertEqual(assets.check(project, refresh=False)["untracked_new"], [])
 
-    def test_non_shared_case_is_not_expanded(self) -> None:
-        case_record(self.root, "CASE-20261003-001-private", "私密专项", sensitivity="local-only",
-                    files={"docs/private-plan.md": "x"})
-        self.assertEqual(assets.find(self.project(), ["private-plan"])["total"], 0)
+    def test_non_shared_case_is_indexed_like_any_other(self) -> None:
+        """台账只是本机缓存里的索引，sensitivity 不过滤；私密事项的文件也能被找到。"""
+        for sensitivity in ("private", "local-only"):
+            case_record(self.root, f"CASE-20261003-00{1 if sensitivity == 'private' else 2}-{sensitivity}", "私密专项",
+                        sensitivity=sensitivity, files={f"docs/{sensitivity}-plan.md": "x"})
+        project = self.project()
+        for sensitivity in ("private", "local-only"):
+            found = assets.find(project, [f"{sensitivity}-plan"])
+            self.assertEqual(found["total"], 1, sensitivity)
 
     def test_refresh_status_and_no_refresh(self) -> None:
         project = self.project()

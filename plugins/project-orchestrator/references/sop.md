@@ -121,7 +121,7 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 
 - **私有目录**：Profile 的 `privacy.forbidden_default_reads` 声明（缺省约定为项目根的 `private/`，新项目自动建好）。读取前须经用户确认；内容默认不进入 git（目录里的 `.gitignore`，云同步盘同步不受影响）；其余照常，`find` 等命令不做特殊处理。
 - **SOP 用到私有目录**：SOP 正文里把私有路径当路径用（如 `private/notes/`），`sop.py run` 会在预览里说明，并把执行 Case 自动标为 `sensitivity: private`，在步骤清单里写明“读取前须经用户确认”。执行时先向用户列出要读的路径和用途，确认后 `sop.py confirm-read <Case> <路径…> --apply` 记入决策记录。确认只覆盖当次列出的路径。
-- **`sensitivity: private` 的含义**：它是“这个 Case 用到了私有内容”的标记。注意它在资料索引里的既有行为：该 Case 的文件不进索引（`find` 找不到），`progress` / `show` 照常列出。
+- **`sensitivity: private` 的含义**：它是“这个 Case 用到了私有内容”的标记，不改变任何命令的行为：`find`、`progress`、`show` 都照常列出它（资料索引只是本机缓存里的索引，不做过滤）。读取其中私有内容前是否需要确认，由私有目录的约定管。
 - **范围先于读取**：会读取多个事项的流程（复盘、汇总）必须先确定范围，由用户明确给出标签、事项名或编号，**不默认纳入全部事项**。未被纳入的事项不读、不写进产物。范围写在产物开头。
 - 创建时的 `scope` 事项把这几件事谈清：读取哪些事项、是否用到私有目录、产物放进哪个项目、那个项目会不会公开。公开仓库里只放通用样例；涉及个人进度的 SOP 放在不公开的项目或用户级目录。要把复盘之类的内容公开时，先由用户逐段确认，再复制出去。
 - 命令：`sop.py private`（状态；`--apply` 补 `.gitignore`；`--create` 创建 `private/`）、`sop.py confirm-read`。

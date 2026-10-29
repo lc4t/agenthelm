@@ -8,7 +8,8 @@
 扫描范围来自 Project Profile：Case 根取 ``work.case.root``（缺省 ``cases``），额外扫描根取
 ``work.assets.roots``（缺省无）。同义词来自项目可选文件
 ``.agents/moe.sakanano.agent-pack/asset-synonyms.json``（缺省为空）。凭据、密钥与证书
-无论是否入库都不登记；嵌套的 SVN/Git 外部检出、纯缓存目录与非 shared 的 Case 不展开。
+无论是否入库都不登记；嵌套的 SVN/Git 外部检出与纯缓存目录不展开。Case 的 sensitivity 不影响登记：台账只是本机缓存里的索引，
+private 的 Case 也能被找到（读取其内容前是否需要确认，由私有目录的约定管，不在这里过滤）。
 """
 from __future__ import annotations
 
@@ -540,9 +541,6 @@ def scan(project: Project, previous: dict | None = None) -> dict:
     checkouts: list[str] = []
     raw = []
     for rel, stat in _walk(project, skipped, checkouts):
-        container, kind, _ = project.container_of(rel)
-        if kind == "case" and container in non_shared:
-            continue
         raw.append((rel, stat))
     external = _checkout_roots(project, checkouts)
     for directory in sorted(external):

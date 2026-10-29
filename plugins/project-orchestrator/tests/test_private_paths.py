@@ -258,7 +258,17 @@ class SopIntegrationTests(PrivateCase):
         code, created = self.run_sop("private", "--create", "--apply")
         self.assertTrue((self.root / "private" / ".gitignore").is_file())
 
-    def test_find_is_not_special_cased_by_the_private_directory(self) -> None:
+    def test_find_lists_private_cases_and_their_files_like_any_other(self) -> None:
+        case_id = self.new_case("journal-notes")
+        self.run_case("update", case_id, "--sensitivity", "private")
+        docs = self.root / "cases" / case_id / "docs"
+        docs.mkdir()
+        (docs / "journal-summary.md").write_text("# 总结\n", encoding="utf-8")
+        _, found = self.cli("find", "journal-summary")
+        self.assertEqual(found["data"]["total"], 1)
+        self.assertIn(case_id, found["data"]["results"][0]["container"])
+
+    def test_the_private_directory_itself_is_not_scanned(self) -> None:
         (self.root / "private").mkdir()
         (self.root / "private" / "diary.md").write_text("# diary\n", encoding="utf-8")
         _, found = self.cli("find", "diary")

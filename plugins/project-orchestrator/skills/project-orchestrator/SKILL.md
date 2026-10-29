@@ -136,7 +136,7 @@ Profile 的 `privacy.forbidden_default_reads` 声明私有路径（没有声明�
 - **内容默认不进入 git**：私有目录里有 `.gitignore`（`*` 加 `!.gitignore`）。`sop.py private` 查看状态，`--apply` 补上缺失的 `.gitignore`；`health` 会提示未被忽略的私有目录和已被跟踪的文件。不要替用户 `git add`、提交或推送私有目录里的内容。
 - **用到私有目录的 Case 标为 `sensitivity: private`**：`case.py update --add-deliverable/--add-evidence` 登记私有路径时自动改，也可 `--sensitivity private`；SOP 里引用了私有路径时 `sop.py run` 自动标。云同步盘同步它没有问题。
 
-这是协议级约束：工具层挡不住 Agent 直接读文件，所以要靠这里的规则；`find` 不做特殊处理。
+这是协议级约束：工具层挡不住 Agent 直接读文件，所以要靠这里的规则；`find` 照常索引 `private` 的 Case（索引只是本机缓存里的索引，不做过滤）。
 
 ## 4. 路由能力
 
