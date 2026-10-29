@@ -28,7 +28,9 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import case as case_tool  # noqa: E402
+import case_structure  # noqa: E402
 import private_paths  # noqa: E402
+import sop_structure as vocab  # noqa: E402
 from i18n_orchestrator import _, N_  # noqa: E402
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -46,7 +48,7 @@ REF_RE = re.compile(r"([a-z0-9]+(?:-[a-z0-9]+)*)@(\d+\.\d+\.\d+)\Z")
 SCHEDULE_RE = re.compile(r"(daily|weekly:(mon|tue|wed|thu|fri|sat|sun)|monthly:([1-9]|1\d|2[0-8])|every:[1-9]\d{0,2}d)\Z")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 EVENTS = ("case.created", "case.closed")
-PLACEHOLDER = "【待补充】"
+PLACEHOLDER = vocab.PLACEHOLDERS[0]  # 中文占位标记；英文的 SOP 用 vocab.PLACEHOLDERS[1]，读取时两种都认
 
 STATUSES = ("draft", "active", "retired")
 SCALARS = ("schema_version", "id", "title", "status", "version", "description", "trigger", "exclude", "schedule",
@@ -54,8 +56,6 @@ SCALARS = ("schema_version", "id", "title", "status", "version", "description", 
            "resume", "confirm_costly", "created", "verified_at", "review_after", "origin")
 LISTS = ("aliases", "examples_hit", "examples_miss", "on_events", "event_tags", "outputs", "sources", "decided")
 REQUIRED = ("schema_version", "id", "title", "status", "version", "description", "created")
-SECTIONS = ("目的", "前置条件", "步骤", "完成标准", "例外与回退", "修订记录")
-STRICT_SECTIONS = ("前置条件", "步骤", "完成标准")
 
 # 用户习惯：每项给出可选值、缺省、以及创建时必须谈的问题。第一个标注推荐的是我们的倾向，用户可改。
 CHOICES: dict[str, dict[str, Any]] = {
@@ -105,16 +105,8 @@ FIELD_DECISION = {"on_error": "on_error", "max_retries": "on_error", "on_missing
 DECISION_OPTIONS = {"on_error": "on_error", "on_missing_tool": "on_missing_tool", "artifacts": "artifact_keep",
                     "resume": "resume", "confirm_costly": "confirm_costly"}
 
-STEP_KEYS = {"工具": "tools", "输入": "inputs", "中间产物": "intermediates", "最终产物": "finals", "检查点": "checkpoint",
-             "失败时": "on_failure", "需确认": "confirm", "说明": "note"}
-KIND_MAP = {"命令": "command", "模块": "module", "环境变量": "env", "路径": "path", "技能": "skill", "MCP": "mcp",
-            "mcp": "mcp", "手动确认": "manual", "手动": "manual"}
 KIND_LABEL = {"command": N_("命令"), "module": N_("Python 模块"), "env": N_("环境变量"), "path": N_("路径"), "skill": N_("技能"),
               "mcp": "MCP", "manual": N_("手动确认")}
-REQ_KEYS = {"用途": "purpose", "安装": "install", "替代": "alternative", "缺失时": "if_missing", "版本": "version",
-            "仅当": "when"}
-MISSING_MAP = {"询问用户": "ask", "询问": "ask", "停止": "stop", "跳过该步": "skip-step", "跳过": "skip-step",
-               "使用替代": "alternative", "替代": "alternative"}
 SECRET_PATTERNS = (re.compile(r"sk-[A-Za-z0-9_-]{20,}"), re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"),
                    re.compile(r"AKIA[0-9A-Z]{16}"), re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
                    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
@@ -297,10 +289,10 @@ def split_sections(body: str) -> dict[str, str]:
 
 
 def split_list(value: str) -> list[str]:
-    return [item.strip() for item in re.split(r"[、,，;；]", value) if item.strip() and item.strip() not in ("无", "-", "—")]
+    return [item.strip() for item in re.split(r"[、,，;；]", value) if item.strip() and item.strip().lower() not in vocab.LIST_NONE]
 
 
-def parse_steps(text: str) -> tuple[list[dict], list[str]]:
+def parse_steps(text: str, language: str = "zh") -> tuple[list[dict], list[str]]:
     steps: list[dict] = []
     problems: list[str] = []
     for line in text.splitlines():
@@ -313,17 +305,18 @@ def parse_steps(text: str) -> tuple[list[dict], list[str]]:
             continue
         if not steps:
             continue  # 第一个编号步骤之前的说明文字不参与解析
-        sub = re.match(r"^\s+[-*]\s*([^：:]{1,8})[：:]\s*(.*?)\s*$", line)
+        sub = re.match(r"^\s+[-*]\s*([^：:]{1,32})[：:]\s*(.*?)\s*$", line)
         if not sub:
             steps[-1]["note"] = (steps[-1]["note"] + " " + line.strip()).strip()
             continue
-        key = STEP_KEYS.get(sub.group(1).strip())
+        key = vocab.step_key(sub.group(1))
         if key is None:
-            problems.append(_("步骤 {0} 有未知字段“{1}”（可用：{2}）").format(steps[-1]['n'], sub.group(1), _('、').join(STEP_KEYS)))
+            problems.append(_("步骤 {0} 有未知字段“{1}”（可用：{2}）").format(
+                steps[-1]['n'], sub.group(1), _('、').join(vocab.name(vocab.STEP_KEYS, item, language) for item in vocab.STEP_KEYS)))
         elif key in ("tools", "intermediates", "finals"):
             steps[-1][key] = split_list(sub.group(2))
         elif key == "confirm":
-            steps[-1][key] = sub.group(2).strip().lower() in ("是", "y", "yes", "true", "需要")
+            steps[-1][key] = sub.group(2).strip().lower() in vocab.TRUE_WORDS
         else:
             steps[-1][key] = sub.group(2)
     for index, step in enumerate(steps, 1):
@@ -333,31 +326,33 @@ def parse_steps(text: str) -> tuple[list[dict], list[str]]:
     return steps, problems
 
 
-def parse_requirements(text: str) -> tuple[list[dict], list[str]]:
+def parse_requirements(text: str, language: str = "zh") -> tuple[list[dict], list[str]]:
     reqs: list[dict] = []
     problems: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.rstrip("。") in ("无", "（无）", "(无)", "不需要"):
+        if not stripped or stripped.rstrip("。.").lower() in vocab.NONE_WORDS:
             continue
         if not stripped.startswith("- "):
             continue
         parts = [part.strip() for part in re.split(r"\s*｜\s*|\s+\|\s+", stripped[2:]) if part.strip()]
-        head = re.match(r"^([^：:]{1,8})[：:]\s*(.+)$", parts[0]) if parts else None
-        if not head or head.group(1) not in KIND_MAP:
+        head = re.match(r"^([^：:]{1,32})[：:]\s*(.+)$", parts[0]) if parts else None
+        if not head or vocab.kind_key(head.group(1)) is None:
             problems.append(_("无法识别的前置条件：{0}（写法：- 命令：名称｜用途：…｜安装：…｜缺失时：询问用户）").format(stripped[:40]))
             continue
-        req = {"kind": KIND_MAP[head.group(1)], "name": head.group(2).strip().strip("`"), "purpose": "", "install": "",
+        req = {"kind": vocab.kind_key(head.group(1)), "name": head.group(2).strip().strip("`"), "purpose": "", "install": "",
                "alternative": "", "if_missing": "", "version": "", "when": ""}
         for part in parts[1:]:
-            pair = re.match(r"^([^：:]{1,8})[：:]\s*(.*)$", part)
-            key = REQ_KEYS.get(pair.group(1)) if pair else None
+            pair = re.match(r"^([^：:]{1,32})[：:]\s*(.*)$", part)
+            key = vocab.req_key(pair.group(1)) if pair else None
             if key is None:
-                problems.append(_("{0}：未知字段“{1}”（可用：{2}）").format(req['name'], part[:20], _('、').join(REQ_KEYS)))
+                problems.append(_("{0}：未知字段“{1}”（可用：{2}）").format(
+                    req['name'], part[:20], _('、').join(vocab.name(vocab.REQ_KEYS, item, language) for item in vocab.REQ_KEYS)))
             elif key == "if_missing":
-                value = MISSING_MAP.get(pair.group(2).strip())
+                value = vocab.missing_value(pair.group(2))
                 if value is None:
-                    problems.append(_("{0}：缺失时只能写 {1}").format(req['name'], _('、').join(sorted(set(MISSING_MAP) - {'询问', '跳过', '替代'}))))
+                    problems.append(_("{0}：缺失时只能写 {1}").format(
+                        req['name'], _('、').join(vocab.name(vocab.MISSING, item, language) for item in vocab.MISSING)))
                 else:
                     req[key] = value
             else:
@@ -366,11 +361,12 @@ def parse_requirements(text: str) -> tuple[list[dict], list[str]]:
     return reqs, problems
 
 
-def parsed(sop: dict) -> dict:
+def parsed(sop: dict, default: str = "zh") -> dict:
     sections = split_sections(sop["body"])
-    steps, step_problems = parse_steps(sections.get("步骤", ""))
-    reqs, req_problems = parse_requirements(sections.get("前置条件", ""))
-    return {"sections": sections, "steps": steps, "step_problems": step_problems, "requires": reqs,
+    language = vocab.detect(sop["body"], default)
+    steps, step_problems = parse_steps(vocab.section_text(sections, "steps"), language)
+    reqs, req_problems = parse_requirements(vocab.section_text(sections, "requires"), language)
+    return {"language": language, "sections": sections, "steps": steps, "step_problems": step_problems, "requires": reqs,
             "require_problems": req_problems}
 
 
@@ -451,7 +447,7 @@ def issue(level: str, code: str, message: str) -> dict:
     return {"level": level, "code": code, "message": message}
 
 
-def check_sop(sop: dict, defaults: dict, *, strict: bool | None = None) -> list[dict]:
+def check_sop(sop: dict, defaults: dict, *, strict: bool | None = None, default_language: str = "zh") -> list[dict]:
     """strict 缺省按 status：active 严格；draft / retired 只提示。"""
     if sop["error"]:
         return [issue("error", "unreadable", sop["error"])]
@@ -511,20 +507,16 @@ def check_sop(sop: dict, defaults: dict, *, strict: bool | None = None) -> list[
     if strict and not str(meta.get("trigger", "")).strip():
         add("error", "missing-trigger", _("active 的 SOP 必须写 trigger（什么情况下用它）"))
 
-    info = parsed(sop)
-    for name in SECTIONS if strict else ():
-        if name in STRICT_SECTIONS and not info["sections"].get(name, "").strip():
-            add("error", "missing-section", _("缺少或为空的小节：## {0}").format(name))
-    if not strict:
-        for name in STRICT_SECTIONS:
-            if not info["sections"].get(name, "").strip():
-                add("warn", "missing-section", _("缺少或为空的小节：## {0}").format(name))
+    info = parsed(sop, default_language)
+    for key in vocab.STRICT_SECTIONS:
+        if not vocab.section_text(info["sections"], key).strip():
+            add(level, "missing-section", _("缺少或为空的小节：## {0}").format(vocab.name(vocab.SECTIONS, key, info["language"])))
     for problem in info["step_problems"]:
         add(level, "step-format", problem)
     for problem in info["require_problems"]:
         add(level, "requirement-format", problem)
     if strict and not info["steps"]:
-        add("error", "no-steps", _("## 步骤 下至少要有一个编号步骤"))
+        add("error", "no-steps", _("## {0} 下至少要有一个编号步骤").format(vocab.name(vocab.SECTIONS, "steps", info["language"])))
     names = {req["name"].lower() for req in info["requires"]}
     for req in info["requires"]:
         if req["alternative"] and req["alternative"].lower() not in names:
@@ -533,8 +525,9 @@ def check_sop(sop: dict, defaults: dict, *, strict: bool | None = None) -> list[
         for tool in step["tools"]:
             if tool.lower() not in names:
                 add(level, "undeclared-tool", _("步骤 {0} 用到“{1}”，但前置条件里没有声明（会让执行前检查漏掉它）").format(step['n'], tool))
-    if PLACEHOLDER in sop["text"]:
-        add(level, "placeholder", _("还有 {0} 处{1}需要填写").format(sop['text'].count(PLACEHOLDER), PLACEHOLDER))
+    if vocab.count_placeholders(sop["text"]):
+        marker = next(item for item in vocab.PLACEHOLDERS if item in sop["text"])
+        add(level, "placeholder", _("还有 {0} 处{1}需要填写").format(vocab.count_placeholders(sop["text"]), marker))
     if any(pattern.search(sop["text"]) for pattern in SECRET_PATTERNS):
         add("error", "secret", _("SOP 里疑似写入了密钥或口令：只写环境变量名，不写密钥本身"))
     if strict:
@@ -555,8 +548,9 @@ def check_sop(sop: dict, defaults: dict, *, strict: bool | None = None) -> list[
 def check_all(sops: list[dict], defaults: dict, project: Path | None) -> list[dict]:
     results = []
     active_alias: dict[str, str] = {}
+    language = vocab.language_of(read_profile(project)) if project else "zh"
     for sop in sops:
-        issues = check_sop(sop, defaults)
+        issues = check_sop(sop, defaults, default_language=language)
         if project and not sop["error"]:
             for source in sop["meta"].get("sources") or []:
                 try:
@@ -839,8 +833,14 @@ def bump(version: str, part: str) -> str:
     return {"major": f"{major + 1}.0.0", "minor": f"{major}.{minor + 1}.0", "patch": f"{major}.{minor}.{patch + 1}"}[part]
 
 
-def append_revision(body: str, line: str) -> str:
-    return case_tool.append_section(body, "修订记录", line)
+def append_revision(body: str, line: str, default: str = "zh") -> str:
+    """The revision log lives under the heading the file itself uses (detected from its headings)."""
+    language = vocab.detect(body, default)
+    return case_tool.append_section(body, vocab.name(vocab.SECTIONS, "revisions", language), line, language)
+
+
+def revision_line(body: str, version: str, note: str, default: str = "zh") -> str:
+    return vocab.text("revision_line", vocab.detect(body, default), date=today().isoformat(), version=version, note=note)
 
 
 # ---------------------------------------------------------------- 命令
@@ -850,6 +850,7 @@ class Context:
         self.project = args.project.expanduser().resolve()
         self.args = args
         self.defaults = read_defaults(self.project)
+        self.language = vocab.language_of(read_profile(self.project))
 
     def sops(self, *, user: bool = True) -> list[dict]:
         return load_all(self.project, user=user)
@@ -892,11 +893,11 @@ def cmd_show(ctx: Context) -> tuple[int, dict, list[str]]:
     sop = ctx.one(ctx.args.sop)
     if sop["error"]:
         fail(_("{0} 无法读取：{1}").format(sop['id'], sop['error']), "invalid")
-    info = parsed(sop)
+    info = parsed(sop, ctx.language)
     habit = effective(sop["meta"], ctx.defaults)
     data = {"id": sop["id"], "scope": sop["scope"], "path": display(sop["path"], ctx.project), "meta": sop["meta"],
             "steps": info["steps"], "requires": info["requires"], "conventions": habit,
-            "gaps": gaps(sop["meta"], ctx.defaults), "issues": check_sop(sop, ctx.defaults),
+            "gaps": gaps(sop["meta"], ctx.defaults), "issues": check_sop(sop, ctx.defaults, default_language=ctx.language),
             "private": private_paths.mentions(sop["text"], private_paths.declared(ctx.project))}
     meta = sop["meta"]
     lines = [_("{0}（{1}@{2}，{3}，{4}级）").format(meta.get('title'), sop['id'], meta.get('version'), meta.get('status'), _('项目') if sop['scope'] == 'project' else _('用户')),
@@ -999,14 +1000,30 @@ def cmd_preflight(ctx: Context) -> tuple[int, dict, list[str]]:
     return (0 if report["ready"] else 1), report, lines
 
 
-def template_source(name: str) -> tuple[str, dict[str, str]]:
+def template_source(name: str, language: str = "zh") -> tuple[str, dict[str, str]]:
+    """The sample's SOP.md and its extra files in the given language.
+
+    ``SOP.en.md`` and ``<name>.en.<ext>`` are the English variants of ``SOP.md`` and ``<name>.<ext>``; a sample
+    without an English variant falls back to the Chinese one."""
     base = TEMPLATE_DIR / name
     if not ID_RE.fullmatch(name) or not (base / "SOP.md").is_file():
         names = sorted(path.name for path in TEMPLATE_DIR.iterdir() if (path / "SOP.md").is_file()) if TEMPLATE_DIR.is_dir() else []
         fail(_("没有这个样例：{0}").format(name), "not-found", [_("可用：") + _("、").join(names)])
-    extra = {path.relative_to(base).as_posix(): path.read_text(encoding="utf-8") for path in sorted(base.rglob("*"))
-             if path.is_file() and path.name != "SOP.md"}
-    return (base / "SOP.md").read_text(encoding="utf-8"), extra
+    english = language == "en"
+
+    def variant(relative: Path) -> Path:
+        if not english:
+            return relative
+        candidate = relative.with_name(relative.stem + ".en" + relative.suffix)
+        return candidate if (base / candidate).is_file() else relative
+
+    extra = {}
+    for path in sorted(base.rglob("*")):
+        relative = path.relative_to(base)
+        if not path.is_file() or relative.name in ("SOP.md", "SOP.en.md") or relative.stem.endswith(".en"):
+            continue
+        extra[relative.as_posix()] = (base / variant(relative)).read_text(encoding="utf-8")
+    return (base / variant(Path("SOP.md"))).read_text(encoding="utf-8"), extra
 
 
 def cmd_new(ctx: Context) -> tuple[int, dict, list[str]]:
@@ -1020,14 +1037,15 @@ def cmd_new(ctx: Context) -> tuple[int, dict, list[str]]:
         fail(_("已存在：{0}").format(display(target, ctx.project)), "conflict")
     extra: dict[str, str] = {}
     stamp = today().isoformat()
+    language = args.language or ctx.language
     if args.from_file:
         text = Path(args.from_file).expanduser().read_text(encoding="utf-8")
         meta, body = parse_sop_text(text)
     elif args.from_case:
-        meta, body = parse_sop_text(template_source("blank")[0])
-        meta, body = from_case(ctx, args.from_case, meta, body)
+        meta, body = parse_sop_text(template_source("blank", language)[0])
+        meta, body = from_case(ctx, args.from_case, meta, body, language)
     else:
-        text, extra = template_source(args.template)
+        text, extra = template_source(args.template, language)
         meta, body = parse_sop_text(text)
     previous = str(meta.get("title") or "")
     title = args.title or (previous if previous and "{{" not in previous else slug)
@@ -1044,7 +1062,7 @@ def cmd_new(ctx: Context) -> tuple[int, dict, list[str]]:
     writes = [{"path": target / "SOP.md", "content": text, "expect": None}]
     writes += [{"path": target / relative, "content": fill(content), "expect": None} for relative, content in extra.items()]
     issues = check_sop({"id": slug, "scope": args.scope, "dir": target, "path": target / "SOP.md", "meta": meta,
-                        "body": body, "text": text, "error": None, "shadowed": False}, ctx.defaults, strict=False)
+                        "body": body, "text": text, "error": None, "shadowed": False}, ctx.defaults, strict=False, default_language=language)
     result = plan_result(ctx.project, writes, args.apply, {"id": slug, "status": "draft", "issues": issues,
                                                            "next": [_("sop.py interview {0}（谈清 {1} 项）").format(slug, len(gaps(meta, ctx.defaults))),
                                                                     _("填完后 sop.py validate，再 sop.py activate")]})
@@ -1054,26 +1072,30 @@ def cmd_new(ctx: Context) -> tuple[int, dict, list[str]]:
     return 0, result, lines
 
 
-def from_case(ctx: Context, token: str, meta: dict, body: str) -> tuple[dict, str]:
+def from_case(ctx: Context, token: str, meta: dict, body: str, language: str) -> tuple[dict, str]:
     try:
         cases = case_tool.Project(ctx.project)
         directory = cases.find(token)
         data, case_body = case_tool.read_case(directory / "CASE.md")
     except case_tool.CaseError as exc:
         raise SopError(_("读不了 Case：{0}").format(exc), "unavailable") from exc
-    marker = "## 工作记录\n"
+    heading = case_structure.existing_heading(case_body, "work_log") or case_structure.heading("work_log", language)
+    marker = f"## {heading}\n"
     start = case_body.find(marker)
     end = case_body.find("\n## ", start + len(marker)) if start >= 0 else -1
+    created = vocab.TEXTS["case_created_marker"]
     records = [re.sub(r"^\d{4}-\d{2}-\d{2}T\S+\s+", "", line[2:].strip()) for line in
                (case_body[start + len(marker):None if end < 0 else end].splitlines() if start >= 0 else []) if line.startswith("- ")]
-    steps = [f"{index}. {text}\n   - 说明：{PLACEHOLDER}整理这一步（来自 {data.get('id')} 的工作记录，需改写成可重复执行的动作）"
-             for index, text in enumerate([r for r in records if "Case 已创建" not in r], 1)]
-    meta["description"] = f"{PLACEHOLDER}（从 {data.get('id')} 提炼）"
+    placeholder = vocab.PLACEHOLDERS[vocab.LANGUAGES.index(language)]
+    steps = [vocab.text("from_case_step", language, index=index, text=text, p=placeholder, case=data.get("id"))
+             for index, text in enumerate([r for r in records if not any(item in r for item in created)], 1)]
+    meta["description"] = vocab.text("from_case_description", language, p=placeholder, case=data.get("id"))
     meta["sources"] = [cases.relative(directory / "CASE.md")]
     meta["origin"] = f"case:{data.get('id')}"
     sections = split_sections(body)
-    sections["步骤"] = "\n".join(steps) or f"1. {PLACEHOLDER}"
-    return meta, "# {{title}}\n\n" + "".join(f"## {name}\n\n{sections.get(name, PLACEHOLDER)}\n\n" for name in SECTIONS)
+    chosen = {key: vocab.section_text(sections, key) or placeholder for key in vocab.SECTIONS}
+    chosen["steps"] = "\n".join(steps) or f"1. {placeholder}"
+    return meta, "# {{title}}\n\n" + "".join(f"## {vocab.name(vocab.SECTIONS, key, language)}\n\n{chosen[key]}\n\n" for key in vocab.SECTIONS)
 
 
 def set_status_plan(ctx: Context, sop: dict, status: str, note: str) -> dict:
@@ -1081,7 +1103,7 @@ def set_status_plan(ctx: Context, sop: dict, status: str, note: str) -> dict:
     meta["status"] = status
     if status == "active":
         meta["verified_at"] = today().isoformat()
-    body = append_revision(sop["body"], f"{today().isoformat()} v{meta['version']}：{note}")
+    body = append_revision(sop["body"], revision_line(sop["body"], str(meta["version"]), note, ctx.language), ctx.language)
     text = render_sop(meta, body)
     writes = [{"path": sop["path"], "content": text, "expect": sha(sop["text"])}]
     snapshot = snapshot_write(sop["dir"], str(meta["version"]), text)
@@ -1101,7 +1123,7 @@ def cmd_activate(ctx: Context) -> tuple[int, dict, list[str]]:
     if blockers:
         lines = [_("{0} 还不能启用：").format(sop['id'])] + [f"  - {item['message']}" for item in blockers]
         return 1, {"id": sop["id"], "applied": False, "blockers": blockers}, lines
-    plan = set_status_plan(ctx, sop, "active", "启用（内容与执行约定已与用户确认）")
+    plan = set_status_plan(ctx, sop, "active", vocab.text("note_activated", vocab.detect(sop["body"], ctx.language)))
     result = plan_result(ctx.project, plan["writes"], ctx.args.apply, {"id": sop["id"], "status": "active"})
     return 0, result, [f"{_('已启用') if result['applied'] else _('将启用')} {sop['id']}@{sop['meta']['version']}"] + \
         ([] if result["applied"] else [_("以上为预览，没有写入。确认后加 --apply。")])
@@ -1118,7 +1140,8 @@ def cmd_retire(ctx: Context) -> tuple[int, dict, list[str]]:
         if blockers:
             return 1, {"id": sop["id"], "applied": False, "blockers": blockers}, \
                 [_("{0} 不能恢复为 active：").format(sop['id'])] + [f"  - {item['message']}" for item in blockers]
-    plan = set_status_plan(ctx, sop, target, ctx.args.note or ("退役" if target == "retired" else "恢复"))
+    language = vocab.detect(sop["body"], ctx.language)
+    plan = set_status_plan(ctx, sop, target, ctx.args.note or vocab.text("note_retired" if target == "retired" else "note_restored", language))
     result = plan_result(ctx.project, plan["writes"], ctx.args.apply, {"id": sop["id"], "status": target})
     return 0, result, [(_("已退役 {0}") if result["applied"] else _("将退役 {0}")).format(sop["id"]) if target == "retired"
                       else (_("已恢复 {0}") if result["applied"] else _("将恢复 {0}")).format(sop["id"])] + \
@@ -1134,7 +1157,7 @@ def cmd_revise(ctx: Context) -> tuple[int, dict, list[str]]:
         fail(_("revise 需要 --note 说明这次改了什么、为什么"))
     version = bump(str(sop["meta"]["version"]), ctx.args.bump)
     meta = {**sop["meta"], "version": version, "verified_at": today().isoformat()}
-    body = append_revision(sop["body"], f"{today().isoformat()} v{version}：{ctx.args.note}")
+    body = append_revision(sop["body"], revision_line(sop["body"], version, ctx.args.note, ctx.language), ctx.language)
     text = render_sop(meta, body)
     writes = [{"path": sop["path"], "content": text, "expect": sha(sop["text"])}]
     snapshot = snapshot_write(sop["dir"], version, text)
@@ -1228,27 +1251,37 @@ def read_event_case(ctx: Context, token: str) -> dict:
 # ---------------------------------------------------------------- 执行：一次执行 = 一个 Case
 
 def checklist_text(sop: dict, info: dict, habit: dict, params: list[str], runtime_note: str,
-                   private_hits: list[str] | None = None) -> str:
+                   private_hits: list[str] | None = None, language: str = "zh") -> str:
+    def t(key: str, **fields: object) -> str:
+        return vocab.text(key, language, **fields)
+
     version = sop["meta"]["version"]
     keep = habit["artifact_keep"]["value"]
-    place = habit["artifact_dir"]["value"] or _("本 Case 的 data/ 目录")
-    lines = ["## SOP 执行清单", "", f"来源：`{sop['id']}@{version}`（{runtime_note}）", "", "执行约定（开始时从 SOP 与项目习惯固化，执行中不随 SOP 改动）：",
-             f"- 出错时：{habit['on_error']['value']}" + (f"（最多重试 {habit['max_retries']['value']} 次）" if habit["on_error"]["value"] == "retry" else ""),
-             f"- 缺少工具时：{habit['on_missing_tool']['value']}", f"- 中间产物：放在 {place}；完成后：{keep}",
-             f"- 失败后重新执行：{habit['resume']['value']}", f"- 花钱或耗时的步骤：{habit['confirm_costly']['value']}"]
+    place = habit["artifact_dir"]["value"] or t("cl_data_dir")
+    joiner = t("list_join")
+    lines = ["## " + vocab.name(vocab.CASE_SECTIONS, "checklist", language), "", t("cl_source", id=sop["id"], version=version, note=runtime_note), "",
+             t("cl_conventions"),
+             t("cl_on_error") + habit["on_error"]["value"] + (t("cl_retries", n=habit["max_retries"]["value"]) if habit["on_error"]["value"] == "retry" else ""),
+             t("cl_on_missing") + habit["on_missing_tool"]["value"], t("cl_artifacts_label") + t("cl_artifacts", place=place, keep=keep),
+             t("cl_resume") + habit["resume"]["value"], t("cl_costly") + habit["confirm_costly"]["value"]]
     if private_hits:
-        lines.append(f"- 私有目录：本次会用到 {'、'.join(private_hits)}；读取前须经用户确认（用 sop confirm-read 记录），"
-                     "内容默认不进入 git；本 Case 已标为 private")
+        lines.append(t("cl_private", dirs=joiner.join(private_hits)))
     lines.append("")
     if params:
-        lines += ["参数："] + [f"- {item}" for item in params] + [""]
-    lines += ["步骤："] + [f"- [ ] {step['n']}. {step['title']}" + (f"（工具：{'、'.join(step['tools'])}）" if step["tools"] else "")
-                        for step in info["steps"]]
+        lines += [t("cl_params")] + [f"- {item}" for item in params] + [""]
+    lines += [t("cl_steps")] + [f"- [ ] {step['n']}. {step['title']}" + (t("cl_tools", tools=joiner.join(step["tools"])) if step["tools"] else "")
+                               for step in info["steps"]]
     return "\n".join(lines)
 
 
 def insert_before(body: str, heading: str, text: str) -> str:
-    marker = f"## {heading}\n"
+    """Insert ``text`` before the section whose logical key (or heading) is ``heading``, in either language."""
+    try:
+        key = case_structure.key_of(heading)
+    except KeyError:
+        key = None
+    found = case_structure.existing_heading(body, key) if key else None
+    marker = f"## {found or heading}\n"
     position = body.find(marker)
     block = text.rstrip("\n") + "\n\n"
     return body.rstrip("\n") + "\n\n" + block if position < 0 else body[:position] + block + body[position:]
@@ -1263,9 +1296,10 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
         fail(_("{0} 是 {1}，不能正式执行").format(sop['id'], status), "conflict", [_("草稿试跑请加 --trial（Case 会带 sop-trial 标签）"), _("正式使用先 sop.py activate")])
     if sop["meta"].get("creates_case") == "never":
         fail(_("这个 SOP 声明了 creates_case=never，没有执行记录可建"), "conflict")
-    info = parsed(sop)
+    info = parsed(sop, ctx.language)
     if not info["steps"]:
         fail(_("SOP 没有可执行的步骤"), "invalid")
+    language = ctx.language  # 执行 Case 用项目语言写；SOP 文件自己的语言只影响怎么解析它
     habit = effective(sop["meta"], ctx.defaults)
     report = preflight(sop, ctx.project, ctx.defaults)
     private_dirs = private_paths.declared(ctx.project)
@@ -1278,7 +1312,7 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
         fail(_("{0}@{1} 的内容比版本快照新，但版本号没升").format(sop['id'], version), "conflict",
              [_("先 sop.py revise {0} --bump patch --note …，再执行").format(sop['id'])])
     snapshot = snapshot_write(sop["dir"], version, sop["text"])
-    note = _("快照 {0}").format(display(sop['dir'] / SNAPSHOTS / (version + '.md'), ctx.project))
+    note = vocab.text("snapshot_note", ctx.language, path=display(sop["dir"] / SNAPSHOTS / (version + ".md"), ctx.project))
     event_note = ""
     params = list(ctx.args.param or [])
     if ctx.args.event:
@@ -1289,15 +1323,16 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
         trigger = read_event_case(ctx, ctx.args.event_case)
         if trigger.get("sop"):
             fail(_("SOP 自己的执行 Case 不能再触发事件"), "conflict")
-        event_note = f"由 {ctx.args.event} 触发（{trigger.get('id')}）"
-        params.insert(0, f"触发事件：{ctx.args.event}（{trigger.get('id')}：{trigger.get('title', '')}）")
-    goal = (info["sections"].get("目的", "").strip().splitlines() or [sop["meta"].get("title", sop["id"])])[0]
-    done_when = "；".join(line.strip("- ").strip() for line in info["sections"].get("完成标准", "").splitlines() if line.strip())[:300]
+        event_note = vocab.text("event_note", language, event=ctx.args.event, id=trigger.get("id"))
+        params.insert(0, vocab.text("cl_event_param", language, event=ctx.args.event, id=trigger.get("id"), title=trigger.get("title", "")))
+    goal = (vocab.section_text(info["sections"], "purpose").strip().splitlines() or [sop["meta"].get("title", sop["id"])])[0]
+    done_when = vocab.text("list_join", language).replace("、", "；").replace(", ", "; ").join(
+        line.strip("- ").strip() for line in vocab.section_text(info["sections"], "done").splitlines() if line.strip())[:300]
     title = ctx.args.title or f"{sop['meta'].get('title', sop['id'])} {today().isoformat()}"
-    case_args = argparse.Namespace(title=title, slug=sop["id"], goal=goal, next_action=f"步骤 1：{info['steps'][0]['title']}",
+    case_args = argparse.Namespace(title=title, slug=sop["id"], goal=goal, next_action=vocab.text("next_first", language, title=info["steps"][0]["title"]),
                                    status="active", done_when=done_when,
-                                   source=f"SOP {sop['id']}@{version}" + (f"；{event_note}" if event_note else ""),
-                                   current_state=f"SOP 进度 0/{len(info['steps'])}",
+                                   source=f"SOP {sop['id']}@{version}" + (vocab.text("source_event", language, note=event_note) if event_note else ""),
+                                   current_state=vocab.text("progress0", language, total=len(info["steps"])),
                                    tag=["sop", *(["sop-trial"] if status != "active" else [])], sop=f"{sop['id']}@{version}",
                                    sensitivity="private" if private_hits else "shared")
     try:
@@ -1305,7 +1340,7 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
         case_id, case_text = case_tool.plan_create(cases, case_args)
     except case_tool.CaseError as exc:
         raise SopError(_("不能建立执行记录：{0}").format(exc), "unavailable", [_("执行记录需要项目启用 case-workspace（Profile work.mode）")]) from exc
-    section = checklist_text(sop, info, habit, params, note, private_hits)
+    section = checklist_text(sop, info, habit, params, note, private_hits, language)
     preview = {"case_id": case_id, "title": title, "steps": [step["title"] for step in info["steps"]],
                "preflight": {"ready": report["ready"], "counts": report["counts"]}, "snapshot": bool(snapshot),
                "checklist": section, "private": private_hits, "private_warnings": private_warnings}
@@ -1322,8 +1357,12 @@ def cmd_run(ctx: Context) -> tuple[int, dict, list[str]]:
     created = case_tool.create(cases, case_args)
     path = ctx.project / created["path"]
     data, body = case_tool.read_case(path)
-    body = insert_before(body, "阻塞与恢复条件", section + "\n\n## 中间产物\n\n暂无。")
-    body = case_tool.append_section(body, "工作记录", f"{case_tool.now()} 按 {sop['id']}@{version} 开始执行{('，' + event_note) if event_note else ''}；执行前检查：就绪 {report['counts']['ok']}、缺失 {report['counts']['missing']}、待核对 {report['counts']['unknown']}")
+    intermediate = vocab.name(vocab.CASE_SECTIONS, "intermediate", language)
+    body = insert_before(body, "blockers", section + f"\n\n## {intermediate}\n\n" + vocab.text("empty_intermediates", language))
+    body = case_tool.append_section(body, "work_log", vocab.text(
+        "log_started", language, stamp=case_tool.now(), id=sop["id"], version=version,
+        event=vocab.text("log_started_event", language, note=event_note) if event_note else "",
+        ok=report["counts"]["ok"], missing=report["counts"]["missing"], unknown=report["counts"]["unknown"]), language)
     case_tool.write_atomic(path, case_tool.render_frontmatter(data) + body)
     return 0, {"applied": True, **preview, "case_id": created["id"], "path": created["path"]}, \
         lines + [_("已建立：{0}").format(created['path'])]
@@ -1336,7 +1375,8 @@ def read_run(ctx: Context, token: str) -> tuple[Path, dict, str, list[dict]]:
         data, body = case_tool.read_case(path)
     except case_tool.CaseError as exc:
         raise SopError(str(exc), "not-found") from exc
-    section = split_sections(body).get("SOP 执行清单", "")
+    sections = split_sections(body)
+    section = next((sections[name] for name in vocab.checklist_headings() if name in sections), "")
     steps = []
     for line in section.splitlines():
         match = CHECK_RE.match(line)
@@ -1347,16 +1387,29 @@ def read_run(ctx: Context, token: str) -> tuple[Path, dict, str, list[dict]]:
     return path, data, body, steps
 
 
-def section_value(body: str, heading: str, prefix: str) -> str:
-    for line in split_sections(body).get(heading, "").splitlines():
-        if line.startswith(prefix):
-            return line[len(prefix):].strip()
+def case_artifacts_heading(body: str, language: str) -> str:
+    """The heading of the intermediate-artifacts section in a run Case, as the Case itself spells it."""
+    for name in vocab.CASE_SECTIONS["intermediate"]:
+        if f"## {name}\n" in body or body.rstrip().endswith(f"## {name}"):
+            return name
+    return vocab.name(vocab.CASE_SECTIONS, "intermediate", language)
+
+
+def section_value(body: str, text_key: str) -> str:
+    """The value of a ``- label: value`` line in the run checklist, whichever language the Case is written in."""
+    sections = split_sections(body)
+    section = next((sections[name] for name in vocab.checklist_headings() if name in sections), "")
+    for line in section.splitlines():
+        for prefix in vocab.prefixes(text_key):
+            if line.startswith(prefix):
+                return line[len(prefix):].strip()
     return ""
 
 
 def cmd_step(ctx: Context) -> tuple[int, dict, list[str]]:
     args = ctx.args
     path, data, body, steps = read_run(ctx, args.case)
+    language = vocab.detect_case(body, ctx.language)
     current = path.read_text(encoding="utf-8")
     if args.expect_sha256 and sha(current) != args.expect_sha256:
         fail(_("Case 在预览之后被修改过，请重新读取"), "conflict")
@@ -1370,31 +1423,35 @@ def cmd_step(ctx: Context) -> tuple[int, dict, list[str]]:
     if state in ("skip", "fail") and not (args.note or "").strip():
         fail(_("--skip 和 --fail 必须用 --note 写明原因"))
     mark = {"done": "x", "skip": "-", "fail": "!", "pending": " "}[state]
-    label = {"done": "完成", "skip": "跳过", "fail": "失败", "pending": "重置为待办"}[state]
+    label = vocab.text("state_" + state, language)
     shown = {"done": _("完成"), "skip": _("跳过"), "fail": _("失败"), "pending": _("重置为待办")}[state]
     body = body.replace(f"- [{wanted['mark']}] {wanted['n']}. {wanted['text']}", f"- [{mark}] {wanted['n']}. {wanted['text']}", 1)
     stamp = case_tool.now()
-    note = f"：{args.note.strip()}" if args.note else ""
-    body = case_tool.append_section(body, "工作记录", f"{stamp} SOP 步骤 {args.n}「{wanted['text'].split('（工具')[0]}」{label}{note}")
+    note = vocab.text("note_join", language, note=args.note.strip()) if args.note else ""
+    body = case_tool.append_section(body, "work_log", vocab.text(
+        "log_step", language, stamp=stamp, n=args.n, title=vocab.strip_tools(wanted["text"]), label=label, note=note), language)
+    intermediate = case_artifacts_heading(body, language)
     for item in args.artifact or []:
         location, _unused, what = item.partition(":")
-        body = case_tool.append_section(body, "中间产物", f"步骤 {args.n}：`{location.strip()}`" + (f"（{what.strip()}）" if what.strip() else ""))
+        body = case_tool.append_section(body, intermediate, vocab.text("artifact_line", language, n=args.n, location=location.strip())
+                                        + (vocab.text("artifact_what", language, what=what.strip()) if what.strip() else ""), language)
     states = {step["n"]: step["mark"] for step in steps}
     states[args.n] = mark
     pending = [step for step in steps if states[step["n"]] == " "]
     failed = [step for step in steps if states[step["n"]] == "!"]
-    habit = section_value(body, "SOP 执行清单", "- 出错时：") or "ask"
+    habit = section_value(body, "cl_on_error") or "ask"
     if failed:
-        next_action = f"处理步骤 {failed[0]['n']} 的失败（约定：{habit}）" + (f"：{args.note.strip()}" if args.note and state == "fail" else "")
+        next_action = vocab.text("next_failed", language, n=failed[0]["n"], habit=habit) \
+            + (vocab.text("note_join", language, note=args.note.strip()) if args.note and state == "fail" else "")
     elif pending:
-        next_action = f"步骤 {pending[0]['n']}：{pending[0]['text'].split('（工具')[0]}"
+        next_action = vocab.text("next_step", language, n=pending[0]["n"], title=vocab.strip_tools(pending[0]["text"]))
     else:
-        next_action = "核对完成标准（sop.py status）后关闭 Case 或登记交付物"
+        next_action = vocab.text("next_done", language)
     finished = sum(1 for key in states.values() if key in ("x", "-"))
-    data.update({"next_action": next_action, "current_state": f"SOP 进度 {finished}/{len(steps)}"
-                 + (f"，步骤 {failed[0]['n']} 失败" if failed else ""), "updated_at": stamp})
-    body = case_tool._replace_section(body, "当前可信状态", data["current_state"])  # noqa: SLF001
-    body = case_tool._replace_section(body, "下一动作", next_action)  # noqa: SLF001
+    data.update({"next_action": next_action, "current_state": vocab.text("state_progress", language, done=finished, total=len(steps))
+                 + (vocab.text("state_failed_suffix", language, n=failed[0]["n"]) if failed else ""), "updated_at": stamp})
+    body = case_tool._replace_section(body, "current_state", data["current_state"], language)  # noqa: SLF001
+    body = case_tool._replace_section(body, "next_action", next_action, language)  # noqa: SLF001
     errors = case_tool.validate_schema(data, case_tool.Project(ctx.project).schema)
     if errors:
         fail(_("更新后 Case 不符合 Schema：") + _("；").join(errors), "invalid")
@@ -1412,7 +1469,9 @@ def cmd_step(ctx: Context) -> tuple[int, dict, list[str]]:
 
 def cmd_status(ctx: Context) -> tuple[int, dict, list[str]]:
     path, data, body, steps = read_run(ctx, ctx.args.case)
-    artifacts = [line[2:] for line in split_sections(body).get("中间产物", "").splitlines() if line.startswith("- ")]
+    sections = split_sections(body)
+    intermediate = next((sections[name] for name in vocab.CASE_SECTIONS["intermediate"] if name in sections), "")
+    artifacts = [line[2:] for line in intermediate.splitlines() if line.startswith("- ")]
     pending = [step for step in steps if step["mark"] == " "]
     failed = [step for step in steps if step["mark"] == "!"]
     skipped = [step for step in steps if step["mark"] == "-"]
@@ -1424,7 +1483,7 @@ def cmd_status(ctx: Context) -> tuple[int, dict, list[str]]:
     return (0 if complete else 1), {"case": data["id"], "sop": data.get("sop", ""), "steps": steps, "complete": complete,
                                     "skipped": [step["n"] for step in skipped], "failed": [step["n"] for step in failed],
                                     "artifacts": artifacts,
-                                    "keep_policy": section_value(body, "SOP 执行清单", "- 中间产物：")}, lines
+                                    "keep_policy": section_value(body, "cl_artifacts_label")}, lines
 
 
 def cmd_confirm_read(ctx: Context) -> tuple[int, dict, list[str]]:
@@ -1441,9 +1500,11 @@ def cmd_confirm_read(ctx: Context) -> tuple[int, dict, list[str]]:
     except case_tool.CaseError as exc:
         raise SopError(str(exc), "not-found") from exc
     current = path.read_text(encoding="utf-8")
+    language = vocab.detect_case(body, ctx.language)
     stamp = case_tool.now()
-    note = f"；{ctx.args.note.strip()}" if ctx.args.note else ""
-    body = case_tool.append_section(body, "决策记录", f"{stamp} 用户确认读取私有路径：{'、'.join(ctx.args.paths)}{note}")
+    note = vocab.text("confirm_note", language, note=ctx.args.note.strip()) if ctx.args.note else ""
+    body = case_tool.append_section(body, "decisions", vocab.text(
+        "log_confirm_read", language, stamp=stamp, paths=vocab.text("list_join", language).join(ctx.args.paths), note=note), language)
     marked = data.get("sensitivity") != "private"
     data.update({"sensitivity": "private", "updated_at": stamp})
     errors = case_tool.validate_schema(data, cases.schema)
@@ -1526,6 +1587,7 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--slug", required=True)
     new.add_argument("--title")
     new.add_argument("--template", default="blank", help=_("样例：blank / video-to-transcript / weekly-review"))
+    new.add_argument("--language", choices=vocab.LANGUAGES, help=_("新 SOP 的文件语言（缺省取项目 Profile 的 language，再缺省为 zh）"))
     new.add_argument("--from-file", help=_("用现成的 SOP.md 作为草稿"))
     new.add_argument("--from-case", help=_("从一个已完成的 Case 的工作记录提炼草稿"))
     new.add_argument("--scope", choices=("project", "user"), default="project")

@@ -39,18 +39,24 @@
       "version": "1.0.0",
       "kind": "sample",
       "title": "SOP 样例",
-      "description": "runtime/sop.py new --template 使用的 SOP 样例：blank（空白，带填写说明）、video-to-transcript（视频转文字稿，展示工具清单、条件性前置、替代方案与中间产物）、weekly-review（周期性复盘，展示先确定复盘范围）、knowledge-digest（知识整理，展示可共享的流程与规则候选的交接）。样例只含流程结构，不含任何个人进度或数据；创建的都是草稿，需要与用户谈清各项约定后才能启用；已创建的 SOP 不会被改写。",
+      "description": "runtime/sop.py new --template 使用的 SOP 样例：blank（空白，带填写说明）、video-to-transcript（视频转文字稿，展示工具清单、条件性前置、替代方案与中间产物）、weekly-review（周期性复盘，展示先确定复盘范围）、knowledge-digest（知识整理，展示可共享的流程与规则候选的交接）。每个样例有中文（SOP.md）和英文（SOP.en.md）两套，按项目文件语言选用；样例只含流程结构，不含任何个人进度或数据；创建的都是草稿，需要与用户谈清各项约定后才能启用；已创建的 SOP 不会被改写。",
       "sources": [
         "sop-templates"
       ],
       "materializes": [],
       "project_lock": "none",
       "files": {
+        "sop-templates/blank/SOP.en.md": "f7929e5840f1a4ea7cb832d949237be43328c662c690fcc2e204bb36233940fa",
         "sop-templates/blank/SOP.md": "efec23ad29102590bdd16268c79222eb6f14fa8a1352deb27a5e55d35c413704",
+        "sop-templates/knowledge-digest/SOP.en.md": "e30bb6fb0282f23e326e70404ac66e4419c99a53a2e3eb2cabfdffa5c2754e55",
         "sop-templates/knowledge-digest/SOP.md": "eaa8d7eb2338fe71b7a05fec662230a7e0b2e36f4727657558f2b51ed0a98027",
+        "sop-templates/knowledge-digest/templates/digest.en.md": "9461e971a40307434d5460b12cf0938038ab6af2b2c98ce5a02260d816bc9d7a",
         "sop-templates/knowledge-digest/templates/digest.md": "0741e5a8008119528c5fc71cc9c3c8064dc1173d61465643e8dc5745883ccb9a",
+        "sop-templates/video-to-transcript/SOP.en.md": "5c5797eed4fdadaec4089b43843bc43287d68cc6699e9fafd1803aa8e8e253a4",
         "sop-templates/video-to-transcript/SOP.md": "b8dfb1ecb0e2cf2a13d4acad78ee759f6c402776443cf5a70e2d6390a120ba4e",
+        "sop-templates/weekly-review/SOP.en.md": "fd9734078467066463c8005c459a9c3885236545e622b1219c52cf5633045de8",
         "sop-templates/weekly-review/SOP.md": "9dee7bcbf351e395a66e042929eede0bb425a92a88db14944b4348f2de656b1b",
+        "sop-templates/weekly-review/templates/review.en.md": "ba727876879208caad46c6ce9c51411e1f451e72003572ccd18de9ef6f55811e",
         "sop-templates/weekly-review/templates/review.md": "cf8321a1739cecf6286d591e88a6af86831b01c12e77834a873ea497a5db127c"
       }
     }

@@ -62,6 +62,24 @@ SOP（Standard Operating Procedure）是用户自己定义的**步骤序列**：
 
 步骤里的“工具”必须在前置条件里声明过，否则执行前检查会漏掉它（active 的 SOP 校验为错误）。
 
+### 文件语言
+
+SOP.md 的小节名、步骤子项与前置条件的写法、占位标记，以及 `sop run` 写进执行 Case 的清单与记录，按项目文件语言生成，由 Project Profile 的 `language`（`zh` / `en`，缺省 `zh`）决定，随项目同步，不随命令行界面的语言（`AGENTHELM_LANG`）变化；规则与 Case 相同，见 [case-workspaces.md](case-workspaces.md) 的“文件语言”。`sop new --language zh|en` 可以单独指定某个 SOP 的语言。
+
+| | 中文 | English |
+|---|---|---|
+| 小节 | `目的` `前置条件` `步骤` `完成标准` `例外与回退` `修订记录` | `Purpose` `Prerequisites` `Steps` `Completion criteria` `Exceptions and fallback` `Revision log` |
+| 步骤子项 | `工具` `输入` `中间产物` `最终产物` `检查点` `失败时` `需确认` `说明` | `Tools` `Inputs` `Intermediates` `Final outputs` `Checkpoint` `On failure` `Needs confirmation` `Note` |
+| 前置条件种类 | `命令` `模块` `环境变量` `路径` `技能` `MCP` `手动确认` | `Command` `Module` `Environment variable` `Path` `Skill` `MCP` `Manual check` |
+| 前置条件字段 | `用途` `安装` `替代` `缺失时` `仅当` `版本` | `Purpose` `Install` `Alternative` `If missing` `Only if` `Version` |
+| 缺失时的取值 | `询问用户` `停止` `跳过该步` `使用替代` | `Ask the user` `Stop` `Skip the step` `Use the alternative` |
+| 占位标记 | `【待补充】` | `[TO FILL IN]` |
+
+- 英文的前置条件用 ` | `（两侧各一个空格）分隔，冒号用 `:`；中文用全角 `｜` 与 `：`。需确认写 `yes` / `是`；确实不需要任何工具时写 `None` / `无`。
+- 读取时两套词表都认，同一个文件里混用也能解析；文件沿用自己的写法（按小节名判断），所以换过语言的项目、从别处拷来的 SOP 都照常可用。
+- 执行 Case 的清单与记录用 Case 自己的语言（有“SOP checklist”小节就是英文，有“SOP 执行清单”就是中文），项目中途换语言不会让同一个 Case 里中英文混写。
+- `frontmatter` 的键与枚举值（`ask`、`stop`、`draft` …）本来就是英文，与语言无关。样例有中文和英文两套（`SOP.md` / `SOP.en.md`，附带模板同理）。
+
 ## 命令
 
 `python3 runtime/sop.py --project <项目> <子命令>`，也可用 `agenthelm project sop <子命令>`。加 `--output json` 得到结构化结果。**写入类默认只预览，`--apply` 才执行**，写后读回核对；`--expect-sha256` 防止覆盖别人刚改的内容。

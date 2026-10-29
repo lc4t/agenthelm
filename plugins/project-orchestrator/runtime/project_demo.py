@@ -21,8 +21,9 @@ import weakref
 from pathlib import Path
 from typing import Any
 
+import sop_structure  # noqa: E402
 from project_base import EntryError, sop_call
-from i18n_orchestrator import _  # noqa: E402
+from i18n_orchestrator import _, resolve_language  # noqa: E402
 
 DEMO_NOW = "2026-10-25T09:12:00+08:00"
 FAULTS = ("index-broken", "offline", "runtime-old", "conflict")
@@ -340,7 +341,8 @@ class DemoProvider:
         root = self._sandbox / "project"
         profile = root / ".agents" / "moe.sakanano.agent-pack" / "project.json"
         profile.parent.mkdir(parents=True)
-        profile.write_text(json.dumps({"schema_version": "1.0", "name": self.name, "sop": {"root": "sops"},
+        # 演示项目的文件语言跟着当前界面语言：演示本身就是按界面语言讲的故事
+        profile.write_text(json.dumps({"schema_version": "1.0", "name": self.name, "language": resolve_language(), "sop": {"root": "sops"},
                                        "work": {"mode": "case-workspace", "case": {"root": "cases"}}}), encoding="utf-8")
         if self.scenario_id != "blank":
             self._seed_sops(root)
@@ -355,7 +357,10 @@ class DemoProvider:
             for slug in ("knowledge-digest", "weekly-review", "video-to-transcript"):
                 sop_call(["new", "--slug", slug, "--template", slug, "--apply"], root)
                 path = root / "sops" / slug / "SOP.md"
-                path.write_text(path.read_text(encoding="utf-8").replace("【待补充】", "演示"), encoding="utf-8")
+                text = path.read_text(encoding="utf-8")
+                for marker in sop_structure.PLACEHOLDERS:
+                    text = text.replace(marker, _("演示"))
+                path.write_text(text, encoding="utf-8")
                 sop_call(["decide", slug, "--confirm", "trigger", "--confirm", "requires", "--confirm", "scope", "--apply"], root)
                 sop_call(["activate", slug, "--apply"], root)
 

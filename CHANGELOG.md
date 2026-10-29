@@ -12,7 +12,8 @@
 
 - 翻译：agenthelm（`check` / `install` / `update` / `doctor` / `runtime` / `nudge`）、项目入口与菜单（`project` / `./menu`，含演示项目）、`wf`、`assets.py`、`case.py`、`memory.py`、`case_workspace.py`、`opinion_manager.py`（含 `context` / `lifecycle` / `inbox`）、`init_project.py` 与 `scaffold.py` 的输出、提示、错误与 `--help`；用户级运行时启动器的“需要 Python 3.11”提示按 `AGENTHELM_LANG` / `LANG` 选择语言。
 - 项目文件语言（新增）：Profile 顶层 `language`（`zh` | `en`，缺省 `zh`）决定写进项目的 Case 与 README。`en` 的项目里，新建的 CASE.md 使用英文小节名（Current trusted state / Next action / Decision log / Work log / Result）与英文默认文字，README 追加 “How to use”。它独立于界面语言：界面语言只影响命令输出，不会改动已有文件。`agents-init --language {auto,zh,en}`：`auto` 在 init 时取当前界面语言，migrate 时保持中文；agents-init 的 Skill 要求先问用户想用哪种文件语言。解析器同时认中英文小节名，已有文件沿用自己的写法，缺失的小节按项目语言补建。新增 `templates/CASE.en.md`，内容包 `project-orchestrator/case-template` 升到 1.1.0。
-- 不翻译：OPINION.md 与锁的渲染、记忆索引、AGENT.template.md 等其余模板、骨架文件模板，以及 SOP 写进项目的文件（SOP.md 的小节名与字段名、占位标记、执行 Case 里的“SOP 执行清单”与步骤记录、样例 SOP）（这几项仍为中文，是后续工作，见 issue #24）、用户自己写的内容（候选、规则、原因、CASE.md 正文）、公开 Opinion 模板的规则正文、Skill 正文与 CHANGELOG / README 等文档。两种界面语言下 OPINION.md、锁、脚手架指纹与决定文件完全一致，并有测试守住。
+- SOP 同样跟项目文件语言走（`sop_structure.py`）：`language: en` 的项目里，`sop new` 从英文样例（`SOP.en.md`，附带模板 `*.en.md`）创建草稿，小节名为 Purpose / Prerequisites / Steps / Completion criteria / Exceptions and fallback / Revision log，步骤子项与前置条件字段也是英文（占位标记 `[TO FILL IN]`）；`sop run` 写进执行 Case 的“SOP checklist”小节、步骤记录与决策记录用英文。解析器两套词表都认，同一文件混用也能解析；追加内容沿用文件自己的写法，执行 Case 沿用 Case 自己的语言。`sop new --language zh|en` 可单独指定某个 SOP 的语言。样例 SOP 与参考文档 [`references/sop.md`](plugins/project-orchestrator/references/sop.md) 的“文件语言”一节给出对照表。
+- 不翻译：OPINION.md 与锁的渲染、记忆索引、AGENT.template.md 等其余模板、骨架文件模板（这几项仍为中文，是后续工作，见 issue #24）、用户自己写的内容（候选、规则、原因、CASE.md 正文）、公开 Opinion 模板的规则正文、Skill 正文与 CHANGELOG / README 等文档。两种界面语言下 OPINION.md、锁、脚手架指纹与决定文件完全一致，并有测试守住。
 - 机器可读输出（`--output json` 的字段名与结构、退出码）不变；JSON 里给人看的 `message` / `error` 文字随语言变化。解析文字输出的脚本请改用 `--output json`。
 
 ### 实现

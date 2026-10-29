@@ -1401,5 +1401,8 @@
  "{0} 像是同步盘留下的冲突副本：合并到 SOP.md 后删除": "{0} looks like a conflict copy left by the sync service: merge it into SOP.md and delete it",
  "已超过复核日期 {0}：核对后更新 verified_at / review_after": "Past the review date {0}: after checking, update verified_at / review_after",
  "步骤 {0} 用到“{1}”，但前置条件里没有声明（会让执行前检查漏掉它）": "Step {0} uses \"{1}\" but the prerequisites do not declare it (the preflight check would miss it)",
- "{0} 必须为 YYYY-MM-DD": "{0} must be YYYY-MM-DD"
+ "{0} 必须为 YYYY-MM-DD": "{0} must be YYYY-MM-DD",
+ "演示": "demo",
+ "新 SOP 的文件语言（缺省取项目 Profile 的 language，再缺省为 zh）": "language of the new SOP's file (default: the Profile's language, then zh)",
+ "## {0} 下至少要有一个编号步骤": "The \"{0}\" section needs at least one numbered step"
 }
