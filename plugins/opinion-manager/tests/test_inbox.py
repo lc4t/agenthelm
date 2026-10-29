@@ -254,6 +254,17 @@ class LanguageTests(InboxBase):
         self.assertIn("It is currently not ignored by Git", notice)
         self.assertNotRegex(notice, r"[\u4e00-\u9fff]")
 
+    def test_english_is_the_fallback_when_nothing_names_a_language(self) -> None:
+        self.add()
+        with mock.patch.dict(os.environ, {"LANG": "C", "LC_ALL": "", "LC_MESSAGES": ""}):
+            os.environ.pop("AGENTHELM_LANG", None)
+            text = super().run_action("brief", lang=None)["text"]
+            self.assertTrue(text.startswith("[Opinion protocol"))
+            self.assertIn("--lang en", text)
+        with mock.patch.dict(os.environ, {"LC_ALL": "zh_CN.UTF-8"}):
+            os.environ.pop("AGENTHELM_LANG", None)
+            self.assertTrue(super().run_action("brief", lang=None)["text"].startswith("[Opinion 协议"))
+
     def test_stored_history_is_language_neutral(self) -> None:
         identity = self.add()["id"]
         self.run_action("decide", identity, to="trial", confirmed=True)
@@ -285,9 +296,10 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(resolve("auto", {"LC_ALL": "zh_TW.UTF-8", "LANG": "en_US.UTF-8"}), "zh")
         self.assertEqual(resolve(None, {"LC_ALL": "C", "LANG": "en_US.UTF-8"}), "en")
         self.assertEqual(resolve(None, {"LANG": "fr_FR.UTF-8"}), "en")
-        self.assertEqual(resolve(None, {"LANG": "C.UTF-8"}), "zh")
-        self.assertEqual(resolve(None, {}), "zh")
-        self.assertEqual(resolve("", {"LANG": "POSIX"}), "zh")
+        self.assertEqual(resolve(None, {"LANG": "C.UTF-8"}), "en")
+        self.assertEqual(resolve(None, {}), "en")
+        self.assertEqual(resolve("", {"LANG": "POSIX"}), "en")
+        self.assertEqual(resolve(None, {"LC_ALL": "C", "LANG": "zh_CN.UTF-8"}), "zh", "C is skipped, the next variable decides")
 
 
 if __name__ == "__main__":

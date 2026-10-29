@@ -1,7 +1,7 @@
 """收件箱面向用户和模型的文案（中文、英文）与语言选择。
 
 语言按这个顺序决定：命令行 ``--lang`` → 环境变量 ``AGENTHELM_LANG`` → 系统 locale（``LC_ALL``、``LC_MESSAGES``、
-``LANG``）→ 中文。``auto``、空值和 C/POSIX 视为未指定；中文 locale 用中文，其他语言的 locale 暂用英文。
+``LANG``）→ 英文。``auto``、空值和 C/POSIX 视为未指定；中文 locale 用中文，其他语言的 locale 暂用英文。
 候选内容本身（标题、规则、用户原话）是用户的话，从不翻译；文件里的字段名与历史记录使用与语言无关的编码。
 """
 
@@ -13,7 +13,7 @@ from typing import Any, Mapping
 
 
 LANGUAGES = ("zh", "en")
-DEFAULT_LANGUAGE = "zh"
+DEFAULT_LANGUAGE = "en"
 
 
 def normalize(value: str | None) -> str | None:

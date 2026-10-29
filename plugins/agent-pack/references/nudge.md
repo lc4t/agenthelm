@@ -1,5 +1,7 @@
 # nudge：自动采集观点候选与未决事项提示
 
+[English](nudge.en.md) · **简体中文**
+
 `agenthelm nudge` 由三个客户端的 hook 调用，让 opinion 机制在用户不主动提起时也能工作：会话开始注入协议与试行规则，工作中发现长期偏好时提醒 Agent 暂存，任务完成时请用户集中确认，开新会话时按阈值提示久未处理的候选。它只读写 opinion-manager 的收件箱和本机状态，从不写 `OPINION.md`。收件箱与状态流转见 opinion-manager 的 `references/inbox.md`。
 
 ## 各客户端的行为
@@ -35,7 +37,7 @@
 
 ## 提示语言
 
-给用户看的提示和注入给模型的协议使用同一种语言，目前支持中文（`zh`）和英文（`en`）。按这个顺序决定：配置 `nudge.language`（不是 `auto` 时）→ 环境变量 `AGENTHELM_LANG` → 系统 locale（`LC_ALL`、`LC_MESSAGES`、`LANG`）→ 中文。中文 locale 用中文；其他语言的 locale 暂用英文；`C` / `POSIX` / 空值视为未指定。用户配置的 `nudge.language` 优先于项目 Profile，所以你可以按自己的语言覆盖团队的设置。
+给用户看的提示和注入给模型的协议使用同一种语言，目前支持中文（`zh`）和英文（`en`）。按这个顺序决定：配置 `nudge.language`（不是 `auto` 时）→ 环境变量 `AGENTHELM_LANG` → 系统 locale（`LC_ALL`、`LC_MESSAGES`、`LANG`）→ 英文。中文 locale 用中文；其他语言的 locale 暂用英文；`C` / `POSIX` / 空值视为未指定，继续看下一个变量，都没有就用英文。用户配置的 `nudge.language` 优先于项目 Profile，所以你可以按自己的语言覆盖团队的设置。
 
 - 解析出的语言会传给 opinion-manager 的 `inbox`（`--lang`），所以协议、隐私提醒、待确认列表与 hook 的提示是同一种语言。协议同时要求 Agent 向用户转告和确认时使用用户正在使用的语言，系统语言与对话语言不一致时由对话语言兜底。
 - 候选的标题、规则和用户原话是用户自己的话，从不翻译；关键词列表是数据，默认同时包含中文和英文，可自行增删。

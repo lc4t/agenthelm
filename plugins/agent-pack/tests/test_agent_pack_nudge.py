@@ -215,6 +215,16 @@ class NudgeTests(unittest.TestCase):
         config, warnings = nudge.merge_config({"language": "fr"}, None)
         self.assertEqual((config["language"], len(warnings)), ("auto", 1))
 
+    def test_english_is_the_fallback_and_a_chinese_locale_still_gets_chinese(self) -> None:
+        with mock.patch.dict(os.environ, {"LANG": "C", "LC_ALL": ""}):
+            os.environ.pop("AGENTHELM_LANG", None)
+            config, _ = nudge.merge_config(None, None)
+            self.assertEqual(config["lang"], "en")
+            self.assertTrue(nudge.reminder_text({"pending": 9, "trial": 0, "oldest_days": 0.0}, config).startswith("[Opinion] 9 candidate opinions"))
+        with mock.patch.dict(os.environ, {"LC_ALL": "zh_CN.UTF-8"}):
+            os.environ.pop("AGENTHELM_LANG", None)
+            self.assertEqual(nudge.merge_config(None, None)[0]["lang"], "zh")
+
     def test_warnings_use_the_resolved_language(self) -> None:
         _, warnings = nudge.merge_config({"language": "en", "pending_threshold": 0}, None)
         self.assertEqual(warnings, ["Project Profile opinion.nudge.pending_threshold must be a positive integer; ignored"])

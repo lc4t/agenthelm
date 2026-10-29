@@ -1,5 +1,7 @@
 # 候选收件箱（inbox）
 
+[English](inbox.en.md) · **简体中文**
+
 收件箱保存 Agent 在工作中发现的、尚待用户裁决的观点。它不是规则：不写入 `OPINION.md`、Profile 或锁，也不改变任何已确认内容。暂存无需确认，所有状态变化都需要用户明确表态。
 
 ## 位置与隐私
@@ -19,7 +21,7 @@
 
 ## 命令
 
-以下命令都在 `opinion_manager.py inbox <动作>` 下，`--project` 必填；`--lang zh|en` 指定提示语言（缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用中文）；输出为 JSON，`list` 可用 `--output markdown` 得到给用户看的编号列表。
+以下命令都在 `opinion_manager.py inbox <动作>` 下，`--project` 必填；`--lang zh|en` 指定提示语言（缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用英文）；输出为 JSON，`list` 可用 `--output markdown` 得到给用户看的编号列表。
 
 - `add --title --text --scope [--quote] [--client] [--session]`：暂存。标题 ≤120、正文 ≤1200、原话 ≤600 个字符；至少一个 `--scope`。内容相同（忽略空白与大小写）的候选合并，新原话追加为证据。
 - `list [--status a,b] [--session ID] [--unpresented]`：列出候选。

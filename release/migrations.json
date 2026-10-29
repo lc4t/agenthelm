@@ -215,7 +215,7 @@
     "change_kind": "code",
     "breaking": false,
     "date": "2026-10-29",
-    "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用中文。",
+    "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用英文。",
     "actions": [
       "Codex 需要在 /hooks 中审阅并信任插件 hook 后才会运行",
       "Cursor：运行 agenthelm nudge install-hooks --client cursor 预览，确认后加 --apply；stop 提示默认关闭",

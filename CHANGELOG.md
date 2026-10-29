@@ -10,7 +10,7 @@ Opinion 之前只在用户明确提出时才工作：没有 hook，没有低成�
   - `add` 暂存（标题、完整规则、适用范围、用户原话），无需确认；内容相同的候选合并并追加证据；
   - 状态 `pending`（待确认）/ `trial`（项目内试行）/ `formal`（同意转正式）/ `held` / `rejected`；`decide` 必须带 `--confirmed`，批量要么全成功要么全不改；
   - `trial` 的候选全文随会话开始注入，Agent 按其工作；`expire --days N` 把试行超期未转正的退回待确认；
-  - 提示与协议有中文、英文两种（`--lang zh|en`，缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用中文）；候选内容是用户自己的话，不翻译；历史记录用与语言无关的编码；
+  - 提示与协议有中文、英文两种（`--lang zh|en`，缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用英文）；候选内容是用户自己的话，不翻译；历史记录用与语言无关的编码；
   - `exposure` 只读报告收件箱在 Git 里的状态（已忽略 / 已跟踪 / 未忽略 / 非 Git 仓库）；
   - `pending` 是“待确认项提供者”，返回统一结构，供 agent-pack 汇总（SOP 等其他来源按同一结构接入）；`brief` 生成会话开始注入的协议与试行候选。
 - `formal` 只记录用户意愿，写入 `OPINION.md` 仍走完整预览与确认；`inbox` 不写 `OPINION.md`、Profile 或锁。
@@ -23,7 +23,7 @@ Opinion 之前只在用户明确提出时才工作：没有 hook，没有低成�
   - **用户消息**：命中长期偏好关键词（可配置）时提醒 Agent 静默暂存，每会话至多 3 次；
   - **回合结束**：本会话暂存且没展示过的候选存在、最后一条回复像是完成时，让 Agent 用编号列表一次性请用户裁决，每会话至多 1 次。
 - 各客户端：Claude Code 与 Codex 读取同一个 `hooks/hooks.json`（Codex 需在 `/hooks` 中信任）；Cursor 没有 prompt 级注入，用 `agenthelm nudge install-hooks --client cursor` 预览并写入 `hooks.json`，stop 提示默认关闭。其他目录完全无输出，hook 永远退出 0。
-- 提示语言：给用户看的提示和注入给模型的协议使用同一种语言（中文 / 英文）。顺序：`nudge.language`（非 `auto` 时，用户配置优先于项目 Profile）→ `AGENTHELM_LANG` → 系统 locale → 中文；解析结果传给 opinion-manager 的 `inbox --lang`。协议要求 Agent 向用户转告和确认时使用用户正在使用的语言。文案集中在 `nudge_text.py` / `inbox_text.py`，测试守住两种语言的键与占位符一致、英文不含中文。这是运行时多语言的第一步，仓库里其他命令的输出暂时仍为中文。
+- 提示语言：给用户看的提示和注入给模型的协议使用同一种语言（中文 / 英文）。顺序：`nudge.language`（非 `auto` 时，用户配置优先于项目 Profile）→ `AGENTHELM_LANG` → 系统 locale → 英文；解析结果传给 opinion-manager 的 `inbox --lang`。协议要求 Agent 向用户转告和确认时使用用户正在使用的语言。文案集中在 `nudge_text.py` / `inbox_text.py`，测试守住两种语言的键与占位符一致、英文不含中文。这是运行时多语言的第一步，仓库里其他命令的输出暂时仍为中文。新增的 `inbox` / `nudge` 命令行帮助为英文，两份 references 各有中文与英文版（`inbox.md` / `inbox.en.md`、`nudge.md` / `nudge.en.md`）。
 - 配置：Project Profile 的 `opinion.nudge`（随项目）与用户配置的 `nudge`（个人，优先）；缺省即默认值，不进脚手架受检字段。`agenthelm nudge status` 显示生效配置与是否会提示；`AGENTHELM_NO_NUDGE=1` 关闭。详见 [`references/nudge.md`](plugins/agent-pack/references/nudge.md)。
 - 尚未在真实客户端逐一验证：Codex 插件 hook 的信任流程、Cursor 的 sessionStart 注入与 `~/.cursor/hooks.json` 加载、Claude Code `Stop` 的 `additionalContext`；依据官方文档编写，单元测试覆盖输出格式与逻辑。
 

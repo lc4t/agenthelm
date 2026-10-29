@@ -1,7 +1,7 @@
 """nudge 面向用户和模型的文案（中文、英文）与语言选择。
 
 语言按这个顺序决定：配置 ``nudge.language``（``auto`` / ``zh`` / ``en``，用户配置优先于项目 Profile）→ 环境变量
-``AGENTHELM_LANG`` → 系统 locale（``LC_ALL``、``LC_MESSAGES``、``LANG``）→ 中文。``auto``、空值和 C/POSIX 视为
+``AGENTHELM_LANG`` → 系统 locale（``LC_ALL``、``LC_MESSAGES``、``LANG``）→ 英文。``auto``、空值和 C/POSIX 视为
 未指定；中文 locale 用中文，其他语言的 locale 暂用英文。解析出的语言同时传给 opinion-manager 的 ``inbox``，所以同一次提示
 里用户和模型看到的是同一种语言。候选内容是用户自己的话，不翻译。关键词列表是数据，不属于文案。
 """
@@ -13,7 +13,7 @@ import re
 from typing import Any, Mapping
 
 LANGUAGES = ("zh", "en")
-DEFAULT_LANGUAGE = "zh"
+DEFAULT_LANGUAGE = "en"
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 

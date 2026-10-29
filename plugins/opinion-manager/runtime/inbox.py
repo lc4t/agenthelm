@@ -339,25 +339,25 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
 
 
 def add_command(subparsers: Any) -> None:
-    parser = subparsers.add_parser("inbox", help="项目私有的候选收件箱：暂存、裁决与待确认汇总；不写入规则")
+    parser = subparsers.add_parser("inbox", help="Project-private candidate inbox: stash, decide and summarize pending items; never writes rules")
     parser.add_argument("action", choices=("add", "list", "decide", "present", "expire", "pending", "brief", "exposure"))
-    parser.add_argument("ids", nargs="*", help="decide / present 的候选编号")
+    parser.add_argument("ids", nargs="*", help="candidate ids for decide / present")
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--title")
     parser.add_argument("--text")
     parser.add_argument("--scope", action="append", default=[])
-    parser.add_argument("--quote", help="用户原话，作为候选的证据")
-    parser.add_argument("--client", help="来源客户端：claude / codex / cursor")
-    parser.add_argument("--session", help="来源会话编号；用于任务结束时只确认本次新增的候选")
-    parser.add_argument("--status", help="list 的状态过滤，逗号分隔")
-    parser.add_argument("--unpresented", action="store_true", help="list 只列还没向用户展示过的")
+    parser.add_argument("--quote", help="the user's own words, kept as evidence for the candidate")
+    parser.add_argument("--client", help="source client: claude / codex / cursor")
+    parser.add_argument("--session", help="source session id; lets the end-of-task confirmation cover only this session's candidates")
+    parser.add_argument("--status", help="list: comma-separated status filter")
+    parser.add_argument("--unpresented", action="store_true", help="list: only candidates not yet shown to the user")
     parser.add_argument("--to", choices=DECIDABLE)
-    parser.add_argument("--confirmed", action="store_true", help="用户已看过候选全文并明确表态")
+    parser.add_argument("--confirmed", action="store_true", help="the user has seen the full candidate and stated a decision explicitly")
     parser.add_argument("--note")
-    parser.add_argument("--days", type=int, help="expire：试行超过多少天回到待确认")
-    parser.add_argument("--max-chars", type=int, default=6000, help="brief 的正文上限")
+    parser.add_argument("--days", type=int, help="expire: revert trials older than this many days to pending")
+    parser.add_argument("--max-chars", type=int, default=6000, help="brief: size limit of the text")
     parser.add_argument("--output", choices=("json", "markdown"), default="json")
-    parser.add_argument("--lang", choices=("auto", *words.LANGUAGES), help="提示语言：zh / en；缺省按 AGENTHELM_LANG、系统 locale 决定，最后用中文")
+    parser.add_argument("--lang", choices=("auto", *words.LANGUAGES), help="message language: zh / en; by default AGENTHELM_LANG, then the system locale, then English")
 
 
 def run(args: argparse.Namespace) -> dict[str, Any] | str:
