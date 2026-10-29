@@ -1,5 +1,48 @@
 # 更新记录
 
+## 2026-10-29 — agenthelm 6.11.0 / Opinion Manager 0.5.0 / Agent Pack 1.11.0 / Project Orchestrator 1.11.1：观点自动采集与未决事项提示
+
+6.11.0 同时包含下面 2026-10-29（6.10.0，local-only）和 2026-10-28（6.9.0，SOP）两个条目的全部变化：6.9.0、6.10.0 都没有单独发布，从 6.8.0 升级的用户一次得到三部分。
+
+Opinion 之前只在用户明确提出时才工作：没有 hook，没有低成本的暂存入口，也没有任何东西提醒用户回头确认。这个版本让它在日常工作中自己转起来：会话开始注入规则和协议，工作中发现长期偏好就暂存，任务完成时集中请用户确认，开新会话时按阈值提示久未处理的候选。采集是自动的，生效与转正式仍然只来自用户的明确确认。
+
+### opinion-manager 0.5.0
+
+- 新增候选收件箱 `opinion_manager.py inbox`（数据在项目私有的 `.opinion/inbox.json`）：
+  - `add` 暂存（标题、完整规则、适用范围、用户原话），无需确认；内容相同的候选合并并追加证据；
+  - 状态 `pending`（待确认）/ `trial`（项目内试行）/ `formal`（同意转正式）/ `held` / `rejected`；`decide` 必须带 `--confirmed`，批量要么全成功要么全不改；
+  - `trial` 的候选全文随会话开始注入，Agent 按其工作；`expire --days N` 把试行超期未转正的退回待确认；
+  - 提示与协议有中文、英文两种（`--lang zh|en`，缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用英文）；候选内容是用户自己的话，不翻译；历史记录用与语言无关的编码；
+  - `exposure` 只读报告收件箱在 Git 里的状态（已忽略 / 已跟踪 / 未忽略 / 非 Git 仓库）；
+  - `pending` 是“待确认项提供者”，返回统一结构，供 agent-pack 汇总（SOP 等其他来源按同一结构接入）；`brief` 生成会话开始注入的协议与试行候选。
+- `formal` 只记录用户意愿，写入 `OPINION.md` 仍走完整预览与确认；`inbox` 不写 `OPINION.md`、Profile 或锁。
+- `SKILL.md`：触发描述增加“工作中出现长期偏好或纠正”“任务完成时确认”“候选堆积时裁决”；新增候选收件箱与自动采集一节。新增 [`references/inbox.md`](plugins/opinion-manager/references/inbox.md)。
+
+### agent-pack 1.11.0
+
+- 新增 `agenthelm nudge` 与随附 hook（`hooks/hooks.json`）：
+  - **会话开始**（`startup|resume|clear|compact`）：在启用了 opinion-manager 的项目里注入采集协议与试行候选；待确认 ≥ `pending_threshold`（默认 5）条或最久 ≥ `stale_days`（默认 7）天时给用户一行提示，同一项目每 24 小时至多一次；
+  - **用户消息**：命中长期偏好关键词（可配置）时提醒 Agent 静默暂存，每会话至多 3 次；
+  - **回合结束**：本会话暂存且没展示过的候选存在、最后一条回复像是完成时，让 Agent 用编号列表一次性请用户裁决，每会话至多 1 次。
+- 各客户端：Claude Code 与 Codex 读取同一个 `hooks/hooks.json`（Codex 需在 `/hooks` 中信任）；Cursor 没有 prompt 级注入，用 `agenthelm nudge install-hooks --client cursor` 预览并写入 `hooks.json`，stop 提示默认关闭。其他目录完全无输出，hook 永远退出 0。
+- 提示语言：给用户看的提示和注入给模型的协议使用同一种语言（中文 / 英文）。顺序：`nudge.language`（非 `auto` 时，用户配置优先于项目 Profile）→ `AGENTHELM_LANG` → 系统 locale → 英文；解析结果传给 opinion-manager 的 `inbox --lang`。协议要求 Agent 向用户转告和确认时使用用户正在使用的语言。文案集中在 `nudge_text.py` / `inbox_text.py`，测试守住两种语言的键与占位符一致、英文不含中文。这是运行时多语言的第一步，仓库里其他命令的输出暂时仍为中文。新增的 `inbox` / `nudge` 命令行帮助为英文，两份 references 各有中文与英文版（`inbox.md` / `inbox.en.md`、`nudge.md` / `nudge.en.md`）。
+- 配置：Project Profile 的 `opinion.nudge`（随项目）与用户配置的 `nudge`（个人，优先）；缺省即默认值，不进脚手架受检字段。`agenthelm nudge status` 显示生效配置与是否会提示；`AGENTHELM_NO_NUDGE=1` 关闭。详见 [`references/nudge.md`](plugins/agent-pack/references/nudge.md)。
+- 尚未在真实客户端逐一验证：Codex 插件 hook 的信任流程、Cursor 的 sessionStart 注入与 `~/.cursor/hooks.json` 加载、Claude Code `Stop` 的 `additionalContext`；依据官方文档编写，单元测试覆盖输出格式与逻辑。
+
+### project-orchestrator 1.11.1
+
+- 在 1.10.0（SOP 合并）已取消 `sensitivity` 过滤的基础上补两点：`find` 等结果带每个 Case 的 `sensitivity` 字段，菜单里标注“私密”；台账结构版本升到 2，使 1.10.0 之前建立、指纹没变的旧台账下次使用时自动重建（否则旧缓存里仍没有私密 Case）。凭据类文件名仍不登记，台账仍在用户缓存目录、不进项目。
+
+### 不兼容点与注意
+
+- 无。没有 `.opinion/`、`opinion.lock.json` 或 `opinion.provider: opinion-manager` 的项目不受影响。
+- 启用 Opinion 的项目，新会话会多出约 1500 字符的协议上下文；不需要时设置 `nudge.enabled: false` 或 `AGENTHELM_NO_NUDGE=1`。
+- 收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议启用本功能的项目保持私有。是否公开仓库、是否排除 `.opinion/` 由你决定：工具只在第一次暂存（`inbox add` 返回 `notice`）和每个项目第一次开会话时提醒一次，`inbox exposure` / `agenthelm nudge status` 随时可查；不会替你决定，也不会自动修改 `.gitignore`、删除或改写内容。
+
+### 版本
+
+agenthelm 6.11.0、opinion-manager 0.5.0、agent-pack 1.11.0、project-orchestrator 1.11.1；agents-init 6.8.0 不变。
+
 ## 2026-10-29 — agenthelm 6.10.0 / Agent Pack 1.10.0 / Project Orchestrator 1.11.0：同步盘里的本机专属目录
 
 项目放在 iCloud、Dropbox、OneDrive 等同步目录、在多台设备上使用时，`.venv`、`node_modules`、工具缓存不该进同步盘。`agenthelm local-only` 把它们放到每台设备自己的 `~/.local/share/agenthelm/local-only/` 下并留软链接，同时检查各设备之间的差异（谁装好了依赖、谁没装、HOME 是否一致）。

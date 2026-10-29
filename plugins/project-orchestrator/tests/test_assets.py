@@ -211,6 +211,16 @@ class AssetRegistryTests(AssetTestCase):
             self.assertEqual(assets.find(project, ["report"], refresh=False)["results"][0]["git"], "none")
             self.assertEqual(assets.check(project, refresh=False)["untracked_new"], [])
 
+    def test_non_shared_case_is_indexed_and_marked(self) -> None:
+        case_record(self.root, "CASE-20261003-001-private", "私密专项", sensitivity="private",
+                    files={"docs/private-plan.md": "x", "docs/db-password.txt": "y"})
+        result = assets.find(self.project(), ["private-plan"])
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["results"][0]["sensitivity"], "private")
+        self.assertEqual(assets.find(self.project(), ["report"])["results"][0]["sensitivity"], "shared")
+        self.assertEqual(assets.find(self.project(), ["db-password"])["total"], 0)
+        self.assertIn("CASE-20261003-001-private", [item["id"] for item in assets.cases(self.project())["results"]])
+
     def test_non_shared_case_is_indexed_like_any_other(self) -> None:
         """台账只是本机缓存里的索引，sensitivity 不过滤；私密事项的文件也能被找到。"""
         for sensitivity in ("private", "local-only"):

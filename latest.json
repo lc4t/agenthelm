@@ -5,7 +5,7 @@
   "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
-      "version": "1.10.0",
+      "version": "1.11.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -23,7 +23,7 @@
       }
     },
     "opinion-manager": {
-      "version": "0.4.2",
+      "version": "0.5.0",
       "source": "./plugins/opinion-manager",
       "content": {
         "opinion-manager/catalog": {
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.11.0",
+      "version": "1.11.1",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -305,11 +305,57 @@
     {
       "plugin": "project-orchestrator",
       "from": "1.9.0",
-      "to": "1.11.0",
+      "to": "1.11.1",
       "change_kind": "both",
       "breaking": false,
       "date": "2026-10-29",
-      "summary": "1.10.0（SOP 管理）与 1.11.0（同步盘本机专属目录汇总）合并后的对照条目：6.9.0 不单独发布，随 6.10.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。v6.10.0 发布后可删除（之后门禁对照 v6.10.0）。",
+      "summary": "1.10.0（SOP 管理）、1.11.0（同步盘本机专属目录汇总）与 1.11.1（私密 Case 标注、台账结构升级）合并后的对照条目：6.9.0 不单独发布，随 6.10.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。v6.10.0 发布后可删除（之后门禁对照 v6.10.0）。",
+      "actions": []
+    },
+    {
+      "plugin": "opinion-manager",
+      "from": "0.4.2",
+      "to": "0.5.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。",
+      "actions": [
+        "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）"
+      ]
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.10.0",
+      "to": "1.11.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用英文。",
+      "actions": [
+        "Codex 需要在 /hooks 中审阅并信任插件 hook 后才会运行",
+        "Cursor：运行 agenthelm nudge install-hooks --client cursor 预览，确认后加 --apply；stop 提示默认关闭",
+        "不想要提示：AGENTHELM_NO_NUDGE=1，或把 nudge.enabled 设为 false"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.11.0",
+      "to": "1.11.1",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。",
+      "actions": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.9.0",
+      "to": "1.11.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "1.10.0（同步盘本机专属目录 local-only）与 1.11.0（观点自动采集 nudge 与 hook）合并后的对照条目：6.9.0、6.10.0 都不单独发布，随 6.11.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。",
       "actions": []
     }
   ]

@@ -2,7 +2,7 @@
 """agenthelm：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 插件。
 
 ``project`` 打开不需要 AI Agent 的项目自助入口（由 project-orchestrator 实现）；``runtime``
-管理用户级运行时。``check`` 只读：比较各客户端已安装的插件版本、项目里由模板渲染的文件，
+管理用户级运行时；``nudge`` 是各客户端 hook 调用的观点候选采集与未决事项提示（见 references/nudge.md）。``check`` 只读：比较各客户端已安装的插件版本、项目里由模板渲染的文件，
 以及 Opinion 来源与云端 ``latest.json``。``install``、``update``、``migrate``
 默认只预览，``--apply`` 才执行。通过 ``npx @sakanano-moe/agenthelm <命令>`` 或
 ``python3 <agent-pack>/runtime/agenthelm.py <命令>`` 运行。``--hook`` 供会话开始时静默调用：
@@ -1302,6 +1302,14 @@ def run_project(argv: list[str]) -> int:
     return project_cli.main(argv)
 
 
+def run_nudge(argv: list[str]) -> int:
+    """``agenthelm nudge``: hooks that collect opinion candidates and surface unconfirmed items."""
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_nudge  # noqa: PLC0415 - shipped next to this file
+
+    return agent_pack_nudge.main(argv, sys.modules[__name__])
+
+
 def run_local_only(argv: list[str]) -> int:
     """``agenthelm local-only``: keep rebuildable directories out of cloud-synced folders."""
     return _local_only().main(argv, sys.modules[__name__])
@@ -1375,6 +1383,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_project(["fix", *argv[1:]])
     if argv[:1] == ["runtime"]:
         return run_runtime(argv[1:])
+    if argv[:1] == ["nudge"]:
+        return run_nudge(argv[1:])
     if argv[:1] == ["local-only"]:
         return run_local_only(argv[1:])
     args = parser().parse_args(argv)
