@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Iterable
 if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path from other plugins
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-from i18n_init import _  # noqa: E402
+from i18n_init import _, resolve_language  # noqa: E402
 
 
 INITIALIZER_VERSION = "6.6.0"
@@ -99,6 +99,7 @@ class Inputs:
     agent_cli: tuple[str, ...]
     work_mode: str = "case-workspace"
     entry_launcher: str | None = None
+    language: str = "zh"
 
 
 def split_csv(value: str) -> tuple[str, ...]:
@@ -321,11 +322,29 @@ def entry_command(launcher: str | None) -> str:
     return f"./{launcher}" if launcher else "agenthelm project"
 
 
-def readme_block(launcher: str | None) -> str:
+def readme_block(launcher: str | None, language: str = "zh") -> str:
+    """The README section that points at the project entry, written in the project's file language."""
     command = entry_command(launcher)
+    if language == "en":
+        return (f"{README_START}\n## How to use\n\nRun `{command}` in the project root to open the project menu: find files, see progress, "
+                f"read the project guide, check and maintain. No AI client is needed, only Python 3.11+; if the first run says the runtime is "
+                f"missing, install it once as prompted.\n\n"
+                f"You can also skip the menu: `{command} find <words>`, `{command} progress`, `{command} --help`.\n{README_END}\n")
     return (f"{README_START}\n## 怎样使用\n\n在项目根目录运行 `{command}` 打开项目菜单：找资料、看进展、项目指南、检查与维护。"
             f"不需要 AI 客户端，只需要 Python 3.11+；第一次运行如果提示缺少运行时，按提示安装一次即可。\n\n"
             f"不进菜单也可以：`{command} find 关键词`、`{command} progress`、`{command} --help`。\n{README_END}\n")
+
+
+def file_language(args: argparse.Namespace) -> str:
+    """The language a new project's files are written in: --language, else the UI language at init time (migrate keeps zh)."""
+    if getattr(args, "language", "auto") in ("zh", "en"):
+        return args.language
+    return "zh" if args.mode == "migrate" else resolve_language()
+
+
+def project_language(profile: dict) -> str:
+    """The language of a project's generated files: the Profile's ``language``, ``zh`` for projects that predate it."""
+    return profile.get("language") if profile.get("language") in ("zh", "en") else "zh"
 
 
 def tracked_paths(pack: dict | None, launcher: str | None) -> list[Path]:
@@ -341,6 +360,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
         "schema_version": "1.0",
         "initializer_version": INITIALIZER_VERSION,
         "name": inputs.name,
+        "language": inputs.language,
         "profile": {
             "project_type": list(inputs.project_type),
             "vcs": inputs.vcs,
@@ -709,6 +729,7 @@ def inputs_from_profile(root: Path) -> Inputs:
         tuple(details.get("agent_cli") or ()),
         str((profile.get("work") or {}).get("mode") or "legacy"),
         _profile_launcher(profile),
+        project_language(profile),
     )
 
 
@@ -867,18 +888,18 @@ def _atomic_write(path: Path, text: str, mode: int | None = None) -> None:
     os.replace(temporary, path)
 
 
-def readme_plan(root: Path, name: str, launcher: str | None) -> dict | None:
+def readme_plan(root: Path, name: str, launcher: str | None, language: str = "zh") -> dict | None:
     """README.md: create it with the entry section, or append the section once (marked)."""
     path = root / "README.md"
     if path.is_symlink():
         raise InitError("refusing symlinked README.md")
     if not path.exists():
-        return {"path": "README.md", "action": "create", "text": f"# {name}\n\n{readme_block(launcher)}"}
+        return {"path": "README.md", "action": "create", "text": f"# {name}\n\n{readme_block(launcher, language)}"}
     current = path.read_text(encoding="utf-8")
     if README_START in current:
         return None
     return {"path": "README.md", "action": "append",
-            "text": current.rstrip("\n") + "\n\n" + readme_block(launcher)}
+            "text": current.rstrip("\n") + "\n\n" + readme_block(launcher, language)}
 
 
 def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
@@ -918,7 +939,7 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         action = "blocked"
     new_profile = {**profile, "entry": {**entry, "api": entry.get("api", ENTRY_API), "launcher": name}}
     profile_changed = new_profile != profile
-    readme = readme_plan(root, str(profile.get("name") or root.name), name) if args.readme_entry else None
+    readme = readme_plan(root, str(profile.get("name") or root.name), name, project_language(profile)) if args.readme_entry else None
     writes = ([name] if action in ("create", "replace") else []) + ([str(PROFILE_PATH)] if profile_changed else []) \
         + ([readme["path"]] if readme else [])
     if action in ("create", "replace", "unchanged"):
@@ -937,7 +958,7 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                   "profile_diff": _unified_diff(str(PROFILE_PATH), json_text(profile), json_text(new_profile))
                   if profile_changed else ""},
         "blocked": [name] if action == "blocked" else [],
-        "readme_snippet": readme_block(name) if not readme else "",
+        "readme_snippet": readme_block(name, project_language(profile)) if not readme else "",
     }
     if action == "blocked":
         result["hint"] = _("{0} 已存在：--accept {1} 用模板替换（先备份到 --recovery-dir），或 --keep {2} 保留你的文件").format(name, name, name)
@@ -1006,6 +1027,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--state-dir", type=Path, help=_("机器本地决定的状态目录（缺省 $XDG_STATE_HOME 或 ~/.local/state）"))
     result.add_argument("--entry-name", help=_("根目录启动器文件名（init 缺省 {0}；entry 模式必填）").format(DEFAULT_ENTRY))
     result.add_argument("--no-entry", action="store_true", help=_("init：不生成根目录启动器"))
+    result.add_argument("--language", choices=("auto", "zh", "en"), default="auto",
+                        help=_("init / migrate：项目文件语言（新建 Case 的小节名、README 追加的使用说明）；auto 在 init 时取当前界面语言，migrate 时保持中文"))
     result.add_argument("--readme-entry", action="store_true",
                         help=_("在已有 README.md 末尾追加「怎样使用」一节（带标记，只追加一次）；init 时 README 不存在会直接新建"))
     result.add_argument("--accept", action="append", default=[], help=_("refresh：用新模板替换这个本地已改动的文件"))
@@ -1086,6 +1109,7 @@ def main(argv: list[str] | None = None) -> int:
             args.work_mode or ('legacy' if args.mode == 'migrate' else 'case-workspace'),
             None if args.no_entry else validate_entry_name(args.entry_name) if args.entry_name
             else DEFAULT_ENTRY if args.mode == "init" else None,
+            file_language(args),
         )
         files = files_for(inputs)
         if args.mode == "migrate" and (root / PROFILE_PATH).exists():
@@ -1099,6 +1123,8 @@ def main(argv: list[str] | None = None) -> int:
             if not isinstance(current_profile, dict) or current_profile.get("schema_version") != "1.0":
                 raise InitError("unsupported Project Profile", code="profile-invalid")
             upgraded = configure_work_mode(upgrade_legacy_profile(current_profile), args.work_mode)
+            if args.language in ("zh", "en"):
+                upgraded["language"] = args.language
             files[PROFILE_PATH] = json_text(upgraded)
             if upgraded.get("work", {}).get("mode") != "case-workspace":
                 files.pop(Path("cases/.gitkeep"), None)
@@ -1112,6 +1138,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if not (root / PROFILE_PATH).exists():
                 upgraded = configure_work_mode(upgrade_legacy_profile(legacy_profile), args.work_mode)
+                if args.language in ("zh", "en"):
+                    upgraded["language"] = args.language
                 files[PROFILE_PATH] = json_text(upgraded)
                 if upgraded.get('work', {}).get('mode') != 'case-workspace':
                     files.pop(Path('cases/.gitkeep'), None)
@@ -1136,9 +1164,9 @@ def main(argv: list[str] | None = None) -> int:
                 del files[path]
         readme = None
         if args.mode == "init" and not (root / "README.md").exists():
-            files[Path("README.md")] = f"# {inputs.name}\n\n{readme_block(inputs.entry_launcher)}"
+            files[Path("README.md")] = f"# {inputs.name}\n\n{readme_block(inputs.entry_launcher, inputs.language)}"
         elif args.readme_entry:
-            readme = readme_plan(root, inputs.name, inputs.entry_launcher)
+            readme = readme_plan(root, inputs.name, inputs.entry_launcher, inputs.language)
         create, collisions, symlinked = plan_writes(
             root, files, skip_symlinked_parents=args.mode == "migrate"
         )

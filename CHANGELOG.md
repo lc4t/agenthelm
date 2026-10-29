@@ -11,7 +11,8 @@
 ### 范围
 
 - 翻译：agenthelm（`check` / `install` / `update` / `doctor` / `runtime` / `nudge`）、项目入口与菜单（`project` / `./menu`，含演示项目）、`wf`、`assets.py`、`case.py`、`memory.py`、`case_workspace.py`、`opinion_manager.py`（含 `context` / `lifecycle` / `inbox`）、`init_project.py` 与 `scaffold.py` 的输出、提示、错误与 `--help`；用户级运行时启动器的“需要 Python 3.11”提示按 `AGENTHELM_LANG` / `LANG` 选择语言。
-- 不翻译：写进项目的文件内容与结构（CASE.md 的小节名与默认文字、OPINION.md 与锁的渲染、记忆索引、README 追加的“怎样使用”、各类模板）、用户自己写的内容（候选、规则、原因、CASE.md 正文）、公开 Opinion 模板的规则正文、Skill 正文与 CHANGELOG / README 等文档。因此两种语言下 OPINION.md、锁、脚手架指纹与决定文件完全一致，并有测试守住。
+- 项目文件语言（新增）：Profile 顶层 `language`（`zh` | `en`，缺省 `zh`）决定写进项目的 Case 与 README。`en` 的项目里，新建的 CASE.md 使用英文小节名（Current trusted state / Next action / Decision log / Work log / Result）与英文默认文字，README 追加 “How to use”。它独立于界面语言：界面语言只影响命令输出，不会改动已有文件。`agents-init --language {auto,zh,en}`：`auto` 在 init 时取当前界面语言，migrate 时保持中文；agents-init 的 Skill 要求先问用户想用哪种文件语言。解析器同时认中英文小节名，已有文件沿用自己的写法，缺失的小节按项目语言补建。新增 `templates/CASE.en.md`，内容包 `project-orchestrator/case-template` 升到 1.1.0。
+- 不翻译：OPINION.md 与锁的渲染、记忆索引、AGENT.template.md 等其余模板、骨架文件模板（这几项仍为中文，是后续工作，见 issue #24）、用户自己写的内容（候选、规则、原因、CASE.md 正文）、公开 Opinion 模板的规则正文、Skill 正文与 CHANGELOG / README 等文档。两种界面语言下 OPINION.md、锁、脚手架指纹与决定文件完全一致，并有测试守住。
 - 机器可读输出（`--output json` 的字段名与结构、退出码）不变；JSON 里给人看的 `message` / `error` 文字随语言变化。解析文字输出的脚本请改用 `--output json`。
 
 ### 实现

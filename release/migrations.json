@@ -231,7 +231,7 @@
     "change_kind": "code",
     "breaking": true,
     "date": "2026-10-29",
-    "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
+    "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定；Case 的小节名与默认文字按 Profile 的 language（zh | en，缺省 zh）选择，新增 templates/CASE.en.md，解析器同时认中英文小节名，内容包 case-template 升到 1.1.0。",
     "actions": [
       "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
     ]
@@ -243,9 +243,10 @@
     "change_kind": "code",
     "breaking": true,
     "date": "2026-10-29",
-    "summary": "init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；生成到项目里的文件内容、模板与决定文件不随语言变化。",
+    "summary": "init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；新增 Profile 顶层 language（项目文件语言）与 --language {auto,zh,en}，决定新建 Case 的小节名与 README 追加的“怎样使用”；模板、决定文件与指纹不随界面语言变化。",
     "actions": [
-      "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json",
+      "新项目想用英文的 Case 与 README：init 时加 --language en（auto 取当前界面语言）；已有项目保持中文，要改在 Profile 顶层写 \"language\": \"en\"，已有文件不会被改写"
     ]
   }
 ]

@@ -252,15 +252,9 @@ class EnglishOutputTests(unittest.TestCase):
         self.assertIn(completed.returncode, expect, completed.stderr)
         return completed
 
-    # 写进 CASE.md 的正文与模板目录里的规则是用户内容，不随界面语言翻译
-    CONTENT = ("刚创建", "待明确", "工作记录", "决策记录", "暂无。", "待执行。")
-
-    def assertEnglish(self, completed: subprocess.CompletedProcess, label: str, content: tuple[str, ...] = ()) -> None:
+    def assertEnglish(self, completed: subprocess.CompletedProcess, label: str) -> None:
         for line in (completed.stdout + "\n" + completed.stderr).splitlines():
-            visible = line
-            for token in (*self.CONTENT, *content):
-                visible = visible.replace(token, "")
-            self.assertFalse(CJK.search(visible), f"{label}: 英文输出里有漏翻的中文：{line[:160]}")
+            self.assertFalse(CJK.search(line), f"{label}: 英文输出里有漏翻的中文：{line[:160]}")
 
     def test_the_demo_projects_speak_english(self) -> None:
         for scenario in ("study", "personal", "research", "blank"):
@@ -319,7 +313,8 @@ class EnglishOutputTests(unittest.TestCase):
         project = Path(self.directory.name) / "project"
         profile = project / ".agents/moe.sakanano.agent-pack/project.json"
         profile.parent.mkdir(parents=True)
-        profile.write_text(json.dumps({"schema_version": "2.0", "work": {"mode": "case-workspace", "case": {"root": "cases"}}}), encoding="utf-8")
+        profile.write_text(json.dumps({"schema_version": "2.0", "language": "en", "work": {"mode": "case-workspace", "case": {"root": "cases"}}}),
+                           encoding="utf-8")
         case = PLUGINS / "project-orchestrator/runtime/case.py"
         assets = PLUGINS / "project-orchestrator/runtime/assets.py"
         steps = [
@@ -338,11 +333,14 @@ class EnglishOutputTests(unittest.TestCase):
             [str(AGENTHELM), "project", "--project", str(project), "--no-input", "guide"],
             [str(AGENTHELM), "project", "--project", str(project), "--no-input", "show", "missing"],
             [str(AGENTHELM), "project", "--project", str(project), "--no-input", "record", "new", "--title", "Second", "--goal", "Goal"],
+            [str(AGENTHELM), "project", "--project", str(project), "--no-input", "record", "new", "--title", "Third", "--goal", "Goal", "--apply"],
+            [str(AGENTHELM), "project", "--project", str(project), "--no-input", "record", "quarterly", "--log", "Did a thing", "--apply"],
+            [str(AGENTHELM), "project", "--project", str(project), "--no-input", "show", "quarterly"],
         ]
         for step in steps:
-            completed = self.run_command(*step)
-            if "show" not in step[:5]:  # show prints the CASE.md body, which is the user's own content
-                self.assertEnglish(completed, " ".join(step[1:4]))
+            self.assertEnglish(self.run_command(*step), " ".join(step[1:4]))
+        case_file = next((project / "cases").glob("CASE-*/CASE.md"))
+        self.assertFalse(CJK.search(case_file.read_text(encoding="utf-8")), "an English project writes an English CASE.md")
 
     def test_the_language_changes_only_the_words_never_the_facts(self) -> None:
         """同一个项目在两种语言下：发现 ID、脚手架指纹与已记录的决定完全一致；决定在一种语言下写、另一种语言下读。"""

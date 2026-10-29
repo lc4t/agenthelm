@@ -18,11 +18,12 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import case_structure as structure  # noqa: E402
 from i18n_orchestrator import _  # noqa: E402
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SCHEMA = PLUGIN_ROOT / "references" / "case.schema.json"
-TEMPLATE = PLUGIN_ROOT / "templates" / "CASE.md"
+TEMPLATES = {"zh": PLUGIN_ROOT / "templates" / "CASE.md", "en": PLUGIN_ROOT / "templates" / "CASE.en.md"}
 PROFILE = Path(".agents/moe.sakanano.agent-pack/project.json")
 CASE_DIR_RE = re.compile(r"^CASE-([0-9]{8})-([0-9]{3})-([a-z0-9]+(?:-[a-z0-9]+)*)$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -168,6 +169,7 @@ class Project:
             raise CaseError(_("缺少 Project Profile：{0}").format(PROFILE), "profile-missing") from exc
         except (OSError, ValueError) as exc:
             raise CaseError(_("Project Profile 无法解析：{0}").format(exc), "profile-invalid") from exc
+        self.language = structure.language_of(profile)  # the language the project's files are written in
         work = profile.get("work") or {}
         if work.get("mode") != "case-workspace":
             raise CaseError(_("项目未启用 case-workspace（Profile work.mode）"), "mode")
@@ -248,7 +250,7 @@ def _new_case_fields(project: Project, args: argparse.Namespace) -> tuple[str, d
         "next_action": clean(args.next_action, "--next-action", required=status == "active"),
         "done_when": clean(args.done_when, "--done-when"),
         "source": clean(args.source, "--source"),
-        "current_state": clean(args.current_state, "--current-state") or "刚创建",
+        "current_state": clean(args.current_state, "--current-state") or structure.text("just_created", project.language),
     }
     return slug, fields
 
@@ -265,9 +267,9 @@ def _render_new_case(project: Project, args: argparse.Namespace, fields: dict, c
     errors = validate_schema(data, project.schema)
     if errors:
         raise CaseError(_("新 Case 不符合 Schema：") + _("；").join(errors), "schema")
-    body = TEMPLATE.read_text(encoding="utf-8")
+    body = TEMPLATES[project.language].read_text(encoding="utf-8")
     for key, value in {**fields, "created_at": stamp}.items():
-        body = body.replace("{{" + key + "}}", value or "待明确")
+        body = body.replace("{{" + key + "}}", value or structure.text("to_define", project.language))
     return render_frontmatter(data) + "\n" + body
 
 
@@ -340,9 +342,11 @@ def list_cases(project: Project, args: argparse.Namespace) -> dict:
     return {"ok": True, "cases": cases, "invalid": invalid}
 
 
-def append_section(body: str, heading: str, line: str) -> str:
-    """Append a bullet under ``## heading``, replacing the template's placeholder text."""
-    marker = f"## {heading}\n"
+def append_section(body: str, heading: str, line: str, language: str = "zh") -> str:
+    """Append a bullet under the section ``heading`` (either language's name, or a logical key), replacing the placeholder text.
+
+    The file's own spelling of the heading wins; a missing section is created in ``language``."""
+    marker = f"## {structure.resolve(body, heading, language)}\n"
     start = body.find(marker)
     if start < 0:
         return body.rstrip("\n") + f"\n\n{marker}\n- {line}\n"
@@ -350,7 +354,7 @@ def append_section(body: str, heading: str, line: str) -> str:
     next_heading = body.find("\n## ", section_start)
     end = len(body) if next_heading < 0 else next_heading + 1
     section = body[section_start:end].strip("\n")
-    if section in ("暂无。", "无。", "待执行。"):
+    if section in structure.PLACEHOLDERS:
         section = ""
     section = (section + "\n" if section else "") + f"- {line}"
     return body[:section_start] + "\n" + section + "\n\n" + body[end:].lstrip("\n")
@@ -387,19 +391,20 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
         raise CaseError(_("active 的 Case 需要 next_action"))
     if data.get("status") == "waiting" and not data.get("waiting_for"):
         raise CaseError(_("waiting 的 Case 需要 waiting_for"))
+    language = project.language
     if "current_state" in changed:
-        body = _replace_section(body, "当前可信状态", data["current_state"])
+        body = _replace_section(body, "current_state", data["current_state"], language)
     if "next_action" in changed:
-        body = _replace_section(body, "下一动作", data["next_action"] or "待明确")
+        body = _replace_section(body, "next_action", data["next_action"] or structure.text("to_define", language), language)
     if args.log:
-        body = append_section(body, "工作记录", f"{stamp} {clean(args.log, '--log', required=True)}")
-        changed.append("工作记录")
+        changed.append(structure.resolve(body, "work_log", language))
+        body = append_section(body, "work_log", f"{stamp} {clean(args.log, '--log', required=True)}", language)
     if args.decision:
-        body = append_section(body, "决策记录", f"{stamp} {clean(args.decision, '--decision', required=True)}")
-        changed.append("决策记录")
+        changed.append(structure.resolve(body, "decisions", language))
+        body = append_section(body, "decisions", f"{stamp} {clean(args.decision, '--decision', required=True)}", language)
     if args.result:
-        body = _replace_section(body, "结果", clean(args.result, "--result", required=True))
-        changed.append("结果")
+        changed.append(structure.resolve(body, "result", language))
+        body = _replace_section(body, "result", clean(args.result, "--result", required=True), language)
     if not changed:
         raise CaseError(_("没有要更新的内容"))
     data["updated_at"] = stamp
@@ -420,8 +425,8 @@ def update(project: Project, args: argparse.Namespace) -> dict:
     return result
 
 
-def _replace_section(body: str, heading: str, text: str) -> str:
-    marker = f"## {heading}\n"
+def _replace_section(body: str, heading: str, text: str, language: str = "zh") -> str:
+    marker = f"## {structure.resolve(body, heading, language)}\n"
     start = body.find(marker)
     if start < 0:
         return body.rstrip("\n") + f"\n\n{marker}\n{text}\n"

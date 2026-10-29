@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import assets
+import case_structure as structure
 import case as case_tool
 import project_maintain
 import project_write
@@ -37,11 +38,12 @@ def now_iso() -> str:
 
 
 def last_record(body: str) -> dict | None:
-    """The newest bullet under ``## 工作记录`` (records are appended, so the last one)."""
-    marker = "## 工作记录\n"
-    start = body.find(marker)
-    if start < 0:
+    """The newest bullet under the work-log section, in either language (records are appended, so the last one)."""
+    name = structure.existing_heading(body, "work_log")
+    if name is None:
         return None
+    marker = f"## {name}\n"
+    start = body.find(marker)
     end = body.find("\n## ", start + len(marker))
     lines = [line[2:].strip() for line in body[start + len(marker):None if end < 0 else end].splitlines()
              if line.startswith("- ")]

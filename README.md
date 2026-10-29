@@ -117,7 +117,7 @@ npx @sakanano-moe/agenthelm check --show-skipped       # 列出被跳过的项�
 命令行输出、菜单、`--help` 与错误信息有中文和英文两种，**默认英文**。按这个顺序决定：环境变量 `AGENTHELM_LANG`（`zh` / `en`）→ `~/.config/agenthelm/config.json` 的 `{"language": "zh"}` → 系统 locale（中文 locale 用中文）→ 英文。要继续看中文：`export AGENTHELM_LANG=zh`。
 
 - 机器可读输出（`--output json` 的字段与结构、退出码）不随语言变化；解析文字输出的脚本请改用 `--output json`。
-- 写进项目的文件（CASE.md 的小节、OPINION.md 与锁、记忆索引、模板）与你自己写的内容不随语言变化，所以两种语言下指纹与决定文件一致。
+- 界面语言不改动项目文件。Case 的小节名与 README 追加的“怎样使用”由项目文件语言决定：Profile 顶层 `language`（`zh` | `en`，缺省 `zh`），`agents-init --language {auto,zh,en}` 在初始化时设置，`auto` 取当时的界面语言。OPINION.md 与锁、记忆索引等其余模板仍为中文，所以两种语言下指纹与决定文件一致。
 - 观点提示的语言另可在 `nudge.language` 单独设置，见 [nudge 说明](plugins/agent-pack/references/nudge.md)。
 
 ## 多机与同步盘

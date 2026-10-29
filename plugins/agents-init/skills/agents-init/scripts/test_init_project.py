@@ -588,6 +588,46 @@ class EntryTests(unittest.TestCase):
             self.assertIn("`./menu`", (root / "README.md").read_text(encoding="utf-8"))
             self.assertIn("## 人用入口", (root / "AGENTS.md").read_text(encoding="utf-8"))
 
+    def test_the_project_file_language_is_set_at_init_and_follows_the_ui_language_only_then(self) -> None:
+        for argument, ui, expected in ((("--language", "en"), "zh", "en"), (("--language", "zh"), "en", "zh"),
+                                       ((), "en", "en"), ((), "zh", "zh"), (("--language", "auto"), "en", "en")):
+            with self.subTest(argument=argument, ui=ui), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                with mock.patch.dict(os.environ, {"AGENTHELM_LANG": ui}):
+                    self.assertEqual(self.init(root, "--apply", *argument).returncode, 0)
+                self.assertEqual(self.profile(root)["language"], expected)
+                readme = (root / "README.md").read_text(encoding="utf-8")
+                self.assertIn("## How to use" if expected == "en" else "## 怎样使用", readme)
+                self.assertNotIn("## 怎样使用" if expected == "en" else "## How to use", readme)
+
+    def test_a_project_without_the_field_stays_chinese_and_entry_follows_the_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.init(root, "--apply", "--no-entry", "--language", "zh").returncode, 0)
+            profile = self.profile(root)
+            del profile["language"]  # a project that predates the field
+            (root / init_project.PROFILE_PATH).write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+            (root / "README.md").unlink()
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": "en"}):
+                code, result = self.entry(root, "--entry-name", "menu", "--readme-entry", "--apply")
+            self.assertEqual(code, 0, result)
+            self.assertIn("## 怎样使用", (root / "README.md").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.init(root, "--apply", "--no-entry", "--language", "en").returncode, 0)
+            (root / "README.md").unlink()
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": "zh"}):
+                code, result = self.entry(root, "--entry-name", "menu", "--readme-entry", "--apply")
+            self.assertEqual(code, 0, result)
+            self.assertIn("## How to use", (root / "README.md").read_text(encoding="utf-8"))
+
+    def test_readme_block_marker_is_the_same_in_both_languages(self) -> None:
+        for language in ("zh", "en"):
+            block = init_project.readme_block("menu", language)
+            self.assertTrue(block.startswith(init_project.README_START + "\n"))
+            self.assertTrue(block.endswith(init_project.README_END + "\n"))
+            self.assertIn("`./menu`", block)
+
     def test_init_keeps_an_existing_readme_and_can_skip_the_entry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

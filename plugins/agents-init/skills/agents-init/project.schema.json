@@ -5,79 +5,263 @@
   "description": "由 project-orchestrator、agent-pack 与 opinion-manager 消费的可移植项目发现契约，位于 .agents/moe.sakanano.agent-pack/project.json。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "name", "profile", "runtime", "opinion", "capabilities", "work", "privacy"],
+  "required": [
+    "schema_version",
+    "name",
+    "profile",
+    "runtime",
+    "opinion",
+    "capabilities",
+    "work",
+    "privacy"
+  ],
   "properties": {
-    "$schema": {"type": "string", "format": "uri-reference"},
-    "schema_version": {"const": "1.0"},
-    "initializer_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-    "name": {"type": "string", "minLength": 1},
+    "$schema": {
+      "type": "string",
+      "format": "uri-reference"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "initializer_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "language": {
+      "enum": [
+        "zh",
+        "en"
+      ],
+      "description": "项目文件语言：新建 Case 的小节名与默认文字、README 追加的使用说明用哪种语言写；缺省视为 zh（已有项目保持原样）。与命令行界面的语言（AGENTHELM_LANG）无关，随项目同步。"
+    },
     "profile": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["project_type", "vcs", "stack", "runtime", "agent_cli"],
+      "required": [
+        "project_type",
+        "vcs",
+        "stack",
+        "runtime",
+        "agent_cli"
+      ],
       "properties": {
-        "project_type": {"$ref": "#/$defs/stringArray"},
-        "vcs": {"type": "string", "minLength": 1},
-        "stack": {"$ref": "#/$defs/stringArray"},
-        "runtime": {"type": "string", "minLength": 1},
-        "agent_cli": {"$ref": "#/$defs/stringArray"}
+        "project_type": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "vcs": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stack": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent_cli": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "runtime": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["skill", "plugin", "capability_manager", "required", "commit_policy", "push_policy"],
+      "required": [
+        "skill",
+        "plugin",
+        "capability_manager",
+        "required",
+        "commit_policy",
+        "push_policy"
+      ],
       "properties": {
-        "skill": {"const": "project-orchestrator"},
-        "plugin": {"const": "project-orchestrator"},
-        "capability_manager": {"const": "agent-pack"},
-        "distribution": {"enum": ["marketplace", "bundled", "external"]},
-        "required": {"type": "boolean"},
-        "commit_policy": {"enum": ["explicit", "project-policy"]},
-        "push_policy": {"enum": ["explicit", "project-policy"]},
-        "source_repository": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用的来源仓库。运行时代码不读取，check 不比较，也不进脚手架指纹。"},
-        "source_ref": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用的发布 tag。同上，仅作记录。"},
-        "source_commit": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用的提交。同上，仅作记录。"},
-        "plugin_version": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用时的 project-orchestrator 版本。同上，仅作记录。"},
-        "capability_manager_version": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：采用时的 agent-pack 版本。同上，仅作记录。"}
+        "skill": {
+          "const": "project-orchestrator"
+        },
+        "plugin": {
+          "const": "project-orchestrator"
+        },
+        "capability_manager": {
+          "const": "agent-pack"
+        },
+        "distribution": {
+          "enum": [
+            "marketplace",
+            "bundled",
+            "external"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "commit_policy": {
+          "enum": [
+            "explicit",
+            "project-policy"
+          ]
+        },
+        "push_policy": {
+          "enum": [
+            "explicit",
+            "project-policy"
+          ]
+        },
+        "source_repository": {
+          "type": "string",
+          "x-agenthelm-scope": "audit",
+          "description": "审计记录：采用的来源仓库。运行时代码不读取，check 不比较，也不进脚手架指纹。"
+        },
+        "source_ref": {
+          "type": "string",
+          "x-agenthelm-scope": "audit",
+          "description": "审计记录：采用的发布 tag。同上，仅作记录。"
+        },
+        "source_commit": {
+          "type": "string",
+          "x-agenthelm-scope": "audit",
+          "description": "审计记录：采用的提交。同上，仅作记录。"
+        },
+        "plugin_version": {
+          "type": "string",
+          "x-agenthelm-scope": "audit",
+          "description": "审计记录：采用时的 project-orchestrator 版本。同上，仅作记录。"
+        },
+        "capability_manager_version": {
+          "type": "string",
+          "x-agenthelm-scope": "audit",
+          "description": "审计记录：采用时的 agent-pack 版本。同上，仅作记录。"
+        }
       }
     },
     "opinion": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["provider", "project_overlay", "strict_mode"],
+      "required": [
+        "provider",
+        "project_overlay",
+        "strict_mode"
+      ],
       "properties": {
-        "provider": {"type": ["string", "null"]},
-        "project_overlay": {"type": ["string", "null"]},
-        "strict_mode": {"enum": ["smart", "strict", "disabled"]},
-        "loading_mode": {"enum": ["tiered", "full"]},
-        "tool_version": {"type": "string", "x-agenthelm-scope": "audit", "description": "审计记录：生成该 Opinion 时的工具版本；不参与比较。"}
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project_overlay": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "strict_mode": {
+          "enum": [
+            "smart",
+            "strict",
+            "disabled"
+          ]
+        },
+        "loading_mode": {
+          "enum": [
+            "tiered",
+            "full"
+          ]
+        },
+        "tool_version": {
+          "type": "string",
+          "x-agenthelm-scope": "audit",
+          "description": "审计记录：生成该 Opinion 时的工具版本；不参与比较。"
+        }
       }
     },
     "memory": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["provider"],
+      "required": [
+        "provider"
+      ],
       "properties": {
-        "provider": {"enum": ["project-orchestrator", "project"]},
-        "root": {"anyOf": [{"$ref": "#/$defs/relativePath"}, {"type": "null"}]},
-        "index_command": {"type": ["string", "null"]},
-        "check_command": {"type": ["string", "null"]},
-        "policy": {"anyOf": [{"$ref": "#/$defs/relativePath"}, {"type": "null"}]}
+        "provider": {
+          "enum": [
+            "project-orchestrator",
+            "project"
+          ]
+        },
+        "root": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/relativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "index_command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "check_command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/relativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     },
     "capabilities": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["plugin_roots", "plugin_dirs", "skill_roots", "mcp_sources", "destination_skill_root", "destination_mcp"],
+      "required": [
+        "plugin_roots",
+        "plugin_dirs",
+        "skill_roots",
+        "mcp_sources",
+        "destination_skill_root",
+        "destination_mcp"
+      ],
       "properties": {
-        "plugin_roots": {"$ref": "#/$defs/pathArray"},
-        "plugin_dirs": {"$ref": "#/$defs/pathArray"},
-        "skill_roots": {"$ref": "#/$defs/pathArray"},
-        "mcp_sources": {"$ref": "#/$defs/pathArray"},
-        "native_mcp_sources": {"$ref": "#/$defs/pathArray"},
+        "plugin_roots": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "plugin_dirs": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "skill_roots": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "mcp_sources": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "native_mcp_sources": {
+          "$ref": "#/$defs/pathArray"
+        },
         "credential_env_file": {
-          "anyOf": [{"$ref": "#/$defs/relativePath"}, {"type": "null"}]
+          "anyOf": [
+            {
+              "$ref": "#/$defs/relativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "mcp_client_policy": {
           "type": "object",
@@ -85,72 +269,186 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "include": {"$ref": "#/$defs/stringArray"},
-              "exclude": {"$ref": "#/$defs/stringArray"}
+              "include": {
+                "$ref": "#/$defs/stringArray"
+              },
+              "exclude": {
+                "$ref": "#/$defs/stringArray"
+              }
             },
-            "not": {"required": ["include", "exclude"]}
+            "not": {
+              "required": [
+                "include",
+                "exclude"
+              ]
+            }
           }
         },
-        "destination_skill_root": {"$ref": "#/$defs/relativePath"},
-        "destination_mcp": {"$ref": "#/$defs/relativePath"}
+        "destination_skill_root": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "destination_mcp": {
+          "$ref": "#/$defs/relativePath"
+        }
       }
     },
     "work": {
-      "type": "object", "additionalProperties": true,
+      "type": "object",
+      "additionalProperties": true,
       "properties": {
-        "mode": {"enum": ["case-workspace", "legacy"]},
-        "task": {"type": ["object", "null"]},
-        "legacy_task": {"type": ["object", "null"]},
+        "mode": {
+          "enum": [
+            "case-workspace",
+            "legacy"
+          ]
+        },
+        "task": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "legacy_task": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "case": {
-          "type": ["object", "null"], "additionalProperties": true,
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
           "properties": {
-            "root": {"$ref": "#/$defs/relativePath"},
-            "artifact_mode": {"enum": ["case-local", "external-references"]},
-            "command": {"type": ["array", "string"], "description": "项目自己的 Case 工具命令；声明后项目入口不绕过它写 Case。"},
+            "root": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "artifact_mode": {
+              "enum": [
+                "case-local",
+                "external-references"
+              ]
+            },
+            "command": {
+              "type": [
+                "array",
+                "string"
+              ],
+              "description": "项目自己的 Case 工具命令；声明后项目入口不绕过它写 Case。"
+            },
             "directory_naming": {
-              "type": "object", "additionalProperties": true,
+              "type": "object",
+              "additionalProperties": true,
               "description": "Case 目录命名规则，check 据此检查目录名；缺省按 CASE-日期-序号-主题。fix case-naming 只给改名计划，不移动目录。",
               "properties": {
-                "style": {"enum": ["case-id", "date-topic", "custom"]},
-                "pattern": {"type": "string", "description": "匹配整个目录名的正则；style 为 custom 时必填。"}
+                "style": {
+                  "enum": [
+                    "case-id",
+                    "date-topic",
+                    "custom"
+                  ]
+                },
+                "pattern": {
+                  "type": "string",
+                  "description": "匹配整个目录名的正则；style 为 custom 时必填。"
+                }
               }
             }
           }
         },
         "assets": {
-          "type": ["object", "null"], "additionalProperties": true,
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
           "properties": {
-            "roots": {"$ref": "#/$defs/pathArray"}
+            "roots": {
+              "$ref": "#/$defs/pathArray"
+            }
           }
         }
       }
     },
     "entry": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": true,
       "description": "人用入口：不经过 AI Agent 打开项目菜单。缺省时仍可用 agenthelm project。",
       "properties": {
-        "api": {"type": "integer", "minimum": 1, "description": "项目入口的接口版本；运行时不支持时启动器提示更新"},
-        "launcher": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "description": "根目录启动器的文件名"},
-        "about": {"type": "string"},
-        "guide": {"$ref": "#/$defs/relativePath"},
-        "tools": {"$ref": "#/$defs/relativePath"},
+        "api": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "项目入口的接口版本；运行时不支持时启动器提示更新"
+        },
+        "launcher": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+          "description": "根目录启动器的文件名"
+        },
+        "about": {
+          "type": "string"
+        },
+        "guide": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "tools": {
+          "$ref": "#/$defs/relativePath"
+        },
         "where": {
           "type": "array",
-          "items": {"type": "object", "required": ["label", "path"],
-                    "properties": {"label": {"type": "string"}, "path": {"type": "string"}}}
+          "items": {
+            "type": "object",
+            "required": [
+              "label",
+              "path"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          }
         },
-        "start": {"$ref": "#/$defs/stringArray"},
+        "start": {
+          "$ref": "#/$defs/stringArray"
+        },
         "items": {
           "type": "object",
           "additionalProperties": true,
-          "required": ["command"],
+          "required": [
+            "command"
+          ],
           "properties": {
-            "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-            "write": {"type": "boolean"},
+            "command": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "write": {
+              "type": "boolean"
+            },
             "status_map": {
               "type": "object",
-              "additionalProperties": {"enum": ["active", "waiting", "captured", "suspended", "done", "abandoned"]}
+              "additionalProperties": {
+                "enum": [
+                  "active",
+                  "waiting",
+                  "captured",
+                  "suspended",
+                  "done",
+                  "abandoned"
+                ]
+              }
             }
           }
         }
@@ -159,27 +457,41 @@
     "privacy": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["forbidden_default_reads", "generated_outputs"],
+      "required": [
+        "forbidden_default_reads",
+        "generated_outputs"
+      ],
       "properties": {
-        "forbidden_default_reads": {"$ref": "#/$defs/pathArray"},
-        "generated_outputs": {"$ref": "#/$defs/pathArray"}
+        "forbidden_default_reads": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "generated_outputs": {
+          "$ref": "#/$defs/pathArray"
+        }
       }
     }
   },
   "$defs": {
     "stringArray": {
       "type": "array",
-      "items": {"type": "string", "minLength": 1},
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "relativePath": {
       "type": "string",
       "minLength": 1,
-      "not": {"pattern": "^(?:/|~|[A-Za-z]:[\\\\/])"}
+      "not": {
+        "pattern": "^(?:/|~|[A-Za-z]:[\\\\/])"
+      }
     },
     "pathArray": {
       "type": "array",
-      "items": {"$ref": "#/$defs/relativePath"},
+      "items": {
+        "$ref": "#/$defs/relativePath"
+      },
       "uniqueItems": true
     }
   }
