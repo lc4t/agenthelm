@@ -107,12 +107,20 @@ cases/
 └── .gitkeep
 memory/
 └── .gitkeep
+sops/
+└── .gitkeep
+private/
+└── .gitignore
 docs/
 ├── refs/README.md
 └── drafts/.gitkeep
 ```
 
 `AGENTS.md` 是项目执行入口；`CLAUDE.md` 与 `AGENT.md` 是短路由文件；初始化产生的 `OPINION.md` 保持为空白配置入口。用户确认后由 `opinion-manager` 写入当前项目；用户内容禁止复制到公开模板、示例、测试或文档。
+
+新项目的 Profile 声明 `privacy.forbidden_default_reads: ["private/"]` 并建立 `private/`（里面的 `.gitignore` 让内容默认不进入 git）：私有信息放在这里，Agent 默认不读，读之前须经用户确认；用到它的 Case 标为 `sensitivity: private`。已有项目没有声明时 `check` 不要求 `private/`，不会多出差异。
+
+新项目的 Profile 带 `sop: {"root": "sops"}`，并建立 `sops/`：用户自己的流程（SOP）放在这里，由 `project-orchestrator` 的 `runtime/sop.py` 管理。已有项目没有 `sop` 段时 `check` 不要求 `sops/`，想启用就在 Profile 加这一段并运行 `fix add-skeleton`。
 
 新项目默认 `work.mode=case-workspace`。`--work-mode legacy` 可保留旧分类；既有项目迁移时未显式选择模式就保持现有模式。Case 数据迁移由 `project-orchestrator` 的已审阅映射工具执行，初始化器只更新骨架与 Profile。
 

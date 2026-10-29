@@ -7,7 +7,7 @@
 | 插件 | 职责 |
 |---|---|
 | `agents-init` | 创建或迁移项目骨架与 Project Profile |
-| `project-orchestrator` | 管理 Case、能力路由、验证、进度、记忆与受控 Git 交付；附默认 Case 工具与不需要 AI Agent 的项目入口 |
+| `project-orchestrator` | 管理 Case、能力路由、验证、进度、记忆、用户自己的流程（SOP）与受控 Git 交付；附默认 Case 工具与不需要 AI Agent 的项目入口 |
 | `agent-pack` | 在项目与各客户端之间盘点、安装、同步、迁移 Plugin / Skill / MCP；附 `agenthelm` 命令行与用户级运行时 |
 | `opinion-manager` | 管理用户确认的 Agent 行为规则：模板、平行变体、精确版本与锁定 |
 
@@ -51,7 +51,7 @@ codex plugin add opinion-manager@agenthelm
 ## 不需要 AI Agent 的项目入口
 
 ```bash
-./menu                      # 交互菜单：找资料 / 看进展 / 项目指南 / 检查项目与环境 / 修复与更新 / 记录事项 / 项目工具
+./menu                      # 交互菜单：找资料 / 看进展 / 项目指南 / 检查项目与环境 / 修复与更新 / 记录事项 / 项目工具 / 流程（SOP）
 ./menu find 读后感 2026-10    # 不进菜单：直接查；--output json 给脚本用
 ./menu progress             # 按 进行中 / 等待 / 待澄清 / 挂起 分组看事项
 ./menu health               # 检查依赖、插件、模板、索引、事项记录与运行时，每条都写原因、影响和下一步
@@ -66,6 +66,28 @@ codex plugin add opinion-manager@agenthelm
 - **先看看**：`agenthelm project --demo study`（另有 `personal`、`research`、`blank`）用内置的虚构项目体验，不读写真实文件。
 - **项目适配**：项目可在 Profile 的 `entry` 段声明简介、资料位置、自有事项工具与项目专用工具，约定见 [case-workspaces.md「项目入口」](plugins/project-orchestrator/references/case-workspaces.md#项目入口不需要-ai-agent)。
 - 只在 macOS 与 Linux 上验证过。
+
+## 流程（SOP）
+
+把常用流程固化成 SOP（Standard Operating Procedure，标准作业流程），之后让 Agent 按它执行，或由场景触发。例子：把视频下载下来、转成音频、再用本地或云端模型转录；每周复盘。
+
+```bash
+./menu sop new --slug video-to-transcript --template video-to-transcript   # 预览；加 --apply 创建草稿
+./menu sop interview video-to-transcript    # 还要和你谈清哪些事（编号问题清单，含范围与公开边界）
+./menu sop preflight video-to-transcript    # 执行前检查所需的程序、模型、环境变量是否就绪
+./menu sop activate video-to-transcript     # 谈清并确认后启用；加 --apply 写入
+./menu sop run video-to-transcript          # 按它建立一次执行（一个 Case），加 --apply 写入
+./menu sop due                              # 哪些有周期的流程到期了
+```
+
+- **每个人的习惯由你定**：触发场景、用到哪些工具及替代方案、缺工具怎么办、出错怎么办、中间产物放哪里和完成后是否清理、失败后从哪里重来、花钱或耗时的步骤要不要先问你。创建时逐项谈清；项目级的习惯（`sop defaults`）只需谈一次，新流程沿用。有没谈清的事项，`activate` 拒绝启用。
+- **工具检查**：前置条件按种类声明（命令、Python 模块、环境变量、路径、技能、MCP、手动确认），写明安装方式与替代方案；因输入而异的工具写 `仅当`（例如 B 站视频用 yutto、其他站点用 yt-dlp）。执行前 `preflight` 列出就绪 / 缺失 / 待核对；缺失项一次性交给你处理，Agent 不会自行安装软件。API 密钥只写环境变量名。
+- **触发**：用户明确指定、Case 事件、周期到期、对话意图，命中后默认先问你；到期只是提醒。草稿不会被触发。事件指新建或关闭 Case，可限定只对带某些标签的 Case 生效；流程自己的执行记录不会再触发事件。
+- **执行记录**：一次执行是一个 Case，里面有步骤清单、固化的执行约定、每步结果和登记过的中间产物；SOP 目录里不记执行状态。SOP 不放宽任何授权：写入、外发、删除、花钱类步骤仍需你当次同意。
+- **私有目录**：私有信息放在项目根的 `private/`（新项目自动建好，也可在 Profile 的 `privacy.forbidden_default_reads` 声明别的路径）。三条约定，其余照常：Agent 读取前须经你确认；内容默认不进入 git（目录里的 `.gitignore`，云同步盘不受影响）；用到它的 Case 自动标为 `sensitivity: private`。`./menu sop private` 查看状态，`./menu health` 提示未被忽略的私有目录。这是协议级约束，不是访问控制。
+- **范围**：会读取多个事项的流程（复盘、汇总）先由你指定范围，不默认读取全部。你自己的流程不要提交到公开仓库，公开的只有通用样例。
+- **位置**：项目级 `sops/<id>/SOP.md`（随项目同步），用户级 `~/.config/agenthelm/sops/`（每台机器各一份）。改过内容用 `sop revise` 登记版本，每个执行 Case 记着它用的版本。
+- 契约与命令见 [sop.md](plugins/project-orchestrator/references/sop.md)，与用户一起建立的流程见 [sop-interview.md](plugins/project-orchestrator/references/sop-interview.md)；随包样例 `blank`、`video-to-transcript`、`weekly-review`、`knowledge-digest`（样例只含流程结构，不含任何个人进度或数据）。
 
 ## 初始化项目
 

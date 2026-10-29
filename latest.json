@@ -2,14 +2,14 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-10-27",
+  "released_at": "2026-10-28",
   "plugins": {
     "agent-pack": {
       "version": "1.9.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.7.0",
+      "version": "6.8.0",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
@@ -17,7 +17,7 @@
           "kind": "template"
         },
         "agents-init/project-skeleton": {
-          "version": "1.0.0",
+          "version": "1.1.0",
           "kind": "manifest"
         }
       }
@@ -33,15 +33,19 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.9.0",
+      "version": "1.10.0",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
-          "version": "1.0.0",
+          "version": "1.1.0",
           "kind": "sample"
         },
         "project-orchestrator/asset-synonyms": {
           "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/sop-samples": {
+          "version": "1.0.0",
           "kind": "sample"
         }
       }
@@ -244,6 +248,33 @@
       "date": "2026-10-27",
       "summary": "health 汇总脚手架差异（建议处理，不改变退出码）；fix 新增 add-skeleton / profile / repair-lock / case-naming / sync-folder，--skip <ID> --reason / --unskip <ID> 记录决定；交互时每项可选 采用 / 永久跳过 / 稍后 / 查看差异；update-content 的 --keep 持久化到决定文件。",
       "actions": []
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.7.0",
+      "to": "6.8.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-28",
+      "summary": "新项目的 Profile 带 sop 段（root=sops）并建立 sops/；骨架清单（内容包 agents-init/project-skeleton 1.1.0）新增 {sop_root}/.gitkeep，仅对声明了 sop 段的项目生效；project.schema.json 声明 sop 段。",
+      "actions": [
+        "已有项目无需改动：没有 sop 段的项目 check / health 不会多出任何差异",
+        "想启用 SOP：在 Profile 加 \"sop\": {\"root\": \"sops\"}，运行 agenthelm fix add-skeleton，或运行 agenthelm project sop init --apply"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.9.0",
+      "to": "1.10.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-28",
+      "summary": "新增 SOP（标准作业流程）管理：runtime/sop.py（创建、谈清约定、执行前检查、版本快照、触发索引、周期到期、按 SOP 建立执行 Case 并逐步记录）、agenthelm project sop 子命令与菜单项、health 汇总流程问题与到期提醒；Case Schema 新增可选字段 sop（内容包 case-template 1.1.0）；新增样例内容包 sop-samples 1.0.0；事件触发（case.created / case.closed，可按标签过滤，case.py 与 record 在结果里带 sop_events）；创建时必须谈清“范围与私有目录”（scope）；私有目录约定（读取前确认、默认不进 git、用到的 Case 标为 private）：sop private / confirm-read、case.py --sensitivity 与自动标记、health 检查；样例 knowledge-digest；前置条件支持“仅当”；演示模式支持 SOP；新增 references/sop.md 与 sop-interview.md。",
+      "actions": [
+        "已有项目无需改动；没有 sops/ 目录时 SOP 相关功能静默跳过",
+        "行为变化：资料索引（find / refs / check）不再过滤 sensitivity 非 shared 的 Case，它们的文件也会被登记并能找到；依赖“private 的 Case 搜不到”的项目，请把内容放在资料根之外的私有目录（privacy.forbidden_default_reads）",
+        "自定义了 work.case.schema 的项目：想让 Case 记录 SOP 来源，需在自己的 Schema 增加可选字符串字段 sop（格式 <id>@<主.次.修订>）"
+      ]
     }
   ]
 }

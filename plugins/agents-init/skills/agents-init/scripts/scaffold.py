@@ -144,6 +144,12 @@ class Context:
         memory = self.profile.get("memory") if isinstance(self.profile.get("memory"), dict) else {}
         self.case_root = case.get("root") if _relative_ok(case.get("root")) else "cases"
         self.memory_root = memory.get("root") if _relative_ok(memory.get("root")) else "memory"
+        sop = self.profile.get("sop") if isinstance(self.profile.get("sop"), dict) else None
+        privacy = self.profile.get("privacy") if isinstance(self.profile.get("privacy"), dict) else {}
+        reads = privacy.get("forbidden_default_reads") if isinstance(privacy.get("forbidden_default_reads"), list) else []
+        self.private_declared = any(isinstance(item, str) and item.strip().strip("/") == "private" for item in reads)
+        self.sop_declared = sop is not None
+        self.sop_root = sop.get("root") if sop is not None and _relative_ok(sop.get("root")) else "sops"
         self.rendered = self._rendered()
         self.fresh = json.loads(self.rendered[module.PROFILE_PATH])
         self.pack = module.contract_pack()
@@ -170,6 +176,11 @@ class Context:
         files = _init().files_for(self.inputs)
         files.pop(Path("cases/.gitkeep"), None)
         files.pop(Path("memory/.gitkeep"), None)
+        files.pop(Path("sops/.gitkeep"), None)
+        if not self.private_declared:
+            files.pop(Path("private/.gitignore"), None)  # 老项目没有声明私有目录：不要求，也不产生新差异
+        if self.sop_declared:
+            files[Path(self.sop_root) / ".gitkeep"] = ""
         if self.inputs.work_mode == "case-workspace":
             files[Path(self.case_root) / ".gitkeep"] = ""
         files[Path(self.memory_root) / ".gitkeep"] = ""
@@ -184,7 +195,12 @@ class Context:
                 continue
             if when == "entry" and not self.inputs.entry_launcher:
                 continue
+            if when == "private" and not self.private_declared:
+                continue
+            if when == "sop" and not self.sop_declared:
+                continue  # 旧项目没有声明 sop 段：不要求 sops/，也不产生新的差异
             path = (entry["path"].replace("{case_root}", self.case_root).replace("{memory_root}", self.memory_root)
+                    .replace("{sop_root}", self.sop_root)
                     .replace("{launcher}", self.inputs.entry_launcher or ""))
             text = self.rendered.get(Path(path))
             resolved.append({**entry, "path": path, "fingerprint": sha(text if text is not None else path)})

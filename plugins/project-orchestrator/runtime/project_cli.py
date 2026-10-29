@@ -15,6 +15,8 @@
     agenthelm project fix --skip <ID> --reason …  永久跳过某个发现（记入随项目同步的决定文件）；--unskip <ID> 撤销
     agenthelm project record <事项|new> 记录事项：默认只预览，--apply 写入
     agenthelm project tools [工具]      项目自行声明的工具；--run --apply 执行
+    agenthelm project sop <子命令>      流程（SOP）：list / index / show / new / interview / defaults / preflight /
+                                       activate / run / step / status / due / validate …；写入默认只预览，--apply 执行
     agenthelm project capabilities     各项能力当前是否可用、为什么
 
 项目根目录的启动器（缺省 ./menu）等同于 agenthelm project --project <项目根目录>。
@@ -492,7 +494,14 @@ def cmd_record(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, 
         lines.append(S.dim("以上为预览，没有写入。确认后加 --apply。"))
         return EXIT_OK, {"preview": preview, "applied": False}, lines
     result = provider.record_apply(preview)
-    return EXIT_OK, {"preview": preview, "applied": True, **result}, lines + [S.green(result["verify"])]
+    lines += [S.green(result["verify"])]
+    events = result.get("sop_events") or []
+    if events:
+        lines += ["", S.bold("命中流程（SOP）：")]
+        for event in events:
+            lines.append(f"  {event['id']}（{event['title']}）：{event['trigger']}")
+            lines.append(S.dim(f"    是否按它执行由你决定；确认后运行：{event['command']}"))
+    return EXIT_OK, {"preview": preview, "applied": True, **result}, lines
 
 
 def cmd_tools(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
@@ -509,6 +518,23 @@ def cmd_tools(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, l
         return EXIT_OK, tool, lines
     result = provider.run_tool(args.tool)
     return EXIT_OK, result, lines + [result["message"]]
+
+
+SOP_EXIT_CODES = {"usage": "usage", "invalid": "usage", "not-found": "not-found", "ambiguous": "ambiguous",
+                  "conflict": "conflict", "unavailable": "unavailable", "failed": "failed"}
+
+
+def cmd_sop(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
+    rest = list(args.sop_args)
+    for flag in ("--output",):  # 子命令后面的 --output 交给本入口处理，保持与其他子命令一致
+        if flag in rest and rest.index(flag) + 1 < len(rest):
+            position = rest.index(flag)
+            args.output = rest[position + 1]
+            del rest[position:position + 2]
+    if not rest:
+        rest = ["list"]
+    code, data, lines = provider.sop(rest)
+    return code, data, header(provider, "流程（SOP）") + lines
 
 
 def cmd_capabilities(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
@@ -536,7 +562,7 @@ def cmd_home(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, li
 COMMANDS: dict[str, Callable[[Any, argparse.Namespace], tuple[int, Any, list[str]]]] = {
     "find": cmd_find, "open": cmd_open, "refs": cmd_refs, "progress": cmd_progress, "show": cmd_show,
     "guide": cmd_guide, "health": cmd_health, "fix": cmd_fix, "record": cmd_record, "tools": cmd_tools,
-    "capabilities": cmd_capabilities, "scenarios": cmd_scenarios, "home": cmd_home,
+    "sop": cmd_sop, "capabilities": cmd_capabilities, "scenarios": cmd_scenarios, "home": cmd_home,
 }
 
 
@@ -610,6 +636,8 @@ def parser() -> argparse.ArgumentParser:
     tools.add_argument("tool", nargs="?")
     tools.add_argument("--run", action="store_true")
     tools.add_argument("--apply", action="store_true")
+    sop_parser = add("sop", "流程（SOP）：用户自己的步骤序列，触发、前置检查、逐步记录")
+    sop_parser.add_argument("sop_args", nargs=argparse.REMAINDER, help="子命令与参数，见 agenthelm project sop --help")
     add("capabilities", "能力状态")
     add("scenarios", "列出演示场景")
     return result
@@ -630,20 +658,19 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return EXIT_OK if exc.code in (0, None) else EXIT_USAGE
     command = args.command or "home"
-    output = args.output
     try:
         if command == "scenarios":
             code, data, lines = cmd_scenarios(None, args)
-            emit(output, code, command, data, lines, True)
+            emit(args.output, code, command, data, lines, True)
             return code
         provider = open_provider(args)
         check_entry_api(provider)
         code, data, lines = COMMANDS[command](provider, args)
-        emit(output, code, command, data, lines, provider.simulated)
+        emit(args.output, code, command, data, lines, provider.simulated)
         return code
     except EntryError as exc:
         code = EXIT_BY_CODE.get(exc.code, EXIT_USAGE)
-        if output == "json":
+        if args.output == "json":
             print(json.dumps({"ok": False, "exit_code": code, "command": command, "demo": bool(args.demo),
                               "error": {"code": exc.code, "message": str(exc), "next": exc.next_steps}},
                              ensure_ascii=False, indent=2))
