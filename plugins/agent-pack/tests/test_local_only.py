@@ -815,6 +815,20 @@ class AgentHelmCheckIntegrationTests(unittest.TestCase):
         self.assertIn("local:local-only-error", [item["id"] for item in report["machine"]["findings"]])
 
 
+class MigrationStepTests(unittest.TestCase):
+    def test_a_span_kept_for_the_release_gate_does_not_duplicate_the_single_steps_inside_it(self) -> None:
+        def entry(start: str, end: str) -> dict:
+            return {"plugin": "p", "from": start, "to": end, "summary": f"{start}->{end}"}
+        latest = {"migrations": [entry("1.9.0", "1.10.0"), entry("1.10.0", "1.11.0"), entry("1.9.0", "1.11.0"),
+                                 {**entry("1.0.0", "2.0.0"), "plugin": "other"}]}
+        steps = agenthelm.migrations_between(latest, "p", "1.9.0", "1.11.0")
+        self.assertEqual([step["summary"] for step in steps], ["1.9.0->1.10.0", "1.10.0->1.11.0"])
+        steps = agenthelm.migrations_between(latest, "p", "1.10.0", "1.11.0")
+        self.assertEqual([step["summary"] for step in steps], ["1.10.0->1.11.0"])
+        self.assertEqual(agenthelm.migrations_between({"migrations": [entry("1.9.0", "1.11.0")]}, "p", "1.9.0", "1.11.0")[0]["summary"],
+                         "1.9.0->1.11.0")
+
+
 class McpToolTests(Fixture):
     def test_the_tool_is_listed_with_a_description_an_agent_can_act_on(self) -> None:
         tool = next(item for item in mcp_server.TOOLS if item["name"] == "agent_pack_cloud_sync_safety_check")

@@ -250,14 +250,18 @@ def installed_plugins(env: Env, names: set[str]) -> list[dict]:
 
 
 def migrations_between(latest: dict, plugin: str, current: str, target: str) -> list[dict]:
-    steps = []
+    """The steps from ``current`` to ``target``; when two entries end at the same version (a span kept for the
+    release gate and the single steps inside it) the narrower one, with the newer ``from``, is shown."""
+    steps: dict[str, dict] = {}
     for entry in latest.get("migrations", []):
         if entry.get("plugin") != plugin:
             continue
         to = str(entry.get("to"))
         if is_newer(to, current) and not is_newer(to, target):
-            steps.append(entry)
-    return sorted(steps, key=lambda entry: version_key(str(entry.get("to"))) or (0,))
+            kept = steps.get(to)
+            if kept is None or is_newer(str(entry.get("from")), str(kept.get("from"))):
+                steps[to] = entry
+    return sorted(steps.values(), key=lambda entry: version_key(str(entry.get("to"))) or (0,))
 
 
 def plugin_findings(latest: dict, installed: list[dict]) -> list[dict]:

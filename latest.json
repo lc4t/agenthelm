@@ -2,7 +2,7 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-10-28",
+  "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
       "version": "1.10.0",
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.10.0",
+      "version": "1.11.0",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -269,7 +269,7 @@
       "change_kind": "both",
       "breaking": false,
       "date": "2026-10-28",
-      "summary": "新增 SOP（标准作业流程）管理：runtime/sop.py（创建、谈清约定、执行前检查、版本快照、触发索引、周期到期、按 SOP 建立执行 Case 并逐步记录）、agenthelm project sop 子命令与菜单项、health 汇总流程问题与到期提醒；Case Schema 新增可选字段 sop（内容包 case-template 1.1.0）；新增样例内容包 sop-samples 1.0.0；事件触发（case.created / case.closed，可按标签过滤，case.py 与 record 在结果里带 sop_events）；创建时必须谈清“范围与私有目录”（scope）；私有目录约定（读取前确认、默认不进 git、用到的 Case 标为 private）：sop private / confirm-read、case.py --sensitivity 与自动标记、health 检查；样例 knowledge-digest；前置条件支持“仅当”；演示模式支持 SOP；新增 references/sop.md 与 sop-interview.md。 health 汇总同步盘里的本机专属目录问题（area=同步盘，ID 以 local: 开头）；fix local-only 展示 agenthelm local-only fix 的预览；fix sync-folder 的指引改为推荐 local-only，不再建议对 npm 无效的 .nosync 做法。",
+      "summary": "新增 SOP（标准作业流程）管理：runtime/sop.py（创建、谈清约定、执行前检查、版本快照、触发索引、周期到期、按 SOP 建立执行 Case 并逐步记录）、agenthelm project sop 子命令与菜单项、health 汇总流程问题与到期提醒；Case Schema 新增可选字段 sop（内容包 case-template 1.1.0）；新增样例内容包 sop-samples 1.0.0；事件触发（case.created / case.closed，可按标签过滤，case.py 与 record 在结果里带 sop_events）；创建时必须谈清“范围与私有目录”（scope）；私有目录约定（读取前确认、默认不进 git、用到的 Case 标为 private）：sop private / confirm-read、case.py --sensitivity 与自动标记、health 检查；样例 knowledge-digest；前置条件支持“仅当”；演示模式支持 SOP；新增 references/sop.md 与 sop-interview.md。",
       "actions": [
         "已有项目无需改动；没有 sops/ 目录时 SOP 相关功能静默跳过",
         "行为变化：资料索引（find / refs / check）不再过滤 sensitivity 非 shared 的 Case，它们的文件也会被登记并能找到；依赖“private 的 Case 搜不到”的项目，请把内容放在资料根之外的私有目录（privacy.forbidden_default_reads）",
@@ -289,6 +289,28 @@
         "在同步盘里的项目：check 会多出“同步目录里有本机专属目录”等发现，agenthelm check --strict 与会话开始的一行提示把需要处理的项算作未处理；不需要的用 fix --skip <ID> --reason … 跳过",
         "想把依赖移出同步盘：agenthelm local-only fix（预览）→ --apply；各设备的 HOME 绝对路径必须一致"
       ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.10.0",
+      "to": "1.11.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "health 汇总同步盘里的本机专属目录问题（area=同步盘，ID 以 local: 开头，决定只记在这台机器上）；fix local-only 展示 agenthelm local-only fix 的预览；fix sync-folder 的指引改为推荐 local-only，不再建议对 npm 无效的 .nosync 做法。",
+      "actions": [
+        "已有项目无需改动：不在同步盘里、也没有 local-only 配置的项目，health 的输出与退出码不变"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.9.0",
+      "to": "1.11.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "1.10.0（SOP 管理）与 1.11.0（同步盘本机专属目录汇总）合并后的对照条目：发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它；客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。v6.9.0 发布后可删除。",
+      "actions": []
     }
   ]
 }

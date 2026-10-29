@@ -1,6 +1,6 @@
 {
   "name": "@sakanano-moe/agenthelm",
-  "version": "6.9.0",
+  "version": "6.10.0",
   "description": "agenthelm CLI: install, check and update the agenthelm plugins for Claude Code, Codex and Cursor; a user-level runtime; and a project menu that works without any AI agent.",
   "license": "MIT",
   "bin": {

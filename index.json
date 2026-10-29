@@ -4,14 +4,14 @@
     "name": "agenthelm",
     "description": "Cross-agent project management plugins: project contract, lifecycle, extension capabilities and behavior rules. 跨 Agent 的项目管理插件集。",
     "version": "0.7.0",
-    "updated_at": "2026-10-28",
+    "updated_at": "2026-10-29",
     "homepage": "./index.html",
     "domain": "agenthelm.sakanano.moe",
     "legacy_domain": "skill.sakanano.moe"
   },
   "plugin": {
     "manifest": "./plugins/agents-init/plugin.json",
-    "version": "6.9.0",
+    "version": "6.10.0",
     "install_unit": "marketplace",
     "bundled_plugins": [
       "./plugins/project-orchestrator/plugin.json",
@@ -43,7 +43,7 @@
       "id": "project-orchestrator",
       "name": "project-orchestrator / project lifecycle orchestration",
       "description": "Organizes Case workspaces or keeps existing Task/Case layouts; search, lossless migration, verification, scoped Git delivery, and a project menu that works without any AI agent.",
-      "version": "1.10.0",
+      "version": "1.11.0",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",
