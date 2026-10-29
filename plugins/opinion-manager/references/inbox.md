@@ -19,7 +19,7 @@
 
 ## 命令
 
-以下命令都在 `opinion_manager.py inbox <动作>` 下，`--project` 必填；输出为 JSON，`list` 可用 `--output markdown` 得到给用户看的编号列表。
+以下命令都在 `opinion_manager.py inbox <动作>` 下，`--project` 必填；`--lang zh|en` 指定提示语言（缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用中文）；输出为 JSON，`list` 可用 `--output markdown` 得到给用户看的编号列表。
 
 - `add --title --text --scope [--quote] [--client] [--session]`：暂存。标题 ≤120、正文 ≤1200、原话 ≤600 个字符；至少一个 `--scope`。内容相同（忽略空白与大小写）的候选合并，新原话追加为证据。
 - `list [--status a,b] [--session ID] [--unpresented]`：列出候选。

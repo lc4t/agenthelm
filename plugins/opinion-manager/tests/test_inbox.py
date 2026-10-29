@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -12,17 +13,19 @@ from unittest import mock
 RUNTIME = Path(__file__).resolve().parents[1] / "runtime"
 sys.path.insert(0, str(RUNTIME))
 import inbox  # noqa: E402
+import inbox_text  # noqa: E402
 
 SCRIPT = RUNTIME / "opinion_manager.py"
 START = datetime(2026, 10, 1, 8, 0, tzinfo=UTC)
 
 
 def cli(*arguments: str) -> tuple[int, dict]:
-    completed = subprocess.run([sys.executable, str(SCRIPT), "inbox", *arguments], capture_output=True, text=True, check=False)
+    completed = subprocess.run([sys.executable, str(SCRIPT), "inbox", *arguments], capture_output=True, text=True, check=False,
+                               env={**os.environ, "AGENTHELM_LANG": "zh"})
     return completed.returncode, json.loads(completed.stdout)
 
 
-class InboxTests(unittest.TestCase):
+class InboxBase(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -35,7 +38,7 @@ class InboxTests(unittest.TestCase):
     def run_action(self, action: str, *ids: str, **options):
         defaults = dict(project=self.root, title=None, text=None, scope=[], quote=None, client=None, session=None,
                         status=None, unpresented=False, to=None, confirmed=False, note=None, days=None,
-                        max_chars=6000, output="json")
+                        max_chars=6000, output="json", lang="zh")
         defaults.update(options)
         import argparse
         return inbox.run(argparse.Namespace(action=action, ids=list(ids), **defaults))
@@ -45,6 +48,9 @@ class InboxTests(unittest.TestCase):
         options.setdefault("quote", "以后都先说结论")
         return self.run_action("add", title=title, text=text, **options)
 
+
+
+class InboxTests(InboxBase):
     def test_add_is_unconfirmed_pending_and_never_writes_stable_rules(self) -> None:
         result = self.add(session="s1", client="claude")
         self.assertEqual((result["status"], result["state"], result["id"]), ("added", "pending", "cand-20261001-001"))
@@ -148,10 +154,11 @@ class InboxTests(unittest.TestCase):
         self.assertEqual((result["trial"], result["pending"], result["trial_shown"]), (1, 1, [trial]))
 
     def test_brief_respects_the_size_budget(self) -> None:
+        baseline = len(self.run_action("brief")["text"])
         for number in range(6):
             identity = self.add(title=f"规则{number}", text="详" * 200)["id"]
             self.run_action("decide", identity, to="trial", confirmed=True)
-        result = self.run_action("brief", max_chars=len(inbox.PROTOCOL) + 700)
+        result = self.run_action("brief", max_chars=baseline + 700)
         self.assertLess(len(result["trial_shown"]), 6)
         self.assertIn("未展示", result["text"])
 
@@ -213,6 +220,74 @@ class InboxTests(unittest.TestCase):
         code, brief = cli("brief", "--project", str(self.root))
         self.assertIn("opinion_manager.py inbox add", brief["text"])
         self.assertIn(added["id"], brief["text"])
+
+
+class LanguageTests(InboxBase):
+    """同一组行为在英文下：提示、错误与协议换成英文，数据与命令保持不变。"""
+
+    def run_action(self, action: str, *ids: str, **options):
+        return super().run_action(action, *ids, **{"lang": "en", **options})
+
+    def test_english_prompts_errors_and_protocol(self) -> None:
+        identity = self.add()["id"]
+        with self.assertRaisesRegex(inbox.InboxError, "explicit decision"):
+            self.run_action("decide", identity, to="trial")
+        with self.assertRaisesRegex(inbox.InboxError, "No such candidate"):
+            self.run_action("decide", "cand-missing", to="trial", confirmed=True)
+        with self.assertRaisesRegex(inbox.InboxError, "Title must not be empty"):
+            self.run_action("add", title="", text="x", scope=["a"])
+        self.assertIn("Adopting as formal only records", self.run_action("decide", identity, to="formal", confirmed=True)["reminder"])
+        self.run_action("decide", identity, to="trial", confirmed=True)
+        text = self.run_action("brief", session="s9")["text"]
+        self.assertTrue(text.startswith("[Opinion protocol"))
+        self.assertIn("--lang en", text)
+        self.assertIn("--session s9", text)
+        self.assertIn("Relay and confirm in the language the user is using", text)
+        self.assertIn("Trial candidates", text)
+        self.assertEqual(self.run_action("list", output="markdown").splitlines()[1], "   - Rule: 回答先给结论再展开")
+
+    def test_english_notice_keeps_the_decision_with_the_user(self) -> None:
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        notice = self.add()["notice"]
+        self.assertIn("is your decision", notice)
+        self.assertIn("never edits .gitignore", notice)
+        self.assertIn("It is currently not ignored by Git", notice)
+        self.assertNotRegex(notice, r"[\u4e00-\u9fff]")
+
+    def test_stored_history_is_language_neutral(self) -> None:
+        identity = self.add()["id"]
+        self.run_action("decide", identity, to="trial", confirmed=True)
+        self.moment += timedelta(days=40)
+        self.run_action("expire", days=30)
+        notes = [entry["note"] for entry in json.loads((self.root / ".opinion/inbox.json").read_text(encoding="utf-8"))["candidates"][identity]["history"]]
+        self.assertEqual(notes, ["captured", "", "trial-expired:30d"])
+
+
+class CatalogTests(unittest.TestCase):
+    CJK = __import__("re").compile(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]")
+
+    def test_both_languages_have_the_same_keys_and_placeholders(self) -> None:
+        for key, versions in inbox_text.MESSAGES.items():
+            self.assertEqual(set(versions), set(inbox_text.LANGUAGES), key)
+            self.assertEqual(set(inbox_text.PLACEHOLDER.findall(versions["zh"])),
+                             set(inbox_text.PLACEHOLDER.findall(versions["en"])), key)
+
+    def test_english_text_has_no_chinese_and_chinese_text_is_chinese(self) -> None:
+        for key, versions in inbox_text.MESSAGES.items():
+            self.assertFalse(self.CJK.search(versions["en"]), f"{key} 的英文里有中文")
+        for key in ("protocol", "exposure_notice", "err_confirm", "brief_trial_header"):
+            self.assertTrue(self.CJK.search(inbox_text.MESSAGES[key]["zh"]), key)
+
+    def test_language_resolution_order(self) -> None:
+        resolve = inbox_text.resolve_language
+        self.assertEqual(resolve("en", {"AGENTHELM_LANG": "zh", "LANG": "zh_CN.UTF-8"}), "en")
+        self.assertEqual(resolve(None, {"AGENTHELM_LANG": "en", "LANG": "zh_CN.UTF-8"}), "en")
+        self.assertEqual(resolve("auto", {"LC_ALL": "zh_TW.UTF-8", "LANG": "en_US.UTF-8"}), "zh")
+        self.assertEqual(resolve(None, {"LC_ALL": "C", "LANG": "en_US.UTF-8"}), "en")
+        self.assertEqual(resolve(None, {"LANG": "fr_FR.UTF-8"}), "en")
+        self.assertEqual(resolve(None, {"LANG": "C.UTF-8"}), "zh")
+        self.assertEqual(resolve(None, {}), "zh")
+        self.assertEqual(resolve("", {"LANG": "POSIX"}), "zh")
 
 
 if __name__ == "__main__":

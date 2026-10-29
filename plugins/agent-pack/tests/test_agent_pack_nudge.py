@@ -15,6 +15,7 @@ RUNTIME = PLUGIN / "runtime"
 sys.path.insert(0, str(RUNTIME))
 import agent_pack_nudge as nudge  # noqa: E402
 import agenthelm  # noqa: E402
+import nudge_text  # noqa: E402
 
 MANAGER = PLUGIN.parent / "opinion-manager" / "runtime" / "opinion_manager.py"
 
@@ -38,7 +39,7 @@ class NudgeTests(unittest.TestCase):
         self.home.mkdir()
         self.project.mkdir()
         isolated = {key: value for key, value in os.environ.items() if not key.startswith(("XDG_", "AGENTHELM_", "CLAUDE_", "CODEX_"))}
-        patcher = mock.patch.dict(os.environ, isolated, clear=True)
+        patcher = mock.patch.dict(os.environ, {**isolated, "AGENTHELM_LANG": "zh"}, clear=True)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.env = agenthelm.current_env(self.home)
@@ -203,6 +204,62 @@ class NudgeTests(unittest.TestCase):
         (self.project / ".gitignore").unlink()
         self.assertEqual(nudge.status(arguments, agenthelm)["exposure"]["git"], "not-ignored")
 
+    # -- language
+    def test_language_follows_the_config_then_the_environment(self) -> None:
+        self.assertEqual(nudge.merge_config(None, None)[0]["lang"], "zh")
+        with mock.patch.dict(os.environ, {"AGENTHELM_LANG": "en"}):
+            self.assertEqual(nudge.merge_config(None, None)[0]["lang"], "en")
+            self.assertEqual(nudge.merge_config({"language": "zh"}, None)[0]["lang"], "zh")
+            self.assertEqual(nudge.merge_config({"language": "zh"}, {"language": "auto"})[0]["lang"], "en", "the user's own auto wins")
+            self.assertEqual(nudge.merge_config({"language": "zh"}, {"language": "en"})[0]["lang"], "en")
+        config, warnings = nudge.merge_config({"language": "fr"}, None)
+        self.assertEqual((config["language"], len(warnings)), ("auto", 1))
+
+    def test_warnings_use_the_resolved_language(self) -> None:
+        _, warnings = nudge.merge_config({"language": "en", "pending_threshold": 0}, None)
+        self.assertEqual(warnings, ["Project Profile opinion.nudge.pending_threshold must be a positive integer; ignored"])
+        _, warnings = nudge.merge_config({"pending_threshold": 0}, None)
+        self.assertEqual(warnings, ["项目 Profile opinion.nudge.pending_threshold 须为正整数，已忽略"])
+
+    def english(self, **overrides) -> dict:
+        return nudge.merge_config({"language": "en", "pending_threshold": 1, "stop_prompt": "always", **overrides}, None)[0]
+
+    def test_english_session_start_speaks_one_language_to_the_user_and_the_model(self) -> None:
+        self.capture("Answer first")
+        (self.project / ".gitignore").unlink()
+        output = self.start(config=self.english())
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("1 candidate opinions await confirmation", output["systemMessage"])
+        self.assertIn("is your decision", output["systemMessage"])
+        self.assertIn("[Opinion protocol · agenthelm]", context)
+        self.assertIn("--lang en", context)
+        self.assertNotRegex(output["systemMessage"], r"[\u4e00-\u9fff]")
+        self.assertNotRegex(context.split("原话：")[0], r"[\u4e00-\u9fff]")
+
+    def test_english_prompt_hint_and_stop_request(self) -> None:
+        config = self.english()
+        payload = {"session_id": "s1", "cwd": str(self.project), "prompt": "from now on, answer first"}
+        hint = nudge.prompt_submit(agenthelm, self.env, payload, "claude", self.project, config)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("matched: from now on", hint)
+        self.assertIn('--title "<title>"', hint)
+        self.assertIn("--lang en", hint)
+        self.capture("Answer first")
+        request = self.stop(config=config)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("adopt as formal / trial in this project / hold / discard", request)
+        self.assertIn("--confirmed --lang en", request)
+        self.assertIn("   - Rule: Answer first的完整规则", request)
+
+    def test_english_status_and_install_output(self) -> None:
+        write(self.env.config_file, {"nudge": {"language": "en"}})
+        self.capture("Answer first")
+        completed = subprocess.run([sys.executable, str(RUNTIME / "agenthelm.py"), "nudge", "status", "--project", str(self.project)],
+                                   capture_output=True, text=True, check=True, env={**os.environ, "HOME": str(self.home)})
+        self.assertIn("Now: 1 pending, 0 on trial", completed.stdout)
+        self.assertIn("Switch: on", completed.stdout)
+        installed = subprocess.run([sys.executable, str(RUNTIME / "agenthelm.py"), "nudge", "install-hooks"], capture_output=True, text=True,
+                                   check=True, env={**os.environ, "HOME": str(self.home)})
+        self.assertIn("Would write (add --apply to do it):", installed.stdout)
+
     # -- prompt submit
     def prompt(self, text: str, session: str = "s1", client: str = "claude"):
         payload = {"session_id": session, "cwd": str(self.project), "prompt": text}
@@ -355,6 +412,35 @@ class NudgeTests(unittest.TestCase):
         write(self.home / ".cursor" / "hooks.json", "{oops")
         with self.assertRaises(agenthelm.CheckError):
             self.install(apply=True)
+
+
+class CatalogTests(unittest.TestCase):
+    CJK = __import__("re").compile(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]")
+
+    def test_both_languages_have_the_same_keys_and_placeholders(self) -> None:
+        for key, versions in nudge_text.MESSAGES.items():
+            self.assertEqual(set(versions), set(nudge_text.LANGUAGES), key)
+            self.assertEqual(set(nudge_text.PLACEHOLDER.findall(versions["zh"])),
+                             set(nudge_text.PLACEHOLDER.findall(versions["en"])), key)
+
+    def test_english_text_has_no_chinese(self) -> None:
+        for key, versions in nudge_text.MESSAGES.items():
+            self.assertFalse(self.CJK.search(versions["en"]), f"{key} 的英文里有中文")
+        for key in ("reminder", "prompt_hint", "stop_request", "status_thresholds"):
+            self.assertTrue(self.CJK.search(nudge_text.MESSAGES[key]["zh"]), key)
+
+    def test_every_message_formats_in_both_languages(self) -> None:
+        for key, versions in nudge_text.MESSAGES.items():
+            fields = {name: "x" for language in versions.values() for name in nudge_text.PLACEHOLDER.findall(language)}
+            for language in nudge_text.LANGUAGES:
+                self.assertTrue(nudge_text.text(key, language, **fields), key)
+
+    def test_both_catalogs_resolve_languages_identically(self) -> None:
+        sys.path.insert(0, str(MANAGER.parent))
+        import inbox_text
+        for requested, environ in ((None, {}), ("en", {"LANG": "zh_CN"}), (None, {"LANG": "fr_FR"}), ("auto", {"LC_ALL": "C", "LANG": "zh_TW"}),
+                                   (None, {"AGENTHELM_LANG": "en"}), ("zh", {"AGENTHELM_LANG": "en"})):
+            self.assertEqual(nudge_text.resolve_language(requested, environ), inbox_text.resolve_language(requested, environ), (requested, environ))
 
 
 class ShippedHooksTests(unittest.TestCase):

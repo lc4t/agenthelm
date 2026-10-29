@@ -23,6 +23,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from nudge_text import LANGUAGES, resolve_language, text as say
+
 ENV_DISABLE = "AGENTHELM_NO_NUDGE"
 ENV_DEBUG = "AGENTHELM_NUDGE_DEBUG"
 CLIENTS = ("claude", "codex", "cursor")
@@ -45,6 +47,7 @@ DEFAULT_COMPLETION = [
 ]
 DEFAULTS: dict[str, Any] = {
     "enabled": True,
+    "language": "auto",
     "pending_threshold": 5,
     "stale_days": 7,
     "max_prompts_per_session": 1,
@@ -72,40 +75,48 @@ def _words(value: Any, fallback: list[str]) -> list[str]:
 def merge_config(*layers: Any) -> tuple[dict[str, Any], list[str]]:
     """内置默认 ← 项目 Profile ← 用户配置；非法值忽略并报告，不让会话失败。"""
     config = {key: (dict(value) if isinstance(value, dict) else value) for key, value in DEFAULTS.items()}
-    warnings: list[str] = []
+    problems: list[tuple[str, dict]] = []
     for index, layer in enumerate(layers):
-        label = ("项目 Profile opinion.nudge", "用户配置 nudge")[index]
+        label = ("label_profile", "label_user")[index]
         if layer is None:
             continue
         if not isinstance(layer, dict):
-            warnings.append(f"{label} 必须是对象，已忽略")
+            problems.append(("warn_object", {"label": label}))
             continue
         for key, value in layer.items():
             if key not in DEFAULTS:
-                warnings.append(f"{label}.{key} 不是已知设置，已忽略")
+                problems.append(("warn_unknown", {"label": label, "key": key}))
             elif key == "enabled":
                 if isinstance(value, bool):
                     config[key] = value
                 else:
-                    warnings.append(f"{label}.enabled 必须是布尔值，已忽略")
+                    problems.append(("warn_bool", {"label": label, "key": key}))
+            elif key == "language":
+                if value in ("auto", *LANGUAGES):
+                    config[key] = value
+                else:
+                    problems.append(("warn_language", {"label": label}))
             elif key == "stop_prompt":
                 modes = {client: value for client in CLIENTS} if isinstance(value, str) else value
                 if isinstance(modes, dict) and all(client in CLIENTS and mode in STOP_MODES for client, mode in modes.items()):
                     config[key] = {**config[key], **modes}
                 else:
-                    warnings.append(f"{label}.stop_prompt 须为 {'/'.join(STOP_MODES)} 或 {{客户端: 模式}}，已忽略")
+                    problems.append(("warn_stop", {"label": label, "modes": "/".join(STOP_MODES)}))
             elif key in ("keywords", "completion_keywords"):
                 parsed = _words(value, [])
                 if parsed:
                     config[key] = parsed
                 else:
-                    warnings.append(f"{label}.{key} 须为非空的字符串数组，已忽略")
+                    problems.append(("warn_words", {"label": label, "key": key}))
             elif isinstance(value, int) and not isinstance(value, bool) and value >= 1:
                 config[key] = value
             else:
-                warnings.append(f"{label}.{key} 须为正整数，已忽略")
+                problems.append(("warn_int", {"label": label, "key": key}))
     config["keywords"] = _words(config["keywords"], DEFAULT_KEYWORDS)
     config["completion_keywords"] = _words(config["completion_keywords"], DEFAULT_COMPLETION)
+    config["lang"] = resolve_language(config["language"])
+    warnings = [say(key, config["lang"], **{**fields, **({"label": say(fields["label"], config["lang"])} if "label" in fields else {})})
+                for key, fields in problems]
     return config, warnings
 
 
@@ -171,9 +182,10 @@ def find_manager(host: Any, env: Any) -> Path | None:
     return found / "runtime" / "opinion_manager.py" if found is not None else None
 
 
-def run_manager(manager: Path, *arguments: str) -> Any:
+def run_manager(manager: Path, *arguments: str, lang: str | None = None) -> Any:
+    command = [*arguments, "--lang", lang] if lang else list(arguments)
     try:
-        completed = subprocess.run([sys.executable, str(manager), *arguments], capture_output=True, text=True,
+        completed = subprocess.run([sys.executable, str(manager), *command], capture_output=True, text=True,
                                    check=False, timeout=SUBPROCESS_TIMEOUT)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -190,20 +202,20 @@ def run_manager(manager: Path, *arguments: str) -> Any:
 
 # ---------------------------------------------------------------- pending-item providers
 
-def opinion_provider(manager: Path | None, root: Path, session: str) -> dict | None:
+def opinion_provider(manager: Path | None, root: Path, session: str, lang: str) -> dict | None:
     """待确认项提供者契约：返回 {source, items[{id, source, title, status, age_days, hint_command…}],
     counts, oldest_pending_days, last_action_at, session_unpresented}。其他来源（如 SOP 待办）按同一结构接入。"""
     if manager is None or not (root / ".opinion" / "inbox.json").is_file():
         return None
     arguments = ["inbox", "pending", "--project", str(root)] + (["--session", session] if session else [])
-    return run_manager(manager, *arguments)
+    return run_manager(manager, *arguments, lang=lang)
 
 
 PROVIDERS = (opinion_provider,)
 
 
-def collect(manager: Path | None, root: Path, session: str) -> dict:
-    summaries = [result for provider in PROVIDERS if (result := provider(manager, root, session))]
+def collect(manager: Path | None, root: Path, session: str, lang: str) -> dict:
+    summaries = [result for provider in PROVIDERS if (result := provider(manager, root, session, lang))]
     waiting = [item for summary in summaries for item in summary["items"] if item["status"] == "pending"]
     return {"summaries": summaries, "pending": len(waiting),
             "trial": sum(1 for summary in summaries for item in summary["items"] if item["status"] == "trial"),
@@ -213,15 +225,12 @@ def collect(manager: Path | None, root: Path, session: str) -> dict:
 
 
 def reminder_text(summary: dict, config: dict) -> str | None:
-    count, oldest = summary["pending"], summary["oldest_days"]
+    count, oldest, lang = summary["pending"], summary["oldest_days"], config["lang"]
     if not count or not (count >= config["pending_threshold"] or oldest >= config["stale_days"]):
         return None
-    text = f"[Opinion] 有 {count} 条候选观点待确认"
-    if oldest >= 1:
-        text += f"（最久 {int(oldest)} 天未处理）"
-    if summary["trial"]:
-        text += f"，另有 {summary['trial']} 条在项目内试行"
-    return text + "。在对话里让 Agent 逐条确认，或自行运行 opinion-manager 的 inbox list。"
+    return say("reminder", lang, count=count,
+               age=say("reminder_age", lang, days=int(oldest)) if oldest >= 1 else "",
+               trial=say("reminder_trial", lang, trial=summary["trial"]) if summary["trial"] else "")
 
 
 # ---------------------------------------------------------------- machine-local state
@@ -291,12 +300,12 @@ def session_start(host: Any, env: Any, payload: dict, client: str, root: Path, c
     session = str(payload.get("session_id") or payload.get("conversation_id") or "")
     source = str(payload.get("source") or "startup")
     if (root / ".opinion" / "inbox.json").is_file():
-        run_manager(manager, "inbox", "expire", "--project", str(root), "--days", str(config["trial_expire_days"]))
-    brief = run_manager(manager, "inbox", "brief", "--project", str(root), *(["--session", session] if session else []))
+        run_manager(manager, "inbox", "expire", "--project", str(root), "--days", str(config["trial_expire_days"]), lang=config["lang"])
+    brief = run_manager(manager, "inbox", "brief", "--project", str(root), *(["--session", session] if session else []), lang=config["lang"])
     context = brief["text"] if brief else None
     if source == "compact":
         return render(client, "session-start", context=context)
-    summary = collect(manager, root, session)
+    summary = collect(manager, root, session, config["lang"])
     text = reminder_text(summary, config)
     state = load_state(host, env)
     shown: list[str] = []
@@ -305,23 +314,22 @@ def session_start(host: Any, env: Any, payload: dict, client: str, root: Path, c
         if time.time() - previous.get("at", 0) >= config["reminder_repeat_hours"] * 3600:
             state["reminders"][str(root)] = {"at": time.time()}
             shown.append(text)
-            hint = f"\n用户已看到提示：「{text}」。不要打断当前任务；用户提起或任务间隙再协助逐条确认（inbox list --status pending --output markdown）。"
-            context = (context or "") + hint
-    notice = exposure_notice(manager, root, state)
+            context = (context or "") + say("reminder_hint", config["lang"], text=text)
+    notice = exposure_notice(manager, root, state, config["lang"])
     if notice:
         shown.append(notice)
         if client != "claude":
-            context = (context or "") + f"\n[给用户的提示，他可能没有看到；请在首次回复里用一句话如实转告，是否处理由用户决定，不要自行改 .gitignore]\n{notice}"
+            context = (context or "") + say("relay", config["lang"], notice=notice)
     if shown:
         save_state(host, env, state)
     return render(client, "session-start", context=context, system="\n".join(shown) or None)
 
 
-def exposure_notice(manager: Path, root: Path, state: dict) -> str | None:
+def exposure_notice(manager: Path, root: Path, state: dict, lang: str) -> str | None:
     """收件箱含用户原话：每个项目只在第一次提醒一次是否会随仓库或同步盘被他人看到。只告知，不替用户决定，不改任何文件。"""
     if not (root / ".opinion" / "inbox.json").is_file() or str(root) in state["exposure_noted"]:
         return None
-    result = run_manager(manager, "inbox", "exposure", "--project", str(root))
+    result = run_manager(manager, "inbox", "exposure", "--project", str(root), lang=lang)
     if not result or not result.get("needs_notice"):
         return None
     state["exposure_noted"][str(root)] = {"at": time.time(), "git": result["git"]}
@@ -344,11 +352,10 @@ def prompt_submit(host: Any, env: Any, payload: dict, client: str, root: Path, c
     record["capture_hints"] += 1
     save_state(host, env, state)
     manager = find_manager(host, env)
-    command = (f'python3 {manager} inbox add --project {root} --title "<标题>" --text "<完整规则>" --scope "<适用范围>" '
-               f'--quote "<用户原话>"' + (f" --session {session}" if session else "")) if manager else "opinion-manager 的 inbox add"
-    context = (f"[Opinion] 用户这条消息里有可能是长期偏好或对你行为的纠正的表述（命中：{'、'.join(hits[:3])}）。"
-               f"若确属长期偏好、规则或纠正，先静默暂存为候选，不打断当前工作：{command}。"
-               "仅限本次任务的要求、项目事实和命令不是候选，忽略即可。任务完成前再请用户集中确认。")
+    lang = config["lang"]
+    command = say("add_command", lang, manager=manager, root=root, lang=lang,
+                  session=f" --session {session}" if session else "") if manager else say("add_command_fallback", lang)
+    context = say("prompt_hint", lang, hits=say("sep", lang).join(hits[:3]), command=command)
     return render(client, "prompt-submit", context=context)
 
 
@@ -372,21 +379,18 @@ def stop(host: Any, env: Any, payload: dict, client: str, root: Path, config: di
     manager = find_manager(host, env)
     if manager is None:
         return None
-    summary = collect(manager, root, session)
+    summary = collect(manager, root, session, config["lang"])
     identifiers = summary["session_unpresented"]
     if not identifiers:
         return None
     listing = run_manager(manager, "inbox", "list", "--project", str(root), "--session", session, "--unpresented",
-                          "--status", "pending", "--output", "markdown")
+                          "--status", "pending", "--output", "markdown", lang=config["lang"])
     if not listing:
         return None
-    run_manager(manager, "inbox", "present", *identifiers, "--project", str(root))
+    run_manager(manager, "inbox", "present", *identifiers, "--project", str(root), lang=config["lang"])
     record["stop_prompts"] += 1
     save_state(host, env, state)
-    context = (f"[Opinion] 本次会话暂存了 {len(identifiers)} 条候选观点，尚未向用户确认。请在不重复已完成工作的前提下，"
-               "用下面的编号列表一次性请用户裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃（也可以逐条说明）。"
-               f"用户明确表态后运行：python3 {manager} inbox decide <编号…> --project {root} --to trial|formal|held|rejected --confirmed。"
-               "采纳为正式只改状态，写入 OPINION.md 须走 opinion-manager 的完整预览与确认；未经确认不要写入。\n\n" + listing)
+    context = say("stop_request", config["lang"], count=len(identifiers), manager=manager, root=root, lang=config["lang"], listing=listing)
     return render(client, "stop", context=context)
 
 
@@ -434,14 +438,14 @@ def status(args: argparse.Namespace, host: Any) -> dict:
     result: dict[str, Any] = {"ok": True, "project": str(root) if root else None, "config": config, "warnings": warnings,
                               "disabled_by_environment": env.get(ENV_DISABLE) not in (None, "0", "false")}
     if root is None:
-        result["note"] = "当前目录不在启用了 opinion-manager 的项目里：hook 不会产生任何输出。"
+        result["note"] = say("note_no_project", config["lang"])
         return result
     manager = find_manager(host, env)
     result["opinion_manager"] = str(manager) if manager else None
-    summary = collect(manager, root, "")
+    summary = collect(manager, root, "", config["lang"])
     result["summary"] = {key: summary[key] for key in ("pending", "trial", "oldest_days")}
     if manager is not None and (root / ".opinion" / "inbox.json").is_file():
-        result["exposure"] = run_manager(manager, "inbox", "exposure", "--project", str(root))
+        result["exposure"] = run_manager(manager, "inbox", "exposure", "--project", str(root), lang=config["lang"])
     result["reminder"] = reminder_text(summary, config)
     return result
 
@@ -471,6 +475,7 @@ def merged_cursor_hooks(existing: dict, runtime: Path, remove: bool) -> dict:
 
 def install_hooks(args: argparse.Namespace, host: Any) -> dict:
     env = host.current_env(args.home)
+    lang = load_config(host, env, None)[0]["lang"]
     if args.scope == "project":
         project = (args.project or Path.cwd()).expanduser().resolve()
         target = project / ".cursor" / "hooks.json"
@@ -479,9 +484,9 @@ def install_hooks(args: argparse.Namespace, host: Any) -> dict:
     try:
         existing = host.read_json(target) if target.is_file() else {}
     except ValueError as exc:
-        raise host.CheckError(f"{target} 不是合法 JSON，已停止：{exc}") from exc
+        raise host.CheckError(say("err_hooks_json", lang, target=target, error=exc)) from exc
     if not isinstance(existing, dict):
-        raise host.CheckError(f"{target} 的根节点必须是对象")
+        raise host.CheckError(say("err_hooks_root", lang, target=target))
     runtime = Path(__file__).resolve().with_name("agenthelm.py")
     merged = merged_cursor_hooks(existing, runtime, args.remove)
     changed = merged != existing
@@ -495,9 +500,8 @@ def install_hooks(args: argparse.Namespace, host: Any) -> dict:
                 result["backup"] = str(backup)
         host.write_json_atomic(target, merged)
         result["applied"] = True
-    result["note"] = ("Cursor 的 sessionStart 注入是否到达模型取决于 Cursor 版本（社区有未到达的反馈）；"
-                      "协议同时写在 opinion-manager 的 Skill 中，未到达时仍可按需触发。stop 提示默认关闭，"
-                      "需要时把 nudge.stop_prompt.cursor 设为 on-completion。")
+    result["note"] = say("note_cursor", lang)
+    result["lang"] = lang
     return result
 
 
@@ -539,24 +543,31 @@ def main(argv: list[str], host: Any) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.action == "status":
-        lines = [f"项目：{result['project'] or '（不在启用 opinion-manager 的项目里）'}",
-                 f"开关：{'已被环境变量 AGENTHELM_NO_NUDGE 关闭' if result['disabled_by_environment'] else ('开启' if result['config']['enabled'] else '关闭')}"]
         config = result["config"]
-        lines.append(f"阈值：待确认 ≥{config['pending_threshold']} 条或最久 ≥{config['stale_days']} 天；每会话确认 ≤{config['max_prompts_per_session']} 次；"
-                     f"试行 {config['trial_expire_days']} 天未转正回退；任务结束提示 {config['stop_prompt']}")
+        lang = config["lang"]
+        if result["disabled_by_environment"]:
+            state = say("status_env_off", lang)
+        else:
+            state = say("status_on", lang) if config["enabled"] else say("status_off", lang)
+        lines = [say("status_project", lang, project=result["project"] or say("status_no_project", lang)),
+                 say("status_switch", lang, state=state),
+                 say("status_thresholds", lang, pending=config["pending_threshold"], stale=config["stale_days"],
+                     prompts=config["max_prompts_per_session"], expire=config["trial_expire_days"],
+                     stop=config["stop_prompt"], language=f"{config['language']} ({lang})")]
         if result.get("summary"):
             summary = result["summary"]
-            lines.append(f"当前：待确认 {summary['pending']} 条，试行 {summary['trial']} 条，最久 {int(summary['oldest_days'])} 天")
-            lines.append(result["reminder"] or "按当前阈值，开新会话不会提示。")
+            lines.append(say("status_current", lang, pending=summary["pending"], trial=summary["trial"], days=int(summary["oldest_days"])))
+            lines.append(result["reminder"] or say("status_quiet", lang))
         if result.get("exposure"):
-            lines.append(f"收件箱的可见范围：{result['exposure']['message']}")
-        lines += [f"配置警告：{item}" for item in result["warnings"]]
+            lines.append(say("status_exposure", lang, message=result["exposure"]["message"]))
+        lines += [say("status_warning", lang, item=item) for item in result["warnings"]]
         if result.get("note"):
             lines.append(result["note"])
         print("\n".join(lines))
     else:
-        verb = "已写入" if result["applied"] else ("没有变化" if not result["changed"] else "将写入（加 --apply 执行）")
-        print(f"{verb}：{result['target']}")
+        lang = result["lang"]
+        verb = say("install_written" if result["applied"] else ("install_unchanged" if not result["changed"] else "install_preview"), lang)
+        print(say("install_line", lang, verb=verb, target=result["target"]))
         print(json.dumps(result["hooks"], ensure_ascii=False, indent=2))
         print(result["note"])
     return 0

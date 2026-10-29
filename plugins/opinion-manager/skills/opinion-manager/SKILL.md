@@ -63,6 +63,7 @@ description: Generate, compose, review and maintain behavior rules between the u
 - **转正式**：`formal` 只记录用户意愿。写入 OPINION.md 仍走上文的完整预览与确认流程，候选正文作为个人规则输入。
 - **边界**：`inbox` 不写 OPINION.md、Profile 或锁；重复出现不等于确认。试行超过设定天数未转正会回到待确认。
 - **隐私**：收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议项目保持私有。`inbox add` 返回 `notice` 时如实转告用户；是否公开仓库、是否排除 `.opinion/` 由用户决定，不要替用户决定，也不要自行修改 `.gitignore`。
+- **语言**：提示与协议有中文、英文两种，命令带 `--lang zh|en`；向用户转告和确认时使用用户正在使用的语言。候选内容是用户自己的话，不翻译。
 - **未决汇总**：开新会话时 agent-pack 按阈值提示待确认数量与久未处理的天数；用户可在 Project Profile 的 `opinion.nudge` 或 `~/.config/agenthelm/config.json` 的 `nudge` 调整，或用 `AGENTHELM_NO_NUDGE=1` 关闭。
 
 ## 完成条件

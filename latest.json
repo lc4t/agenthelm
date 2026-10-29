@@ -252,7 +252,7 @@
       "change_kind": "code",
       "breaking": false,
       "date": "2026-10-29",
-      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。",
+      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。",
       "actions": [
         "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）"
       ]
@@ -264,7 +264,7 @@
       "change_kind": "code",
       "breaking": false,
       "date": "2026-10-29",
-      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。",
+      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用中文。",
       "actions": [
         "Codex 需要在 /hooks 中审阅并信任插件 hook 后才会运行",
         "Cursor：运行 agenthelm nudge install-hooks --client cursor 预览，确认后加 --apply；stop 提示默认关闭",
