@@ -1,5 +1,38 @@
 # 更新记录
 
+## 2026-10-29 — agenthelm 6.10.0 / Agent Pack 1.10.0 / Project Orchestrator 1.11.0：同步盘里的本机专属目录
+
+项目放在 iCloud、Dropbox、OneDrive 等同步目录、在多台设备上使用时，`.venv`、`node_modules`、工具缓存不该进同步盘。`agenthelm local-only` 把它们放到每台设备自己的 `~/.local/share/agenthelm/local-only/` 下并留软链接，同时检查各设备之间的差异（谁装好了依赖、谁没装、HOME 是否一致）。
+
+### agent-pack 1.10.0：同步盘里的本机专属目录（local-only）
+
+项目放在 iCloud、Dropbox、OneDrive 等同步目录里、在多台设备上使用时，`.venv`、`node_modules`、工具缓存不该进同步盘。新增 `runtime/local_only.py`（只用标准库）、命令 `agenthelm local-only`、只读 MCP Tool `agent_pack_cloud_sync_safety_check`，以及 `references/local-only.md`。
+
+- **外置**：`local-only fix` 把虚拟环境（按 `pyvenv.cfg` 识别，不看名字）和可外置的 `node_modules` 移到 `~/.local/share/agenthelm/local-only/<project_id>/<相对路径>`，原位置建软链接。默认只预览，`--apply` 才写；跨设备移动先复制并核对文件数与字节数；任何一步失败整体撤销；旧配置先备份。`--rebuild` 在本机按锁文件重新安装（`uv sync`、`poetry install`、`yarn/bun install --frozen-lockfile`）。
+- **硬约束**：链接文本随项目同步，必须各设备相同——目标路径只由项目里记录的 `home`、`project_id` 和相对路径拼成，不读 `XDG_DATA_HOME`；各设备 HOME 的绝对路径必须一致，不一致时 `check` 报告、`fix` 拒绝写入。
+- **实测依据**（Linux 容器，2026-10-29）：uv 0.11.32、普通 venv、yarn 1.22.22、bun 1.4.4 可以外置；**npm 10.9.4 把链接换回真实目录，pnpm 10.28.0 安装失败并删掉链接目标**——同步目录里的 npm / pnpm 项目只报告并建议改用 yarn 或 bun（不开云同步时不提示）；缓存类用 `PYTHONPYCACHEPREFIX`、`RUFF_CACHE_DIR`、`MYPY_CACHE_DIR`、`pytest -o cache_dir` 外置，工具只给写法。
+- **检查**：`local-only check`（`quick` / `standard` / `full` 三档时间预算，会话开始钩子只用 `quick`）发现真实的本机专属目录、已声明条目的状态（正常 / 本机未安装 / 尚未建立 / 又变回真实目录 / 指向别处）、包管理器、体积阈值、`-wal` / `-shm` / pid / socket 文件、冲突副本、iCloud 未下载占位文件（不读取内容）。“本机未安装”就是设备 B 没装好依赖的信号——此时直接运行 `uv sync` 会报 `File exists`，`fix --apply --rebuild` 修复。
+- **默认保持同步**：构建产物（`dist`、`build`、`out`）和本机工具状态（`.claude`、`.cursor`、`.idea`、`.vscode`）；可在配置的 `keep_synced` 调整。带 `CACHEDIR.TAG` 的目录算工具缓存，不算构建产物。
+- **体积阈值可配置**：每个顶层目录默认 200 MB 或 2 万个文件，达到 80% 开始提示；`.agents/moe.sakanano.agent-pack/local-only.json`（随项目同步，`fix` 创建）和 `~/.config/agenthelm/config.json` 的 `local_only` 段都能改，项目配置优先。接近阈值时只给选项由你决定——提高阈值（`fix --raise-limit 目录=MB/文件数`）、不再提示（`fix --skip`）、在同步服务里设为不同步——不提供“外置”（普通内容外置后其他设备看不到）。
+- **跨设备对比**：`local-only check --fingerprint [--explain 对方.json]`；`agenthelm check --fingerprint` 在项目配置了 local-only 时也带“本机环境”段并一并比较。指纹只含 HOME、链接状态与链接文本，不含平台与体积；没有配置的项目输出与以前完全一样。
+- **汇总**：`agenthelm check` / `health` / 会话开始提示汇总同步盘问题（`local:` 开头的本机发现，决定存用户状态目录）；“需要处理”的项让 `up_to_date` 变为 false、`check --strict` 退出码为 1，`health` 的退出码不变。不在同步盘里、也没有配置的项目不扫描，输出与退出码不变。
+- **同步盘识别**：补上 macOS File Provider 的 `~/Library/CloudStorage/Dropbox-*`；iCloud“桌面与文稿”同步的路径上看不出来，用 `fix --service icloud` 声明。
+- **未确认**：iCloud、Dropbox、OneDrive 是否同步软链接本身；yarn 2+；各服务冲突副本的命名（只识别 Dropbox 的 `conflicted copy` 与 iCloud 的 `.icloud` 占位文件）；macOS 上是否正在同步、账号状态没有找到可靠的检测办法，不报告。Windows 上只支持检查。
+
+### project-orchestrator 1.11.0
+
+- `health` 汇总同步盘里的本机专属目录问题（area 为“同步盘”，ID 以 `local:` 开头，决定只记在这台机器上）；`fix local-only` 展示 `agenthelm local-only fix` 的预览（不自己执行移动）；`fix sync-folder` 的指引改为推荐 `local-only`，不再建议对 npm 无效的 `.nosync` 做法。
+
+### 不兼容点与注意
+
+- 无不兼容变更。
+- **同步盘里的项目**：`check` / `health` 会多出“同步目录里有本机专属目录”等发现；`agenthelm check --strict` 与会话开始的一行提示把需要处理的项算作未处理。不需要的用 `fix --skip <ID> --reason …` 跳过。不在同步盘里、也没有 local-only 配置的项目，输出与退出码不变。
+- 只在 Linux 容器里做了 uv、yarn、bun、npm、pnpm 的实测；macOS 上跑过测试，但 iCloud、Dropbox、OneDrive 是否同步软链接本身没有在真机核对（见上文“未确认”）。
+
+### 版本
+
+agenthelm 6.10.0、agent-pack 1.10.0、project-orchestrator 1.11.0；agents-init 6.8.0、opinion-manager 0.4.2 不变。
+
 ## 2026-10-28 — agenthelm 6.9.0 / Agents Init 6.8.0 / Project Orchestrator 1.10.0：流程（SOP）管理
 
 把用户常用的流程固化成 SOP（Standard Operating Procedure，标准作业流程），之后让 Agent 按它执行或由场景触发。典型例子：处理一个视频（下载 → 转音频 → 本地或云端转录）、每周复盘。SOP 里工具怎么选、出错怎么办、中间产物放哪，都是用户自己的习惯，建立时逐项谈清，不替用户决定。
