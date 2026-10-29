@@ -71,7 +71,6 @@ python3 runtime/wf.py 笔记 9月1号                                 # 在项�
 - 扫描范围：Case 根取 `work.case.root`（缺省 `cases`）；`work.assets.roots` 可追加项目内的额外根（例如 `["projects"]`），每个一级子目录视为一个容器；未声明时只扫 Case 根，没有 Project Profile 时按缺省值运行。Case 内文件按 `docs/`、`docs/drafts/`、`refs/`、`data/` 等目录推断角色；`CASE.md` 的 `deliverables` / `evidence` 视为声明引用，正文中的 Markdown 链接、wikilink、反引号路径、Case 编号与旧 Task 路径（`legacy_ids`）都会建立引用边。开头带 `<!-- derived:` 标记的生成视图不作为引用来源。
 - 同义词：可选文件 `.agents/moe.sakanano.agent-pack/asset-synonyms.json`，格式见 [示例](asset-synonyms.example.json)（`groups` 中每组互为同义）；缺省为空，不内置任何词表。
 - 不登记：文件名含凭据类词语（credential、password、secret、token、cookie、.env、私钥等）或扩展名为证书/密钥的文件；`.git`、`node_modules` 等工具目录与 `cache` 类缓存目录；含 `.svn` / `.git` 的嵌套外部检出（被 Git 忽略时上溯到最外层被忽略目录）。Git 忽略的文件只在属于文档、表格或压缩包时登记元数据。不需要安装 SVN；项目不是 Git 工作区或没有 git 时，Git 状态记为 `none`。
-- 私密 Case：`sensitivity` 不是 `shared` 的 Case 也登记，`find` 能找到它们（结果带 `sensitivity` 字段），台账只是索引，不做可见性过滤；其中的凭据类文件名仍不登记。台账位于用户缓存目录，不进项目。
 - 状态与写入：台账为 SQLite，位于 `$XDG_CACHE_HOME/agenthelm/assets/<项目摘要>/`（缺省 `~/.cache`），文件清单未变时重建为 no-op；`wf` 的“上一次结果”也存于此。两者都不写项目，缓存目录落在项目内时拒绝运行。
 - 平台：macOS 上 iCloud 未下载的文件（dataless）只登记元数据，不读取、不算哈希；`wf` 的打开、在 Finder 中显示、复制路径调用 `open` / `pbcopy`，其他平台或命令缺失时打印绝对路径。
 - 两个命令都接受 `--project` 与 `--output json`，写在子命令前后均可；查找结果以文件本身与 CASE.md 为准，台账只是可重建的投影。

@@ -3,7 +3,7 @@
   "name": "agents-init v6 / Project Profile initialization and migration",
   "description": "Create or migrate a general project skeleton and Project Profile; the bundled opinion-manager manages user-confirmed Agent behavior rules.",
   "schema_version": "1.0",
-  "version": "6.7.0",
+  "version": "6.8.0",
   "status": "stable",
   "language": "zh-CN",
   "license": "MIT",

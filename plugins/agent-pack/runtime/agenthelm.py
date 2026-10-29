@@ -250,14 +250,18 @@ def installed_plugins(env: Env, names: set[str]) -> list[dict]:
 
 
 def migrations_between(latest: dict, plugin: str, current: str, target: str) -> list[dict]:
-    steps = []
+    """The steps from ``current`` to ``target``; when two entries end at the same version (a span kept for the
+    release gate and the single steps inside it) the narrower one, with the newer ``from``, is shown."""
+    steps: dict[str, dict] = {}
     for entry in latest.get("migrations", []):
         if entry.get("plugin") != plugin:
             continue
         to = str(entry.get("to"))
         if is_newer(to, current) and not is_newer(to, target):
-            steps.append(entry)
-    return sorted(steps, key=lambda entry: version_key(str(entry.get("to"))) or (0,))
+            kept = steps.get(to)
+            if kept is None or is_newer(str(entry.get("from")), str(kept.get("from"))):
+                steps[to] = entry
+    return sorted(steps.values(), key=lambda entry: version_key(str(entry.get("to"))) or (0,))
 
 
 def plugin_findings(latest: dict, installed: list[dict]) -> list[dict]:
@@ -416,12 +420,16 @@ def scaffold_report(env: Env, project: Path | None, *, reprompt: bool = False) -
         return {**base, "error": str(exc)}
 
 
-SYNC_SERVICES = (
-    ("iCloud Drive", re.compile(r"^(com~apple~CloudDocs|Mobile Documents|iCloud Drive|iCloudDrive)$")),
-    ("Dropbox", re.compile(r"^Dropbox( \(.*\))?$")),
-    ("OneDrive", re.compile(r"^OneDrive( - .*|-.*)?$")),
-    ("Google Drive", re.compile(r"^(GoogleDrive(-.*)?|Google Drive|My Drive)$")),
-)
+def _local_only() -> Any:
+    """local_only 模块（与本文件同目录，只用标准库）。"""
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
+    import local_only  # noqa: PLC0415 - shipped next to this file
+
+    return local_only
+
+
+SYNC_SERVICES = tuple((name, pattern) for _identifier, name, pattern in _local_only().SYNC_SERVICES)
 REBUILDABLE_DIRS = {"node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".cache", "dist", "build", "target",
                     ".tox", ".next", ".gradle"}
 
@@ -445,7 +453,7 @@ def sync_folder(root: Path) -> dict | None:
     return {"service": service, "path": str(resolved), "rebuildable": sorted(found)}
 
 
-def machine_findings(env: Env, project: Path | None, *, reprompt: bool = False) -> dict:
+def machine_findings(env: Env, project: Path | None, *, reprompt: bool = False, quick: bool = False) -> dict:
     """Findings about this machine only (no user-level runtime ...); their decisions live in the user state directory."""
     root = profile_root(project)
     result: dict = {"findings": [], "skipped": []}
@@ -471,6 +479,16 @@ def machine_findings(env: Env, project: Path | None, *, reprompt: bool = False) 
                          "fingerprint": sha256_text(where["service"]), "fix": "sync-folder",
                          "next": "运行 agenthelm fix sync-folder 查看指引（只给方案，不改文件、不删内容）；不需要就 fix --skip local:sync-folder",
                          "sync": where})
+    # local-only：同步盘里的本机专属目录、外置链接、HOME、体积……没有同步服务也没有配置时不扫描。
+    try:
+        engine = _local_only().check(root, home=env.home, environ=env.variables, mode="quick" if quick else "standard",
+                                     user_config=env.config_file)
+        findings.extend(engine["findings"])
+    except Exception as exc:  # noqa: BLE001 - 本机目录检查出错不能拖垮插件与脚手架检查
+        findings.append({"id": "local:local-only-error", "kind": "error", "level": "suggest", "scope": "machine",
+                         "title": "无法检查本机专属目录", "reason": str(exc), "impact": "只影响同步盘相关提示",
+                         "fingerprint": sha256_text(str(exc)), "fix": None, "attention": False, "options": [],
+                         "next": "运行 agenthelm local-only check 查看详情"})
     module = scaffold_module(env)
     if module is None or not findings:
         result["findings"] = findings
@@ -478,6 +496,30 @@ def machine_findings(env: Env, project: Path | None, *, reprompt: bool = False) 
     decisions = module.load_decisions(root, env.state_dir)
     result["findings"], result["skipped"] = module.partition(findings, decisions, reprompt=reprompt)
     return result
+
+
+def local_only_report(env: Env, project: Path | None, *, mode: str = "full", reprompt: bool = False) -> dict:
+    """local-only 的完整检查结果（供 ``agenthelm local-only check`` 与 MCP 工具），已套用这台机器上记录的决定。"""
+    module = _local_only()
+    base = (project or Path.cwd()).resolve()
+    root = profile_root(base) or base
+    report = module.check(root, home=env.home, environ=env.variables, mode=mode, user_config=env.config_file)
+    report["skipped"] = []
+    scaffold = scaffold_module(env)
+    if scaffold is not None and report["findings"]:
+        decisions = scaffold.load_decisions(root, env.state_dir)
+        report["findings"], skipped = scaffold.partition(report["findings"], decisions, reprompt=reprompt)
+        report["skipped"] = [{"id": item["id"], "decision": item["decision"]} for item in skipped]
+        report["summary"] = {"findings": len(report["findings"]),
+                             "attention": sum(1 for item in report["findings"] if item.get("attention"))}
+    return report
+
+
+def local_only_plan(env: Env, project: Path | None, **options: Any) -> dict:
+    """``agenthelm local-only fix`` 的预览（不写任何东西）；原因不能处理时抛出 LocalOnlyError。"""
+    base = (project or Path.cwd()).resolve()
+    return _local_only().plan_fix(profile_root(base) or base, home=env.home, environ=env.variables,
+                                  user_config=env.config_file, **options)
 
 
 # ---------------------------------------------------------------- report
@@ -501,7 +543,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     content = content_findings(project, latest) if project else []
     opinion = opinion_findings(project, installed) if project else []
     scaffold = scaffold_report(env, project, reprompt=reprompt)
-    machine = machine_findings(env, project, reprompt=reprompt)
+    machine = machine_findings(env, project, reprompt=reprompt, quick=hook_mode)
+    local_attention = sum(1 for item in machine["findings"] if item.get("attention"))
     scaffold_active = len(scaffold["findings"]) if scaffold else 0
     behind = [item for item in plugins if item["status"] == "behind"]
     legacy = [item for item in plugins if item["client"] == "legacy"]
@@ -519,13 +562,15 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "summary": {
             "scaffold_findings": scaffold_active,
             "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
+            "local_only_attention": local_attention,
             "plugins_behind": len(behind),
             "breaking": any(item["breaking"] for item in behind),
             "content_updates": len(content_updates),
             "content_conflicts": sum(1 for item in content if item["status"] == "conflict"),
             "opinion_updates": len(opinion_updates),
             "legacy_installs": len(legacy),
-            "up_to_date": not (behind or content_updates or opinion_updates or legacy or scaffold_active),
+            "up_to_date": not (behind or content_updates or opinion_updates or legacy or scaffold_active
+                               or local_attention),
         },
     }
 
@@ -554,6 +599,8 @@ def one_line(report: dict) -> str | None:
         parts.append(f"{summary['legacy_installs']} 个旧方式安装待迁移")
     if summary["scaffold_findings"]:
         parts.append(f"项目脚手架有 {summary['scaffold_findings']} 项差异")
+    if summary.get("local_only_attention"):
+        parts.append(f"同步目录里有 {summary['local_only_attention']} 项本机专属目录需要处理")
     return "agenthelm：" + "，".join(parts) + f"。运行 `{CLI} check` 查看详情；更新前会先预览，由你决定。"
 
 
@@ -1195,6 +1242,8 @@ def parser() -> argparse.ArgumentParser:
 
     sub.add_parser("fix", add_help=False,
                    help="修复项目脚手架差异与更新（等同 project fix；默认预览，--apply 写入；--skip/--unskip 记录决定）")
+    sub.add_parser("local-only", add_help=False,
+                   help="只属于这台机器的目录（.venv、node_modules、缓存）不进云同步盘：check / fix / config（详见 local-only --help）")
     sub.add_parser("runtime", add_help=False,
                    help="用户级运行时：install / update / use / status（日常只需要 Python，不经过 npx）")
     sub.add_parser("project", add_help=False,
@@ -1261,6 +1310,11 @@ def run_nudge(argv: list[str]) -> int:
     return agent_pack_nudge.main(argv, sys.modules[__name__])
 
 
+def run_local_only(argv: list[str]) -> int:
+    """``agenthelm local-only``: keep rebuildable directories out of cloud-synced folders."""
+    return _local_only().main(argv, sys.modules[__name__])
+
+
 def run_runtime(argv: list[str]) -> int:
     """``agenthelm runtime``: the user-level runtime that project launchers use without any AI client."""
     sys.path.insert(0, str(RUNTIME_DIR))
@@ -1269,7 +1323,7 @@ def run_runtime(argv: list[str]) -> int:
     return agenthelm_runtime.main(argv, sys.modules[__name__])
 
 
-def print_fingerprint(env: Env, report: dict, args: argparse.Namespace) -> int:
+def print_fingerprint(env: Env, report: dict, args: argparse.Namespace, project: Path | None = None) -> int:
     """``check --fingerprint [--explain [file]]``: the scaffold fingerprint, and where two machines differ."""
     result = scaffold_fingerprint(env, report.get("scaffold"))
     if result is None:
@@ -1279,6 +1333,13 @@ def print_fingerprint(env: Env, report: dict, args: argparse.Namespace) -> int:
         return 4
     payload: dict = {"ok": True, "fingerprint": result["fingerprint"], "detail": result["detail"]}
     lines = [f"脚手架指纹 {result['fingerprint']}"]
+    mine_local: dict = {}
+    if project is not None:
+        # 本机环境（外置链接、HOME）单独成段：没有 local-only 配置的项目，输出与以前完全一样。
+        mine_local = local_only_report(env, project, mode="quick")["fingerprint"]
+        if mine_local["detail"]:
+            payload["local_only"] = mine_local
+            lines.append(f"本机环境指纹 {mine_local['fingerprint']}")
     differences: list[str] = []
     if args.explain and args.explain != "-":
         try:
@@ -1292,12 +1353,21 @@ def print_fingerprint(env: Env, report: dict, args: argparse.Namespace) -> int:
             return 2
         module = scaffold_module(env)
         differences = module.explain(result["detail"], theirs)
+        their_local = (other.get("local_only") or {}).get("detail") or {}
+        if mine_local.get("detail") or their_local:
+            if not their_local:
+                differences.append("本机环境：对方没有 local-only 明细（对方的 agent-pack 较旧或项目还没配置）")
+            elif not mine_local.get("detail"):
+                differences.append("本机环境：这台没有 local-only 配置，对方有")
+            else:
+                differences += _local_only().explain(mine_local["detail"], their_local)
         payload["same"] = not differences
         payload["differences"] = differences
         lines.append("两台机器的脚手架一致。" if not differences else f"有 {len(differences)} 处不同：")
         lines += [f"  {item}" for item in differences]
     elif args.explain:
         lines += [f"  {key} = {value}" for key, value in result["detail"].items()]
+        lines += [f"  local-only {key} = {value}" for key, value in mine_local.get("detail", {}).items()]
     if args.output == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
@@ -1315,6 +1385,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_runtime(argv[1:])
     if argv[:1] == ["nudge"]:
         return run_nudge(argv[1:])
+    if argv[:1] == ["local-only"]:
+        return run_local_only(argv[1:])
     args = parser().parse_args(argv)
     env = current_env(args.home)
     home = env.home
@@ -1336,7 +1408,7 @@ def main(argv: list[str] | None = None) -> int:
                                max_age=0 if args.refresh else CACHE_TTL_SECONDS, reprompt=args.reprompt)
             report.pop("_latest")
             if args.fingerprint or args.explain:
-                return print_fingerprint(env, report, args)
+                return print_fingerprint(env, report, args, project)
             if args.output == "json":
                 print(json.dumps(report, ensure_ascii=False, indent=2))
             else:

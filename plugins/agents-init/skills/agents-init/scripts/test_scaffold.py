@@ -547,5 +547,82 @@ class FingerprintTests(ScaffoldCase):
         self.assertTrue(report["fingerprint"]["fingerprint"].startswith("sha256:"))
 
 
+class SopSkeletonTests(ScaffoldCase):
+    def profile_data(self) -> dict:
+        return json.loads((self.root / PROFILE).read_text(encoding="utf-8"))
+
+    def test_new_project_declares_the_sop_section_and_has_the_directory(self) -> None:
+        self.init()
+        self.assertEqual(self.profile_data()["sop"], {"root": "sops"})
+        self.assertTrue((self.root / "sops/.gitkeep").is_file())
+        self.assertEqual(self.check()["findings"], [])
+
+    def test_a_project_without_the_sop_section_gets_no_new_findings(self) -> None:
+        self.init()
+        before = scaffold.fingerprint(self.check())["fingerprint"]
+        data = self.profile_data()
+        del data["sop"]
+        (self.root / PROFILE).write_text(json.dumps(data), encoding="utf-8")
+        (self.root / "sops/.gitkeep").unlink()
+        (self.root / "sops").rmdir()
+        report = self.check()
+        self.assertFalse([item for item in self.ids(report) if "sops" in item], report["findings"])
+        self.assertNotEqual(scaffold.fingerprint(report)["fingerprint"], before)  # 期望清单少了一项，指纹随之不同
+        self.assertEqual(report["findings"], [])
+
+    def test_a_declared_but_missing_sop_directory_is_found_and_fixed(self) -> None:
+        self.init()
+        (self.root / "sops/.gitkeep").unlink()
+        (self.root / "sops").rmdir()
+        report = self.check()
+        self.assertIn("skel:sops/.gitkeep", self.ids(report))
+        code, result = self.run_mode("add-skeleton", "--target", "sops/.gitkeep", "--apply")
+        self.assertEqual(code, 0, result)
+        self.assertTrue((self.root / "sops/.gitkeep").is_file())
+
+    def test_a_custom_sop_root_is_honoured(self) -> None:
+        self.init()
+        data = self.profile_data()
+        data["sop"] = {"root": "flows"}
+        (self.root / PROFILE).write_text(json.dumps(data), encoding="utf-8")
+        self.assertIn("skel:flows/.gitkeep", self.ids(self.check()))
+
+
+class PrivateSkeletonTests(ScaffoldCase):
+    def profile_data(self) -> dict:
+        return json.loads((self.root / PROFILE).read_text(encoding="utf-8"))
+
+    def test_new_project_declares_the_private_directory_and_ignores_its_content(self) -> None:
+        self.init()
+        self.assertEqual(self.profile_data()["privacy"]["forbidden_default_reads"], ["private/"])
+        text = (self.root / "private/.gitignore").read_text(encoding="utf-8")
+        self.assertEqual(text.splitlines()[1:], ["*", "!.gitignore"])
+        self.assertEqual(self.check()["findings"], [])
+
+    def test_a_project_that_never_declared_it_gets_no_new_findings(self) -> None:
+        self.init()
+        data = self.profile_data()
+        data["privacy"]["forbidden_default_reads"] = []
+        (self.root / PROFILE).write_text(json.dumps(data), encoding="utf-8")
+        (self.root / "private/.gitignore").unlink()
+        (self.root / "private").rmdir()
+        report = self.check()
+        self.assertFalse([item for item in self.ids(report) if "private" in item], report["findings"])
+        self.assertEqual(report["findings"], [])
+
+    def test_a_declared_but_missing_gitignore_is_found_and_fixed(self) -> None:
+        self.init()
+        (self.root / "private/.gitignore").unlink()
+        self.assertIn("skel:private/.gitignore", self.ids(self.check()))
+        code, result = self.run_mode("add-skeleton", "--target", "private/.gitignore", "--apply")
+        self.assertEqual(code, 0, result)
+        self.assertTrue((self.root / "private/.gitignore").is_file())
+
+    def test_a_custom_gitignore_in_private_is_left_alone(self) -> None:
+        self.init()
+        (self.root / "private/.gitignore").write_text("# 我自己的规则\n", encoding="utf-8")
+        self.assertEqual(self.check()["findings"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
