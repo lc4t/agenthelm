@@ -150,9 +150,26 @@ npx @sakanano-moe/agenthelm check --show-skipped       # 列出被跳过的项�
 
 - **`wf` 的结果为什么可能不同**：台账按项目的绝对路径各存一份；查找行为还取决于这台机器装的 project-orchestrator 版本，以及项目里可选的 `asset-synonyms.json`（同义词，随项目同步）。要排查，先用 `check --fingerprint` 确认两台机器的脚手架一致，再用 `fix rebuild-index` 重建本机台账。
 - **`which wf` / `which agenthelm` 为空**：运行时没装时 `./menu` 仍通过客户端插件运行；`wf` 是单独的查找命令，运行时不提供它，用 `./menu find 词` 或 `agenthelm project find 词` 代替。`agenthelm runtime install --link-bin ~/.local/bin` 只建 `agenthelm` 的命令链接。
-- **同步盘提示**：`health` 检测到项目位于同步盘时给出一条本机提示（不改任何文件）；`fix sync-folder` 列出项目里的可重建目录（`node_modules`、`.venv`、`__pycache__` 等）和处理方案（`.gitignore`、iCloud 的 `.nosync`、其他服务的选择性同步），**不会替你移动或删除任何内容**。
+- **同步盘提示**：`health` 检测到项目位于同步盘时给出一条本机提示（不改任何文件）；`fix sync-folder` 列出项目里的可重建目录和处理方案，**不会替你移动或删除任何内容**。要把 `.venv`、`node_modules` 等移出同步盘，用下一节的 `agenthelm local-only`。
 - 同步服务可能留下 `check-decisions 2.json` 之类的冲突副本；`check` 会提示，合并到 `check-decisions.json` 后删除副本。
 - 日期 Case 目录、macOS 的 iCloud 未下载占位文件：台账不读取这些文件的内容，不触发下载。
+
+### 同步盘里的 `.venv`、`node_modules`：`agenthelm local-only`
+
+依赖和缓存不该进同步盘。`agenthelm local-only` 把它们放到每台机器自己的 `~/.local/share/agenthelm/local-only/<project_id>/` 下，项目里留一个软链接，并检查各设备之间的差异：
+
+```bash
+agenthelm local-only check                 # 云同步、外置链接、HOME、体积、包管理器（只读；--output json、--strict）
+agenthelm local-only fix                   # 预览；--apply 才移动目录并建链接，失败整体撤销
+agenthelm local-only fix --apply --rebuild # 新设备：建本机目录，并按 uv.lock / yarn.lock 等重新安装
+agenthelm local-only check --fingerprint   # 本机环境指纹；--explain 对方.json 指出两台设备差在哪里
+```
+
+- **各设备的 HOME 绝对路径必须一致**（链接文本随项目同步，所有设备要相同）；不一致时 `check` 报告，`fix` 拒绝写入。
+- 实测：uv、普通 venv、yarn 经典版、bun 可以外置；**npm 会把链接换回真实目录，pnpm 会安装失败**——同步目录里的 Node 项目请尽量用 yarn 或 bun（不开云同步时随意）。缓存类用 `PYTHONPYCACHEPREFIX`、`RUFF_CACHE_DIR`、`MYPY_CACHE_DIR` 等环境变量外置。
+- 构建产物（`dist`、`build`）和本机工具状态（`.claude`、`.cursor`、`.idea`）默认保持同步。目录体积接近阈值（默认 200 MB 或 2 万个文件的 80%）时给出选项由你决定；阈值与例外在 `.agents/moe.sakanano.agent-pack/local-only.json` 或 `~/.config/agenthelm/config.json` 的 `local_only` 段配置。
+- AI Agent 通过只读 MCP Tool `agent_pack_cloud_sync_safety_check` 获取同样的检查结果。
+- 详见 [`plugins/agent-pack/references/local-only.md`](plugins/agent-pack/references/local-only.md)。
 
 ## 从旧安装方式迁移
 
