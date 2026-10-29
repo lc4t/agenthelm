@@ -18,6 +18,14 @@ cases/CASE-ID/
 
 所有目录按需创建，简单 Case 只需 CASE.md。自有文档使用相对链接并保留完整附件；项目工程、正式规则和跨 Case 的版本化公共资产继续使用原权威位置。来源包中的 AGENTS.md 和 OPINION.md 作为历史材料，不成为当前项目指令。
 
+### 文件语言
+
+Case 正文的结构按项目文件语言生成，由 Project Profile 的 `language`（`zh` / `en`，缺省 `zh`）决定，随项目同步，不随各人命令行界面的语言（`AGENTHELM_LANG`）变化：
+
+- 新建 Case 用 `templates/CASE.md`（中文）或 `templates/CASE.en.md`（英文）；字段占位的默认文字也随语言（“刚创建 / 待明确” 对应 “Just created / To be defined”）。
+- 更新时认两种小节名：当前可信状态 / Current trusted state、下一动作 / Next action、决策记录 / Decision log、工作记录 / Work log、结果 / Result。文件里已有哪种写法就用哪种，找不到小节时按项目语言新建，所以旧 Case、换过语言的项目与手写的 Case 都能照常追加。
+- 初始化时用 `init_project.py --language zh|en` 设定；它只影响之后生成的文件，已有 Case 不会被改写。
+
 ### 最小记录与项目特化
 
 已有项目使用自己的 Case Schema 和状态工具。未声明 Case 创建工具的新项目可由 Agent 创建目录和 CASE.md，最小 Frontmatter 必须包含与目录相同的 `id`、可理解的 `title` 和 `status`；同时保存目标、下一动作、证据与决策，避免仅存文件而丢失恢复上下文。日期序号从当日现有目录取最大值加一，子工作项不取得第二套顶层生命周期。

@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 import case  # noqa: E402
 import project_cli  # noqa: E402

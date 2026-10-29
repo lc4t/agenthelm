@@ -17,6 +17,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[3]
 RUNTIME = ROOT / "plugins/agent-pack/runtime"
 INIT = ROOT / "plugins/agents-init/skills/agents-init/scripts/init_project.py"
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
 sys.path.insert(0, str(RUNTIME))
 import agenthelm  # noqa: E402
 import local_only  # noqa: E402

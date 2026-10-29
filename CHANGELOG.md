@@ -1,5 +1,30 @@
 # 更新记录
 
+## 2026-10-29 — 命令行输出多语言（中文 / 英文），默认英文
+
+此前所有命令的输出与提示只有中文。现在 agenthelm 的命令行输出、菜单、`--help` 与错误信息按语言显示，**默认英文**；中文原样保留。属于 6.11.0 发布窗口，与“观点自动采集与未决事项提示”同批发布。
+
+### 语言怎么决定
+
+顺序：调用方指定（如 `nudge.language`）→ 环境变量 `AGENTHELM_LANG` → 用户配置 `~/.config/agenthelm/config.json` 的 `language` → 系统 locale（`LC_ALL`、`LC_MESSAGES`、`LANG`）→ **英文**。取值 `zh`、`en`；`auto`、空值和 C/POSIX 视为未指定；中文 locale 用中文，其他语言的 locale 暂用英文。要继续看中文：`export AGENTHELM_LANG=zh`，或在用户配置里写 `{"language": "zh"}`。
+
+### 范围
+
+- 翻译：agenthelm（`check` / `install` / `update` / `doctor` / `runtime` / `nudge`）、项目入口与菜单（`project` / `./menu`，含演示项目）、`wf`、`assets.py`、`case.py`、`memory.py`、`case_workspace.py`、`opinion_manager.py`（含 `context` / `lifecycle` / `inbox`）、`init_project.py` 与 `scaffold.py` 的输出、提示、错误与 `--help`；用户级运行时启动器的“需要 Python 3.11”提示按 `AGENTHELM_LANG` / `LANG` 选择语言。
+- 项目文件语言（新增）：Profile 顶层 `language`（`zh` | `en`，缺省 `zh`）决定写进项目的 Case 与 README。`en` 的项目里，新建的 CASE.md 使用英文小节名（Current trusted state / Next action / Decision log / Work log / Result）与英文默认文字，README 追加 “How to use”。它独立于界面语言：界面语言只影响命令输出，不会改动已有文件。`agents-init --language {auto,zh,en}`：`auto` 在 init 时取当前界面语言，migrate 时保持中文；agents-init 的 Skill 要求先问用户想用哪种文件语言。解析器同时认中英文小节名，已有文件沿用自己的写法，缺失的小节按项目语言补建。新增 `templates/CASE.en.md`，内容包 `project-orchestrator/case-template` 升到 1.1.0。
+- 不翻译：OPINION.md 与锁的渲染、记忆索引、AGENT.template.md 等其余模板、骨架文件模板，以及 SOP 写进项目的文件（SOP.md 的小节名与字段名、占位标记、执行 Case 里的“SOP 执行清单”与步骤记录、样例 SOP）（这几项仍为中文，是后续工作，见 issue #24）、用户自己写的内容（候选、规则、原因、CASE.md 正文）、公开 Opinion 模板的规则正文、Skill 正文与 CHANGELOG / README 等文档。两种界面语言下 OPINION.md、锁、脚手架指纹与决定文件完全一致，并有测试守住。
+- 机器可读输出（`--output json` 的字段名与结构、退出码）不变；JSON 里给人看的 `message` / `error` 文字随语言变化。解析文字输出的脚本请改用 `--output json`。
+
+### 实现
+
+- 每个插件带一份相同的语言模块（`i18n_agent_pack.py`、`i18n_opinion.py`、`i18n_orchestrator.py`、`i18n_init.py`；模块名不同，同一进程里不会互相覆盖）：源语言是中文，`_("中文原文")` 在中文下原样返回，英文下查 `locale/en.json`，没有译文时退回原文；模块级常量里的文案用 `N_` 标记，使用处再 `_()`。约 1550 条文案，演示项目的数据在读取时整棵翻译。
+- 测试：`tests/test_i18n.py` 守住四份语言模块行为一致、源码里每个 `_("…")` 都有英文译文、译文的占位符与原文一致且没有漏翻的中文、`_` 没有被局部变量遮蔽、演示数据完整，并在英文下实际运行演示项目、菜单（伪终端）、各命令的 `--help`、真实项目的 Case / 台账命令，要求输出里没有漏翻的中文。既有测试固定 `AGENTHELM_LANG=zh`。
+- 英文文案由人工翻译，未经母语者审校；新增语言只需补一份 `locale/<语言>.json` 并在 `LANGUAGES` 里加上。
+
+### 版本
+
+与 SOP（6.9.0）、local-only（6.10.0）、观点自动采集同在 6.11.0 发布，不另升版本：agents-init 6.8.0、agent-pack 1.11.0、opinion-manager 0.5.0、project-orchestrator 1.11.1，本批把它们标为含不兼容变更（默认输出语言改变）。SOP（`sop.py`、`private_paths.py`）与 local-only（`local_only.py`）的命令输出也已纳入。
+
 ## 2026-10-29 — agenthelm 6.11.0 / Opinion Manager 0.5.0 / Agent Pack 1.11.0 / Project Orchestrator 1.11.1：观点自动采集与未决事项提示
 
 6.11.0 同时包含下面 2026-10-29（6.10.0，local-only）和 2026-10-28（6.9.0，SOP）两个条目的全部变化：6.9.0、6.10.0 都没有单独发布，从 6.8.0 升级的用户一次得到三部分。

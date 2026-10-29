@@ -6,7 +6,7 @@
       "version": "1.1.0",
       "kind": "sample",
       "title": "默认 Case 模板与 Schema",
-      "description": "runtime/case.py 新建 Case 时使用的 CASE.md 正文模板与默认 Frontmatter Schema；只影响之后新建的 Case，已有 Case 不会被改写。（1.1.0：Schema 增加可选字段 sop，记录这个 Case 是哪个 SOP 的一次执行。）",
+      "description": "runtime/case.py 新建 CASE.md 时使用的正文模板（中文 CASE.md、英文 CASE.en.md，按 Project Profile 的 language 选择）与默认 Frontmatter Schema；只影响之后新建的 Case，已有 Case 不会被改写。（1.1.0：Schema 增加可选字段 sop，记录这个 Case 是哪个 SOP 的一次执行。1.2.0：新增 CASE.en.md。）",
       "sources": [
         "templates",
         "references/case.schema.json"
@@ -15,6 +15,7 @@
       "project_lock": "none",
       "files": {
         "references/case.schema.json": "ecb37f084b901786bdc878cdc7f1e5d74c2eb31722d6a10fe24f6d88768bcbde",
+        "templates/CASE.en.md": "4aec0fab19c83bb5c2b72a31bbedb3425c82efb13e5d436f5cee35496d6eab74",
         "templates/CASE.md": "a33ffcec5c239cbcf4c0828f08336c578d6d184363b01db1419f74fcdc9e1086"
       }
     },

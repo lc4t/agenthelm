@@ -134,6 +134,14 @@ npx @sakanano-moe/agenthelm check --show-skipped       # 列出被跳过的项�
 - `check --fingerprint` 输出脚手架指纹：两台机器的脚手架一致时相同。要知道差在哪里：在另一台机器运行 `check --fingerprint --output json > other.json`，在这台运行 `check --fingerprint --explain other.json`。
 - 项目有自己的 Case 目录命名时，在 Profile 声明：`"work": {"case": {"directory_naming": {"style": "date-topic"}}}`（`style` 为 `case-id`（缺省）/ `date-topic` / `custom` + `pattern` 正则），`check` 按声明检查。
 
+## 界面语言
+
+命令行输出、菜单、`--help` 与错误信息有中文和英文两种，**默认英文**。按这个顺序决定：环境变量 `AGENTHELM_LANG`（`zh` / `en`）→ `~/.config/agenthelm/config.json` 的 `{"language": "zh"}` → 系统 locale（中文 locale 用中文）→ 英文。要继续看中文：`export AGENTHELM_LANG=zh`。
+
+- 机器可读输出（`--output json` 的字段与结构、退出码）不随语言变化；解析文字输出的脚本请改用 `--output json`。
+- 界面语言不改动项目文件。Case 的小节名与 README 追加的“怎样使用”由项目文件语言决定：Profile 顶层 `language`（`zh` | `en`，缺省 `zh`），`agents-init --language {auto,zh,en}` 在初始化时设置，`auto` 取当时的界面语言。OPINION.md 与锁、记忆索引、SOP 文件等其余内容仍为中文，所以两种语言下指纹与决定文件一致。
+- 观点提示的语言另可在 `nudge.language` 单独设置，见 [nudge 说明](plugins/agent-pack/references/nudge.md)。
+
 ## 多机与同步盘
 
 项目放在 iCloud、Dropbox、OneDrive 等同步盘里、在多台机器上使用时，哪些东西跟着项目走，哪些每台机器各一份：

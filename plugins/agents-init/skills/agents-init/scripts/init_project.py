@@ -14,6 +14,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path from other plugins
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from i18n_init import _, resolve_language  # noqa: E402
 
 
 INITIALIZER_VERSION = "6.6.0"
@@ -98,6 +101,7 @@ class Inputs:
     agent_cli: tuple[str, ...]
     work_mode: str = "case-workspace"
     entry_launcher: str | None = None
+    language: str = "zh"
 
 
 def split_csv(value: str) -> tuple[str, ...]:
@@ -122,11 +126,11 @@ def load_templates(path: Path = TEMPLATE_PATH) -> dict[str, str]:
     try:
         source = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise InitError(f"无法读取中文模板：{path}", code="template-invalid") from exc
+        raise InitError(_("无法读取中文模板：{0}").format(path), code="template-invalid") from exc
     templates = {match.group("name"): match.group("body") for match in TEMPLATE_PATTERN.finditer(source)}
     missing = sorted(REQUIRED_TEMPLATES - set(templates))
     if missing:
-        raise InitError("中文模板缺少生成区块：" + ", ".join(missing), code="template-invalid")
+        raise InitError(_("中文模板缺少生成区块：") + ", ".join(missing), code="template-invalid")
     return templates
 
 
@@ -149,9 +153,9 @@ def _read_manifest(path: Path) -> dict:
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise InitError(f"Plugin manifest 无法解析：{path}", code="runtime-required") from exc
+        raise InitError(_("Plugin manifest 无法解析：{0}").format(path), code="runtime-required") from exc
     if not isinstance(manifest, dict):
-        raise InitError(f"Plugin manifest 根节点必须是对象：{path}", code="runtime-required")
+        raise InitError(_("Plugin manifest 根节点必须是对象：{0}").format(path), code="runtime-required")
     return manifest
 
 
@@ -207,9 +211,9 @@ def _agents_init_root(plugin_root: Path) -> Path:
 def validate_runtime(plugin_root: Path) -> dict[str, str | bool]:
     root = _agents_init_root(plugin_root)
     if not _is_regular_file(root / "plugin.json"):
-        raise InitError(f"缺少 agents-init Plugin manifest：{root / 'plugin.json'}", code="runtime-required")
+        raise InitError(_("缺少 agents-init Plugin manifest：{0}").format(root / 'plugin.json'), code="runtime-required")
     if _read_manifest(root / "plugin.json").get("name") != "agents-init":
-        raise InitError("Plugin manifest 必须声明 name=agents-init", code="runtime-required")
+        raise InitError(_("Plugin manifest 必须声明 name=agents-init"), code="runtime-required")
     missing: list[str] = []
     versions: dict[str, str] = {}
     for name, files in BUNDLED_PLUGINS.items():
@@ -220,11 +224,11 @@ def validate_runtime(plugin_root: Path) -> dict[str, str | bool]:
         missing.extend(f"{name}/{relative}" for relative in files if not _is_regular_file(companion / relative))
         manifest = _read_manifest(companion / "plugin.json")
         if manifest.get("name") != name:
-            raise InitError(f"同包 Plugin manifest 必须声明 name={name}", code="runtime-required")
+            raise InitError(_("同包 Plugin manifest 必须声明 name={0}").format(name), code="runtime-required")
         versions[name] = str(manifest.get("version", ""))
     if missing:
         raise InitError(
-            "缺少必需的 project-orchestrator / agent-pack / opinion-manager 文件："
+            _("缺少必需的 project-orchestrator / agent-pack / opinion-manager 文件：")
             + ", ".join(missing),
             code="runtime-required",
         )
@@ -255,9 +259,9 @@ def read_legacy_profile(root: Path) -> dict | None:
     try:
         profile = json.loads(current.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise InitError(f"legacy profile 无法解析：{LEGACY_PROFILE_PATH}", code="profile-invalid") from exc
+        raise InitError(_("legacy profile 无法解析：{0}").format(LEGACY_PROFILE_PATH), code="profile-invalid") from exc
     if not isinstance(profile, dict) or profile.get("schema_version") != "1.0":
-        raise InitError("legacy profile 必须是 schema_version=1.0 的对象", code="profile-invalid")
+        raise InitError(_("legacy profile 必须是 schema_version=1.0 的对象"), code="profile-invalid")
     return profile
 
 
@@ -277,12 +281,12 @@ def upgrade_legacy_profile(legacy: dict) -> dict:
 
 def configure_work_mode(profile: dict, mode: str | None) -> dict:
     if profile.get('work') is not None and not isinstance(profile['work'], dict):
-        raise InitError('work 配置必须是对象', code='profile-invalid')
+        raise InitError(_('work 配置必须是对象'), code='profile-invalid')
     if mode is None:
         return profile
     work = dict(profile.get('work') or {})
     if any(work.get(key) is not None and not isinstance(work[key], dict) for key in ('task', 'case')):
-        raise InitError('task/case 配置必须是对象或 null', code='profile-invalid')
+        raise InitError(_('task/case 配置必须是对象或 null'), code='profile-invalid')
     if mode == 'case-workspace':
         if work.get('task'):
             work['legacy_task'] = {**work['task'], 'mode': 'migrate-only'}
@@ -297,15 +301,15 @@ def configure_work_mode(profile: dict, mode: str | None) -> dict:
 
 def validate_inline(label: str, value: str) -> str:
     if not value.strip():
-        raise InitError(f"{label} 不能为空")
+        raise InitError(_("{0} 不能为空").format(label))
     if len(value) > 512 or any(ord(character) < 32 for character in value):
-        raise InitError(f"{label} 只能包含单行可打印文本")
+        raise InitError(_("{0} 只能包含单行可打印文本").format(label))
     return value.strip()
 
 
 def validate_entry_name(name: str) -> str:
     if not ENTRY_NAME_RE.fullmatch(name) or name in RESERVED_ENTRY_NAMES:
-        raise InitError(f"启动器名称不合法：{name}（只能用字母、数字、. _ -，且不能与骨架文件同名）")
+        raise InitError(_("启动器名称不合法：{0}（只能用字母、数字、. _ -，且不能与骨架文件同名）").format(name))
     return name
 
 
@@ -313,18 +317,36 @@ def launcher_text() -> str:
     try:
         return LAUNCHER_TEMPLATE.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise InitError(f"无法读取启动器模板：{LAUNCHER_TEMPLATE}", code="template-invalid") from exc
+        raise InitError(_("无法读取启动器模板：{0}").format(LAUNCHER_TEMPLATE), code="template-invalid") from exc
 
 
 def entry_command(launcher: str | None) -> str:
     return f"./{launcher}" if launcher else "agenthelm project"
 
 
-def readme_block(launcher: str | None) -> str:
+def readme_block(launcher: str | None, language: str = "zh") -> str:
+    """The README section that points at the project entry, written in the project's file language."""
     command = entry_command(launcher)
+    if language == "en":
+        return (f"{README_START}\n## How to use\n\nRun `{command}` in the project root to open the project menu: find files, see progress, "
+                f"read the project guide, check and maintain. No AI client is needed, only Python 3.11+; if the first run says the runtime is "
+                f"missing, install it once as prompted.\n\n"
+                f"You can also skip the menu: `{command} find <words>`, `{command} progress`, `{command} --help`.\n{README_END}\n")
     return (f"{README_START}\n## 怎样使用\n\n在项目根目录运行 `{command}` 打开项目菜单：找资料、看进展、项目指南、检查与维护。"
             f"不需要 AI 客户端，只需要 Python 3.11+；第一次运行如果提示缺少运行时，按提示安装一次即可。\n\n"
             f"不进菜单也可以：`{command} find 关键词`、`{command} progress`、`{command} --help`。\n{README_END}\n")
+
+
+def file_language(args: argparse.Namespace) -> str:
+    """The language a new project's files are written in: --language, else the UI language at init time (migrate keeps zh)."""
+    if getattr(args, "language", "auto") in ("zh", "en"):
+        return args.language
+    return "zh" if args.mode == "migrate" else resolve_language()
+
+
+def project_language(profile: dict) -> str:
+    """The language of a project's generated files: the Profile's ``language``, ``zh`` for projects that predate it."""
+    return profile.get("language") if profile.get("language") in ("zh", "en") else "zh"
 
 
 def tracked_paths(pack: dict | None, launcher: str | None) -> list[Path]:
@@ -340,6 +362,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
         "schema_version": "1.0",
         "initializer_version": INITIALIZER_VERSION,
         "name": inputs.name,
+        "language": inputs.language,
         "profile": {
             "project_type": list(inputs.project_type),
             "vcs": inputs.vcs,
@@ -669,7 +692,7 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str]) -> None
         try:
             lock = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise InitError(f"content lock 无法解析：{CONTENT_LOCK_PATH}", code="profile-invalid") from exc
+            raise InitError(_("content lock 无法解析：{0}").format(CONTENT_LOCK_PATH), code="profile-invalid") from exc
     entry = lock.setdefault("packs", {}).get(pack["id"], {})
     files = {**entry.get("files", {}), **baseline}
     lock["packs"][pack["id"]] = {"plugin": "agents-init", "version": pack["version"], "files": dict(sorted(files.items()))}
@@ -686,11 +709,11 @@ def _read_project_json(root: Path, relative: Path, label: str) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise InitError(f"缺少 {relative}", code="refresh-unavailable") from exc
+        raise InitError(_("缺少 {0}").format(relative), code="refresh-unavailable") from exc
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise InitError(f"{label} 无法解析：{relative}", code="profile-invalid") from exc
+        raise InitError(_("{0} 无法解析：{1}").format(label, relative), code="profile-invalid") from exc
     if not isinstance(data, dict):
-        raise InitError(f"{label} 根节点必须是对象", code="profile-invalid")
+        raise InitError(_("{0} 根节点必须是对象").format(label), code="profile-invalid")
     return data
 
 
@@ -711,6 +734,7 @@ def inputs_from_profile(root: Path) -> Inputs:
         tuple(details.get("agent_cli") or ()),
         str((profile.get("work") or {}).get("mode") or "legacy"),
         _profile_launcher(profile),
+        project_language(profile),
     )
 
 
@@ -750,7 +774,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     """
     pack = contract_pack()
     if pack is None:
-        raise InitError("当前 agents-init 未声明可刷新的内容包", code="refresh-unavailable")
+        raise InitError(_("当前 agents-init 未声明可刷新的内容包"), code="refresh-unavailable")
     try:
         lock = _read_project_json(root, CONTENT_LOCK_PATH, "content lock")
     except InitError as exc:
@@ -768,9 +792,9 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     tracked = tracked_paths(pack, inputs.entry_launcher)
     unknown = (accept | keep) - set(tracked)
     if unknown:
-        raise InitError("不是内容包跟踪的文件：" + ", ".join(sorted(map(str, unknown))))
+        raise InitError(_("不是内容包跟踪的文件：") + ", ".join(sorted(map(str, unknown))))
     if accept & keep:
-        raise InitError("同一文件不能同时 --accept 与 --keep：" + ", ".join(sorted(map(str, accept & keep))))
+        raise InitError(_("同一文件不能同时 --accept 与 --keep：") + ", ".join(sorted(map(str, accept & keep))))
     plan: list[dict] = []
     kept_before = _scaffold().keep_fingerprints(root)
     for relative in tracked:
@@ -813,7 +837,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         "blocked": blocked,
     }
     if blocked:
-        result["hint"] = "本地已改动的文件需逐个选择：--accept <文件> 用新模板替换（先备份），或 --keep <文件> 保留本地"
+        result["hint"] = _("本地已改动的文件需逐个选择：--accept <文件> 用新模板替换（先备份），或 --keep <文件> 保留本地")
     if not args.apply or blocked:
         return (0 if not blocked else 1), result
     if replacing and args.recovery_dir is None:
@@ -869,18 +893,18 @@ def _atomic_write(path: Path, text: str, mode: int | None = None) -> None:
     os.replace(temporary, path)
 
 
-def readme_plan(root: Path, name: str, launcher: str | None) -> dict | None:
+def readme_plan(root: Path, name: str, launcher: str | None, language: str = "zh") -> dict | None:
     """README.md: create it with the entry section, or append the section once (marked)."""
     path = root / "README.md"
     if path.is_symlink():
         raise InitError("refusing symlinked README.md")
     if not path.exists():
-        return {"path": "README.md", "action": "create", "text": f"# {name}\n\n{readme_block(launcher)}"}
+        return {"path": "README.md", "action": "create", "text": f"# {name}\n\n{readme_block(launcher, language)}"}
     current = path.read_text(encoding="utf-8")
     if README_START in current:
         return None
     return {"path": "README.md", "action": "append",
-            "text": current.rstrip("\n") + "\n\n" + readme_block(launcher)}
+            "text": current.rstrip("\n") + "\n\n" + readme_block(launcher, language)}
 
 
 def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
@@ -892,22 +916,22 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     replaced only by explicit --keep / --accept, replacements backed up first.
     """
     if not args.entry_name:
-        raise InitError("--mode entry 需要 --entry-name")
+        raise InitError(_("--mode entry 需要 --entry-name"))
     name = validate_entry_name(args.entry_name)
     profile = _read_project_json(root, PROFILE_PATH, "Project Profile")
     entry = profile.get("entry") if isinstance(profile.get("entry"), dict) else {}
     if entry.get("launcher") and entry["launcher"] != name:
-        raise InitError(f"项目已声明入口 ./{entry['launcher']}；改名请同时修改 Profile 的 entry.launcher 与文件名")
+        raise InitError(_("项目已声明入口 ./{0}；改名请同时修改 Profile 的 entry.launcher 与文件名").format(entry['launcher']))
     template = launcher_text()
     target = root / name
     if target.is_symlink():
         raise InitError(f"refusing symlinked launcher: {name}")
     current = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
     if target.exists() and not target.is_file():
-        raise InitError(f"{name} 已存在且不是文件")
+        raise InitError(_("{0} 已存在且不是文件").format(name))
     chosen = {Path(value) for value in args.accept} | {Path(value) for value in args.keep}
     if chosen - {Path(name)}:
-        raise InitError("--mode entry 只接受启动器文件的 --accept / --keep：" + name)
+        raise InitError(_("--mode entry 只接受启动器文件的 --accept / --keep：") + name)
     if current is None:
         action = "create"
     elif current == template:
@@ -920,18 +944,18 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         action = "blocked"
     new_profile = {**profile, "entry": {**entry, "api": entry.get("api", ENTRY_API), "launcher": name}}
     profile_changed = new_profile != profile
-    readme = readme_plan(root, str(profile.get("name") or root.name), name) if args.readme_entry else None
+    readme = readme_plan(root, str(profile.get("name") or root.name), name, project_language(profile)) if args.readme_entry else None
     writes = ([name] if action in ("create", "replace") else []) + ([str(PROFILE_PATH)] if profile_changed else []) \
         + ([readme["path"]] if readme else [])
     if action in ("create", "replace", "unchanged"):
         writes.append(str(CONTENT_LOCK_PATH))
-    labels = {"create": "新建启动器", "replace": "用模板替换（先备份）", "unchanged": "已是模板内容",
-              "keep": "保留你的文件（不跟踪更新）", "blocked": "已存在同名文件，需要选择"}
-    changes = [f"{name}：{labels[action]}"]
+    labels = {"create": _("新建启动器"), "replace": _("用模板替换（先备份）"), "unchanged": _("已是模板内容"),
+              "keep": _("保留你的文件（不跟踪更新）"), "blocked": _("已存在同名文件，需要选择")}
+    changes = [_("{0}：{1}").format(name, labels[action])]
     if profile_changed:
-        changes.append(f"Project Profile：加入 entry（api {new_profile['entry']['api']}，launcher {name}）")
+        changes.append(_("Project Profile：加入 entry（api {0}，launcher {1}）").format(new_profile['entry']['api'], name))
     if readme:
-        changes.append("README.md：" + ("新建并写入「怎样使用」" if readme["action"] == "create" else "追加「怎样使用」一节"))
+        changes.append(_("README.md：") + (_("新建并写入「怎样使用」") if readme["action"] == "create" else _("追加「怎样使用」一节")))
     result = {
         "ok": action != "blocked", "mode": "entry", "applied": False,
         "entry": {"name": name, "action": action, "writes": writes, "changes": changes,
@@ -939,10 +963,10 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                   "profile_diff": _unified_diff(str(PROFILE_PATH), json_text(profile), json_text(new_profile))
                   if profile_changed else ""},
         "blocked": [name] if action == "blocked" else [],
-        "readme_snippet": readme_block(name) if not readme else "",
+        "readme_snippet": readme_block(name, project_language(profile)) if not readme else "",
     }
     if action == "blocked":
-        result["hint"] = f"{name} 已存在：--accept {name} 用模板替换（先备份到 --recovery-dir），或 --keep {name} 保留你的文件"
+        result["hint"] = _("{0} 已存在：--accept {1} 用模板替换（先备份到 --recovery-dir），或 --keep {2} 保留你的文件").format(name, name, name)
     if not args.apply or action == "blocked":
         return (0 if action != "blocked" else 1), result
     if action == "replace":
@@ -983,7 +1007,7 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description=__doc__)
+    result = argparse.ArgumentParser(description=_("使用 agents-init v6 中文模板安全创建或迁移项目骨架。"))
     result.add_argument("--project", type=Path, required=True)
     result.add_argument("--name")
     result.add_argument("--slug")
@@ -994,26 +1018,28 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--agent-cli", type=split_csv)
     result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry", "check", "add-skeleton", "profile",
                                            "repair-lock", "decide", "case-naming"), default="init",
-                        help="refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件；"
+                        help=_("refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件；"
                              "entry：为已初始化的项目补上根目录启动器与 Profile 的 entry 段；"
                              "check：只读，对比期望骨架清单；add-skeleton：按模板补上缺失的骨架文件；"
                              "profile：把缺失或不符的受检字段改为模板值；repair-lock：修复内容锁的 0.0.0 版本；"
-                             "decide：记录或撤销对某个发现的决定；case-naming：只输出 Case 目录改名计划与受影响的引用，不移动任何目录")
+                             "decide：记录或撤销对某个发现的决定；case-naming：只输出 Case 目录改名计划与受影响的引用，不移动任何目录"))
     result.add_argument("--target", action="append", default=[],
-                        help="add-skeleton：骨架路径；profile：字段；decide：发现 ID（可重复；省略则处理全部可处理项）")
-    result.add_argument("--decision", choices=("skip", "keep", "later", "unskip"), help="decide：决定；unskip 撤销")
-    result.add_argument("--reason", help="decide：理由（建议写，随项目同步）")
-    result.add_argument("--fingerprint", help="decide：期望指纹（缺省取该发现当前的指纹）")
-    result.add_argument("--reprompt", action="store_true", help="check：忽略已记录的决定，重新评估全部发现")
-    result.add_argument("--state-dir", type=Path, help="机器本地决定的状态目录（缺省 $XDG_STATE_HOME 或 ~/.local/state）")
-    result.add_argument("--entry-name", help=f"根目录启动器文件名（init 缺省 {DEFAULT_ENTRY}；entry 模式必填）")
-    result.add_argument("--no-entry", action="store_true", help="init：不生成根目录启动器")
+                        help=_("add-skeleton：骨架路径；profile：字段；decide：发现 ID（可重复；省略则处理全部可处理项）"))
+    result.add_argument("--decision", choices=("skip", "keep", "later", "unskip"), help=_("decide：决定；unskip 撤销"))
+    result.add_argument("--reason", help=_("decide：理由（建议写，随项目同步）"))
+    result.add_argument("--fingerprint", help=_("decide：期望指纹（缺省取该发现当前的指纹）"))
+    result.add_argument("--reprompt", action="store_true", help=_("check：忽略已记录的决定，重新评估全部发现"))
+    result.add_argument("--state-dir", type=Path, help=_("机器本地决定的状态目录（缺省 $XDG_STATE_HOME 或 ~/.local/state）"))
+    result.add_argument("--entry-name", help=_("根目录启动器文件名（init 缺省 {0}；entry 模式必填）").format(DEFAULT_ENTRY))
+    result.add_argument("--no-entry", action="store_true", help=_("init：不生成根目录启动器"))
+    result.add_argument("--language", choices=("auto", "zh", "en"), default="auto",
+                        help=_("init / migrate：项目文件语言（新建 Case 的小节名、README 追加的使用说明）；auto 在 init 时取当前界面语言，migrate 时保持中文"))
     result.add_argument("--readme-entry", action="store_true",
-                        help="在已有 README.md 末尾追加「怎样使用」一节（带标记，只追加一次）；init 时 README 不存在会直接新建")
-    result.add_argument("--accept", action="append", default=[], help="refresh：用新模板替换这个本地已改动的文件")
-    result.add_argument("--keep", action="append", default=[], help="refresh：保留这个文件的本地内容")
+                        help=_("在已有 README.md 末尾追加「怎样使用」一节（带标记，只追加一次）；init 时 README 不存在会直接新建"))
+    result.add_argument("--accept", action="append", default=[], help=_("refresh：用新模板替换这个本地已改动的文件"))
+    result.add_argument("--keep", action="append", default=[], help=_("refresh：保留这个文件的本地内容"))
     result.add_argument("--work-mode", choices=("case-workspace", "legacy"), default=None,
-                        help="新项目默认 case-workspace；既有项目只在显式选择后更改模式")
+                        help=_("新项目默认 case-workspace；既有项目只在显式选择后更改模式"))
     result.add_argument("--replace", action="append", default=[], help="known skeleton path to replace in migrate mode")
     result.add_argument("--skip", action="append", default=[], help="known skeleton path the project does not want (migrate mode)")
     result.add_argument("--recovery-dir", type=Path, help="outside-project backup directory required for replacements")
@@ -1022,8 +1048,8 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         default=PLUGIN_ROOT,
         help=(
-            "agents-init Plugin 根目录（同级查找 project-orchestrator、agent-pack、"
-            "opinion-manager），或含 plugins/ 的仓库根目录"
+            _("agents-init Plugin 根目录（同级查找 project-orchestrator、agent-pack、"
+            "opinion-manager），或含 plugins/ 的仓库根目录")
         ),
     )
     result.add_argument("--apply", action="store_true", help="create the complete skeleton only when no collision exists")
@@ -1052,7 +1078,7 @@ def main(argv: list[str] | None = None) -> int:
                 if result.get("hint"):
                     print(result["hint"])
                 if result.get("readme_snippet"):
-                    print("README 里可以加上：\n" + result["readme_snippet"])
+                    print(_("README 里可以加上：\n") + result["readme_snippet"])
             return code
         if args.mode == "refresh":
             code, result = refresh_project(args, root)
@@ -1071,7 +1097,7 @@ def main(argv: list[str] | None = None) -> int:
                                             ("--runtime", args.runtime), ("--agent-cli", args.agent_cli))
                    if not value]
         if missing:
-            raise InitError("init/migrate 需要：" + ", ".join(missing))
+            raise InitError(_("init/migrate 需要：") + ", ".join(missing))
         runtime_status = validate_runtime(args.runtime_plugin_root)
         slug = args.slug or slugify(args.name)
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
@@ -1088,6 +1114,7 @@ def main(argv: list[str] | None = None) -> int:
             args.work_mode or ('legacy' if args.mode == 'migrate' else 'case-workspace'),
             None if args.no_entry else validate_entry_name(args.entry_name) if args.entry_name
             else DEFAULT_ENTRY if args.mode == "init" else None,
+            file_language(args),
         )
         files = files_for(inputs)
         if args.mode == "migrate" and (root / PROFILE_PATH).exists():
@@ -1097,10 +1124,12 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 current_profile = json.loads(profile_file.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, ValueError) as exc:
-                raise InitError('Project Profile 无法解析', code='profile-invalid') from exc
+                raise InitError(_('Project Profile 无法解析'), code='profile-invalid') from exc
             if not isinstance(current_profile, dict) or current_profile.get("schema_version") != "1.0":
                 raise InitError("unsupported Project Profile", code="profile-invalid")
             upgraded = configure_work_mode(upgrade_legacy_profile(current_profile), args.work_mode)
+            if args.language in ("zh", "en"):
+                upgraded["language"] = args.language
             files[PROFILE_PATH] = json_text(upgraded)
             if upgraded.get("work", {}).get("mode") != "case-workspace":
                 files.pop(Path("cases/.gitkeep"), None)
@@ -1109,11 +1138,13 @@ def main(argv: list[str] | None = None) -> int:
         if legacy_profile is not None:
             if args.mode == "init":
                 raise InitError(
-                    f"检测到 v5 Project Profile（{LEGACY_PROFILE_PATH}），请改用 --mode migrate",
+                    _("检测到 v5 Project Profile（{0}），请改用 --mode migrate").format(LEGACY_PROFILE_PATH),
                     code="migrate-required",
                 )
             if not (root / PROFILE_PATH).exists():
                 upgraded = configure_work_mode(upgrade_legacy_profile(legacy_profile), args.work_mode)
+                if args.language in ("zh", "en"):
+                    upgraded["language"] = args.language
                 files[PROFILE_PATH] = json_text(upgraded)
                 if upgraded.get('work', {}).get('mode') != 'case-workspace':
                     files.pop(Path('cases/.gitkeep'), None)
@@ -1123,7 +1154,7 @@ def main(argv: list[str] | None = None) -> int:
         if output_profile.get('work', {}).get('mode') == 'case-workspace':
             case_root = (output_profile['work'].get('case') or {}).get('root', 'cases')
             if not isinstance(case_root, str) or not case_root or Path(case_root).is_absolute() or '..' in Path(case_root).parts or '\\' in case_root or re.match(r'^[A-Za-z]:', case_root) or case_root == '.' or set(Path(case_root).parts) & {'.git', '.agents', '.codex', '.cursor', '.claude', 'local-ai', 'confidential'}:
-                raise InitError('Case root 必须是项目内明确相对目录', code='profile-invalid')
+                raise InitError(_('Case root 必须是项目内明确相对目录'), code='profile-invalid')
             files[Path(case_root) / '.gitkeep'] = ''
         requested_skip = {Path(value) for value in args.skip}
         if requested_skip:
@@ -1138,9 +1169,9 @@ def main(argv: list[str] | None = None) -> int:
                 del files[path]
         readme = None
         if args.mode == "init" and not (root / "README.md").exists():
-            files[Path("README.md")] = f"# {inputs.name}\n\n{readme_block(inputs.entry_launcher)}"
+            files[Path("README.md")] = f"# {inputs.name}\n\n{readme_block(inputs.entry_launcher, inputs.language)}"
         elif args.readme_entry:
-            readme = readme_plan(root, inputs.name, inputs.entry_launcher)
+            readme = readme_plan(root, inputs.name, inputs.entry_launcher, inputs.language)
         create, collisions, symlinked = plan_writes(
             root, files, skip_symlinked_parents=args.mode == "migrate"
         )
