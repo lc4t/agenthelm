@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 from project_base import EntryError
+from i18n_orchestrator import _  # noqa: E402
 
 DEMO_NOW = "2026-10-25T09:12:00+08:00"
 FAULTS = ("index-broken", "offline", "runtime-old", "conflict")
@@ -264,6 +265,20 @@ DEFAULT_GROUPS = {"active": "active", "waiting": "waiting", "captured": "capture
 DemoError = EntryError
 
 
+# 演示数据本身是中文原文；按当前语言整棵翻译。旧编号、编号与路径是用来匹配和查找的标识，保持原样；
+# 项目自定义的状态词（status 与 status_map 的键）一起翻译，两边保持对应。
+KEEP_KEYS = {"legacy_ids", "id", "path", "command", "launcher"}
+
+
+def translate_tree(value: Any, key: str | None = None) -> Any:
+    if isinstance(value, dict):
+        return {(_(item_key) if key == "status_map" and isinstance(item_key, str) else item_key):
+                item if item_key in KEEP_KEYS else translate_tree(item, item_key) for item_key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(translate_tree(item) for item in value)
+    return _(value) if isinstance(value, str) else value
+
+
 class DemoProvider:
     """内存里的虚构项目；所有结果带 demo 标记，所有写入只模拟。"""
 
@@ -271,11 +286,11 @@ class DemoProvider:
 
     def __init__(self, scenario: str, fault: str | None = None) -> None:
         if scenario not in SCENARIOS:
-            raise DemoError(f"没有这个演示场景：{scenario}", "usage", [f"可选：{'、'.join(SCENARIOS)}"])
+            raise DemoError(_("没有这个演示场景：{0}").format(scenario), "usage", [_("可选：{0}").format(_('、').join(SCENARIOS))])
         if fault is not None and fault not in FAULTS:
-            raise DemoError(f"没有这个演示故障：{fault}", "usage", [f"可选：{'、'.join(FAULTS)}"])
+            raise DemoError(_("没有这个演示故障：{0}").format(fault), "usage", [_("可选：{0}").format(_('、').join(FAULTS))])
         self.scenario_id = scenario
-        self.data = copy.deepcopy(SCENARIOS[scenario])
+        self.data = translate_tree(copy.deepcopy(SCENARIOS[scenario]))
         self.fault = fault
         titles = {item["id"]: item["title"] for item in self.data["items"]}
         for asset in self.data["assets"]:
@@ -302,7 +317,7 @@ class DemoProvider:
         levels: dict[str, int] = {}
         for finding in self.health()["findings"]:
             levels[finding["level"]] = levels.get(finding["level"], 0) + 1
-        return {"name": self.data["name"], "kind": self.data["kind"], "kind_label": self.data["kind"] + "项目",
+        return {"name": self.data["name"], "kind": self.data["kind"], "kind_label": _("{0}项目").format(self.data["kind"]),
                 "launcher": self.data["launcher"],
                 "index": self.index_state(), "items": counts, "health": levels, "read_at": DEMO_NOW,
                 "tools": {"declared": len(self.data["tools"]),
@@ -313,8 +328,8 @@ class DemoProvider:
     def find(self, terms: list[str], *, ext: str | None = None, container: str | None = None,
              limit: int = 10) -> dict:
         if self.index_state()["status"] == "broken":
-            raise DemoError("资料索引损坏，暂时无法查找", "index-broken",
-                            ["重建索引：只改用户缓存里的索引，不改项目文件（5 修复与更新 → 重建索引，或 fix rebuild-index --apply）"])
+            raise DemoError(_("资料索引损坏，暂时无法查找"), "index-broken",
+                            [_("重建索引：只改用户缓存里的索引，不改项目文件（5 修复与更新 → 重建索引，或 fix rebuild-index --apply）")])
         results = []
         for asset in self.data["assets"]:
             haystack = " ".join([asset["path"], asset["title"], asset["case_title"], asset["modified"]]).lower()
@@ -333,9 +348,9 @@ class DemoProvider:
         return {"path": path, "inbound": known.get("inbound", []), "outbound": known.get("outbound", [])}
 
     def act(self, action: str, path: str) -> dict:
-        verbs = {"open": "打开", "reveal": "在文件管理器中显示", "copy": "复制路径"}
+        verbs = {"open": _("打开"), "reveal": _("在文件管理器中显示"), "copy": _("复制路径")}
         return {"action": action, "path": path, "simulated": True,
-                "message": f"【演示】将{verbs.get(action, action)} {path}（未实际执行）"}
+                "message": _("【演示】将{0} {1}（未实际执行）").format(verbs.get(action, action), path)}
 
     # -------------------------------------------------------------- progress
 
@@ -354,9 +369,9 @@ class DemoProvider:
         exact = [item for item in self.data["items"] if token in (item["id"], *item["legacy_ids"], *item["aliases"])]
         matches = exact or [item for item in self.data["items"] if _item_hits(token, item)]
         if not matches:
-            raise DemoError(f"没有找到事项：{token}", "not-found", ["试试更短的词，或在「看进展」里浏览全部"])
+            raise DemoError(_("没有找到事项：{0}").format(token), "not-found", [_("试试更短的词，或在「看进展」里浏览全部")])
         if len(matches) > 1:
-            raise DemoError(f"有 {len(matches)} 个事项都匹配“{token}”", "ambiguous",
+            raise DemoError(_("有 {0} 个事项都匹配“{1}”").format(len(matches), token), "ambiguous",
                             [f"{item['id']}  {item['title']}" for item in matches])
         item = matches[0]
         return {**item, "group": self._group(item), "source": self.data["items_source"]}
@@ -372,29 +387,29 @@ class DemoProvider:
         index = self.index_state()["status"]
         record = self.data["record"]
         return [
-            {"id": "find", "title": "找资料", "state": "unavailable" if index == "broken" else "available",
-             "reason": "资料索引损坏，可重建" if index == "broken" else "", "offline": True},
-            {"id": "progress", "title": "看进展", "state": "available", "reason": "", "offline": True},
-            {"id": "guide", "title": "项目指南", "state": "available", "reason": "", "offline": True},
-            {"id": "health", "title": "检查项目与环境", "state": "available",
-             "reason": "联网项使用缓存" if self.fault == "offline" else "", "offline": True},
-            {"id": "fix", "title": "修复与更新", "state": "available",
-             "reason": "离线：需要联网的更新只能预览" if self.fault == "offline" else "", "offline": False},
-            {"id": "record", "title": "记录事项", "state": "available" if record["write"] else "unavailable",
-             "reason": "" if record["write"] else "项目工具没有写接口", "offline": True},
-            {"id": "tools", "title": "项目工具",
+            {"id": "find", "title": _("找资料"), "state": "unavailable" if index == "broken" else "available",
+             "reason": _("资料索引损坏，可重建") if index == "broken" else "", "offline": True},
+            {"id": "progress", "title": _("看进展"), "state": "available", "reason": "", "offline": True},
+            {"id": "guide", "title": _("项目指南"), "state": "available", "reason": "", "offline": True},
+            {"id": "health", "title": _("检查项目与环境"), "state": "available",
+             "reason": _("联网项使用缓存") if self.fault == "offline" else "", "offline": True},
+            {"id": "fix", "title": _("修复与更新"), "state": "available",
+             "reason": _("离线：需要联网的更新只能预览") if self.fault == "offline" else "", "offline": False},
+            {"id": "record", "title": _("记录事项"), "state": "available" if record["write"] else "unavailable",
+             "reason": "" if record["write"] else _("项目工具没有写接口"), "offline": True},
+            {"id": "tools", "title": _("项目工具"),
              "state": "available" if self.data["tools"] else "unavailable",
-             "reason": "" if self.data["tools"] else "项目没有声明专用工具", "offline": True},
+             "reason": "" if self.data["tools"] else _("项目没有声明专用工具"), "offline": True},
         ]
 
     def health(self) -> dict:
         findings = [finding for finding in copy.deepcopy(self.data["health"])
                     if not any(step["action"] == f"fix:{fix_id}" for step in finding["next"] for fix_id in self.resolved)]
         if self.index_state()["status"] == "broken":
-            findings.insert(0, {"id": "rebuild-index", "level": "must", "area": "资料", "title": "资料索引损坏",
-                                "reason": "缓存里的索引文件无法读取（可能是上次重建被中断）",
-                                "impact": "「找资料」暂时不可用；项目文件本身没有受影响",
-                                "next": [{"label": "重建索引（只改用户缓存）", "action": "fix:rebuild-index"}]})
+            findings.insert(0, {"id": "rebuild-index", "level": "must", "area": _("资料"), "title": _("资料索引损坏"),
+                                "reason": _("缓存里的索引文件无法读取（可能是上次重建被中断）"),
+                                "impact": _("「找资料」暂时不可用；项目文件本身没有受影响"),
+                                "next": [{"label": _("重建索引（只改用户缓存）"), "action": "fix:rebuild-index"}]})
         online = {"status": "offline", "cached_at": "2026-10-22T09:00:00+08:00"} if self.fault == "offline" \
             else {"status": "online", "cached_at": DEMO_NOW}
         return {"findings": findings, "ok": self.data["ok"], "read_at": DEMO_NOW, "update_source": online}
@@ -405,20 +420,20 @@ class DemoProvider:
         fixes = {key: value for key, value in self.data["fixes"].items() if key not in self.resolved}
         if self.index_state()["status"] == "broken":
             fixes["rebuild-index"] = {
-                "title": "重建资料索引", "kind": "index", "network": False,
-                "changes": ["删除损坏的索引并按当前文件重新登记"],
-                "writes": [{"path": "~/.cache/agenthelm/assets/<项目摘要>/", "scope": "用户缓存"}],
-                "custom": [], "breaking": False, "recovery": "不涉及项目文件；索引可随时再次重建",
-                "verify": "重新读取索引状态：最新，文件数与项目一致"}
+                "title": _("重建资料索引"), "kind": "index", "network": False,
+                "changes": [_("删除损坏的索引并按当前文件重新登记")],
+                "writes": [{"path": _("~/.cache/agenthelm/assets/<项目摘要>/"), "scope": _("用户缓存")}],
+                "custom": [], "breaking": False, "recovery": _("不涉及项目文件；索引可随时再次重建"),
+                "verify": _("重新读取索引状态：最新，文件数与项目一致")}
         chosen = ids or sorted(fixes)
         unknown = [fix_id for fix_id in chosen if fix_id not in fixes]
         if unknown:
-            raise DemoError("没有这些可处理项：" + "、".join(unknown), "not-found",
-                            ["可处理：" + ("、".join(sorted(fixes)) or "（无）")])
+            raise DemoError(_("没有这些可处理项：") + _("、").join(unknown), "not-found",
+                            [_("可处理：") + (_("、").join(sorted(fixes)) or _("（无）"))])
         steps = []
         for fix_id in chosen:
             step = {"id": fix_id, **copy.deepcopy(fixes[fix_id])}
-            step["blocked"] = "离线：需要联网，只能预览" if step["network"] and self.fault == "offline" else ""
+            step["blocked"] = _("离线：需要联网，只能预览") if step["network"] and self.fault == "offline" else ""
             steps.append(step)
         return {"steps": steps, "simulated": True, "update_source": self.health()["update_source"]}
 
@@ -441,12 +456,12 @@ class DemoProvider:
     def record_preview(self, target: str | None, change: dict) -> dict:
         record = self.data["record"]
         if not record["write"]:
-            raise DemoError("这个项目不能在本入口记录事项", "unavailable",
-                            [record["gap"], "需要时请直接使用项目工具，或请项目维护者补充写接口"])
+            raise DemoError(_("这个项目不能在本入口记录事项"), "unavailable",
+                            [record["gap"], _("需要时请直接使用项目工具，或请项目维护者补充写接口")])
         if target is None:
             slug = re.sub(r"[^a-z0-9]+", "-", (change.get("slug") or "new-item").lower()).strip("-") or "new-item"
             path = f"cases/CASE-20261025-001-{slug}/CASE.md"
-            lines = [f"+ 新建 {path}", f"+ title: {change.get('title', '')}", "+ status: active",
+            lines = [_("+ 新建 {0}").format(path), f"+ title: {change.get('title', '')}", "+ status: active",
                      f"+ goal: {change.get('goal', '')}", f"+ next_action: {change.get('next_action', '')}"]
             return {"target": None, "path": path, "lines": lines, "expect_updated_at": None, "simulated": True}
         item = self.item(target)
@@ -455,22 +470,22 @@ class DemoProvider:
             if change.get(key) is not None:
                 lines += [f"- {label}: {item.get(key) or ''}", f"+ {label}: {change[key]}"]
         if change.get("log"):
-            lines.append(f"+ 工作记录：- 2026-10-25T09:15 {change['log']}")
+            lines.append(_("+ 工作记录：- 2026-10-25T09:15 {0}").format(change['log']))
         for path in change.get("add_deliverable") or []:
             lines.append(f"+ deliverables: {path}")
         if not lines:
-            raise DemoError("没有要修改的内容", "usage", ["至少给出一项：记录、下一动作、等待对象或状态"])
+            raise DemoError(_("没有要修改的内容"), "usage", [_("至少给出一项：记录、下一动作、等待对象或状态")])
         lines.append(f"  updated_at: {item['updated_at']} → 2026-10-25T09:15:00+08:00")
         return {"target": item["id"], "path": item["path"], "lines": lines,
                 "expect_updated_at": item["updated_at"], "simulated": True}
 
     def record_apply(self, preview: dict) -> dict:
         if self.fault == "conflict" and preview["target"]:
-            raise DemoError("这个事项在你预览之后被修改过，没有写入", "conflict",
-                            ["最新修改：2026-10-25T09:14（CASE.md 的 updated_at 已变化）",
-                             "重新打开预览，确认对方的改动后再提交"])
+            raise DemoError(_("这个事项在你预览之后被修改过，没有写入"), "conflict",
+                            [_("最新修改：2026-10-25T09:14（CASE.md 的 updated_at 已变化）"),
+                             _("重新打开预览，确认对方的改动后再提交")])
         return {"path": preview["path"], "simulated": True,
-                "verify": "【演示】写入后重新读取：内容与预览一致，未知字段与原有正文保留"}
+                "verify": _("【演示】写入后重新读取：内容与预览一致，未知字段与原有正文保留")}
 
     # -------------------------------------------------------------- tools
 
@@ -480,11 +495,11 @@ class DemoProvider:
     def run_tool(self, tool_id: str) -> dict:
         tool = next((tool for tool in self.data["tools"] if tool["id"] == tool_id), None)
         if tool is None:
-            raise DemoError(f"项目没有声明这个工具：{tool_id}", "not-found")
+            raise DemoError(_("项目没有声明这个工具：{0}").format(tool_id), "not-found")
         if tool["state"] != "available":
-            raise DemoError(f"“{tool['title']}”当前不可用", "unavailable", [tool["reason"]])
+            raise DemoError(_("“{0}”当前不可用").format(tool['title']), "unavailable", [tool["reason"]])
         return {"id": tool_id, "simulated": True,
-                "message": f"【演示】将运行：{' '.join(tool['command'])}（未实际执行）"}
+                "message": _("【演示】将运行：{0}（未实际执行）").format(' '.join(tool['command']))}
 
 
 def _term_hits(term: str, haystack: str) -> bool:
@@ -501,4 +516,4 @@ def _item_hits(term: str, item: dict) -> bool:
 
 
 def describe() -> list[dict[str, Any]]:
-    return [{"id": key, "name": value["name"], "kind": value["kind"]} for key, value in SCENARIOS.items()]
+    return [{"id": key, "name": _(value["name"]), "kind": _(value["kind"])} for key, value in SCENARIOS.items()]

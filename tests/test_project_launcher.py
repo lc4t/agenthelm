@@ -4,6 +4,10 @@
 """
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
 import json
 import os
 import shutil
@@ -42,7 +46,7 @@ class LauncherTests(unittest.TestCase):
 
     def launch(self, *args: str, path: Path | None = None, **extra: str) -> subprocess.CompletedProcess:
         # No /bin on PATH: merged-/usr Linux systems keep python3 there.
-        environment = {"HOME": str(self.home), "PATH": str(path or self.bin_python),
+        environment = {"HOME": str(self.home), "AGENTHELM_LANG": "zh", "PATH": str(path or self.bin_python),
                        "NO_COLOR": "1", "PYTHONDONTWRITEBYTECODE": "1", **extra}
         return subprocess.run(["/bin/sh", str(self.menu), *args], input="", capture_output=True, text=True,
                               env=environment, timeout=30, check=False)

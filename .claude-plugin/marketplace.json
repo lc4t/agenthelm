@@ -36,7 +36,7 @@
       "name": "agents-init",
       "source": "./plugins/agents-init",
       "description": "Initialize or migrate an Agent project contract (AGENTS.md, Project Profile, root launcher); ships with project-orchestrator, agent-pack and opinion-manager.",
-      "version": "6.7.0",
+      "version": "6.8.0",
       "author": {
         "name": "lc4t"
       },

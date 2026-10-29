@@ -7,29 +7,14 @@
 
 from __future__ import annotations
 
-import os
 import re
-from typing import Any, Mapping
+from typing import Any
 
 
 LANGUAGES = ("zh", "en")
-DEFAULT_LANGUAGE = "en"
 
 
-def normalize(value: str | None) -> str | None:
-    text = (value or "").strip().lower().replace("_", "-")
-    if not text or text in ("auto", "c", "posix") or text.startswith(("c.", "posix.")):
-        return None
-    return "zh" if text.startswith("zh") else "en"
-
-
-def resolve_language(requested: str | None = None, environ: Mapping[str, str] | None = None) -> str:
-    environ = os.environ if environ is None else environ
-    for candidate in (requested, environ.get("AGENTHELM_LANG"), environ.get("LC_ALL"), environ.get("LC_MESSAGES"), environ.get("LANG")):
-        language = normalize(candidate)
-        if language:
-            return language
-    return DEFAULT_LANGUAGE
+from i18n_opinion import DEFAULT_LANGUAGE, normalize, resolve_language  # noqa: E402,F401
 
 
 MESSAGES: dict[str, dict[str, str]] = {

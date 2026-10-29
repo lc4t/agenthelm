@@ -18,6 +18,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from i18n_orchestrator import _  # noqa: E402
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SCHEMA = PLUGIN_ROOT / "references" / "case.schema.json"
@@ -52,12 +53,12 @@ def _scalar(value: str, key: str) -> Any:
         try:
             parsed = json.loads(value)
         except ValueError as exc:
-            raise CaseError(f"{key}: 字符串必须是 JSON 双引号格式", "frontmatter") from exc
+            raise CaseError(_("{0}: 字符串必须是 JSON 双引号格式").format(key), "frontmatter") from exc
         if not isinstance(parsed, str):
-            raise CaseError(f"{key}: 只支持字符串", "frontmatter")
+            raise CaseError(_("{0}: 只支持字符串").format(key), "frontmatter")
         return parsed
     if value[:1] in ("[", "{", "|", ">", "'", "&", "*", "!"):
-        raise CaseError(f"{key}: 不支持该 YAML 写法", "frontmatter")
+        raise CaseError(_("{0}: 不支持该 YAML 写法").format(key), "frontmatter")
     return value
 
 
@@ -67,10 +68,10 @@ def parse_frontmatter(text: str) -> dict:
     while index < len(lines):
         line = lines[index]
         if not line or line[0].isspace() or ":" not in line:
-            raise CaseError(f"frontmatter 第 {index + 1} 行格式不支持", "frontmatter")
+            raise CaseError(_("frontmatter 第 {0} 行格式不支持").format(index + 1), "frontmatter")
         key, value = line.split(":", 1)
         if not KEY_RE.fullmatch(key) or key in data:
-            raise CaseError(f"frontmatter 键无效或重复：{key}", "frontmatter")
+            raise CaseError(_("frontmatter 键无效或重复：{0}").format(key), "frontmatter")
         if value.strip():
             data[key] = _scalar(value.strip(), key)
             index += 1
@@ -85,16 +86,16 @@ def parse_frontmatter(text: str) -> dict:
 
 def read_case(path: Path) -> tuple[dict, str]:
     if path.is_symlink():
-        raise CaseError(f"拒绝符号链接：{path.name}", "symlink")
+        raise CaseError(_("拒绝符号链接：{0}").format(path.name), "symlink")
     raw = path.read_bytes()
     if len(raw) > MAX_CASE_BYTES:
-        raise CaseError("CASE.md 超过 2 MiB", "oversize")
+        raise CaseError(_("CASE.md 超过 2 MiB"), "oversize")
     text = raw.decode("utf-8")
     if not text.startswith("---\n"):
-        raise CaseError("CASE.md 必须以 --- 开头", "frontmatter")
+        raise CaseError(_("CASE.md 必须以 --- 开头"), "frontmatter")
     end = text.find("\n---\n", 3)
     if end < 0:
-        raise CaseError("CASE.md 缺少 frontmatter 结束标记", "frontmatter")
+        raise CaseError(_("CASE.md 缺少 frontmatter 结束标记"), "frontmatter")
     return parse_frontmatter(text[4:end]), text[end + 5:]
 
 
@@ -119,13 +120,13 @@ def render_frontmatter(data: dict) -> str:
 
 def validate_schema(data: dict, schema: dict) -> list[str]:
     """The keyword subset the default schema uses: const, enum, type, pattern, minLength, items, uniqueItems."""
-    errors = [f"缺少字段：{key}" for key in schema.get("required", []) if key not in data]
+    errors = [_("缺少字段：{0}").format(key) for key in schema.get("required", []) if key not in data]
     properties = schema.get("properties", {})
     for key, value in data.items():
         rule = properties.get(key)
         if rule is None:
             if schema.get("additionalProperties") is False:
-                errors.append(f"未知字段：{key}")
+                errors.append(_("未知字段：{0}").format(key))
             continue
         errors.extend(f"{key}: {problem}" for problem in _check(value, rule))
     return errors
@@ -134,24 +135,24 @@ def validate_schema(data: dict, schema: dict) -> list[str]:
 def _check(value: Any, rule: dict) -> list[str]:
     problems = []
     if "const" in rule and value != rule["const"]:
-        problems.append(f"必须为 {rule['const']!r}")
+        problems.append(_("必须为 {0!r}").format(rule['const']))
     if "enum" in rule and value not in rule["enum"]:
-        problems.append("取值必须是 " + "、".join(map(str, rule["enum"])))
+        problems.append(_("取值必须是 ") + _("、").join(map(str, rule["enum"])))
     kind = rule.get("type")
     if kind == "string" and not isinstance(value, str):
-        problems.append("必须是字符串")
+        problems.append(_("必须是字符串"))
     if kind == "array":
         if not isinstance(value, list):
-            return problems + ["必须是列表"]
+            return problems + [_("必须是列表")]
         if rule.get("uniqueItems") and len(value) != len(set(map(str, value))):
-            problems.append("列表有重复项")
+            problems.append(_("列表有重复项"))
         for item in value:
             problems.extend(_check(item, rule.get("items", {})))
     if isinstance(value, str):
         if len(value) < rule.get("minLength", 0):
-            problems.append("不能为空")
+            problems.append(_("不能为空"))
         if "pattern" in rule and not re.search(rule["pattern"], value):
-            problems.append("格式不符合")
+            problems.append(_("格式不符合"))
     return problems
 
 
@@ -164,12 +165,12 @@ class Project:
         try:
             profile = json.loads(profile_path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
-            raise CaseError(f"缺少 Project Profile：{PROFILE}", "profile-missing") from exc
+            raise CaseError(_("缺少 Project Profile：{0}").format(PROFILE), "profile-missing") from exc
         except (OSError, ValueError) as exc:
-            raise CaseError(f"Project Profile 无法解析：{exc}", "profile-invalid") from exc
+            raise CaseError(_("Project Profile 无法解析：{0}").format(exc), "profile-invalid") from exc
         work = profile.get("work") or {}
         if work.get("mode") != "case-workspace":
-            raise CaseError("项目未启用 case-workspace（Profile work.mode）", "mode")
+            raise CaseError(_("项目未启用 case-workspace（Profile work.mode）"), "mode")
         case = work.get("case") or {}
         self.case_root = self._inside(case.get("root") or "cases", "work.case.root")
         self.project_command = case.get("command")
@@ -180,17 +181,17 @@ class Project:
     def _inside(self, value: str, label: str) -> Path:
         relative = Path(value)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-            raise CaseError(f"{label} 必须是项目内相对路径", "profile-invalid")
+            raise CaseError(_("{0} 必须是项目内相对路径").format(label), "profile-invalid")
         current = self.root
         for part in relative.parts:
             current = current / part
             if current.is_symlink():
-                raise CaseError(f"{label} 不能经过符号链接", "symlink")
+                raise CaseError(_("{0} 不能经过符号链接").format(label), "symlink")
         return self.root / relative
 
     def require_writable(self) -> None:
         if self.project_command:
-            raise CaseError(f"项目声明了自己的 Case 工具（{self.project_command}），请用它修改 Case", "project-tool")
+            raise CaseError(_("项目声明了自己的 Case 工具（{0}），请用它修改 Case").format(self.project_command), "project-tool")
 
     def case_dirs(self) -> list[Path]:
         if not self.case_root.is_dir():
@@ -204,7 +205,7 @@ class Project:
             lowered = term.lower()
             matches = [path for path in self.case_dirs() if lowered in path.name.lower()]
         if len(matches) != 1:
-            raise CaseError(f"找到 {len(matches)} 个匹配 {term!r} 的 Case", "not-found" if not matches else "ambiguous")
+            raise CaseError(_("找到 {0} 个匹配 {1!r} 的 Case").format(len(matches), term), "not-found" if not matches else "ambiguous")
         return matches[0]
 
     def relative(self, path: Path) -> str:
@@ -228,9 +229,9 @@ def write_atomic(path: Path, content: str) -> None:
 def clean(value: str | None, label: str, *, required: bool = False) -> str:
     value = (value or "").strip()
     if any(character in value for character in "\r\n\x00"):
-        raise CaseError(f"{label} 只能是单行文本")
+        raise CaseError(_("{0} 只能是单行文本").format(label))
     if required and not value:
-        raise CaseError(f"{label} 不能为空")
+        raise CaseError(_("{0} 不能为空").format(label))
     return value
 
 
@@ -239,7 +240,7 @@ def clean(value: str | None, label: str, *, required: bool = False) -> str:
 def _new_case_fields(project: Project, args: argparse.Namespace) -> tuple[str, dict]:
     slug = clean(args.slug, "--slug", required=True)
     if not SLUG_RE.fullmatch(slug) or CREDENTIAL_RE.search(slug):
-        raise CaseError("--slug 只能用小写字母、数字和连字符，且不能含凭据类词语")
+        raise CaseError(_("--slug 只能用小写字母、数字和连字符，且不能含凭据类词语"))
     status = args.status
     fields = {
         "title": clean(args.title, "--title", required=True),
@@ -263,7 +264,7 @@ def _render_new_case(project: Project, args: argparse.Namespace, fields: dict, c
     data = {key: value for key, value in data.items() if key in project.schema.get("properties", data)}
     errors = validate_schema(data, project.schema)
     if errors:
-        raise CaseError("新 Case 不符合 Schema：" + "；".join(errors), "schema")
+        raise CaseError(_("新 Case 不符合 Schema：") + _("；").join(errors), "schema")
     body = TEMPLATE.read_text(encoding="utf-8")
     for key, value in {**fields, "created_at": stamp}.items():
         body = body.replace("{{" + key + "}}", value or "待明确")
@@ -304,7 +305,7 @@ def create(project: Project, args: argparse.Namespace) -> dict:
         except FileExistsError:
             continue
     else:
-        raise CaseError("今天的 Case 序号已用完", "sequence-exhausted")
+        raise CaseError(_("今天的 Case 序号已用完"), "sequence-exhausted")
     try:
         text = _render_new_case(project, args, fields, case_id, now())
     except CaseError:
@@ -315,7 +316,7 @@ def create(project: Project, args: argparse.Namespace) -> dict:
 
 
 def summary(project: Project, directory: Path) -> dict:
-    data, _ = read_case(directory / "CASE.md")
+    data, _body = read_case(directory / "CASE.md")
     return {"id": data.get("id", directory.name), "title": data.get("title", ""), "status": data.get("status", ""),
             "next_action": data.get("next_action", ""), "updated_at": data.get("updated_at", ""),
             "path": project.relative(directory / "CASE.md")}
@@ -364,9 +365,9 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
     current = path.read_text(encoding="utf-8")
     expected_digest = getattr(args, "expect_sha256", None)
     if expected_digest and hashlib.sha256(current.encode("utf-8")).hexdigest() != expected_digest:
-        raise CaseError("Case 在预览之后被修改过（内容摘要不一致），请重新读取", "conflict")
+        raise CaseError(_("Case 在预览之后被修改过（内容摘要不一致），请重新读取"), "conflict")
     if args.expect_updated_at and data.get("updated_at") != args.expect_updated_at:
-        raise CaseError("Case 已被其他人修改（updated_at 不一致），请重新读取", "conflict")
+        raise CaseError(_("Case 已被其他人修改（updated_at 不一致），请重新读取"), "conflict")
     stamp = now()
     changed = []
     for flag, key in (("status", "status"), ("next_action", "next_action"), ("current_state", "current_state"),
@@ -383,9 +384,9 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
                 data[key].append(item)
                 changed.append(key)
     if data.get("status") == "active" and not data.get("next_action"):
-        raise CaseError("active 的 Case 需要 next_action")
+        raise CaseError(_("active 的 Case 需要 next_action"))
     if data.get("status") == "waiting" and not data.get("waiting_for"):
-        raise CaseError("waiting 的 Case 需要 waiting_for")
+        raise CaseError(_("waiting 的 Case 需要 waiting_for"))
     if "current_state" in changed:
         body = _replace_section(body, "当前可信状态", data["current_state"])
     if "next_action" in changed:
@@ -400,11 +401,11 @@ def plan_update(project: Project, args: argparse.Namespace) -> tuple[Path, str, 
         body = _replace_section(body, "结果", clean(args.result, "--result", required=True))
         changed.append("结果")
     if not changed:
-        raise CaseError("没有要更新的内容")
+        raise CaseError(_("没有要更新的内容"))
     data["updated_at"] = stamp
     errors = validate_schema(data, project.schema)
     if errors:
-        raise CaseError("更新后不符合 Schema：" + "；".join(errors), "schema")
+        raise CaseError(_("更新后不符合 Schema：") + _("；").join(errors), "schema")
     return path, current, render_frontmatter(data) + body, {
         "ok": True, "id": data["id"], "changed": sorted(set(changed)), "updated_at": stamp,
         "path": project.relative(path)}
@@ -414,7 +415,7 @@ def update(project: Project, args: argparse.Namespace) -> dict:
     path, current, text, result = plan_update(project, args)
     # Re-read right before replacing: a write that landed after planning must not be lost.
     if path.read_text(encoding="utf-8") != current:
-        raise CaseError("Case 刚被其他人修改，请重新读取", "conflict")
+        raise CaseError(_("Case 刚被其他人修改，请重新读取"), "conflict")
     write_atomic(path, text)
     return result
 
@@ -440,12 +441,12 @@ def validate(project: Project, args: argparse.Namespace) -> dict:
             data, body = read_case(path)
             errors = validate_schema(data, project.schema)
             if data.get("id") != directory.name:
-                errors.append("id 与目录名不一致")
+                errors.append(_("id 与目录名不一致"))
             if data.get("status") == "active" and not data.get("next_action"):
-                errors.append("active 的 Case 需要 next_action")
+                errors.append(_("active 的 Case 需要 next_action"))
             seen.setdefault(data.get("id"), []).append(project.relative(path))
         except FileNotFoundError:
-            errors = ["缺少 CASE.md"]
+            errors = [_("缺少 CASE.md")]
         except (CaseError, OSError, UnicodeDecodeError) as exc:
             errors = [str(exc)]
         results.append({"path": project.relative(path), "valid": not errors, "errors": errors})
@@ -454,12 +455,12 @@ def validate(project: Project, args: argparse.Namespace) -> dict:
             for result in results:
                 if result["path"] in paths:
                     result["valid"] = False
-                    result["errors"].append(f"重复的 id：{case_id}")
+                    result["errors"].append(_("重复的 id：{0}").format(case_id))
     return {"ok": all(result["valid"] for result in results), "results": results}
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    result = argparse.ArgumentParser(description=_("默认 Case 工具：在 case-workspace 项目里新建、列出、查看、更新与校验 Case。"))
     result.add_argument("--project", type=Path, default=Path.cwd())
     result.add_argument("--output", choices=("text", "json"), default="text")
     # The same options are accepted after the subcommand, where people tend to type them.
@@ -471,9 +472,9 @@ def parser() -> argparse.ArgumentParser:
     def command(name: str, help_text: str) -> argparse.ArgumentParser:
         return sub.add_parser(name, parents=[shared], help=help_text)
 
-    new = command("new", "新建 Case 目录与 CASE.md")
+    new = command("new", _("新建 Case 目录与 CASE.md"))
     new.add_argument("--title", required=True)
-    new.add_argument("--slug", required=True, help="目录名后缀：小写字母、数字与连字符")
+    new.add_argument("--slug", required=True, help=_("目录名后缀：小写字母、数字与连字符"))
     new.add_argument("--goal", required=True)
     new.add_argument("--next-action")
     new.add_argument("--status", choices=("active", "captured"), default="active")
@@ -481,12 +482,12 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--source")
     new.add_argument("--current-state")
     new.add_argument("--tag", action="append", default=[])
-    listing = command("list", "列出 Case（默认不含已关闭）")
+    listing = command("list", _("列出 Case（默认不含已关闭）"))
     listing.add_argument("--status", choices=tuple(STATUS_ORDER))
     listing.add_argument("--all", action="store_true")
-    show = command("show", "查看一个 Case 的字段与正文")
+    show = command("show", _("查看一个 Case 的字段与正文"))
     show.add_argument("case")
-    change = command("update", "更新状态、下一动作，追加工作记录、决策、交付物与证据")
+    change = command("update", _("更新状态、下一动作，追加工作记录、决策、交付物与证据"))
     change.add_argument("case")
     change.add_argument("--status", choices=tuple(STATUS_ORDER))
     change.add_argument("--title")
@@ -494,31 +495,31 @@ def parser() -> argparse.ArgumentParser:
     change.add_argument("--current-state")
     change.add_argument("--waiting-for")
     change.add_argument("--resume-when")
-    change.add_argument("--result", help="替换「结果」段")
-    change.add_argument("--log", help="向「工作记录」追加一条")
-    change.add_argument("--decision", help="向「决策记录」追加一条")
+    change.add_argument("--result", help=_("替换「结果」段"))
+    change.add_argument("--log", help=_("向「工作记录」追加一条"))
+    change.add_argument("--decision", help=_("向「决策记录」追加一条"))
     change.add_argument("--add-deliverable", action="append", default=[])
     change.add_argument("--add-evidence", action="append", default=[])
     change.add_argument("--add-tag", action="append", default=[])
     change.add_argument("--add-alias", action="append", default=[])
-    change.add_argument("--expect-updated-at", help="只在 updated_at 等于该值时写入，避免覆盖并发修改")
-    change.add_argument("--expect-sha256", help="只在 CASE.md 内容摘要等于该值时写入（比 updated_at 更严格）")
-    check = command("validate", "按 Schema 校验 Case")
+    change.add_argument("--expect-updated-at", help=_("只在 updated_at 等于该值时写入，避免覆盖并发修改"))
+    change.add_argument("--expect-sha256", help=_("只在 CASE.md 内容摘要等于该值时写入（比 updated_at 更严格）"))
+    check = command("validate", _("按 Schema 校验 Case"))
     check.add_argument("case", nargs="?")
     return result
 
 
 def render_text(command: str, result: dict) -> str:
     if command == "list":
-        lines = [f"{item['status']:9} {item['id']}  {item['title']}" + (f"\n          下一步：{item['next_action']}"
+        lines = [f"{item['status']:9} {item['id']}  {item['title']}" + (_("\n          下一步：{0}").format(item['next_action'])
                                                                           if item["next_action"] else "")
                  for item in result["cases"]]
         lines += [f"invalid   {item['path']}: {item['error']}" for item in result["invalid"]]
-        return "\n".join(lines) or "没有 Case。"
+        return "\n".join(lines) or _("没有 Case。")
     if command == "validate":
         lines = [f"{'ok' if item['valid'] else 'FAIL'}  {item['path']}" +
                  "".join(f"\n      {error}" for error in item["errors"]) for item in result["results"]]
-        return "\n".join(lines) or "没有 Case。"
+        return "\n".join(lines) or _("没有 Case。")
     if command == "show":
         return result["content"]
     return json.dumps(result, ensure_ascii=False, indent=2)
@@ -534,7 +535,7 @@ def main(argv: list[str] | None = None) -> int:
             result = list_cases(project, args)
         elif args.command == "show":
             directory = project.find(args.case)
-            data, _ = read_case(directory / "CASE.md")
+            data, _body = read_case(directory / "CASE.md")
             result = {"ok": True, "case": data, "path": project.relative(directory / "CASE.md"),
                       "content": (directory / "CASE.md").read_text(encoding="utf-8")}
         elif args.command == "update":

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
 import json
 import subprocess
 import sys
@@ -30,7 +34,7 @@ class PluginEndToEndTests(unittest.TestCase):
     def test_manifests_distribute_four_chinese_skills(self) -> None:
         manifest = json.loads((PLUGIN_ROOT / "plugins/agents-init/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "agents-init")
-        self.assertEqual(manifest["version"], "6.7.0")
+        self.assertEqual(manifest["version"], "6.8.0")
         for name, root in UNITS:
             skill_file = root / "skills" / name / "SKILL.md"
             self.assertTrue(skill_file.is_file(), name)

@@ -9,7 +9,7 @@
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.7.0",
+      "version": "6.8.0",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
@@ -250,11 +250,12 @@
       "from": "0.4.2",
       "to": "0.5.0",
       "change_kind": "code",
-      "breaking": false,
+      "breaking": true,
       "date": "2026-10-29",
-      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。",
+      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
       "actions": [
-        "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）"
+        "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）",
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
       ]
     },
     {
@@ -262,13 +263,14 @@
       "from": "1.9.0",
       "to": "1.10.0",
       "change_kind": "code",
-      "breaking": false,
+      "breaking": true,
       "date": "2026-10-29",
-      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用英文。",
+      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用英文。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
       "actions": [
         "Codex 需要在 /hooks 中审阅并信任插件 hook 后才会运行",
         "Cursor：运行 agenthelm nudge install-hooks --client cursor 预览，确认后加 --apply；stop 提示默认关闭",
-        "不想要提示：AGENTHELM_NO_NUDGE=1，或把 nudge.enabled 设为 false"
+        "不想要提示：AGENTHELM_NO_NUDGE=1，或把 nudge.enabled 设为 false",
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
       ]
     },
     {
@@ -276,10 +278,24 @@
       "from": "1.9.0",
       "to": "1.9.1",
       "change_kind": "code",
-      "breaking": false,
+      "breaking": true,
       "date": "2026-10-29",
-      "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。",
-      "actions": []
+      "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
+      "actions": [
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      ]
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.7.0",
+      "to": "6.8.0",
+      "change_kind": "code",
+      "breaking": true,
+      "date": "2026-10-29",
+      "summary": "init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；生成到项目里的文件内容、模板与决定文件不随语言变化。",
+      "actions": [
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      ]
     }
   ]
 }

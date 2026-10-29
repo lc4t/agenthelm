@@ -31,10 +31,10 @@ def run_json(command: list[str]) -> tuple[int, dict[str, Any]]:
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "无输出"
-        raise BootstrapInitError(f"子命令没有返回合法 JSON：{detail}") from exc
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no output"
+        raise BootstrapInitError(f"The subcommand did not return valid JSON: {detail}") from exc
     if not isinstance(payload, dict):
-        raise BootstrapInitError("子命令 JSON 根节点必须是对象")
+        raise BootstrapInitError("The JSON root of the subcommand must be an object")
     return completed.returncode, payload
 
 
@@ -163,7 +163,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--runtime", required=True)
     result.add_argument("--agent-cli", required=True)
     result.add_argument('--work-mode', choices=('case-workspace', 'legacy'))
-    result.add_argument("--home", type=Path, help="测试或显式客户端 home；默认使用当前用户 home")
+    result.add_argument("--home", type=Path, help="home for tests or an explicit client home; defaults to the current user's home")
     result.add_argument("--apply", action="store_true")
     return result
 

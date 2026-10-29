@@ -1,6 +1,10 @@
 """用户级运行时：安装、幂等、同版本不改写、切换、命令链接与离线发布包。"""
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
 import json
 import os
 import shutil

@@ -26,6 +26,7 @@ import project_maintain
 import project_write
 from project_base import (GROUP_KEYS, LAUNCHER_API, EntryError, entry_section, find_profile_root, inside,
                           read_profile)
+from i18n_orchestrator import _  # noqa: E402
 
 RECORD_STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2}T[0-9:]{5,8}(?:Z|[+-]\d{2}:\d{2})?)\s+(.*)$")
 TOOL_TIMEOUT_SECONDS = 30
@@ -78,8 +79,8 @@ class RealProvider:
         try:
             return assets.Project(self.root)
         except assets.AssetError as exc:
-            raise EntryError(f"资料扫描范围配置有误：{exc}", "profile-invalid",
-                             ["检查 Profile 的 work.case.root 与 work.assets.roots"]) from exc
+            raise EntryError(_("资料扫描范围配置有误：{0}").format(exc), "profile-invalid",
+                             [_("检查 Profile 的 work.case.root 与 work.assets.roots")]) from exc
 
     def index_state(self) -> dict:
         try:
@@ -109,8 +110,8 @@ class RealProvider:
         for finding in (self._health or {}).get("findings", []):
             levels[finding["level"]] = levels.get(finding["level"], 0) + 1
         tools = project_write.load_tools(self)
-        return {"name": self.name, "kind": "、".join(map(str, types)) or "通用",
-                "kind_label": ("、".join(map(str, types)) + " 项目") if types else "项目",
+        return {"name": self.name, "kind": _("、").join(map(str, types)) or _("通用"),
+                "kind_label": (_("、").join(map(str, types)) + _(" 项目")) if types else _("项目"),
                 "launcher": self.launcher(), "index": self.index_state(), "items": counts,
                 "health": levels, "health_checked": self._health is not None, "read_at": now_iso(),
                 "tools": {"declared": len(tools["tools"]),
@@ -124,25 +125,25 @@ class RealProvider:
         try:
             result = assets.find(project, terms, ext=ext, container=container, limit=limit)
         except assets.AssetError as exc:
-            raise EntryError(f"查找失败：{exc}", "index-broken",
-                             ["重建资料索引（只改用户缓存）：fix rebuild-index --apply"]) from exc
+            raise EntryError(_("查找失败：{0}").format(exc), "index-broken",
+                             [_("重建资料索引（只改用户缓存）：fix rebuild-index --apply")]) from exc
         return {**result, "index": self.index_state()}
 
     def refs(self, path: str) -> dict:
         try:
             result = assets.refs(self.assets_project(), path)
         except assets.AssetError as exc:
-            raise EntryError(f"查不到引用关系：{exc}", "index-broken") from exc
+            raise EntryError(_("查不到引用关系：{0}").format(exc), "index-broken") from exc
         return {"path": result["path"], "inbound": [item["src"] for item in result["inbound"]],
                 "outbound": [item["dst"] for item in result["outbound"]],
                 "affected": result.get("affected_containers", [])}
 
     def act(self, action: str, path: str) -> dict:
-        target = inside(self.root, path, "路径")
+        target = inside(self.root, path, _("路径"))
         if not target.exists():
-            raise EntryError(f"文件不存在：{path}", "not-found", ["索引可能过期：重新查找一次"])
+            raise EntryError(_("文件不存在：{0}").format(path), "not-found", [_("索引可能过期：重新查找一次")])
         absolute = str(target)
-        verbs = {"open": "打开", "reveal": "显示所在目录", "copy": "复制路径"}
+        verbs = {"open": _("打开"), "reveal": _("显示所在目录"), "copy": _("复制路径")}
         command = None if os.environ.get("AGENTHELM_OPEN") == "print" else _open_command(action, target)
         if command and shutil.which(command[0]):
             completed = subprocess.run(command, input=absolute.encode("utf-8") if action == "copy" else None,
@@ -150,17 +151,17 @@ class RealProvider:
                                        timeout=15)
             if completed.returncode == 0:
                 return {"action": action, "path": path, "executed": True, "absolute": absolute,
-                        "message": f"已{verbs[action]}：{path}"}
+                        "message": _("已{0}：{1}").format(verbs[action], path)}
         return {"action": action, "path": path, "executed": False, "absolute": absolute,
-                "message": f"这台机器不能直接{verbs[action]}，绝对路径：{absolute}"}
+                "message": _("这台机器不能直接{0}，绝对路径：{1}").format(verbs[action], absolute)}
 
     # -------------------------------------------------------------- progress
 
     def items_source(self) -> str:
         items = self.entry["items"]
         if items:
-            return f"项目工具 {' '.join(items['command'])}（只读接口 list）"
-        return f"{self._case_root_text()}/*/CASE.md（默认 Case 工具）"
+            return _("项目工具 {0}（只读接口 list）").format(' '.join(items['command']))
+        return _("{0}/*/CASE.md（默认 Case 工具）").format(self._case_root_text())
 
     def _case_root_text(self) -> str:
         work = self.profile.get("work") or {}
@@ -181,13 +182,13 @@ class RealProvider:
             rows = [self._normalize(item, status_map) for item in raw]
             return {"items": rows, "invalid": [], "source": self.items_source(), "read_at": now_iso()}
         if self.work_mode != "case-workspace":
-            raise EntryError("这个项目没有使用 Case 工作目录，也没有声明事项工具", "unavailable",
-                             ["work.mode 为 legacy：事项由项目自己的方式管理",
-                              "如需在本入口查看，可在 Profile 的 entry.items 声明事项工具（见 case-workspaces.md「项目入口适配」）"])
+            raise EntryError(_("这个项目没有使用 Case 工作目录，也没有声明事项工具"), "unavailable",
+                             [_("work.mode 为 legacy：事项由项目自己的方式管理"),
+                              _("如需在本入口查看，可在 Profile 的 entry.items 声明事项工具（见 case-workspaces.md「项目入口适配」）")])
         try:
             project = case_tool.Project(self.root)
         except case_tool.CaseError as exc:
-            raise EntryError(f"读不了事项：{exc}", "profile-invalid") from exc
+            raise EntryError(_("读不了事项：{0}").format(exc), "profile-invalid") from exc
         rows, invalid = [], []
         for directory in project.case_dirs():
             path = directory / "CASE.md"
@@ -217,18 +218,18 @@ class RealProvider:
             completed = subprocess.run(command, cwd=self.root, capture_output=True, text=True, check=False,
                                        timeout=TOOL_TIMEOUT_SECONDS)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise EntryError(f"项目事项工具无法运行：{exc}", "unavailable",
-                             [f"命令：{' '.join(command)}", "检查 Profile 的 entry.items.command"]) from exc
+            raise EntryError(_("项目事项工具无法运行：{0}").format(exc), "unavailable",
+                             [_("命令：{0}").format(' '.join(command)), _("检查 Profile 的 entry.items.command")]) from exc
         try:
             data = json.loads(completed.stdout)
         except ValueError as exc:
             detail = (completed.stderr or completed.stdout).strip()[:200]
-            raise EntryError("项目事项工具的 list 没有返回 JSON", "unavailable",
-                             [f"命令：{' '.join(command)}", detail or "（无输出）"]) from exc
+            raise EntryError(_("项目事项工具的 list 没有返回 JSON"), "unavailable",
+                             [_("命令：{0}").format(' '.join(command)), detail or _("（无输出）")]) from exc
         rows = data.get("items", data.get("cases")) if isinstance(data, dict) else data
         if completed.returncode != 0 or not isinstance(rows, list):
-            raise EntryError("项目事项工具的 list 返回格式不符合约定", "unavailable",
-                             ["约定：list --all --output json 返回 {\"items\": [...]}，见 case-workspaces.md"])
+            raise EntryError(_("项目事项工具的 list 返回格式不符合约定"), "unavailable",
+                             [_("约定：list --all --output json 返回 {\"items\": [...]}，见 case-workspaces.md")])
         return [row for row in rows if isinstance(row, dict)]
 
     @staticmethod
@@ -256,9 +257,9 @@ class RealProvider:
         exact = [item for item in rows if token in (item["id"], *item["legacy_ids"], *item["aliases"])]
         matches = exact or [item for item in rows if _item_hits(token, item)]
         if not matches:
-            raise EntryError(f"没有找到事项：{token}", "not-found", ["试试更短的词，或在「看进展」里浏览全部"])
+            raise EntryError(_("没有找到事项：{0}").format(token), "not-found", [_("试试更短的词，或在「看进展」里浏览全部")])
         if len(matches) > 1:
-            raise EntryError(f"有 {len(matches)} 个事项都匹配“{token}”", "ambiguous",
+            raise EntryError(_("有 {0} 个事项都匹配“{1}”").format(len(matches), token), "ambiguous",
                              [f"{item['id']}  {item['title']}" for item in matches[:10]])
         return {**matches[0], "source": self.items_source()}
 
@@ -267,28 +268,28 @@ class RealProvider:
     def guide(self) -> dict:
         prefix = self.command_prefix()
         about = self.entry["about"] or _readme_intro(self.root) or \
-            "（项目还没有写简介：可以在 README.md 开头写一段，或在 Profile 的 entry.about 写一句话）"
+            _("（项目还没有写简介：可以在 README.md 开头写一段，或在 Profile 的 entry.about 写一句话）")
         where = [(item["label"], item["path"]) for item in self.entry["where"]]
         if not where:
             work = self.profile.get("work") or {}
             if self.work_mode == "case-workspace":
-                where.append(("事项与各自资料", f"{self._case_root_text()}/"))
+                where.append((_("事项与各自资料"), f"{self._case_root_text()}/"))
             for root in ((work.get("assets") or {}).get("roots") or []):
-                where.append(("资料", f"{root}/"))
-            for label, relative in (("参考资料", "docs/refs"), ("草稿", "docs/drafts"), ("记忆", "memory")):
+                where.append((_("资料"), f"{root}/"))
+            for label, relative in ((_("参考资料"), "docs/refs"), (_("草稿"), "docs/drafts"), (_("记忆"), "memory")):
                 if (self.root / relative).is_dir():
                     where.append((label, f"{relative}/"))
-        start = self.entry["start"] or ["「看进展」先看进行中和等待中的事项", "需要哪份资料，用「找资料」输入关键词",
-                                        "做完一步，用「记录事项」追加一条记录"]
+        start = self.entry["start"] or [_("「看进展」先看进行中和等待中的事项"), _("需要哪份资料，用「找资料」输入关键词"),
+                                        _("做完一步，用「记录事项」追加一条记录")]
         guide_file = self.entry["guide"]
         if guide_file:
-            where.insert(0, ("项目首页", guide_file))
+            where.insert(0, (_("项目首页"), guide_file))
         return {"name": self.name, "kind": self.overview()["kind"], "about": about,
                 "launcher": self.launcher(), "command": prefix, "where": where, "start": start,
-                "examples": [("按关键词和日期找资料", "1 → 关键词 2026-10", "find 关键词 2026-10"),
-                             ("看某个事项现在到哪了", "2 → 输入事项名称或旧编号", "show 名称"),
-                             ("检查项目和环境", "4", "health"),
-                             ("不进菜单、给脚本用", "—", "progress --output json")],
+                "examples": [(_("按关键词和日期找资料"), _("1 → 关键词 2026-10"), _("find 关键词 2026-10")),
+                             (_("看某个事项现在到哪了"), _("2 → 输入事项名称或旧编号"), _("show 名称")),
+                             (_("检查项目和环境"), "4", "health"),
+                             (_("不进菜单、给脚本用"), "—", "progress --output json")],
                 "capabilities": self.capabilities(), "readme_mentions_entry": _readme_mentions(self)}
 
     def capabilities(self) -> list[dict]:
@@ -303,21 +304,21 @@ class RealProvider:
         if tools["error"]:
             tools_state = ("unavailable", tools["error"])
         elif tools["tools"]:
-            tools_state = ("available", f"{len(tools['tools'])} 个已声明")
+            tools_state = ("available", _("{0} 个已声明").format(len(tools['tools'])))
         else:
-            tools_state = ("unavailable", "项目没有声明专用工具")
-        index_reason = {"missing": "首次查找时建立索引", "stale": "查找时自动更新索引",
-                        "broken": "索引损坏：查找时会尝试重建，也可在「修复与更新」里重建"}.get(index, "")
+            tools_state = ("unavailable", _("项目没有声明专用工具"))
+        index_reason = {"missing": _("首次查找时建立索引"), "stale": _("查找时自动更新索引"),
+                        "broken": _("索引损坏：查找时会尝试重建，也可在「修复与更新」里重建")}.get(index, "")
         return [
-            {"id": "find", "title": "找资料", "state": "available", "reason": index_reason, "offline": True},
-            {"id": "progress", "title": "看进展", "state": progress[0], "reason": progress[1], "offline": True},
-            {"id": "guide", "title": "项目指南", "state": "available", "reason": "", "offline": True},
-            {"id": "health", "title": "检查项目与环境", "state": "available",
-             "reason": "联网检查使用缓存" if self.offline else "", "offline": True},
-            {"id": "fix", "title": "修复与更新", "state": "available",
-             "reason": "需要联网的项离线时只能预览", "offline": False},
-            {"id": "record", "title": "记录事项", "state": record[0], "reason": record[1], "offline": True},
-            {"id": "tools", "title": "项目工具", "state": tools_state[0], "reason": tools_state[1], "offline": True},
+            {"id": "find", "title": _("找资料"), "state": "available", "reason": index_reason, "offline": True},
+            {"id": "progress", "title": _("看进展"), "state": progress[0], "reason": progress[1], "offline": True},
+            {"id": "guide", "title": _("项目指南"), "state": "available", "reason": "", "offline": True},
+            {"id": "health", "title": _("检查项目与环境"), "state": "available",
+             "reason": _("联网检查使用缓存") if self.offline else "", "offline": True},
+            {"id": "fix", "title": _("修复与更新"), "state": "available",
+             "reason": _("需要联网的项离线时只能预览"), "offline": False},
+            {"id": "record", "title": _("记录事项"), "state": record[0], "reason": record[1], "offline": True},
+            {"id": "tools", "title": _("项目工具"), "state": tools_state[0], "reason": tools_state[1], "offline": True},
         ]
 
     # -------------------------------------------------------------- health
@@ -337,92 +338,91 @@ class RealProvider:
         return self._health
 
     def _check_environment(self, findings: list[dict], ok: list[str]) -> None:
-        ok.append(f"运行环境（Python {platform.python_version()}，{platform.system() or sys.platform}）")
+        ok.append(_("运行环境（Python {0}，{1}）").format(platform.python_version(), platform.system() or sys.platform))
         if self.host is None:
-            findings.append({"id": "no-agent-pack", "level": "unavailable", "area": "环境",
-                             "title": "找不到 agent-pack，插件、模板与运行时状态无法检查",
-                             "reason": "当前运行方式没有携带 agent-pack", "impact": "找资料、看进展、指南不受影响",
-                             "next": [{"label": "用 agenthelm 运行时打开（agenthelm runtime install）", "action": ""}]})
+            findings.append({"id": "no-agent-pack", "level": "unavailable", "area": _("环境"),
+                             "title": _("找不到 agent-pack，插件、模板与运行时状态无法检查"),
+                             "reason": _("当前运行方式没有携带 agent-pack"), "impact": _("找资料、看进展、指南不受影响"),
+                             "next": [{"label": _("用 agenthelm 运行时打开（agenthelm runtime install）"), "action": ""}]})
 
     def _check_entry(self, findings: list[dict], ok: list[str]) -> None:
         launcher = self.launcher()
         if not self.entry["declared"] or not launcher:
-            findings.append({"id": "add-entry", "level": "suggest", "area": "入口", "title": "项目根目录还没有人用入口",
-                             "reason": "Profile 没有 entry.launcher", "impact": "不知道命令的人不容易发现本菜单",
-                             "next": [{"label": "生成根目录启动器（默认名 menu，可改）", "action": "fix:add-entry"}]})
+            findings.append({"id": "add-entry", "level": "suggest", "area": _("入口"), "title": _("项目根目录还没有人用入口"),
+                             "reason": _("Profile 没有 entry.launcher"), "impact": _("不知道命令的人不容易发现本菜单"),
+                             "next": [{"label": _("生成根目录启动器（默认名 menu，可改）"), "action": "fix:add-entry"}]})
             return
         path = self.root / launcher
         if not path.is_file():
-            findings.append({"id": "update-content", "level": "suggest", "area": "入口",
-                             "title": f"启动器 {launcher} 不存在", "reason": "Profile 声明了它，但根目录没有这个文件",
-                             "impact": "只能用 agenthelm project 打开",
-                             "next": [{"label": "按模板重新生成", "action": "fix:update-content"}]})
+            findings.append({"id": "update-content", "level": "suggest", "area": _("入口"),
+                             "title": _("启动器 {0} 不存在").format(launcher), "reason": _("Profile 声明了它，但根目录没有这个文件"),
+                             "impact": _("只能用 agenthelm project 打开"),
+                             "next": [{"label": _("按模板重新生成"), "action": "fix:update-content"}]})
         elif not os.access(path, os.X_OK):
-            findings.append({"id": "launcher-mode", "level": "suggest", "area": "入口",
-                             "title": f"启动器 {launcher} 没有执行权限", "reason": "可能是复制或解压时丢了权限",
-                             "impact": f"需要用 sh {launcher} 运行", "next": [{"label": f"运行 chmod +x {launcher}", "action": ""}]})
+            findings.append({"id": "launcher-mode", "level": "suggest", "area": _("入口"),
+                             "title": _("启动器 {0} 没有执行权限").format(launcher), "reason": _("可能是复制或解压时丢了权限"),
+                             "impact": _("需要用 sh {0} 运行").format(launcher), "next": [{"label": _("运行 chmod +x {0}").format(launcher), "action": ""}]})
         elif "agenthelm" not in path.read_text(encoding="utf-8", errors="replace"):
-            findings.append({"id": "launcher-custom", "level": "suggest", "area": "入口",
-                             "title": f"./{launcher} 是项目自己的脚本", "reason": "文件里没有调用 agenthelm",
-                             "impact": f"运行 ./{launcher} 可能打不开本菜单",
-                             "next": [{"label": f"在脚本里调用 agenthelm project --project <项目根目录> \"$@\"，"
-                                       f"或用 fix add-entry --accept {launcher} 换成模板（先备份）", "action": ""}]})
+            findings.append({"id": "launcher-custom", "level": "suggest", "area": _("入口"),
+                             "title": _("./{0} 是项目自己的脚本").format(launcher), "reason": _("文件里没有调用 agenthelm"),
+                             "impact": _("运行 ./{0} 可能打不开本菜单").format(launcher),
+                             "next": [{"label": _("在脚本里调用 agenthelm project --project <项目根目录> \"$@\"，或用 fix add-entry --accept {0} 换成模板（先备份）").format(launcher), "action": ""}]})
         elif self.via_launcher is not None and self.via_launcher < LAUNCHER_API:
-            findings.append({"id": "update-content", "level": "update", "area": "入口", "title": "启动器有新版本",
-                             "reason": f"当前启动器接口 {self.via_launcher}，模板为 {LAUNCHER_API}",
-                             "impact": "旧启动器仍能用", "next": [{"label": "更新项目模板", "action": "fix:update-content"}]})
+            findings.append({"id": "update-content", "level": "update", "area": _("入口"), "title": _("启动器有新版本"),
+                             "reason": _("当前启动器接口 {0}，模板为 {1}").format(self.via_launcher, LAUNCHER_API),
+                             "impact": _("旧启动器仍能用"), "next": [{"label": _("更新项目模板"), "action": "fix:update-content"}]})
         else:
-            ok.append(f"项目入口 ./{launcher}")
+            ok.append(_("项目入口 ./{0}").format(launcher))
         if not _readme_mentions(self):
-            findings.append({"id": "readme-entry", "level": "suggest", "area": "入口", "title": "README 没有提到人用入口",
-                             "reason": f"README.md 里没有 ./{launcher}", "impact": "新接手的人可能不知道有这个菜单",
-                             "next": [{"label": "在 README 末尾追加「怎样使用」（带标记，可删）", "action": "fix:add-entry"}]})
+            findings.append({"id": "readme-entry", "level": "suggest", "area": _("入口"), "title": _("README 没有提到人用入口"),
+                             "reason": _("README.md 里没有 ./{0}").format(launcher), "impact": _("新接手的人可能不知道有这个菜单"),
+                             "next": [{"label": _("在 README 末尾追加「怎样使用」（带标记，可删）"), "action": "fix:add-entry"}]})
 
     def _check_index(self, findings: list[dict], ok: list[str]) -> None:
         state = self.index_state()
         if state["status"] == "broken":
-            findings.append({"id": "rebuild-index", "level": "must", "area": "资料", "title": "资料索引损坏",
-                             "reason": "用户缓存里的索引无法读取或格式不符", "impact": "找资料会先尝试重建；项目文件没有受影响",
-                             "next": [{"label": "重建索引（只改用户缓存）", "action": "fix:rebuild-index"}]})
+            findings.append({"id": "rebuild-index", "level": "must", "area": _("资料"), "title": _("资料索引损坏"),
+                             "reason": _("用户缓存里的索引无法读取或格式不符"), "impact": _("找资料会先尝试重建；项目文件没有受影响"),
+                             "next": [{"label": _("重建索引（只改用户缓存）"), "action": "fix:rebuild-index"}]})
             return
         if state["status"] == "missing":
-            ok.append("资料索引（尚未建立，首次查找时建立）")
+            ok.append(_("资料索引（尚未建立，首次查找时建立）"))
             return
         try:
             report = assets.check(self.assets_project(), limit=5)
         except (assets.AssetError, EntryError) as exc:
-            findings.append({"id": "rebuild-index", "level": "must", "area": "资料", "title": "资料巡检失败",
-                             "reason": str(exc), "impact": "找资料可能不完整",
-                             "next": [{"label": "重建索引（只改用户缓存）", "action": "fix:rebuild-index"}]})
+            findings.append({"id": "rebuild-index", "level": "must", "area": _("资料"), "title": _("资料巡检失败"),
+                             "reason": str(exc), "impact": _("找资料可能不完整"),
+                             "next": [{"label": _("重建索引（只改用户缓存）"), "action": "fix:rebuild-index"}]})
             return
         broken = report["broken"].get("real-broken", [])
         count = report["broken_counts"].get("real-broken", 0)
         if count:
             first = broken[0]
-            findings.append({"id": "broken-links", "level": "suggest", "area": "资料", "title": f"资料里有 {count} 处断链",
-                             "reason": f"例如 {first['src']} 引用的 {first['raw']} 不存在",
-                             "impact": "打开这些文件时链接失效；不影响其他资料",
-                             "next": [{"label": "打开第一处修正", "action": f"open:{first['src']}"}]})
+            findings.append({"id": "broken-links", "level": "suggest", "area": _("资料"), "title": _("资料里有 {0} 处断链").format(count),
+                             "reason": _("例如 {0} 引用的 {1} 不存在").format(first['src'], first['raw']),
+                             "impact": _("打开这些文件时链接失效；不影响其他资料"),
+                             "next": [{"label": _("打开第一处修正"), "action": f"open:{first['src']}"}]})
         unclaimed = sum(len(paths) for paths in report["unclaimed"].values())
-        ok.append(f"资料索引（{report['totals']['files']} 个文件，{hhmm(report['built_at'])} 更新"
-                  + (f"；{unclaimed} 份交付物未被事项引用" if unclaimed else "") + "）")
+        ok.append(_("资料索引（{0} 个文件，{1} 更新").format(report['totals']['files'], hhmm(report['built_at']))
+                  + (_("；{0} 份交付物未被事项引用").format(unclaimed) if unclaimed else "") + _("）"))
 
     def _check_items(self, findings: list[dict], ok: list[str]) -> None:
         try:
             data = self.items()
         except EntryError as exc:
-            findings.append({"id": "items-unavailable", "level": "unavailable", "area": "事项", "title": "看进展不可用",
-                             "reason": str(exc), "impact": "其他功能不受影响",
+            findings.append({"id": "items-unavailable", "level": "unavailable", "area": _("事项"), "title": _("看进展不可用"),
+                             "reason": str(exc), "impact": _("其他功能不受影响"),
                              "next": [{"label": step, "action": ""} for step in exc.next_steps[:1]]})
             return
         if data["invalid"]:
             first = data["invalid"][0]
-            findings.append({"id": "invalid-items", "level": "suggest", "area": "事项",
-                             "title": f"{len(data['invalid'])} 个事项记录读不出来",
-                             "reason": f"{first['path']}：{first['error']}", "impact": "这些事项不会出现在「看进展」里",
-                             "next": [{"label": "打开记录修正格式", "action": f"open:{first['path']}"}]})
+            findings.append({"id": "invalid-items", "level": "suggest", "area": _("事项"),
+                             "title": _("{0} 个事项记录读不出来").format(len(data['invalid'])),
+                             "reason": _("{0}：{1}").format(first['path'], first['error']), "impact": _("这些事项不会出现在「看进展」里"),
+                             "next": [{"label": _("打开记录修正格式"), "action": f"open:{first['path']}"}]})
         else:
-            ok.append(f"事项记录（{len(data['items'])} 个）")
+            ok.append(_("事项记录（{0} 个）").format(len(data['items'])))
 
     def _check_memory(self, findings: list[dict], ok: list[str]) -> None:
         memory = self.profile.get("memory")
@@ -441,11 +441,11 @@ class RealProvider:
         problems = report.get("problems") or report.get("issues") or []
         if problems:
             first = problems[0]
-            findings.append({"id": "memory", "level": "suggest", "area": "记忆", "title": f"记忆条目有 {len(problems)} 个问题",
+            findings.append({"id": "memory", "level": "suggest", "area": _("记忆"), "title": _("记忆条目有 {0} 个问题").format(len(problems)),
                              "reason": str(first.get("message") or first.get("detail") or first)[:160],
-                             "impact": "只影响 AI Agent 召回记忆", "next": [{"label": "在 Agent 会话中运行记忆检查并处理", "action": ""}]})
+                             "impact": _("只影响 AI Agent 召回记忆"), "next": [{"label": _("在 Agent 会话中运行记忆检查并处理"), "action": ""}]})
         else:
-            ok.append("记忆条目")
+            ok.append(_("记忆条目"))
 
     # -------------------------------------------------------------- maintenance and writes
 
