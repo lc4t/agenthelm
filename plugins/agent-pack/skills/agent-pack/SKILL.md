@@ -15,7 +15,7 @@ description: Deterministically inventory, verify, install, sync, migrate and rec
 
 ## 入口
 
-优先使用随附的 `agent-pack` MCP Tool（`agent_pack_inventory` / `agent_pack_doctor` / `agent_pack_bootstrap` / `agent_pack_sync` / `agent_pack_transfer` / `agent_pack_reconcile`）；不可用时运行标准库 CLI `runtime/agent_pack_config.py`。执行能力管理前读取 [references/capability-config.md](../../references/capability-config.md)。
+优先使用随附的 `agent-pack` MCP Tool（`agent_pack_inventory` / `agent_pack_doctor` / `agent_pack_bootstrap` / `agent_pack_sync` / `agent_pack_transfer` / `agent_pack_reconcile` / `agent_pack_cloud_sync_safety_check`）；不可用时运行标准库 CLI `runtime/agent_pack_config.py`。执行能力管理前读取 [references/capability-config.md](../../references/capability-config.md)。
 
 `runtime/agenthelm.py` 另有两个面向人的入口：`project` 转交 project-orchestrator 的项目入口（不需要 AI Agent）；`runtime install|update|use|status` 管理用户级运行时（`~/.local/share/agenthelm/`，项目根目录的启动器优先使用它），写操作默认预览、`--apply` 才执行，新版本装在旁边、旧版本保留。
 
@@ -39,8 +39,16 @@ description: Deterministically inventory, verify, install, sync, migrate and rec
 
 `plugin.json#version` 是唯一权威。`doctor` 对每个被盘点插件比对仓库 `plugin.json` 版本与其 `.codex-plugin/plugin.json` 适配器版本，不一致即报 issue（fail，不是 warning）。`~/.codex/plugins/cache/personal/` 是 Codex 自身的版本化缓存，滞后于 marketplace 源，须由 Codex 下次激活或重启刷新——这不是 `agent-pack` 能写的。
 
+## 同步盘与本机专属目录（local-only）
+
+项目放在 iCloud、Dropbox、OneDrive 等同步目录里时，`.venv`、`node_modules`、工具缓存不该进同步盘。只读 MCP Tool `agent_pack_cloud_sync_safety_check` 返回结构化发现（含 `attention`、证据、可执行的命令）；改动由用户同意后运行 `agenthelm local-only fix … --apply`（默认预览，失败整体撤销）。Agent 不要自己 `mv` / `ln -s`；体积接近阈值的发现把选项交给用户。契约、实测兼容性（yarn / bun / uv 可外置，npm 会把链接换回真实目录，pnpm 会失败）、配置与多设备流程见 `references/local-only.md`。
+
 ## 边界
 
 - 不初始化项目、不创建骨架（那是 `agents-init`）。
 - 不选择 Task/Case、不写项目进度、不做 Git 提交（那是 project-orchestrator）。
 - 不把原生客户端 MCP 配置中的凭据复制进可移植包；含密钥条目保持 `blocked` 并留在客户端本地。
+
+## 观点候选采集与未决事项提示（nudge）
+
+插件随附的 hook 调用 `runtime/agenthelm.py nudge hook`：在项目启用了 opinion-manager 时，会话开始注入候选采集协议与试行候选，工作中提醒暂存长期偏好，任务完成时请用户集中确认，并在待确认候选堆积或久未处理时提示一行。该工具只读写 opinion-manager 的收件箱，不写规则、不改项目文件。阈值、客户端差异与关闭方式见 [references/nudge.md](../../references/nudge.md)；`agenthelm nudge status` 显示生效配置，`agenthelm nudge install-hooks --client cursor` 预览 Cursor 的 hook 配置。

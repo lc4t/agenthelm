@@ -104,7 +104,7 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 
 多机与同步盘的说明见 [README「多机与同步盘」](README.md#多机与同步盘)。
 
-## 6.9.0：CLAUDE.md 导入桩、接管已有内容的目录、受管区块
+## 6.11.0：CLAUDE.md 导入桩、接管已有内容的目录、受管区块
 
 不用改任何东西也能继续使用。升级后 `agenthelm update`（或 `fix update-content`）会列出 `CLAUDE.md` 与 `AGENTS.md` 的变化：
 

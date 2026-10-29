@@ -5,7 +5,7 @@
   "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
-      "version": "1.9.0",
+      "version": "1.11.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -17,13 +17,13 @@
           "kind": "template"
         },
         "agents-init/project-skeleton": {
-          "version": "1.0.0",
+          "version": "1.1.0",
           "kind": "manifest"
         }
       }
     },
     "opinion-manager": {
-      "version": "0.4.2",
+      "version": "0.5.0",
       "source": "./plugins/opinion-manager",
       "content": {
         "opinion-manager/catalog": {
@@ -33,15 +33,19 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.9.1",
+      "version": "1.11.1",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
-          "version": "1.0.0",
+          "version": "1.1.0",
           "kind": "sample"
         },
         "project-orchestrator/asset-synonyms": {
           "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/sop-samples": {
+          "version": "1.0.0",
           "kind": "sample"
         }
       }
@@ -250,16 +254,24 @@
       "from": "6.7.0",
       "to": "6.8.0",
       "change_kind": "both",
-      "breaking": false,
-      "date": "2026-10-29",
-      "summary": "接管非空目录：新增 --mode scan / adopt / region 与受管区块（regions.py）；CLAUDE.md 模板改为一行 @AGENTS.md 导入桩；内容锁记录受管区块与渲染输入；AGENTS.md 模板增加“用户规则”一行；项目契约模板内容包 1.2.0。",
+      "breaking": true,
+      "date": "2026-10-28",
+      "summary": "新项目的 Profile 带 sop 段（root=sops）并建立 sops/；骨架清单（内容包 agents-init/project-skeleton 1.1.0）新增 {sop_root}/.gitkeep，仅对声明了 sop 段的项目生效；project.schema.json 声明 sop 段。 init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；新增 Profile 顶层 language（项目文件语言）与 --language {auto,zh,en}，决定新建 Case 的小节名与 README 追加的“怎样使用”；模板、决定文件与指纹不随界面语言变化。 接管已有内容的目录：新增 --mode scan / adopt / region 与受管区块（regions.py）；CLAUDE.md 模板改为一行 @AGENTS.md 导入桩；AGENTS.md 模板增加“用户规则”一行；内容锁记录受管区块与渲染输入；项目契约模板内容包 1.2.0。",
       "actions": [
+        "已有项目无需改动：没有 sop 段的项目 check / health 不会多出任何差异",
+        "想启用 SOP：在 Profile 加 \"sop\": {\"root\": \"sops\"}，运行 agenthelm fix add-skeleton，或运行 agenthelm project sop init --apply",
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json",
+        "新项目想用英文的 Case 与 README：init 时加 --language en（auto 取当前界面语言）；已有项目保持中文，要改在 Profile 顶层写 \"language\": \"en\"，已有文件不会被改写",
         "已初始化的项目：agenthelm update（或 fix update-content）会列出 CLAUDE.md 与 AGENTS.md 的变化，没改过的先备份再替换，改过的逐个 --keep / --accept",
         "想接管一个已有内容的目录：先 init_project.py --mode scan 看冲突与推荐，再 --mode adopt 预览，确认后 --apply；改动已有文件须带 --recovery-dir",
-        "对外脚本若读取 CLAUDE.md 的路由文字，改为读取 AGENTS.md（CLAUDE.md 现在只有 @AGENTS.md 导入）"
+        "外部脚本若读取 CLAUDE.md 里的路由文字，改为读取 AGENTS.md（CLAUDE.md 现在只有 @AGENTS.md 导入）"
       ],
       "declaration": 2,
       "user_action_required": [
+        {
+          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}；解析 agenthelm 文字输出的脚本改用 --output json",
+          "session": "current"
+        },
         {
           "what": "CLAUDE.md 未改动过的项目：update-content 预览里确认替换为 @AGENTS.md 导入桩（先备份）；改动过的逐个选择 --keep 或 --accept",
           "session": "current"
@@ -272,9 +284,10 @@
       "touches": [
         "CLAUDE.md",
         "AGENTS.md",
-        ".agents/moe.sakanano.agent-pack/content.lock.json"
+        ".agents/moe.sakanano.agent-pack/content.lock.json",
+        "Profile: language（新增，可选）、sop（新增，可选）"
       ],
-      "default_for_existing": "advisory",
+      "default_for_existing": "on",
       "template_changes": [
         {
           "path": "CLAUDE.md",
@@ -283,22 +296,185 @@
         {
           "path": "AGENTS.md",
           "class": "semantic"
+        },
+        {
+          "path": "skills/agents-init/skeleton.json",
+          "class": "semantic"
         }
       ]
     },
     {
       "plugin": "project-orchestrator",
       "from": "1.9.0",
-      "to": "1.9.1",
+      "to": "1.10.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-28",
+      "summary": "新增 SOP（标准作业流程）管理：runtime/sop.py（创建、谈清约定、执行前检查、版本快照、触发索引、周期到期、按 SOP 建立执行 Case 并逐步记录）、agenthelm project sop 子命令与菜单项、health 汇总流程问题与到期提醒；Case Schema 新增可选字段 sop（内容包 case-template 1.1.0）；新增样例内容包 sop-samples 1.0.0；事件触发（case.created / case.closed，可按标签过滤，case.py 与 record 在结果里带 sop_events）；创建时必须谈清“范围与私有目录”（scope）；私有目录约定（读取前确认、默认不进 git、用到的 Case 标为 private）：sop private / confirm-read、case.py --sensitivity 与自动标记、health 检查；样例 knowledge-digest；前置条件支持“仅当”；演示模式支持 SOP；新增 references/sop.md 与 sop-interview.md。",
+      "actions": [
+        "已有项目无需改动；没有 sops/ 目录时 SOP 相关功能静默跳过",
+        "行为变化：资料索引（find / refs / check）不再过滤 sensitivity 非 shared 的 Case，它们的文件也会被登记并能找到；依赖“private 的 Case 搜不到”的项目，请把内容放在资料根之外的私有目录（privacy.forbidden_default_reads）",
+        "自定义了 work.case.schema 的项目：想让 Case 记录 SOP 来源，需在自己的 Schema 增加可选字符串字段 sop（格式 <id>@<主.次.修订>）"
+      ]
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.9.0",
+      "to": "1.10.0",
       "change_kind": "code",
       "breaking": false,
       "date": "2026-10-29",
-      "summary": "health / 菜单遇到脚手架的 update-region 发现时给出处理说明，不再因未知的处理项出错。",
-      "actions": [],
+      "summary": "新增 agenthelm local-only（check / fix / config）：把同步盘里的 .venv、node_modules 等本机专属目录外置到 ~/.local/share/agenthelm/local-only/ 并留软链接，检查 HOME 一致、链接状态、体积阈值与包管理器（npm、pnpm 无法外置，建议 yarn 或 bun），check --fingerprint 带本机环境段；新增只读 MCP Tool agent_pack_cloud_sync_safety_check；agenthelm check / health / 会话开始提示汇总同步盘问题。",
+      "actions": [
+        "已有项目无需改动：不在同步盘里、也没有 local-only 配置的项目，check / health / 会话开始提示的输出与退出码不变",
+        "在同步盘里的项目：check 会多出“同步目录里有本机专属目录”等发现，agenthelm check --strict 与会话开始的一行提示把需要处理的项算作未处理；不需要的用 fix --skip <ID> --reason … 跳过",
+        "想把依赖移出同步盘：agenthelm local-only fix（预览）→ --apply；各设备的 HOME 绝对路径必须一致"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.10.0",
+      "to": "1.11.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "health 汇总同步盘里的本机专属目录问题（area=同步盘，ID 以 local: 开头，决定只记在这台机器上）；fix local-only 展示 agenthelm local-only fix 的预览；fix sync-folder 的指引改为推荐 local-only，不再建议对 npm 无效的 .nosync 做法。",
+      "actions": [
+        "已有项目无需改动：不在同步盘里、也没有 local-only 配置的项目，health 的输出与退出码不变"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.9.0",
+      "to": "1.11.1",
+      "change_kind": "both",
+      "breaking": true,
+      "date": "2026-10-29",
+      "summary": "1.10.0（SOP 管理）、1.11.0（同步盘本机专属目录汇总）与 1.11.1（私密 Case 标注、台账结构升级）合并后的对照条目：6.9.0 不单独发布，随 6.10.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。v6.10.0 发布后可删除（之后门禁对照 v6.10.0）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。Case 的小节名与默认文字按 Profile 的 language（zh | en，缺省 zh）选择；SOP 文件（小节名、步骤子项、前置条件写法、占位标记、样例）与 sop run 写进执行 Case 的清单、记录同样按项目 language 生成，解析器两套词表都认，sop new 新增 --language。",
+      "actions": [
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      ],
       "declaration": 2,
-      "user_action_required": [],
-      "touches": [],
-      "default_for_existing": "off",
+      "user_action_required": [
+        {
+          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}；解析 agenthelm 文字输出的脚本改用 --output json",
+          "session": "current"
+        },
+        {
+          "what": "资料索引（find / wf / refs / check）不再过滤 sensitivity 非 shared 的 Case，私密 Case 的文件也能被找到；此前依赖“private 搜不到”的项目，把内容放进资料根之外的私有目录",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "资料索引（用户缓存）",
+        "Profile: sop、privacy.forbidden_default_reads（新增，可选）",
+        "sops/、private/（启用 SOP 后）"
+      ],
+      "default_for_existing": "on",
+      "template_changes": [
+        {
+          "path": "templates/CASE.en.md",
+          "class": "cosmetic"
+        },
+        {
+          "path": "references/case.schema.json",
+          "class": "semantic"
+        }
+      ]
+    },
+    {
+      "plugin": "opinion-manager",
+      "from": "0.4.2",
+      "to": "0.5.0",
+      "change_kind": "code",
+      "breaking": true,
+      "date": "2026-10-29",
+      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
+      "actions": [
+        "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）",
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      ],
+      "declaration": 2,
+      "user_action_required": [
+        {
+          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}；解析 agenthelm 文字输出的脚本改用 --output json",
+          "session": "current"
+        },
+        {
+          "what": ".opinion/inbox.json 保存用户原话，可能含敏感信息：自行决定是否把 .opinion/ 排除出 Git",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        ".opinion/inbox.json"
+      ],
+      "default_for_existing": "advisory",
+      "template_changes": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.10.0",
+      "to": "1.11.0",
+      "change_kind": "code",
+      "breaking": true,
+      "date": "2026-10-29",
+      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用英文。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
+      "actions": [
+        "Codex 需要在 /hooks 中审阅并信任插件 hook 后才会运行",
+        "Cursor：运行 agenthelm nudge install-hooks --client cursor 预览，确认后加 --apply；stop 提示默认关闭",
+        "不想要提示：AGENTHELM_NO_NUDGE=1，或把 nudge.enabled 设为 false",
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.11.0",
+      "to": "1.11.1",
+      "change_kind": "code",
+      "breaking": true,
+      "date": "2026-10-29",
+      "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。Case 的小节名与默认文字按 Profile 的 language（zh | en，缺省 zh）选择，新增 templates/CASE.en.md，解析器同时认中英文小节名，内容包 case-template 升到 1.1.0（含 CASE.en.md）；SOP 文件（小节名、步骤子项、前置条件写法、占位标记、样例）与 sop run 写进执行 Case 的清单、记录同样按项目 language 生成，解析器两套词表都认，sop new 新增 --language。",
+      "actions": [
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      ]
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.9.0",
+      "to": "1.11.0",
+      "change_kind": "code",
+      "breaking": true,
+      "date": "2026-10-29",
+      "summary": "1.10.0（同步盘本机专属目录 local-only）与 1.11.0（观点自动采集 nudge 与 hook）合并后的对照条目：6.9.0、6.10.0 都不单独发布，随 6.11.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
+      "actions": [
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
+      ],
+      "declaration": 2,
+      "user_action_required": [
+        {
+          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}；解析 agenthelm 文字输出的脚本改用 --output json",
+          "session": "current"
+        },
+        {
+          "what": "启用了 opinion-manager 的项目里，随插件的 hook 会在会话开始注入协议、并在命中偏好关键词时提醒暂存；不需要时设置 AGENTHELM_NO_NUDGE=1 关闭",
+          "session": "current"
+        },
+        {
+          "what": ".opinion/inbox.json 保存用户原话，可能含敏感信息：公开仓库、同步盘或他人可见的项目，自行决定是否把 .opinion/ 排除出 Git（工具不会替你修改 .gitignore）",
+          "session": "current"
+        },
+        {
+          "what": "项目位于 iCloud / Dropbox / OneDrive 等同步目录时，check / health 会多出 local: 开头的发现；按提示处理或用 fix --skip 记录决定",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "hooks/hooks.json（随插件）",
+        "~/.config/agenthelm/config.json（language、nudge、local_only）",
+        ".opinion/inbox.json",
+        ".agents/moe.sakanano.agent-pack/local-only.json"
+      ],
+      "default_for_existing": "on",
       "template_changes": []
     }
   ]

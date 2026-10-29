@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import regions
+from i18n_init import _  # noqa: E402
 
 init: Any = None  # init_project 模块；由 bind() 设置
 
@@ -45,6 +46,22 @@ SECTION_HINTS = (
     ("agents", ("命令", "构建", "测试", "运行", "安装", "目录", "结构", "架构", "概览", "简介", "overview", "command",
                 "build", "test", "run", "install", "architecture", "structure", "setup", "开发", "环境")),
 )
+
+
+# 写进项目文件的文字跟项目文件语言（Profile 的 language），不随界面语言变化。
+FILE_TEXT = {
+    "zh": {"user_header": "# 接管前的用户内容\n\n本文件由 agenthelm 在接管项目时从 AGENTS.md 移出，原文保留。`AGENTS.md` 要求与本文件一并遵循。\n\n",
+           "rules_heading": "\n## 接管前的用户规则（来自原 AGENTS.md）\n\n",
+           "opinion": "待交给 opinion-manager 处理（偏好与表达类）", "sop": "待并入 SOP 机制（流程类）"},
+    "en": {"user_header": "# User content from before adoption\n\nagenthelm moved this out of AGENTS.md when it adopted the project; the original text is kept. "
+                          "`AGENTS.md` asks agents to follow this file as well.\n\n",
+           "rules_heading": "\n## User rules from before adoption (from the original AGENTS.md)\n\n",
+           "opinion": "To hand over to opinion-manager (preferences and style)", "sop": "To merge into the SOP mechanism (procedures)"},
+}
+
+
+def file_text(language: str, key: str) -> str:
+    return FILE_TEXT.get(language, FILE_TEXT["zh"])[key]
 
 
 def bind(module: Any) -> None:
@@ -113,7 +130,7 @@ def sections(text: str) -> list[Section]:
     if not starts or starts[0][0] > 0:
         end = starts[0][0] if starts else len(lines)
         if end > 0 and "".join(lines[:end]).strip():
-            result.append(Section(0, "（开头）", 0, end, "agents", None))
+            result.append(Section(0, _("（开头）"), 0, end, "agents", None))
     for position, (number, heading) in enumerate(starts):
         end = starts[position + 1][0] if position + 1 < len(starts) else len(lines)
         destination, matched = classify(heading)
@@ -125,11 +142,11 @@ def parse_routes(values: list[str], found: list[Section]) -> dict[int, str]:
     routes: dict[int, str] = {}
     valid = {section.index for section in found}
     for value in values:
-        number, _, destination = value.partition("=")
+        number, _sep, destination = value.partition("=")
         if not number.strip().isdigit() or destination not in ROUTE_DESTINATIONS:
-            raise _fail(f"--route 格式为 <序号>=<{'|'.join(ROUTE_DESTINATIONS)}>：{value}")
+            raise _fail(_("--route 格式为 <序号>=<{0}>：{1}").format("|".join(ROUTE_DESTINATIONS), value))
         if int(number) not in valid:
-            raise _fail(f"--route 序号不存在：{number}（先用 scan 查看章节序号）")
+            raise _fail(_("--route 序号不存在：{0}（先用 scan 查看章节序号）").format(number))
         routes[int(number)] = destination
     return routes
 
@@ -161,24 +178,24 @@ def _contract_findings(root: Path, expected: dict[Path, str]) -> list[dict]:
     found: list[dict] = []
     text = _read(root / AGENTS)
     if _lstat(root / AGENTS) is None:
-        found.append(_finding("adopt:contract:AGENTS.md", "contract", "AGENTS.md", "absent", "没有 AGENTS.md，将按模板新建"))
+        found.append(_finding("adopt:contract:AGENTS.md", "contract", "AGENTS.md", "absent", _("没有 AGENTS.md，将按模板新建")))
     elif text is None:
         found.append(_finding("adopt:contract:AGENTS.md", "contract", "AGENTS.md", "unreadable",
-                              "AGENTS.md 是符号链接或无法按 UTF-8 读取，保持原样"))
+                              _("AGENTS.md 是符号链接或无法按 UTF-8 读取，保持原样")))
     elif text == expected[AGENTS]:
-        found.append(_finding("adopt:contract:AGENTS.md", "contract", "AGENTS.md", "same", "AGENTS.md 与模板一致"))
+        found.append(_finding("adopt:contract:AGENTS.md", "contract", "AGENTS.md", "same", _("AGENTS.md 与模板一致")))
     else:
         found_sections = sections(text)
         region = regions.get(text, "agents-contract")
         found.append(_finding(
             "adopt:contract:AGENTS.md", "contract", "AGENTS.md", "user-content",
-            f"AGENTS.md 已有用户内容（{len(text.encode('utf-8'))} 字节，{len(found_sections)} 个章节）",
+            _("AGENTS.md 已有用户内容（{0} 字节，{1} 个章节）").format(len(text.encode('utf-8')), len(found_sections)),
             options=[
-                _option("keep", "保持原样；之后项目契约不会出现在 AGENTS.md 里", "--agents-policy keep"),
-                _option("append", "原文不动，末尾追加带标记的项目契约区块（可随时撤回）", "--agents-policy append"),
-                _option("split", "按章节决定去向：留在 AGENTS.md，或移到 AGENT.RULES.md / AGENT.USER.md；并追加契约区块",
-                        "--agents-policy split --route <序号>=<agents|rules|user|opinion|sop>"),
-                _option("side-by-side", "原文整体移到 AGENT.USER.md，AGENTS.md 换成模板（AGENTS.md 里会指向 AGENT.USER.md）",
+                _option("keep", _("保持原样；之后项目契约不会出现在 AGENTS.md 里"), "--agents-policy keep"),
+                _option("append", _("原文不动，末尾追加带标记的项目契约区块（可随时撤回）"), "--agents-policy append"),
+                _option("split", _("按章节决定去向：留在 AGENTS.md，或移到 AGENT.RULES.md / AGENT.USER.md；并追加契约区块"),
+                        _("--agents-policy split --route <序号>=<agents|rules|user|opinion|sop>")),
+                _option("side-by-side", _("原文整体移到 AGENT.USER.md，AGENTS.md 换成模板（AGENTS.md 里会指向 AGENT.USER.md）"),
                         "--agents-policy side-by-side"),
             ],
             recommended="append",
@@ -186,34 +203,34 @@ def _contract_findings(root: Path, expected: dict[Path, str]) -> list[dict]:
                     "sections": [{"index": s.index, "heading": s.heading, "lines": s.last - s.first,
                                   "suggested": s.suggestion, "matched": s.matched,
                                   "confidence": "keyword" if s.matched else "default"} for s in found_sections],
-                    "note": "章节去向只是关键词启发式的建议；opinion / sop 暂由 opinion-manager 与后续 SOP 机制处理，"
-                            "工具会先把它们放进 AGENT.USER.md 并标注待交接。"},
+                    "note": _("章节去向只是关键词启发式的建议；opinion / sop 暂由 opinion-manager 与后续 SOP 机制处理，"
+                              "工具会先把它们放进 AGENT.USER.md 并标注待交接。")},
         ))
     claude = _lstat(root / CLAUDE)
     if claude is None:
         found.append(_finding("adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "absent",
-                              "没有 CLAUDE.md，将新建一行 @AGENTS.md 的导入桩"))
+                              _("没有 CLAUDE.md，将新建一行 @AGENTS.md 的导入桩")))
     elif (root / CLAUDE).is_symlink():
         target = os.path.realpath(root / CLAUDE)
         same = target == os.path.realpath(root / AGENTS)
         found.append(_finding("adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "symlink-agents" if same else "symlink-other",
-                              "CLAUDE.md 是指向 AGENTS.md 的符号链接，Claude 读到的就是 AGENTS.md" if same
-                              else "CLAUDE.md 是指向其他位置的符号链接，保持原样"))
+                              _("CLAUDE.md 是指向 AGENTS.md 的符号链接，Claude 读到的就是 AGENTS.md") if same
+                              else _("CLAUDE.md 是指向其他位置的符号链接，保持原样")))
     else:
         body = _read(root / CLAUDE)
         if body is None:
-            found.append(_finding("adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "unreadable", "CLAUDE.md 无法读取，保持原样"))
+            found.append(_finding("adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "unreadable", _("CLAUDE.md 无法读取，保持原样")))
         elif body == expected[CLAUDE]:
-            found.append(_finding("adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "same", "CLAUDE.md 与模板一致"))
+            found.append(_finding("adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "same", _("CLAUDE.md 与模板一致")))
         elif IMPORT_RE.search(body):
             found.append(_finding("adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "imports-agents",
-                                  "CLAUDE.md 已导入 AGENTS.md，Claude 能读到项目契约"))
+                                  _("CLAUDE.md 已导入 AGENTS.md，Claude 能读到项目契约")))
         else:
             found.append(_finding(
                 "adopt:contract:CLAUDE.md", "contract", "CLAUDE.md", "shadows-agents",
-                "CLAUDE.md 已有内容但没有导入 AGENTS.md：Claude Code 两者并存时只读 CLAUDE.md，AGENTS.md 里的项目契约不会加载",
-                options=[_option("keep", "保持原样", "--claude-policy keep"),
-                         _option("add-import", "原文不动，末尾追加带标记的 @AGENTS.md 导入区块（可随时撤回）", "--claude-policy add-import")],
+                _("CLAUDE.md 已有内容但没有导入 AGENTS.md：Claude Code 两者并存时只读 CLAUDE.md，AGENTS.md 里的项目契约不会加载"),
+                options=[_option("keep", _("保持原样"), "--claude-policy keep"),
+                         _option("add-import", _("原文不动，末尾追加带标记的 @AGENTS.md 导入区块（可随时撤回）"), "--claude-policy add-import")],
                 recommended="add-import"))
     return found
 
@@ -234,15 +251,16 @@ def _semantic_findings(root: Path, case_root: str, memory_root: str, work_mode: 
         foreign = [p.name for p in entries if p.name not in ours]
         if not foreign:
             found.append(_finding(f"adopt:semantic:{case_root}", "semantic", case_root, "ours" if ours else "empty",
-                                  f"{case_root}/ 已存在，里面的 {len(ours)} 个目录都有 CASE.md" if ours else f"{case_root}/ 已存在且为空"))
+                                  _("{0}/ 已存在，里面的 {1} 个目录都有 CASE.md").format(case_root, len(ours)) if ours
+                                  else _("{0}/ 已存在且为空").format(case_root)))
         else:
             suggestion = _unused_name(root, "cases-managed")
             found.append(_finding(
                 f"adopt:semantic:{case_root}", "semantic", case_root, "mixed" if ours else "foreign",
-                f"{case_root}/ 已有 {len(foreign)} 个没有 CASE.md 的条目（{'、'.join(foreign[:3])}{'……' if len(foreign) > 3 else ''}），"
-                "它们是历史内容：Case 工具会忽略它们，新 Case 与它们并存",
-                options=[_option("coexist", "并存：新 Case 放进同一目录，历史条目不动", None),
-                         _option("alt-case-root", f"新 Case 改放到另一个目录（如 {suggestion}/），{case_root}/ 完全不碰",
+                _("{0}/ 已有 {1} 个没有 CASE.md 的条目（{2}），它们是历史内容：Case 工具会忽略它们，新 Case 与它们并存").format(
+                    case_root, len(foreign), ", ".join(foreign[:3]) + ("…" if len(foreign) > 3 else "")),
+                options=[_option("coexist", _("并存：新 Case 放进同一目录，历史条目不动"), None),
+                         _option("alt-case-root", _("新 Case 改放到另一个目录（如 {0}/），{1}/ 完全不碰").format(suggestion, case_root),
                                  f"--case-root {suggestion}")],
                 recommended="coexist", detail={"foreign": foreign[:50], "ours": ours[:50]}))
     for entry in sorted(root.iterdir()) if root.is_dir() else []:
@@ -253,10 +271,10 @@ def _semantic_findings(root: Path, case_root: str, memory_root: str, work_mode: 
         if children:
             found.append(_finding(
                 f"adopt:semantic:container:{name}", "semantic", name, "container",
-                f"{name}/ 看起来是已有的工作容器（{len(children)} 个子目录），内容不动",
-                options=[_option("register-root", "登记为额外资料根（work.assets.roots），之后可被查找，不改任何文件",
+                _("{0}/ 看起来是已有的工作容器（{1} 个子目录），内容不动").format(name, len(children)),
+                options=[_option("register-root", _("登记为额外资料根（work.assets.roots），之后可被查找，不改任何文件"),
                                  f"--register-root {name}"),
-                         _option("ignore", "不登记", None)],
+                         _option("ignore", _("不登记"), None)],
                 recommended="register-root"))
     memory = root / memory_root
     if _is_dir(memory):
@@ -265,20 +283,20 @@ def _semantic_findings(root: Path, case_root: str, memory_root: str, work_mode: 
             suggestion = _unused_name(root, "agent-memory")
             found.append(_finding(
                 f"adopt:semantic:{memory_root}", "semantic", memory_root, "foreign",
-                f"{memory_root}/ 已有 {len(entries)} 个条目，格式未知：随包记忆工具会在这个目录里写自己的条目，建议分开",
-                options=[_option("coexist", "共用同一目录（记忆工具的索引可能把历史文件当作异常）", None),
-                         _option("alt-memory-root", f"记忆条目改放到 {suggestion}/，{memory_root}/ 不碰", f"--memory-root {suggestion}")],
+                _("{0}/ 已有 {1} 个条目，格式未知：随包记忆工具会在这个目录里写自己的条目，建议分开").format(memory_root, len(entries)),
+                options=[_option("coexist", _("共用同一目录（记忆工具的索引可能把历史文件当作异常）"), None),
+                         _option("alt-memory-root", _("记忆条目改放到 {0}/，{1}/ 不碰").format(suggestion, memory_root), f"--memory-root {suggestion}")],
                 recommended="alt-memory-root", detail={"entries": [p.name for p in entries[:50]]}))
     docs = root / "docs"
     if _is_dir(docs):
-        notes = [f"docs/{name}/ 已存在" for name in ("refs", "drafts") if _is_dir(docs / name)]
+        notes = [_("docs/{0}/ 已存在").format(name) for name in ("refs", "drafts") if _is_dir(docs / name)]
         found.append(_finding("adopt:semantic:docs", "semantic", "docs", "shared",
-                              "docs/ 已存在：骨架只在里面新增 refs/README.md 与 drafts/，已有文件不动"
-                              + ("；" + "、".join(notes) if notes else "")))
+                              _("docs/ 已存在：骨架只在里面新增 refs/README.md 与 drafts/，已有文件不动")
+                              + ("; " + ", ".join(notes) if notes else "")))
     agent_doc = root / ".agent-doc"
     if _is_dir(agent_doc):
         found.append(_finding("adopt:semantic:.agent-doc", "semantic", ".agent-doc", "shared",
-                              ".agent-doc/ 已存在：只补上缺少的 plan.md / progress.md / chat-summary.md"))
+                              _(".agent-doc/ 已存在：只补上缺少的 plan.md / progress.md / chat-summary.md")))
     return found
 
 
@@ -294,9 +312,9 @@ def scan(root: Path, inputs: Any, *, case_root: str = "cases", memory_root: str 
     """Read-only report of how this directory's existing content meets the skeleton."""
     blockers: list[dict] = []
     if (root / init.LEGACY_PROFILE_PATH).exists() and not (root / init.PROFILE_PATH).exists():
-        blockers.append({"code": "migrate-required", "message": "检测到 v5 Project Profile，请改用 --mode migrate"})
+        blockers.append({"code": "migrate-required", "message": _("检测到 v5 Project Profile，请改用 --mode migrate")})
     if (root / init.PROFILE_PATH).exists():
-        blockers.append({"code": "already-initialized", "message": "已有 v6 Project Profile，不是接管场景：用 check / refresh"})
+        blockers.append({"code": "already-initialized", "message": _("已有 v6 Project Profile，不是接管场景：用 check / refresh")})
     files = init.files_for(inputs)
     files.pop(Path("cases/.gitkeep"), None)
     files.pop(Path("memory/.gitkeep"), None)
@@ -308,8 +326,8 @@ def scan(root: Path, inputs: Any, *, case_root: str = "cases", memory_root: str 
     if launcher and _lstat(root / launcher) is not None:
         findings.append(_finding(
             f"adopt:launcher:{launcher}", "launcher", launcher, "name-taken",
-            f"根目录已有 {launcher}，是你的文件：不创建启动器，也不在 Profile 里声明 entry",
-            options=[_option("other-name", "换一个启动器名称", "--entry-name <名称>"), _option("no-entry", "不要启动器", "--no-entry")],
+            _("根目录已有 {0}，是你的文件：不创建启动器，也不在 Profile 里声明 entry").format(launcher),
+            options=[_option("other-name", _("换一个启动器名称"), _("--entry-name <名称>")), _option("no-entry", _("不要启动器"), "--no-entry")],
             recommended="other-name"))
     other = [p for p in collisions if str(p) not in ("AGENTS.md", "CLAUDE.md") and str(p) != launcher]
     if other:
@@ -317,16 +335,16 @@ def scan(root: Path, inputs: Any, *, case_root: str = "cases", memory_root: str 
         differing = [str(p) for p in other if str(p) in tracked and _read(root / p) != expected.get(p)]
         findings.append(_finding(
             "adopt:exists", "exists", "", "preserved",
-            f"{len(other)} 个骨架路径已存在，原样保留（不覆盖）",
+            _("{0} 个骨架路径已存在，原样保留（不覆盖）").format(len(other)),
             detail={"paths": [str(p) for p in other], "differs_from_template": differing}))
     if symlinked:
         findings.append(_finding("adopt:symlink", "symlink", "", "skipped",
-                                 f"{len(symlinked)} 个骨架路径的父目录是符号链接，跳过",
+                                 _("{0} 个骨架路径的父目录是符号链接，跳过").format(len(symlinked)),
                                  detail={"paths": [str(p) for p in symlinked]}))
     others = [name for name in OTHER_AGENT_FILES if _lstat(root / name) is not None]
     if others:
         findings.append(_finding("adopt:other-agent-files", "info", "", "present",
-                                 "其他客户端的指令文件不会被触碰：" + "、".join(others), detail={"paths": others}))
+                                 _("其他客户端的指令文件不会被触碰：") + ", ".join(others), detail={"paths": others}))
     recommended = [option["flag"] for item in findings if item["recommended"]
                    for option in item["options"] if option["id"] == item["recommended"] and option["flag"]]
     return {"blockers": blockers, "findings": findings, "recommended_flags": recommended,
@@ -341,17 +359,17 @@ def _validate_root(value: str, label: str, root: Path, *, must_exist: bool = Fal
     reserved = {".git", ".agents", ".codex", ".cursor", ".claude", "local-ai", "confidential"}
     if (not value or value == "." or path.is_absolute() or ".." in path.parts or "\\" in value
             or re.match(r"^[A-Za-z]:", value) or set(path.parts) & reserved):
-        raise _fail(f"{label} 必须是项目内明确的相对目录：{value}", "profile-invalid")
+        raise _fail(_("{0} 必须是项目内明确的相对目录：{1}").format(label, value), "profile-invalid")
     target = root / path
     if must_exist and not _is_dir(target):
-        raise _fail(f"{label} 不是项目里已有的目录：{value}")
+        raise _fail(_("{0} 不是项目里已有的目录：{1}").format(label, value))
     if not must_exist and _lstat(target) is not None and not _is_dir(target):
-        raise _fail(f"{label} 已被同名文件占用：{value}")
+        raise _fail(_("{0} 已被同名文件占用：{1}").format(label, value))
     for parent in [target, *target.parents]:
         if parent == root:
             break
         if parent.is_symlink():
-            raise _fail(f"{label} 经过符号链接：{value}")
+            raise _fail(_("{0} 经过符号链接：{1}").format(label, value))
     return path.as_posix()
 
 
@@ -363,14 +381,14 @@ def _moved_block(found: list[Section], lines: list[str], note: str | None = None
     return "\n\n".join(pieces)
 
 
-def _plan_agents(text: str, policy: str, routes: dict[int, str], expected: str, body: str) -> dict:
+def _plan_agents(text: str, policy: str, routes: dict[int, str], expected: str, body: str, language: str = "zh") -> dict:
     """What a policy does to a user's AGENTS.md: the new text, files that receive moved sections, region records."""
     plan: dict[str, Any] = {"policy": policy, "new_text": None, "replace": False, "user_text": None, "rules_block": None,
                             "region": None, "pending_handoff": [], "moved": {}}
     if policy == "keep":
         return plan
     if policy == "side-by-side":
-        plan.update(new_text=expected, replace=True, user_text=text, moved={"user": ["（整个文件）"]})
+        plan.update(new_text=expected, replace=True, user_text=text, moved={"user": [_("（整个文件）")]})
         return plan
     lines = text.splitlines(keepends=True)
     found = sections(text)
@@ -391,13 +409,13 @@ def _plan_agents(text: str, policy: str, routes: dict[int, str], expected: str, 
                       if not any(s.first <= number < s.last for s in [*rules, *user])] if moved else lines
         text = "".join(kept_lines)
         if rules:
-            plan["rules_block"] = "\n## 接管前的用户规则（来自原 AGENTS.md）\n\n" + _moved_block(rules, lines) + "\n"
+            plan["rules_block"] = file_text(language, "rules_heading") + _moved_block(rules, lines) + "\n"
             plan["moved"]["rules"] = [s.heading for s in rules]
         if user:
             blocks = []
             for section in user:
                 destination = routes[section.index]
-                note = {"opinion": "待交给 opinion-manager 处理（偏好与表达类）", "sop": "待并入 SOP 机制（流程类）"}.get(destination)
+                note = file_text(language, destination) if destination in ("opinion", "sop") else None
                 blocks.append(_moved_block([section], lines, note))
             plan["user_text"] = "\n\n".join(blocks)
             plan["moved"]["user"] = [s.heading for s in user]
@@ -419,7 +437,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     case_root = _validate_root(getattr(args, "case_root", None) or "cases", "--case-root", root)
     memory_root = _validate_root(getattr(args, "memory_root", None) or "memory", "--memory-root", root)
     if case_root == memory_root:
-        raise _fail("--case-root 与 --memory-root 不能相同")
+        raise _fail(_("--case-root 与 --memory-root 不能相同"))
     registered = sorted({_validate_root(value, "--register-root", root, must_exist=True)
                          for value in getattr(args, "register_root", None) or []})
     taken = None
@@ -444,8 +462,8 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         profile["work"]["assets"] = {"roots": registered}
     files[init.PROFILE_PATH] = init.json_text(profile)
     if not (root / "README.md").exists():
-        files[Path("README.md")] = f"# {inputs.name}\n\n{init.readme_block(inputs.entry_launcher)}"
-    readme = init.readme_plan(root, inputs.name, inputs.entry_launcher) if getattr(args, "readme_entry", False) else None
+        files[Path("README.md")] = f"# {inputs.name}\n\n{init.readme_block(inputs.entry_launcher, inputs.language)}"
+    readme = init.readme_plan(root, inputs.name, inputs.entry_launcher, inputs.language) if getattr(args, "readme_entry", False) else None
 
     modifications: list[dict] = []  # 改动已有文件：先备份再写入
     adopted: list[str] = []
@@ -456,10 +474,10 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     agents_text = _read(root / AGENTS)
     agents_plan = None
     if policy != "keep" and (agents_text is None or agents_text == pristine[AGENTS]):
-        notes.append(f"--agents-policy {policy} 没有生效：AGENTS.md 不存在、不可读，或已与模板一致")
+        notes.append(_("--agents-policy {0} 没有生效：AGENTS.md 不存在、不可读，或已与模板一致").format(policy))
     elif policy != "keep":
         agents_plan = _plan_agents(agents_text, policy, init_routes(args, agents_text), pristine[AGENTS],
-                                   templates["region/agents-contract"])
+                                   templates["region/agents-contract"], inputs.language)
         if agents_plan["replace"]:
             modifications.append({"path": AGENTS, "kind": "replace", "new_text": agents_plan["new_text"]})
         else:
@@ -467,8 +485,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
                                   "region": "agents-contract"})
             region_records.setdefault("AGENTS.md", {})["agents-contract"] = agents_plan["region"][1]
         if agents_plan["user_text"] is not None:
-            extras[USER_FILE] = ("# 接管前的用户内容\n\n本文件由 agenthelm 在接管项目时从 AGENTS.md 移出，原文保留。"
-                                 "`AGENTS.md` 要求与本文件一并遵循。\n\n" + agents_plan["user_text"].rstrip("\n") + "\n")
+            extras[USER_FILE] = file_text(inputs.language, "user_header") + agents_plan["user_text"].rstrip("\n") + "\n"
         pending_handoff = agents_plan["pending_handoff"]
     elif agents_text is not None and agents_text != pristine[AGENTS]:
         adopted.append("AGENTS.md")
@@ -476,9 +493,9 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     claude_state = next((f["state"] for f in report["findings"] if f["id"] == "adopt:contract:CLAUDE.md"), None)
     if claude_policy == "add-import":
         if claude_state != "shadows-agents":
-            notes.append("--claude-policy add-import 没有生效：CLAUDE.md 不存在，或已能读到 AGENTS.md，或是符号链接")
+            notes.append(_("--claude-policy add-import 没有生效：CLAUDE.md 不存在，或已能读到 AGENTS.md，或是符号链接"))
         else:
-            new_text, _ = regions.upsert(claude_text, "claude-import", templates["region/claude-import"])
+            new_text, _state = regions.upsert(claude_text, "claude-import", templates["region/claude-import"])
             modifications.append({"path": CLAUDE, "kind": "modify", "new_text": new_text, "region": "claude-import"})
             region_records.setdefault("CLAUDE.md", {})["claude-import"] = regions.digest(templates["region/claude-import"])
     elif claude_state == "shadows-agents":
@@ -489,23 +506,23 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
             files[RULES_FILE] = files[RULES_FILE].rstrip("\n") + "\n" + agents_plan["rules_block"]
             adopted.append(str(RULES_FILE))
         elif _read(rules_path) is None:
-            raise _fail("AGENT.RULES.md 不可读，无法移入规则章节")
+            raise _fail(_("AGENT.RULES.md 不可读，无法移入规则章节"))
         else:
             modifications.append({"path": RULES_FILE, "kind": "modify",
                                   "new_text": _read(rules_path).rstrip("\n") + "\n" + agents_plan["rules_block"]})
     for path, text in extras.items():
         if _lstat(root / path) is not None:
-            raise _fail(f"{path} 已存在，不会被覆盖：先改名或删除后再选择拆分", "collision")
+            raise _fail(_("{0} 已存在，不会被覆盖：先改名或删除后再选择拆分").format(path), "collision")
         files[path] = text
     if taken:
-        notes.append(f"{taken} 已存在：没有创建启动器。之后可用 --mode entry --entry-name <其他名称> 补上")
+        notes.append(_("{0} 已存在：没有创建启动器。之后可用 --mode entry --entry-name <其他名称> 补上").format(taken))
 
     create, collisions, symlinked = init.plan_writes(root, files, skip_symlinked_parents=True)
     moving = {m["path"] for m in modifications}
     preserved = [p for p in collisions if p not in moving]
     for item in modifications:
         if init.plan_writes(root, {item["path"]: ""}, skip_symlinked_parents=False)[1] == []:
-            raise _fail(f"{item['path']} 不存在或不是普通文件", "collision")
+            raise _fail(_("{0} 不存在或不是普通文件").format(item['path']), "collision")
     needs_recovery = bool(modifications)
     result: dict[str, Any] = {
         "ok": True, "mode": "adopt", "applied": False, "scan": report,
@@ -522,7 +539,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         return 0, result
     recovery_dir = getattr(args, "recovery_dir", None)
     if needs_recovery and recovery_dir is None:
-        raise _fail("改动已有文件前需要 --recovery-dir（项目外的备份目录）")
+        raise _fail(_("改动已有文件前需要 --recovery-dir（项目外的备份目录）"))
     if recovery_dir is not None and needs_recovery:
         resolved = recovery_dir.expanduser().resolve()
         if resolved == root or root in resolved.parents:
@@ -533,7 +550,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         for item in modifications:
             path = root / item["path"]
             if path.is_symlink() or not path.is_file():
-                raise _fail(f"{item['path']} 不是普通文件，拒绝改动")
+                raise _fail(_("{0} 不是普通文件，拒绝改动").format(item['path']))
             original = path.read_text(encoding="utf-8")
             originals[item["path"]] = (original, os.stat(path).st_mode & 0o7777)
         for item in modifications:
@@ -564,7 +581,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     after = scaffold.check(root, state_dir=getattr(args, "state_dir", None), reprompt=True)
     for finding in after["findings"]:
         if finding["kind"] == "content-differs":
-            scaffold.decide(root, finding["id"], "keep", reason="adopt: 保留接管前已有的文件",
+            scaffold.decide(root, finding["id"], "keep", reason="adopt: kept the file that existed before adoption",
                             fingerprint=finding["fingerprint"], scope="project", apply=True,
                             state_dir=getattr(args, "state_dir", None))
             decided.append(finding["id"])

@@ -1,6 +1,10 @@
 """``agenthelm check`` 的脚手架部分：只读、决定文件生效、旧 agents-init 时降级。"""
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
 import json
 import subprocess
 import sys

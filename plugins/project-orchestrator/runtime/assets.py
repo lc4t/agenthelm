@@ -8,7 +8,8 @@
 扫描范围来自 Project Profile：Case 根取 ``work.case.root``（缺省 ``cases``），额外扫描根取
 ``work.assets.roots``（缺省无）。同义词来自项目可选文件
 ``.agents/moe.sakanano.agent-pack/asset-synonyms.json``（缺省为空）。凭据、密钥与证书
-无论是否入库都不登记；嵌套的 SVN/Git 外部检出、纯缓存目录与非 shared 的 Case 不展开。
+无论是否入库都不登记；嵌套的 SVN/Git 外部检出与纯缓存目录不展开。Case 的 sensitivity 不影响登记：台账只是本机缓存里的索引，
+private 的 Case 也能被找到（读取其内容前是否需要确认，由私有目录的约定管，不在这里过滤）。
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import unquote
+from i18n_orchestrator import _  # noqa: E402
 
 try:
     import fcntl
@@ -34,7 +36,7 @@ except ImportError:  # Windows
 
 PROFILE = Path(".agents/moe.sakanano.agent-pack/project.json")
 SYNONYMS = Path(".agents/moe.sakanano.agent-pack/asset-synonyms.json")
-ASSET_SCHEMA_VERSION = 1
+ASSET_SCHEMA_VERSION = 2  # 2: 非 shared 的 Case 也登记；旧台账自动重建
 DB_NAME = "assets.sqlite3"
 LOCK_NAME = "assets.lock"
 LAST_NAME = "wf-last.json"
@@ -114,7 +116,7 @@ class Project:
     def __init__(self, root: Path) -> None:
         self.root = root.expanduser().resolve()
         if not self.root.is_dir():
-            raise AssetError(f"项目目录不存在：{root}", "project-missing")
+            raise AssetError(_("项目目录不存在：{0}").format(root), "project-missing")
         profile_path = self.root / PROFILE
         self.profile_found = profile_path.is_file()
         profile: dict = {}
@@ -122,7 +124,7 @@ class Project:
             try:
                 profile = json.loads(profile_path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:
-                raise AssetError(f"Project Profile 无法解析：{exc}", "profile-invalid") from exc
+                raise AssetError(_("Project Profile 无法解析：{0}").format(exc), "profile-invalid") from exc
         work = profile.get("work") if isinstance(profile, dict) else None
         work = work if isinstance(work, dict) else {}
         case = work.get("case") if isinstance(work.get("case"), dict) else {}
@@ -130,7 +132,7 @@ class Project:
         self.case_root = self._relative(case.get("root") or "cases", "work.case.root")
         extra = assets.get("roots") or []
         if not isinstance(extra, list) or not all(isinstance(item, str) for item in extra):
-            raise AssetError("work.assets.roots 必须是字符串列表", "profile-invalid")
+            raise AssetError(_("work.assets.roots 必须是字符串列表"), "profile-invalid")
         roots = [self.case_root]
         for value in extra:
             relative = self._relative(value, "work.assets.roots")
@@ -139,7 +141,7 @@ class Project:
         for first in roots:
             for second in roots:
                 if first != second and second.startswith(first + "/"):
-                    raise AssetError(f"扫描根互相嵌套：{first} 与 {second}", "profile-invalid")
+                    raise AssetError(_("扫描根互相嵌套：{0} 与 {1}").format(first, second), "profile-invalid")
         self.roots = roots
 
     @classmethod
@@ -154,15 +156,15 @@ class Project:
 
     def _relative(self, value: Any, label: str) -> str:
         if not isinstance(value, str):
-            raise AssetError(f"{label} 必须是项目内相对路径", "profile-invalid")
+            raise AssetError(_("{0} 必须是项目内相对路径").format(label), "profile-invalid")
         relative = Path(value)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-            raise AssetError(f"{label} 必须是项目内相对路径", "profile-invalid")
+            raise AssetError(_("{0} 必须是项目内相对路径").format(label), "profile-invalid")
         current = self.root
         for part in relative.parts:
             current = current / part
             if current.is_symlink():
-                raise AssetError(f"{label} 不能经过符号链接", "symlink")
+                raise AssetError(_("{0} 不能经过符号链接").format(label), "symlink")
         return relative.as_posix()
 
     def state_dir(self, create: bool = False) -> Path:
@@ -172,7 +174,7 @@ class Project:
         directory = cache / key
         resolved = directory.resolve()
         if resolved == self.root or self.root in resolved.parents:
-            raise AssetError("缓存目录不能位于项目内（检查 XDG_CACHE_HOME）", "state-inside-project")
+            raise AssetError(_("缓存目录不能位于项目内（检查 XDG_CACHE_HOME）"), "state-inside-project")
         if create:
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             try:
@@ -181,7 +183,7 @@ class Project:
                 pass
         for path in (directory, directory / DB_NAME, directory / LOCK_NAME, directory / LAST_NAME):
             if path.is_symlink():
-                raise AssetError(f"缓存路径不能是符号链接：{path.name}", "symlink")
+                raise AssetError(_("缓存路径不能是符号链接：{0}").format(path.name), "symlink")
         return directory
 
     def synonyms(self) -> list[list[str]]:
@@ -191,10 +193,10 @@ class Project:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            raise AssetError(f"同义词文件无法解析：{exc}", "synonyms-invalid") from exc
+            raise AssetError(_("同义词文件无法解析：{0}").format(exc), "synonyms-invalid") from exc
         groups = data.get("groups") if isinstance(data, dict) else None
         if not isinstance(groups, list):
-            raise AssetError("同义词文件需要 groups 列表", "synonyms-invalid")
+            raise AssetError(_("同义词文件需要 groups 列表"), "synonyms-invalid")
         return [[str(word).lower() for word in group if str(word).strip()]
                 for group in groups if isinstance(group, list) and len(group) > 1]
 
@@ -535,21 +537,17 @@ def scan(project: Project, previous: dict | None = None) -> dict:
     previous = previous or {}
     root = project.root
     containers = _load_containers(project)
-    non_shared = {cid for cid, item in containers.items() if item["sensitivity"] != "shared"}
     skipped: list[dict] = []
     checkouts: list[str] = []
     raw = []
     for rel, stat in _walk(project, skipped, checkouts):
-        container, kind, _ = project.container_of(rel)
-        if kind == "case" and container in non_shared:
-            continue
         raw.append((rel, stat))
     external = _checkout_roots(project, checkouts)
     for directory in sorted(external):
         skipped.append({"reason": "external-checkout", "path": directory})
     if external:
         raw = [(rel, stat) for rel, stat in raw if not any(rel.startswith(item + "/") for item in external)]
-    has_git, tracked, last_commit, dirty, ignored = _git_state(project, [rel for rel, _ in raw])
+    has_git, tracked, last_commit, dirty, ignored = _git_state(project, [rel for rel, _stat in raw])
 
     files = {}
     denied = 0
@@ -598,7 +596,7 @@ def scan(project: Project, previous: dict | None = None) -> dict:
             }
     edges, broken = _extract_edges(project, files, containers)
     return {"files": files, "containers": containers, "edges": edges, "broken": broken,
-            "non_shared": sorted(non_shared), "skipped": skipped, "denied": denied, "git": has_git}
+            "skipped": skipped, "denied": denied, "git": has_git}
 
 
 def _prefixes(project: Project) -> tuple[str, ...]:
@@ -721,7 +719,7 @@ def _extract_edges(project: Project, files: dict, containers: dict) -> tuple[dic
             elif looks and match.group(1) not in seen:
                 broken.setdefault((src, match.group(1)), "link")
         for match in WIKI.finditer(text):
-            dst, _ = resolve(match.group(1), src, "wiki")
+            dst, _kind = resolve(match.group(1), src, "wiki")
             if dst:
                 add_edge(src, dst, "wikilink", match.group(1))
             else:
@@ -784,7 +782,7 @@ class _Lock:
         try:
             self.fd = os.open(self.path, flags, 0o600)
         except OSError as exc:
-            raise AssetError(f"无法打开台账锁：{exc}", "state-lock") from exc
+            raise AssetError(_("无法打开台账锁：{0}").format(exc), "state-lock") from exc
         try:
             if fcntl is not None:
                 fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -794,7 +792,7 @@ class _Lock:
         except OSError as exc:
             os.close(self.fd)
             self.fd = None
-            raise AssetError("台账正在被另一个进程重建，请稍后重试", "index-locked") from exc
+            raise AssetError(_("台账正在被另一个进程重建，请稍后重试"), "index-locked") from exc
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -828,7 +826,6 @@ def _write_database(path: Path, registry: dict, fingerprint: str, project: Proje
                 "project": str(project.root), "roots": json.dumps(project.roots, ensure_ascii=False),
                 "file_count": str(len(registry["files"])), "edge_count": str(len(registry["edges"])),
                 "denied": str(registry["denied"]), "git": "1" if registry["git"] else "0",
-                "non_shared": json.dumps(registry["non_shared"]),
                 "skipped": json.dumps(registry["skipped"], ensure_ascii=False)}
         connection.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
         connection.executemany(
@@ -860,16 +857,16 @@ def _write_database(path: Path, registry: dict, fingerprint: str, project: Proje
 def _open(project: Project) -> sqlite3.Connection:
     path = project.state_dir() / DB_NAME
     if not path.is_file():
-        raise AssetError("台账尚未建立，先运行 rebuild（或去掉 --no-refresh）", "index-missing")
+        raise AssetError(_("台账尚未建立，先运行 rebuild（或去掉 --no-refresh）"), "index-missing")
     try:
         connection = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
         connection.row_factory = sqlite3.Row
         version = connection.execute("PRAGMA user_version").fetchone()[0]
     except sqlite3.Error as exc:
-        raise AssetError("台账无法读取，请运行 rebuild --force", "index-corrupt") from exc
+        raise AssetError(_("台账无法读取，请运行 rebuild --force"), "index-corrupt") from exc
     if version != ASSET_SCHEMA_VERSION:
         connection.close()
-        raise AssetError("台账格式与当前工具不一致，请运行 rebuild --force", "index-incompatible")
+        raise AssetError(_("台账格式与当前工具不一致，请运行 rebuild --force"), "index-incompatible")
     return connection
 
 
@@ -935,6 +932,7 @@ def _row_info(row: sqlite3.Row, info: dict, inbound: collections.Counter) -> dic
     return {"path": row["path"], "name": row["name"], "title": row["title"], "role": row["role"],
             "container": row["container"], "container_kind": row["container_kind"],
             "case_title": container.get("title", ""), "status": container.get("status", ""),
+            "sensitivity": container.get("sensitivity", "shared"),
             "modified": _iso(row["mtime_ns"] / 1e9), "size": row["size"],
             "git": row["git_state"] + ("+dirty" if row["git_dirty"] else ""),
             "dataless": bool(row["dataless"]), "referenced_by": inbound.get(row["path"], 0)}
@@ -1025,7 +1023,7 @@ def recent(project: Project, *, limit: int = 15, refresh: bool = True) -> dict:
         info, inbound = _containers(connection), _inbound_counts(connection)
         rows = connection.execute("SELECT * FROM files WHERE role IN ('deliverable','draft','project-file') "
                                   "ORDER BY mtime_ns DESC LIMIT 400").fetchall()
-        groups, _ = _group_families([(0, row["mtime_ns"], row) for row in rows], info, inbound, limit)
+        groups, _total = _group_families([(0, row["mtime_ns"], row) for row in rows], info, inbound, limit)
         return {"ok": True, "results": groups, "returned": len(groups)}
     finally:
         connection.close()
@@ -1040,7 +1038,7 @@ def cases(project: Project, term: str | None = None, *, limit: int = 30, refresh
         for row in connection.execute("SELECT * FROM containers WHERE kind = 'case'"):
             haystack = " ".join([row["id"], row["title"], row["goal"], row["tags"], row["aliases"]]).lower()
             if term:
-                words, _ = parse_query([term])
+                words, _dates = parse_query([term])
                 if not all(any(word in haystack for word in alternatives)
                            for alternatives in expand_terms(words, groups)):
                     continue
@@ -1073,7 +1071,7 @@ def refs(project: Project, path: str, *, depth: int = 1, refresh: bool = True) -
         if not connection.execute("SELECT 1 FROM files WHERE path = ?", (path,)).fetchone() and \
                 not connection.execute("SELECT 1 FROM edges WHERE dst = ? OR dst = ?",
                                        (path, path.rstrip("/") + "/")).fetchone():
-            raise AssetError(f"台账里没有这个路径：{path}", "unknown-path")
+            raise AssetError(_("台账里没有这个路径：{0}").format(path), "unknown-path")
         outbound = [{"dst": row["dst"], "type": row["type"]}
                     for row in connection.execute("SELECT dst, type FROM edges WHERE src = ? ORDER BY dst", (path,))]
         direct, seen_src = [], set()
@@ -1083,7 +1081,7 @@ def refs(project: Project, path: str, *, depth: int = 1, refresh: bool = True) -
                 direct.append(row)
         layers, seen = [direct], {path} | seen_src
         frontier = [row["src"] for row in direct]
-        for _ in range(max(depth, 1) - 1):
+        for _depth in range(max(depth, 1) - 1):
             following = []
             for node in frontier:
                 for row in _inbound_rows(connection, node):
@@ -1175,7 +1173,7 @@ def check(project: Project, *, limit: int = 50, refresh: bool = True) -> dict:
 # ---------------------------------------------------------------- cli
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    result = argparse.ArgumentParser(description=_("交付物台账：登记 Case 与额外扫描根下的文件，按标题、日期、同义词查找，追踪版本与引用。"))
     result.add_argument("--project", type=Path, default=None)
     result.add_argument("--output", choices=("text", "json"), default="text")
     # The same options are accepted after the subcommand, where people tend to type them.
@@ -1187,28 +1185,28 @@ def parser() -> argparse.ArgumentParser:
     def command(name: str, help_text: str, refresh: bool = True) -> argparse.ArgumentParser:
         item = sub.add_parser(name, parents=[shared], help=help_text)
         if refresh:
-            item.add_argument("--no-refresh", action="store_true", help="不先增量重建，直接读现有台账")
+            item.add_argument("--no-refresh", action="store_true", help=_("不先增量重建，直接读现有台账"))
         return item
 
-    build = command("rebuild", "重建台账（文件清单未变时为 no-op）", refresh=False)
+    build = command("rebuild", _("重建台账（文件清单未变时为 no-op）"), refresh=False)
     build.add_argument("--force", action="store_true")
-    command("status", "台账是否最新、位置与扫描根", refresh=False)
-    search = command("find", "按标题、文件名、日期与同义词查找，同一系列的版本归为一组")
+    command("status", _("台账是否最新、位置与扫描根"), refresh=False)
+    search = command("find", _("按标题、文件名、日期与同义词查找，同一系列的版本归为一组"))
     search.add_argument("terms", nargs="*")
-    search.add_argument("--kind", help="角色：deliverable / draft / source / data / image / script / process / project-file")
+    search.add_argument("--kind", help=_("角色：deliverable / draft / source / data / image / script / process / project-file"))
     search.add_argument("--ext")
-    search.add_argument("--in", dest="container", help="限定 Case 或目录（片段匹配）")
-    search.add_argument("--content", action="store_true", help="名称不命中时再查文本正文（≤1 MiB）")
+    search.add_argument("--in", dest="container", help=_("限定 Case 或目录（片段匹配）"))
+    search.add_argument("--content", action="store_true", help=_("名称不命中时再查文本正文（≤1 MiB）"))
     search.add_argument("--limit", type=int, default=10)
-    latest = command("recent", "最近改动的交付物")
+    latest = command("recent", _("最近改动的交付物"))
     latest.add_argument("--limit", type=int, default=15)
-    listing = command("cases", "Case 列表（进行中在前）与各自登记的文件数")
+    listing = command("cases", _("Case 列表（进行中在前）与各自登记的文件数"))
     listing.add_argument("term", nargs="?")
     listing.add_argument("--limit", type=int, default=30)
-    reference = command("refs", "谁引用它、它引用谁、改动会波及哪些 Case")
+    reference = command("refs", _("谁引用它、它引用谁、改动会波及哪些 Case"))
     reference.add_argument("path")
     reference.add_argument("--depth", type=int, default=1)
-    inspect = command("check", "巡检：无人认领的交付物、断链、跨容器重复、上游更新")
+    inspect = command("check", _("巡检：无人认领的交付物、断链、跨容器重复、上游更新"))
     inspect.add_argument("--limit", type=int, default=50)
     return result
 
@@ -1219,32 +1217,29 @@ def render_text(command: str, result: dict) -> str:
         for index, item in enumerate(result["results"], 1):
             owner = item["case_title"] or item["container"]
             lines.append(f"{index:>2}. {item['title'] or item['name']}  [{owner}] {item['git']}  {item['path']}")
-            lines += [f"      版本 {version['name']}  {version['path']}" for version in item["versions"]]
-        return "\n".join(lines) or "没有找到。"
+            lines += [_("      版本 {0}  {1}").format(version['name'], version['path']) for version in item["versions"]]
+        return "\n".join(lines) or _("没有找到。")
     if command == "cases":
-        return "\n".join(f"{item['status'] or '-':9} {item['id']}  {item['title']}  ({item['files']} 个文件)"
-                         for item in result["results"]) or "没有 Case。"
+        return "\n".join(_("{0:9} {1}  {2}  ({3} 个文件)").format(item['status'] or '-', item['id'], item['title'], item['files'])
+                         for item in result["results"]) or _("没有 Case。")
     if command == "refs":
         lines = [result["path"]]
         lines += [f"  ← {item['src']}" + ("" if item["via"] == "file" else f"  ({item['via']})")
                   for item in result["inbound"]]
         lines += [f"  → {item['dst']}" for item in result["outbound"]]
         if result["affected_containers"]:
-            lines.append("  改动会波及：" + "、".join(result["affected_containers"]))
+            lines.append(_("  改动会波及：") + _("、").join(result["affected_containers"]))
         return "\n".join(lines)
     if command == "check":
         totals, tiers, counts = result["totals"], result["claim_tiers"], result["broken_counts"]
         git = totals["git"]
-        lines = [f"文件 {totals['files']} · 引用 {totals['edges']} · 拒绝登记的凭据类文件 {totals['denied']}",
-                 f"Git：已入库 {git.get('tracked', 0)} / 被忽略 {git.get('ignored', 0)} / "
-                 f"未提交 {git.get('untracked', 0)} / 非 Git {git.get('none', 0)}",
-                 f"交付物：文件级被引用 {tiers.get('file', 0)} · 仅目录覆盖 {tiers.get('directory', 0)} · "
-                 f"无人认领 {tiers.get('none', 0)}",
-                 f"断链：{counts.get('real-broken', 0)} · 说明文字 {counts.get('prose-not-path', 0)} · "
-                 f"旧 Task 路径 {counts.get('legacy-task-id', 0)} · 主题链接 {counts.get('wikilink-topic', 0)}"]
-        lines += [f"  断链 {item['src']} → {item['raw']}" for item in result["broken"].get("real-broken", [])]
-        lines += [f"  无人认领 {path}" for paths in result["unclaimed"].values() for path in paths]
-        lines += ["  重复 " + " ≡ ".join(group) for group in result["duplicates"]]
+        lines = [_("文件 {0} · 引用 {1} · 拒绝登记的凭据类文件 {2}").format(totals['files'], totals['edges'], totals['denied']),
+                 _("Git：已入库 {0} / 被忽略 {1} / 未提交 {2} / 非 Git {3}").format(git.get('tracked', 0), git.get('ignored', 0), git.get('untracked', 0), git.get('none', 0)),
+                 _("交付物：文件级被引用 {0} · 仅目录覆盖 {1} · 无人认领 {2}").format(tiers.get('file', 0), tiers.get('directory', 0), tiers.get('none', 0)),
+                 _("断链：{0} · 说明文字 {1} · 旧 Task 路径 {2} · 主题链接 {3}").format(counts.get('real-broken', 0), counts.get('prose-not-path', 0), counts.get('legacy-task-id', 0), counts.get('wikilink-topic', 0))]
+        lines += [_("  断链 {0} → {1}").format(item['src'], item['raw']) for item in result["broken"].get("real-broken", [])]
+        lines += [_("  无人认领 {0}").format(path) for paths in result["unclaimed"].values() for path in paths]
+        lines += [_("  重复 ") + " ≡ ".join(group) for group in result["duplicates"]]
         return "\n".join(lines)
     return json.dumps(result, ensure_ascii=False, indent=2)
 

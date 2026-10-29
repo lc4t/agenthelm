@@ -51,7 +51,9 @@ python3 scripts/init_project.py --project /path/to/project \
   --stack python --runtime local --agent-cli codex --apply
 ```
 
-新项目默认在根目录生成启动器 `menu`（人不经过 Agent 打开项目菜单），并在 Profile 写入 `entry` 段；用户想用别的名字时传 `--entry-name <名称>`，不要启动器时传 `--no-entry`。README.md 不存在时新建并写入「怎样使用」，已存在的不改动。
+**项目文件语言**：初始化前先问用户项目里的文件用中文还是英文（用户没有特别要求时取当前对话的语言），用 `--language zh|en` 传入；不传时取当前界面语言（`AGENTHELM_LANG`、系统 locale，最后英文）。它写进 Profile 的 `language`，决定新建 Case 的小节名与默认文字、README 追加的使用说明用哪种语言，随项目同步，与各人的命令行界面语言无关；缺省的旧项目保持中文。`--mode migrate` 缺省保持中文，要改传 `--language en`。
+
+新项目默认在根目录生成启动器 `menu`（人不经过 Agent 打开项目菜单），并在 Profile 写入 `entry` 段；用户想用别的名字时传 `--entry-name <名称>`，不要启动器时传 `--no-entry`。README.md 不存在时新建并写入使用说明小节（中文项目叫「怎样使用」，英文项目叫 How to use），已存在的不改动。
 
 为已初始化的项目补上入口只用 `--mode entry`，它只涉及 Profile 的 `entry` 段、启动器与内容锁；根目录已有同名文件时视为用户的文件，必须由用户选择 `--keep` 或 `--accept`（替换前备份到 `--recovery-dir`）：
 
@@ -122,12 +124,20 @@ cases/
 └── .gitkeep
 memory/
 └── .gitkeep
+sops/
+└── .gitkeep
+private/
+└── .gitignore
 docs/
 ├── refs/README.md
 └── drafts/.gitkeep
 ```
 
 `AGENTS.md` 是项目执行入口；`CLAUDE.md` 与 `AGENT.md` 是短路由文件；初始化产生的 `OPINION.md` 保持为空白配置入口。用户确认后由 `opinion-manager` 写入当前项目；用户内容禁止复制到公开模板、示例、测试或文档。
+
+新项目的 Profile 声明 `privacy.forbidden_default_reads: ["private/"]` 并建立 `private/`（里面的 `.gitignore` 让内容默认不进入 git）：私有信息放在这里，Agent 默认不读，读之前须经用户确认；用到它的 Case 标为 `sensitivity: private`。已有项目没有声明时 `check` 不要求 `private/`，不会多出差异。
+
+新项目的 Profile 带 `sop: {"root": "sops"}`，并建立 `sops/`：用户自己的流程（SOP）放在这里，由 `project-orchestrator` 的 `runtime/sop.py` 管理。已有项目没有 `sop` 段时 `check` 不要求 `sops/`，想启用就在 Profile 加这一段并运行 `fix add-skeleton`。
 
 新项目默认 `work.mode=case-workspace`。`--work-mode legacy` 可保留旧分类；既有项目迁移时未显式选择模式就保持现有模式。Case 数据迁移由 `project-orchestrator` 的已审阅映射工具执行，初始化器只更新骨架与 Profile。
 

@@ -6,12 +6,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; the English output is covered below
 
 SCRIPT = Path(__file__).with_name("init_project.py")
 sys.path.insert(0, str(SCRIPT.parent))
@@ -184,6 +188,24 @@ class ScanTests(AdoptCase):
         self.assertEqual(found["adopt:other-agent-files"]["detail"]["paths"], [".cursorrules"])
         self.assertIn("--agents-policy append", report["recommended_flags"])
         self.assertIn("--claude-policy add-import", report["recommended_flags"])
+
+    def test_english_output_has_no_chinese_left(self) -> None:
+        self.write("AGENTS.md", "# Notes\n\n## Commands\n- make test\n")
+        self.write("CLAUDE.md", "# Mine\n")
+        self.write("cases/old-case/notes.md", "history\n")
+        self.write("memory/old.txt", "x\n")
+        self.write("projects/alpha/readme.md", "alpha\n")
+        self.write("menu", "#!/bin/sh\n")
+        env = {**os.environ, "AGENTHELM_LANG": "en"}
+        cjk = re.compile(r"[\u4e00-\u9fff]")
+        for extra in (["--mode", "scan"], ["--mode", "scan", "--output", "json"],
+                      ["--mode", "adopt", "--name", "Demo", "--project-type", "notes", "--vcs", "none", "--stack", "markdown",
+                       "--runtime", "local", "--agent-cli", "claude", "--agents-policy", "append"],
+                      ["--mode", "region"]):
+            with self.subTest(extra=extra):
+                done = subprocess.run([sys.executable, str(SCRIPT), "--project", str(self.root), *extra],
+                                      capture_output=True, text=True, check=False, env=env)
+                self.assertFalse(cjk.search(done.stdout + done.stderr), done.stdout + done.stderr)
 
     def test_empty_directory_has_nothing_to_decide(self) -> None:
         report = json.loads(self.cmd("scan").stdout)

@@ -11,6 +11,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
+from i18n_orchestrator import _  # noqa: E402
 
 
 PROJECT_PROFILE = Path(".agents") / "moe.sakanano.agent-pack" / "project.json"
@@ -35,10 +36,10 @@ def fail(message: str) -> None:
 
 def confined(root: Path, relative: str | Path) -> Path:
     if Path(relative).is_absolute() or ".." in Path(relative).parts:
-        fail(f"路径必须是项目内的相对路径：{relative}")
+        fail(_("路径必须是项目内的相对路径：{0}").format(relative))
     path = root / relative
     if any(item.is_symlink() for item in (path, *path.parents) if root in (item, *item.parents)):
-        fail(f"拒绝使用符号链接：{relative}")
+        fail(_("拒绝使用符号链接：{0}").format(relative))
     return path
 
 
@@ -46,13 +47,13 @@ def parse_date(value: str, label: str) -> date:
     try:
         return date.fromisoformat(value)
     except (TypeError, ValueError):
-        fail(f"{label} 必须为 YYYY-MM-DD：{value!r}")
+        fail(_("{0} 必须为 YYYY-MM-DD：{1!r}").format(label, value))
 
 
 def read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
-        fail(f"JSON 根节点必须是对象：{path.name}")
+        fail(_("JSON 根节点必须是对象：{0}").format(path.name))
     return value
 
 
@@ -60,7 +61,7 @@ def settings(args: argparse.Namespace) -> tuple[Path, Path, dict[str, Any]]:
     """解析项目根、记忆目录与参数；命令行优先，其次读取 Project Profile 的 memory 段。"""
     project = args.project.resolve()
     if not project.is_dir():
-        fail(f"项目目录不存在：{project}")
+        fail(_("项目目录不存在：{0}").format(project))
     declared: dict[str, Any] = {}
     profile = project / PROJECT_PROFILE
     if profile.is_file():
@@ -74,7 +75,7 @@ def settings(args: argparse.Namespace) -> tuple[Path, Path, dict[str, Any]]:
 def parse_entry(text: str) -> tuple[dict[str, Any], str]:
     """解析受限的 frontmatter：标量为 JSON 字符串，sources 为字符串列表。"""
     if not text.startswith("---\n") or "\n---\n" not in text[4:]:
-        fail("缺少 frontmatter")
+        fail(_("缺少 frontmatter"))
     header, body = text[4:].split("\n---\n", 1)
     meta: dict[str, Any] = {}
     current: str | None = None
@@ -84,16 +85,16 @@ def parse_entry(text: str) -> tuple[dict[str, Any], str]:
             continue
         key, separator, raw = line.partition(":")
         if not separator or key != key.strip() or not key:
-            fail(f"无法解析的 frontmatter 行：{line!r}")
+            fail(_("无法解析的 frontmatter 行：{0!r}").format(line))
         current = key
         if key == "sources":
             if raw.strip() not in ("", "[]"):
-                fail("sources 必须写成列表")
+                fail(_("sources 必须写成列表"))
             meta["sources"] = []
         else:
             value = json.loads(raw.strip())
             if not isinstance(value, str):
-                fail(f"{key} 必须是字符串")
+                fail(_("{0} 必须是字符串").format(key))
             meta[key] = value
     return meta, body
 
@@ -159,17 +160,17 @@ def check_entry(project: Path, entry: dict[str, Any], policy: dict[str, Any]) ->
 
     for key in REQUIRED:
         if not str(meta.get(key, "")).strip():
-            problem("missing-field", f"缺少字段 {key}")
+            problem("missing-field", _("缺少字段 {0}").format(key))
     unknown = set(meta) - set(SCALARS) - {"sources"}
     if unknown:
-        problem("unknown-field", f"未知字段：{'、'.join(sorted(unknown))}")
+        problem("unknown-field", _("未知字段：{0}").format(_('、').join(sorted(unknown))))
     if meta.get("id") and (not IDENTITY.fullmatch(meta["id"]) or meta["id"] != entry["path"].stem):
-        problem("id-mismatch", "编号格式无效或与文件名不一致")
+        problem("id-mismatch", _("编号格式无效或与文件名不一致"))
     types = tuple(policy.get("types", TYPES))
     if meta.get("type") and meta["type"] not in types:
-        problem("invalid-type", f"type 必须为：{'、'.join(types)}")
+        problem("invalid-type", _("type 必须为：{0}").format(_('、').join(types)))
     if meta.get("status") and meta["status"] not in STATUSES:
-        problem("invalid-status", f"status 必须为：{'、'.join(STATUSES)}")
+        problem("invalid-status", _("status 必须为：{0}").format(_('、').join(STATUSES)))
     for key in ("created", "verified_at", "review_after"):
         if meta.get(key):
             try:
@@ -177,12 +178,12 @@ def check_entry(project: Path, entry: dict[str, Any], policy: dict[str, Any]) ->
             except EntryError as exc:
                 problem("invalid-date", str(exc))
     if meta.get("type") == "assumption" and meta.get("status") == "active" and not meta.get("review_after"):
-        problem("assumption-without-review", "未确认的假设必须设置 review_after")
+        problem("assumption-without-review", _("未确认的假设必须设置 review_after"))
     if meta.get("status") == "active" and meta.get("promoted_to"):
-        problem("promoted-still-active", "已晋升的条目应当退役")
+        problem("promoted-still-active", _("已晋升的条目应当退役"))
     limit = policy.get("index", {}).get("max_description_chars")
     if limit and len(meta.get("description", "")) > int(limit):
-        problem("description-too-long", f"description 超过 {limit} 字符")
+        problem("description-too-long", _("description 超过 {0} 字符").format(limit))
     if meta.get("status") == "active":
         for source in meta.get("sources", []):
             try:
@@ -191,7 +192,7 @@ def check_entry(project: Path, entry: dict[str, Any], policy: dict[str, Any]) ->
                 problem("invalid-source", str(exc))
                 continue
             if missing:
-                problem("missing-source", f"来源路径不存在：{source}")
+                problem("missing-source", _("来源路径不存在：{0}").format(source))
     return found
 
 
@@ -200,14 +201,14 @@ def check_budgets(project: Path, lines: list[str], policy: dict[str, Any]) -> li
     index = policy.get("index", {})
     size = len("\n".join(lines).encode("utf-8"))
     if index.get("max_lines") and len(lines) > int(index["max_lines"]):
-        found.append({"code": "index-too-long", "entry": "", "message": f"索引 {len(lines)} 行，超过 {index['max_lines']} 行"})
+        found.append({"code": "index-too-long", "entry": "", "message": _("索引 {0} 行，超过 {1} 行").format(len(lines), index['max_lines'])})
     if index.get("max_bytes") and size > int(index["max_bytes"]):
-        found.append({"code": "index-too-large", "entry": "", "message": f"索引 {size} 字节，超过 {index['max_bytes']} 字节"})
+        found.append({"code": "index-too-large", "entry": "", "message": _("索引 {0} 字节，超过 {1} 字节").format(size, index['max_bytes'])})
     bundle = policy.get("startup_bundle", {})
     if bundle.get("max_bytes") and bundle.get("files"):
         total = sum(confined(project, item).stat().st_size for item in bundle["files"] if confined(project, item).is_file()) + size
         if total > int(bundle["max_bytes"]):
-            found.append({"code": "startup-too-large", "entry": "", "message": f"启动层合计 {total} 字节，超过 {bundle['max_bytes']} 字节"})
+            found.append({"code": "startup-too-large", "entry": "", "message": _("启动层合计 {0} 字节，超过 {1} 字节").format(total, bundle['max_bytes'])})
     summary = policy.get("chat_summary", {})
     path = confined(project, summary.get("path", ".agent-doc/chat-summary.md"))
     if path.is_file():
@@ -216,9 +217,9 @@ def check_budgets(project: Path, lines: list[str], policy: dict[str, Any]) -> li
         for section in summary.get("required_sections", SUMMARY_SECTIONS):
             # 按前缀匹配，项目可以在固定小节名之后补充说明。
             if not any(heading.startswith(section) for heading in headings):
-                found.append({"code": "summary-section-missing", "entry": path.name, "message": f"缺少小节：{section}"})
+                found.append({"code": "summary-section-missing", "entry": path.name, "message": _("缺少小节：{0}").format(section)})
         if summary.get("max_bytes") and len(text.encode("utf-8")) > int(summary["max_bytes"]):
-            found.append({"code": "summary-too-large", "entry": path.name, "message": f"超过 {summary['max_bytes']} 字节"})
+            found.append({"code": "summary-too-large", "entry": path.name, "message": _("超过 {0} 字节").format(summary['max_bytes'])})
     return found
 
 
@@ -229,7 +230,7 @@ def command_check(project: Path, root: Path, policy: dict[str, Any], today: date
         problems.extend(check_entry(project, entry, policy))
         identity = entry["meta"].get("id")
         if identity in seen:
-            problems.append({"code": "duplicate-id", "entry": entry["path"].name, "message": f"与 {seen[identity]} 编号重复"})
+            problems.append({"code": "duplicate-id", "entry": entry["path"].name, "message": _("与 {0} 编号重复").format(seen[identity])})
         seen.setdefault(identity, entry["path"].name)
     lines = index_lines(entries, policy, today)
     problems.extend(check_budgets(project, lines, policy))
@@ -248,14 +249,14 @@ def command_check(project: Path, root: Path, policy: dict[str, Any], today: date
 def command_create(args: argparse.Namespace, project: Path, root: Path, policy: dict[str, Any], today: date) -> dict[str, Any]:
     types = tuple(policy.get("types", TYPES))
     if args.type not in types:
-        fail(f"--type 必须为：{'、'.join(types)}")
+        fail(_("--type 必须为：{0}").format(_('、').join(types)))
     if not args.slug or not SLUG.fullmatch(args.slug):
-        fail("--slug 只能包含小写字母、数字和连字符")
+        fail(_("--slug 只能包含小写字母、数字和连字符"))
     if not args.description or not args.description.strip():
-        fail("--description 说明何时应当想起这条记忆，不能为空")
+        fail(_("--description 说明何时应当想起这条记忆，不能为空"))
     body = confined(project, args.body_file).read_text(encoding="utf-8") if args.body_file else ""
     if not body.strip():
-        fail("--body-file 必须提供非空正文")
+        fail(_("--body-file 必须提供非空正文"))
     created = parse_date(args.date, "--date") if args.date else today
     if args.review_after:
         parse_date(args.review_after, "--review-after")
@@ -268,7 +269,7 @@ def command_create(args: argparse.Namespace, project: Path, root: Path, policy: 
     path = root / f"{identity}.md"
     problems = check_entry(project, {"path": path, "meta": meta, "body": body}, policy)
     if problems:
-        fail("；".join(item["message"] for item in problems))
+        fail(_("；").join(item["message"] for item in problems))
     content = render_entry(meta, "\n" + body.strip() + "\n")
     if args.apply:
         root.mkdir(parents=True, exist_ok=True)
@@ -279,14 +280,14 @@ def command_create(args: argparse.Namespace, project: Path, root: Path, policy: 
 
 def command_update(args: argparse.Namespace, project: Path, root: Path, today: date) -> dict[str, Any]:
     if not args.id:
-        fail(f"{args.action} 需要 --id")
+        fail(_("{0} 需要 --id").format(args.action))
     path = root / f"{args.id}.md"
     if not IDENTITY.fullmatch(args.id) or not path.is_file():
-        fail(f"找不到记忆条目：{args.id}")
+        fail(_("找不到记忆条目：{0}").format(args.id))
     meta, body = parse_entry(path.read_text(encoding="utf-8"))
     if args.action == "retire":
         if not args.reason and not args.promoted_to:
-            fail("retire 需要 --reason 或 --promoted-to")
+            fail(_("retire 需要 --reason 或 --promoted-to"))
         meta["status"] = "retired"
         meta["promoted_to"] = args.promoted_to or meta.get("promoted_to", "")
         body = body.rstrip() + f"\n\n**退役**：{today.isoformat()}，{args.reason or '已晋升到 ' + args.promoted_to}\n"
@@ -304,23 +305,23 @@ def command_update(args: argparse.Namespace, project: Path, root: Path, today: d
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="条目式项目记忆：生成索引、检查、创建、核实与退役")
+    parser = argparse.ArgumentParser(description=_("条目式项目记忆：生成索引、检查、创建、核实与退役"))
     parser.add_argument("action", choices=("index", "list", "check", "create", "verify", "retire"))
     parser.add_argument("--project", type=Path, default=Path.cwd())
-    parser.add_argument("--root", help="记忆目录，默认取 Project Profile 的 memory.root，再默认 memory")
-    parser.add_argument("--policy", help="项目自己的参数文件；未提供时不做体积与间隔检查")
-    parser.add_argument("--today", help="用于测试与回放的日期，YYYY-MM-DD")
+    parser.add_argument("--root", help=_("记忆目录，默认取 Project Profile 的 memory.root，再默认 memory"))
+    parser.add_argument("--policy", help=_("项目自己的参数文件；未提供时不做体积与间隔检查"))
+    parser.add_argument("--today", help=_("用于测试与回放的日期，YYYY-MM-DD"))
     parser.add_argument("--output", choices=("json", "markdown"), default="markdown")
-    parser.add_argument("--apply", action="store_true", help="create、verify、retire 默认只预览")
+    parser.add_argument("--apply", action="store_true", help=_("create、verify、retire 默认只预览"))
     parser.add_argument("--id")
     parser.add_argument("--type")
     parser.add_argument("--slug")
-    parser.add_argument("--description", help="一句话说明何时应当想起这条记忆")
-    parser.add_argument("--body-file", help="项目内的正文文件")
-    parser.add_argument("--source", action="append", default=[], help="项目内的来源路径，可重复")
-    parser.add_argument("--review-after", help="复核日期，YYYY-MM-DD")
+    parser.add_argument("--description", help=_("一句话说明何时应当想起这条记忆"))
+    parser.add_argument("--body-file", help=_("项目内的正文文件"))
+    parser.add_argument("--source", action="append", default=[], help=_("项目内的来源路径，可重复"))
+    parser.add_argument("--review-after", help=_("复核日期，YYYY-MM-DD"))
     parser.add_argument("--supersedes")
-    parser.add_argument("--date", help="create 的创建日期，默认今天")
+    parser.add_argument("--date", help=_("create 的创建日期，默认今天"))
     parser.add_argument("--reason")
     parser.add_argument("--promoted-to")
     return parser
@@ -330,7 +331,7 @@ def run(args: argparse.Namespace) -> tuple[int, str]:
     project, root, policy = settings(args)
     today = parse_date(args.today, "--today") if args.today else date.today()
     if args.action == "index":
-        entries, _ = load_entries(root)
+        entries, _problems = load_entries(root)
         lines = index_lines(entries, policy, today)
         if args.output == "json":
             return 0, json.dumps({"ok": True, "lines": lines}, ensure_ascii=False, indent=2) + "\n"

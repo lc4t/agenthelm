@@ -16,6 +16,8 @@ import hashlib
 import re
 from dataclasses import dataclass
 
+from i18n_init import _  # noqa: E402
+
 ID_PATTERN = r"[a-z0-9][a-z0-9._-]{0,63}"
 ID_RE = re.compile(rf"^{ID_PATTERN}$")
 REGION_RE = re.compile(
@@ -54,10 +56,10 @@ def digest(body: str) -> str:
 
 def render(region_id: str, body: str) -> str:
     if not ID_RE.fullmatch(region_id):
-        raise ValueError(f"区块 ID 不合法：{region_id}")
+        raise ValueError(_("区块 ID 不合法：{0}").format(region_id))
     body = normalize(body)
     if "<!-- agenthelm:region" in body or "<!-- /agenthelm:region" in body:
-        raise ValueError("区块正文不能包含区块标记")
+        raise ValueError(_("区块正文不能包含区块标记"))
     return f"<!-- agenthelm:region {region_id} sha={digest(body)} -->\n{body}<!-- /agenthelm:region {region_id} -->\n"
 
 

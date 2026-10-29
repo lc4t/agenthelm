@@ -18,6 +18,14 @@ cases/CASE-ID/
 
 所有目录按需创建，简单 Case 只需 CASE.md。自有文档使用相对链接并保留完整附件；项目工程、正式规则和跨 Case 的版本化公共资产继续使用原权威位置。来源包中的 AGENTS.md 和 OPINION.md 作为历史材料，不成为当前项目指令。
 
+### 文件语言
+
+Case 正文的结构按项目文件语言生成，由 Project Profile 的 `language`（`zh` / `en`，缺省 `zh`）决定，随项目同步，不随各人命令行界面的语言（`AGENTHELM_LANG`）变化：
+
+- 新建 Case 用 `templates/CASE.md`（中文）或 `templates/CASE.en.md`（英文）；字段占位的默认文字也随语言（“刚创建 / 待明确” 对应 “Just created / To be defined”）。
+- 更新时认两种小节名：当前可信状态 / Current trusted state、下一动作 / Next action、决策记录 / Decision log、工作记录 / Work log、结果 / Result。文件里已有哪种写法就用哪种，找不到小节时按项目语言新建，所以旧 Case、换过语言的项目与手写的 Case 都能照常追加。
+- 初始化时用 `init_project.py --language zh|en` 设定；它只影响之后生成的文件，已有 Case 不会被改写。
+
 ### 最小记录与项目特化
 
 已有项目使用自己的 Case Schema 和状态工具。未声明 Case 创建工具的新项目可由 Agent 创建目录和 CASE.md，最小 Frontmatter 必须包含与目录相同的 `id`、可理解的 `title` 和 `status`；同时保存目标、下一动作、证据与决策，避免仅存文件而丢失恢复上下文。日期序号从当日现有目录取最大值加一，子工作项不取得第二套顶层生命周期。
@@ -70,7 +78,7 @@ python3 runtime/wf.py 笔记 9月1号                                 # 在项�
 
 - 扫描范围：Case 根取 `work.case.root`（缺省 `cases`）；`work.assets.roots` 可追加项目内的额外根（例如 `["projects"]`），每个一级子目录视为一个容器；未声明时只扫 Case 根，没有 Project Profile 时按缺省值运行。Case 内文件按 `docs/`、`docs/drafts/`、`refs/`、`data/` 等目录推断角色；`CASE.md` 的 `deliverables` / `evidence` 视为声明引用，正文中的 Markdown 链接、wikilink、反引号路径、Case 编号与旧 Task 路径（`legacy_ids`）都会建立引用边。开头带 `<!-- derived:` 标记的生成视图不作为引用来源。
 - 同义词：可选文件 `.agents/moe.sakanano.agent-pack/asset-synonyms.json`，格式见 [示例](asset-synonyms.example.json)（`groups` 中每组互为同义）；缺省为空，不内置任何词表。
-- 不登记：文件名含凭据类词语（credential、password、secret、token、cookie、.env、私钥等）或扩展名为证书/密钥的文件；非 `shared` 的 Case；`.git`、`node_modules` 等工具目录与 `cache` 类缓存目录；含 `.svn` / `.git` 的嵌套外部检出（被 Git 忽略时上溯到最外层被忽略目录）。Git 忽略的文件只在属于文档、表格或压缩包时登记元数据。不需要安装 SVN；项目不是 Git 工作区或没有 git 时，Git 状态记为 `none`。
+- 不登记：文件名含凭据类词语（credential、password、secret、token、cookie、.env、私钥等）或扩展名为证书/密钥的文件；`.git`、`node_modules` 等工具目录与 `cache` 类缓存目录；含 `.svn` / `.git` 的嵌套外部检出（被 Git 忽略时上溯到最外层被忽略目录）。Git 忽略的文件只在属于文档、表格或压缩包时登记元数据。不需要安装 SVN；项目不是 Git 工作区或没有 git 时，Git 状态记为 `none`。
 - 状态与写入：台账为 SQLite，位于 `$XDG_CACHE_HOME/agenthelm/assets/<项目摘要>/`（缺省 `~/.cache`），文件清单未变时重建为 no-op；`wf` 的“上一次结果”也存于此。两者都不写项目，缓存目录落在项目内时拒绝运行。
 - 平台：macOS 上 iCloud 未下载的文件（dataless）只登记元数据，不读取、不算哈希；`wf` 的打开、在 Finder 中显示、复制路径调用 `open` / `pbcopy`，其他平台或命令缺失时打印绝对路径。
 - 两个命令都接受 `--project` 与 `--output json`，写在子命令前后均可；查找结果以文件本身与 CASE.md 为准，台账只是可重建的投影。

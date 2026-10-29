@@ -1,6 +1,6 @@
 # 更新记录
 
-## 2026-10-29 — agenthelm 6.9.0 / Agents Init 6.8.0 / Project Orchestrator 1.9.1：接管已有内容的目录、受管区块、发布声明
+## 2026-10-29 — Agents Init 6.8.0：接管已有内容的目录、受管区块、发布声明（属于 6.11.0 发布窗口）
 
 在已有内容的目录里初始化，或者升级时新模板与你自己的内容冲突，现在有统一的处理原则：**控制新增，不追溯历史**。与骨架冲突的旧文件可以长期并存，不是阻塞项；只有你显式选择，工具才改动已有文件，并且先备份到项目外。
 
@@ -17,9 +17,9 @@
 - `CLAUDE.md` 模板改为一行 `@AGENTS.md` 的导入桩（Claude Code 在没有任何 `CLAUDE.md` 时才直接读取 `AGENTS.md`，v2.1.277 起；旧版本与部分会话读不到，导入桩两边都稳）；`AGENT.md` 仍是给其他客户端的文字路由。`AGENTS.md` 模板增加一行：若存在 `AGENT.USER.md`，与本文件一并遵循。项目契约模板内容包 1.2.0。
 - `INITIALIZER_VERSION` 为 6.8.0。
 
-### project-orchestrator 1.9.1
+### project-orchestrator
 
-- `health` / 菜单遇到 `update-region` 发现时给出处理说明，不再因未知处理项出错。
+- `health` / 菜单遇到 `update-region` 发现时给出处理说明，不再因未知处理项出错（不另升版本，随 1.11.1）。
 
 ### 发布声明与 CI 门禁
 
@@ -34,7 +34,152 @@
 
 ### 版本
 
-agenthelm 6.9.0、agents-init 6.8.0、project-orchestrator 1.9.1；agent-pack 1.9.0、opinion-manager 0.4.2 不变。
+不另升版本：随 6.11.0 一起发布（agents-init 6.8.0、project-orchestrator 1.11.1）；内容包 `agents-init/project-contract` 升到 1.2.0。
+
+## 2026-10-29 — 命令行输出多语言（中文 / 英文），默认英文
+
+此前所有命令的输出与提示只有中文。现在 agenthelm 的命令行输出、菜单、`--help` 与错误信息按语言显示，**默认英文**；中文原样保留。属于 6.11.0 发布窗口，与“观点自动采集与未决事项提示”同批发布。
+
+### 语言怎么决定
+
+顺序：调用方指定（如 `nudge.language`）→ 环境变量 `AGENTHELM_LANG` → 用户配置 `~/.config/agenthelm/config.json` 的 `language` → 系统 locale（`LC_ALL`、`LC_MESSAGES`、`LANG`）→ **英文**。取值 `zh`、`en`；`auto`、空值和 C/POSIX 视为未指定；中文 locale 用中文，其他语言的 locale 暂用英文。要继续看中文：`export AGENTHELM_LANG=zh`，或在用户配置里写 `{"language": "zh"}`。
+
+### 范围
+
+- 翻译：agenthelm（`check` / `install` / `update` / `doctor` / `runtime` / `nudge`）、项目入口与菜单（`project` / `./menu`，含演示项目）、`wf`、`assets.py`、`case.py`、`memory.py`、`case_workspace.py`、`opinion_manager.py`（含 `context` / `lifecycle` / `inbox`）、`init_project.py` 与 `scaffold.py` 的输出、提示、错误与 `--help`；用户级运行时启动器的“需要 Python 3.11”提示按 `AGENTHELM_LANG` / `LANG` 选择语言。
+- 项目文件语言（新增）：Profile 顶层 `language`（`zh` | `en`，缺省 `zh`）决定写进项目的 Case 与 README。`en` 的项目里，新建的 CASE.md 使用英文小节名（Current trusted state / Next action / Decision log / Work log / Result）与英文默认文字，README 追加 “How to use”。它独立于界面语言：界面语言只影响命令输出，不会改动已有文件。`agents-init --language {auto,zh,en}`：`auto` 在 init 时取当前界面语言，migrate 时保持中文；agents-init 的 Skill 要求先问用户想用哪种文件语言。解析器同时认中英文小节名，已有文件沿用自己的写法，缺失的小节按项目语言补建。新增 `templates/CASE.en.md`，内容包 `project-orchestrator/case-template` 升到 1.1.0。
+- SOP 同样跟项目文件语言走（`sop_structure.py`）：`language: en` 的项目里，`sop new` 从英文样例（`SOP.en.md`，附带模板 `*.en.md`）创建草稿，小节名为 Purpose / Prerequisites / Steps / Completion criteria / Exceptions and fallback / Revision log，步骤子项与前置条件字段也是英文（占位标记 `[TO FILL IN]`）；`sop run` 写进执行 Case 的“SOP checklist”小节、步骤记录与决策记录用英文。解析器两套词表都认，同一文件混用也能解析；追加内容沿用文件自己的写法，执行 Case 沿用 Case 自己的语言。`sop new --language zh|en` 可单独指定某个 SOP 的语言。样例 SOP 与参考文档 [`references/sop.md`](plugins/project-orchestrator/references/sop.md) 的“文件语言”一节给出对照表。
+- 不翻译：OPINION.md 与锁的渲染、记忆索引、AGENT.template.md 等其余模板、骨架文件模板（这几项仍为中文，是后续工作，见 issue #24）、用户自己写的内容（候选、规则、原因、CASE.md 正文）、公开 Opinion 模板的规则正文、Skill 正文与 CHANGELOG / README 等文档。两种界面语言下 OPINION.md、锁、脚手架指纹与决定文件完全一致，并有测试守住。
+- 机器可读输出（`--output json` 的字段名与结构、退出码）不变；JSON 里给人看的 `message` / `error` 文字随语言变化。解析文字输出的脚本请改用 `--output json`。
+
+### 实现
+
+- 每个插件带一份相同的语言模块（`i18n_agent_pack.py`、`i18n_opinion.py`、`i18n_orchestrator.py`、`i18n_init.py`；模块名不同，同一进程里不会互相覆盖）：源语言是中文，`_("中文原文")` 在中文下原样返回，英文下查 `locale/en.json`，没有译文时退回原文；模块级常量里的文案用 `N_` 标记，使用处再 `_()`。约 1550 条文案，演示项目的数据在读取时整棵翻译。
+- 测试：`tests/test_i18n.py` 守住四份语言模块行为一致、源码里每个 `_("…")` 都有英文译文、译文的占位符与原文一致且没有漏翻的中文、`_` 没有被局部变量遮蔽、演示数据完整，并在英文下实际运行演示项目、菜单（伪终端）、各命令的 `--help`、真实项目的 Case / 台账命令，要求输出里没有漏翻的中文。既有测试固定 `AGENTHELM_LANG=zh`。
+- 英文文案由人工翻译，未经母语者审校；新增语言只需补一份 `locale/<语言>.json` 并在 `LANGUAGES` 里加上。
+
+### 版本
+
+与 SOP（6.9.0）、local-only（6.10.0）、观点自动采集同在 6.11.0 发布，不另升版本：agents-init 6.8.0、agent-pack 1.11.0、opinion-manager 0.5.0、project-orchestrator 1.11.1，本批把它们标为含不兼容变更（默认输出语言改变）。SOP（`sop.py`、`private_paths.py`）与 local-only（`local_only.py`）的命令输出也已纳入。
+
+## 2026-10-29 — agenthelm 6.11.0 / Opinion Manager 0.5.0 / Agent Pack 1.11.0 / Project Orchestrator 1.11.1：观点自动采集与未决事项提示
+
+6.11.0 同时包含下面 2026-10-29（6.10.0，local-only）和 2026-10-28（6.9.0，SOP）两个条目的全部变化：6.9.0、6.10.0 都没有单独发布，从 6.8.0 升级的用户一次得到三部分。
+
+Opinion 之前只在用户明确提出时才工作：没有 hook，没有低成本的暂存入口，也没有任何东西提醒用户回头确认。这个版本让它在日常工作中自己转起来：会话开始注入规则和协议，工作中发现长期偏好就暂存，任务完成时集中请用户确认，开新会话时按阈值提示久未处理的候选。采集是自动的，生效与转正式仍然只来自用户的明确确认。
+
+### opinion-manager 0.5.0
+
+- 新增候选收件箱 `opinion_manager.py inbox`（数据在项目私有的 `.opinion/inbox.json`）：
+  - `add` 暂存（标题、完整规则、适用范围、用户原话），无需确认；内容相同的候选合并并追加证据；
+  - 状态 `pending`（待确认）/ `trial`（项目内试行）/ `formal`（同意转正式）/ `held` / `rejected`；`decide` 必须带 `--confirmed`，批量要么全成功要么全不改；
+  - `trial` 的候选全文随会话开始注入，Agent 按其工作；`expire --days N` 把试行超期未转正的退回待确认；
+  - 提示与协议有中文、英文两种（`--lang zh|en`，缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用英文）；候选内容是用户自己的话，不翻译；历史记录用与语言无关的编码；
+  - `exposure` 只读报告收件箱在 Git 里的状态（已忽略 / 已跟踪 / 未忽略 / 非 Git 仓库）；
+  - `pending` 是“待确认项提供者”，返回统一结构，供 agent-pack 汇总（SOP 等其他来源按同一结构接入）；`brief` 生成会话开始注入的协议与试行候选。
+- `formal` 只记录用户意愿，写入 `OPINION.md` 仍走完整预览与确认；`inbox` 不写 `OPINION.md`、Profile 或锁。
+- `SKILL.md`：触发描述增加“工作中出现长期偏好或纠正”“任务完成时确认”“候选堆积时裁决”；新增候选收件箱与自动采集一节。新增 [`references/inbox.md`](plugins/opinion-manager/references/inbox.md)。
+
+### agent-pack 1.11.0
+
+- 新增 `agenthelm nudge` 与随附 hook（`hooks/hooks.json`）：
+  - **会话开始**（`startup|resume|clear|compact`）：在启用了 opinion-manager 的项目里注入采集协议与试行候选；待确认 ≥ `pending_threshold`（默认 5）条或最久 ≥ `stale_days`（默认 7）天时给用户一行提示，同一项目每 24 小时至多一次；
+  - **用户消息**：命中长期偏好关键词（可配置）时提醒 Agent 静默暂存，每会话至多 3 次；
+  - **回合结束**：本会话暂存且没展示过的候选存在、最后一条回复像是完成时，让 Agent 用编号列表一次性请用户裁决，每会话至多 1 次。
+- 各客户端：Claude Code 与 Codex 读取同一个 `hooks/hooks.json`（Codex 需在 `/hooks` 中信任）；Cursor 没有 prompt 级注入，用 `agenthelm nudge install-hooks --client cursor` 预览并写入 `hooks.json`，stop 提示默认关闭。其他目录完全无输出，hook 永远退出 0。
+- 提示语言：给用户看的提示和注入给模型的协议使用同一种语言（中文 / 英文）。顺序：`nudge.language`（非 `auto` 时，用户配置优先于项目 Profile）→ `AGENTHELM_LANG` → 系统 locale → 英文；解析结果传给 opinion-manager 的 `inbox --lang`。协议要求 Agent 向用户转告和确认时使用用户正在使用的语言。文案集中在 `nudge_text.py` / `inbox_text.py`，测试守住两种语言的键与占位符一致、英文不含中文。这是运行时多语言的第一步，仓库里其他命令的输出暂时仍为中文。新增的 `inbox` / `nudge` 命令行帮助为英文，两份 references 各有中文与英文版（`inbox.md` / `inbox.en.md`、`nudge.md` / `nudge.en.md`）。
+- 配置：Project Profile 的 `opinion.nudge`（随项目）与用户配置的 `nudge`（个人，优先）；缺省即默认值，不进脚手架受检字段。`agenthelm nudge status` 显示生效配置与是否会提示；`AGENTHELM_NO_NUDGE=1` 关闭。详见 [`references/nudge.md`](plugins/agent-pack/references/nudge.md)。
+- 尚未在真实客户端逐一验证：Codex 插件 hook 的信任流程、Cursor 的 sessionStart 注入与 `~/.cursor/hooks.json` 加载、Claude Code `Stop` 的 `additionalContext`；依据官方文档编写，单元测试覆盖输出格式与逻辑。
+
+### project-orchestrator 1.11.1
+
+- 在 1.10.0（SOP 合并）已取消 `sensitivity` 过滤的基础上补两点：`find` 等结果带每个 Case 的 `sensitivity` 字段，菜单里标注“私密”；台账结构版本升到 2，使 1.10.0 之前建立、指纹没变的旧台账下次使用时自动重建（否则旧缓存里仍没有私密 Case）。凭据类文件名仍不登记，台账仍在用户缓存目录、不进项目。
+
+### 不兼容点与注意
+
+- 无。没有 `.opinion/`、`opinion.lock.json` 或 `opinion.provider: opinion-manager` 的项目不受影响。
+- 启用 Opinion 的项目，新会话会多出约 1500 字符的协议上下文；不需要时设置 `nudge.enabled: false` 或 `AGENTHELM_NO_NUDGE=1`。
+- 收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议启用本功能的项目保持私有。是否公开仓库、是否排除 `.opinion/` 由你决定：工具只在第一次暂存（`inbox add` 返回 `notice`）和每个项目第一次开会话时提醒一次，`inbox exposure` / `agenthelm nudge status` 随时可查；不会替你决定，也不会自动修改 `.gitignore`、删除或改写内容。
+
+### 版本
+
+agenthelm 6.11.0、opinion-manager 0.5.0、agent-pack 1.11.0、project-orchestrator 1.11.1；agents-init 6.8.0 不变。
+
+## 2026-10-29 — agenthelm 6.10.0 / Agent Pack 1.10.0 / Project Orchestrator 1.11.0：同步盘里的本机专属目录
+
+项目放在 iCloud、Dropbox、OneDrive 等同步目录、在多台设备上使用时，`.venv`、`node_modules`、工具缓存不该进同步盘。`agenthelm local-only` 把它们放到每台设备自己的 `~/.local/share/agenthelm/local-only/` 下并留软链接，同时检查各设备之间的差异（谁装好了依赖、谁没装、HOME 是否一致）。
+
+6.10.0 同时包含下面 2026-10-28 条目（6.9.0，流程（SOP）管理）的全部变化：6.9.0 没有单独发布，从 6.8.0 升级的用户一次得到两部分。
+
+### agent-pack 1.10.0：同步盘里的本机专属目录（local-only）
+
+项目放在 iCloud、Dropbox、OneDrive 等同步目录里、在多台设备上使用时，`.venv`、`node_modules`、工具缓存不该进同步盘。新增 `runtime/local_only.py`（只用标准库）、命令 `agenthelm local-only`、只读 MCP Tool `agent_pack_cloud_sync_safety_check`，以及 `references/local-only.md`。
+
+- **外置**：`local-only fix` 把虚拟环境（按 `pyvenv.cfg` 识别，不看名字）和可外置的 `node_modules` 移到 `~/.local/share/agenthelm/local-only/<project_id>/<相对路径>`，原位置建软链接。默认只预览，`--apply` 才写；跨设备移动先复制并核对文件数与字节数；任何一步失败整体撤销；旧配置先备份。`--rebuild` 在本机按锁文件重新安装（`uv sync`、`poetry install`、`yarn/bun install --frozen-lockfile`）。
+- **硬约束**：链接文本随项目同步，必须各设备相同——目标路径只由项目里记录的 `home`、`project_id` 和相对路径拼成，不读 `XDG_DATA_HOME`；各设备 HOME 的绝对路径必须一致，不一致时 `check` 报告、`fix` 拒绝写入。
+- **实测依据**（Linux 容器，2026-10-29）：uv 0.11.32、普通 venv、yarn 1.22.22、bun 1.4.4 可以外置；**npm 10.9.4 把链接换回真实目录，pnpm 10.28.0 安装失败并删掉链接目标**——同步目录里的 npm / pnpm 项目只报告并建议改用 yarn 或 bun（不开云同步时不提示）；缓存类用 `PYTHONPYCACHEPREFIX`、`RUFF_CACHE_DIR`、`MYPY_CACHE_DIR`、`pytest -o cache_dir` 外置，工具只给写法。
+- **检查**：`local-only check`（`quick` / `standard` / `full` 三档时间预算，会话开始钩子只用 `quick`）发现真实的本机专属目录、已声明条目的状态（正常 / 本机未安装 / 尚未建立 / 又变回真实目录 / 指向别处）、包管理器、体积阈值、`-wal` / `-shm` / pid / socket 文件、冲突副本、iCloud 未下载占位文件（不读取内容）。“本机未安装”就是设备 B 没装好依赖的信号——此时直接运行 `uv sync` 会报 `File exists`，`fix --apply --rebuild` 修复。
+- **默认保持同步**：构建产物（`dist`、`build`、`out`）和本机工具状态（`.claude`、`.cursor`、`.idea`、`.vscode`）；可在配置的 `keep_synced` 调整。带 `CACHEDIR.TAG` 的目录算工具缓存，不算构建产物。
+- **体积阈值可配置**：每个顶层目录默认 200 MB 或 2 万个文件，达到 80% 开始提示；`.agents/moe.sakanano.agent-pack/local-only.json`（随项目同步，`fix` 创建）和 `~/.config/agenthelm/config.json` 的 `local_only` 段都能改，项目配置优先。接近阈值时只给选项由你决定——提高阈值（`fix --raise-limit 目录=MB/文件数`）、不再提示（`fix --skip`）、在同步服务里设为不同步——不提供“外置”（普通内容外置后其他设备看不到）。
+- **跨设备对比**：`local-only check --fingerprint [--explain 对方.json]`；`agenthelm check --fingerprint` 在项目配置了 local-only 时也带“本机环境”段并一并比较。指纹只含 HOME、链接状态与链接文本，不含平台与体积；没有配置的项目输出与以前完全一样。
+- **汇总**：`agenthelm check` / `health` / 会话开始提示汇总同步盘问题（`local:` 开头的本机发现，决定存用户状态目录）；“需要处理”的项让 `up_to_date` 变为 false、`check --strict` 退出码为 1，`health` 的退出码不变。不在同步盘里、也没有配置的项目不扫描，输出与退出码不变。
+- **同步盘识别**：补上 macOS File Provider 的 `~/Library/CloudStorage/Dropbox-*`；iCloud“桌面与文稿”同步的路径上看不出来，用 `fix --service icloud` 声明。
+- **未确认**：iCloud、Dropbox、OneDrive 是否同步软链接本身；yarn 2+；各服务冲突副本的命名（只识别 Dropbox 的 `conflicted copy` 与 iCloud 的 `.icloud` 占位文件）；macOS 上是否正在同步、账号状态没有找到可靠的检测办法，不报告。Windows 上只支持检查。
+
+### project-orchestrator 1.11.0
+
+- `health` 汇总同步盘里的本机专属目录问题（area 为“同步盘”，ID 以 `local:` 开头，决定只记在这台机器上）；`fix local-only` 展示 `agenthelm local-only fix` 的预览（不自己执行移动）；`fix sync-folder` 的指引改为推荐 `local-only`，不再建议对 npm 无效的 `.nosync` 做法。
+
+### 不兼容点与注意
+
+- 无不兼容变更。
+- **同步盘里的项目**：`check` / `health` 会多出“同步目录里有本机专属目录”等发现；`agenthelm check --strict` 与会话开始的一行提示把需要处理的项算作未处理。不需要的用 `fix --skip <ID> --reason …` 跳过。不在同步盘里、也没有 local-only 配置的项目，输出与退出码不变。
+- 只在 Linux 容器里做了 uv、yarn、bun、npm、pnpm 的实测；macOS 上跑过测试，但 iCloud、Dropbox、OneDrive 是否同步软链接本身没有在真机核对（见上文“未确认”）。
+
+### 版本
+
+agenthelm 6.10.0、agent-pack 1.10.0、project-orchestrator 1.11.0；agents-init 6.8.0 与 project-orchestrator 1.10.0 的变化（6.9.0 条目）首次随本版发布；opinion-manager 0.4.2 不变。
+
+## 2026-10-28 — agenthelm 6.9.0 / Agents Init 6.8.0 / Project Orchestrator 1.10.0：流程（SOP）管理（未单独发布，随 6.10.0 一起发布）
+
+把用户常用的流程固化成 SOP（Standard Operating Procedure，标准作业流程），之后让 Agent 按它执行或由场景触发。典型例子：处理一个视频（下载 → 转音频 → 本地或云端转录）、每周复盘。SOP 里工具怎么选、出错怎么办、中间产物放哪，都是用户自己的习惯，建立时逐项谈清，不替用户决定。
+
+### project-orchestrator 1.10.0
+
+- 新增 `runtime/sop.py`（标准库；也可用 `agenthelm project sop <子命令>`）。一个 SOP 一个目录 `sops/<id>/SOP.md`，用户级 SOP 在 `~/.config/agenthelm/sops/`（`AGENTHELM_SOP_HOME` 可改），同 id 时项目级覆盖用户级。
+  - **创建**：`new` 从样例、现成文件或已完成的 Case 生成草稿；草稿不会被触发。
+  - **谈清约定**：`interview` 给出编号问题清单（触发、前置条件、出错、缺工具、中间产物、失败后恢复、花钱步骤、范围与公开边界）；`defaults --set` 把项目习惯一次谈好，新 SOP 沿用；`decide` 记录用户已确认的事项；有未确认的事项时 `activate` 拒绝启用。
+  - **工具检查**：前置条件按种类声明（命令、Python 模块、环境变量、路径、技能、MCP、手动确认），可写安装方式、替代方案与缺失时的处理；`preflight` 检查就绪 / 缺失 / 待核对，环境变量只报告有无、不显示值；步骤里用到但没声明的工具在校验中报错；SOP 中疑似密钥会被拒绝。
+  - **触发**：`index`（每个已启用的 SOP 一行）、`match`（关键词预筛）、`due`（周期到期，依据执行 Case 的创建日期）、`events`；默认命中后先问用户，到期只提醒，不自动执行。
+  - **事件触发**：SOP 用 `on_events`（`case.created` / `case.closed`）声明监听，`event_tags` 限定只对带某些标签的 Case 触发。默认 Case 工具新建 Case、把 Case 关闭时，`case.py` 与项目入口的 `record` 在结果里带 `sop_events` 和一段提示，列出命中的 SOP 与可直接运行的命令；`sop events <事件> --case <Case>` 供自有 Case 工具的项目查询；`sop run --event … --event-case …` 把触发它的 Case 记进执行记录。SOP 自己的执行 Case 不再触发事件，避免循环；草稿与已退役的 SOP 不监听；SOP 目录有问题时不影响 Case 的写入。
+  - **范围与私有目录**：创建时必须谈清第 8 项 `scope`——读取哪些事项、是否用到私有目录、产物放进哪个项目、那个项目会不会公开。会读取多个事项的流程（复盘）必须先由用户指定范围，不默认纳入全部。私有目录（`privacy.forbidden_default_reads`，缺省约定 `private/`）三条约定：读取前须经用户确认（`sop confirm-read` 记入 Case 的决策记录）；内容默认不进入 git（目录里的 `.gitignore`，`sop private --apply` 补上，`health` 提示未忽略或已被跟踪的文件）；用到它的 Case 标为 `sensitivity: private`（SOP 引用私有路径时 `run` 自动标，`case.py update` 登记私有路径的交付物或证据时自动标，也可 `--sensitivity`）。这是协议级约束，工具层挡不住 Agent 直接读文件。公开样例只含流程结构，不含任何个人进度或数据（有测试检查）。
+  - **条件性前置**：前置条件可写 `仅当：<条件>`，例如 B 站视频用 yutto、其他站点用 yt-dlp。条件项缺失不影响“就绪”判断，`preflight` 单独列出，由 Agent 对照本次输入判断是否成立。
+  - **执行**：`run` 建立一个 Case，固化执行约定与步骤清单；`step` 记录每步完成 / 跳过 / 失败、登记中间产物并更新下一动作；`status` 核对进度。一次执行的状态只记在 Case 里。
+  - **版本**：`revise` 升版本号、写修订记录、保存快照；内容变了但没升版本时 `validate` 警告，`run` 拒绝执行。
+  - 写入类命令默认只预览，`--apply` 才写入，写后读回；`--expect-sha256` 防止覆盖别人刚改的内容。
+- `agenthelm project sop …` 与菜单第 8 项「流程（SOP）」；`health` 汇总流程的校验问题与到期提醒（建议处理，不改变退出码）。
+- 演示模式（`--demo`）也支持流程：直接运行真实的 `sop.py`，但项目、SOP 与 Case 都在用完即删的临时目录里，不碰任何真实文件；非空场景预置 `weekly-review` 与 `video-to-transcript` 两个已启用的流程。唯一读取真实环境的是“执行前检查”（看这台机器上有没有对应命令与环境变量）。
+- Case Schema 新增可选字段 `sop`（`<id>@<版本>`）；`case.py new --sop`。内容包 `project-orchestrator/case-template` 1.1.0，新增样例内容包 `project-orchestrator/sop-samples` 1.0.0（`blank`、`video-to-transcript`、`weekly-review`、`knowledge-digest`，创建的都是草稿；视频样例按 yutto 官方文档写了 B 站下载：`yutto <链接>`，`--audio-only` 只取音频，`-d` 指定目录，依赖 FFmpeg，登录信息用其 `--auth` / `yutto auth login`，凭据不进 SOP）。
+- 新增 `references/sop.md`（契约与执行协议）与 `references/sop-interview.md`（与用户建立 SOP 的谈话流程）；`SKILL.md` 增加 3.1「流程（SOP）」。Agent 协议要点：缺工具时一次性列给用户并等待，不自行安装软件；SOP 不放宽任何授权；只清理登记过的中间产物。
+
+### agents-init 6.8.0
+
+- 新项目的 Profile 声明 `privacy.forbidden_default_reads: ["private/"]` 并建立 `private/.gitignore`；骨架清单对声明了 `private` 的项目才检查它，已有项目不多出差异。
+- 新项目的 Profile 带 `sop: {"root": "sops"}` 并建立 `sops/`；`project.schema.json` 声明 `sop` 段。
+- 骨架清单（内容包 `agents-init/project-skeleton` 1.1.0）新增 `{sop_root}/.gitkeep`，条件为 `sop`：只有 Profile 声明了 `sop` 段的项目才检查它，没有声明的已有项目 `check` / `health` 不会多出任何差异（两台机器的期望清单版本不同时，指纹仍会因版本不同而不同，这是既有行为）。
+
+### 不兼容点与注意
+
+- **行为变化：资料索引不再过滤 `sensitivity` 非 `shared` 的 Case**（`find` / `refs` / `check` 照常登记并能找到它们的文件）。索引只是用户缓存里的本机索引，不对外公开；读取私有内容前是否需要确认，由私有目录的约定管。此前依赖“private 的 Case 搜不到”的项目，需要改用私有目录（`privacy.forbidden_default_reads`）把内容放在资料根之外。
+- 无不兼容变更。没有 `sops/` 目录和用户级 SOP 时，SOP 相关功能静默跳过。
+- 自定义了 `work.case.schema` 的项目：想让 Case 记录 SOP 来源，需要在自己的 Schema 增加可选字符串字段 `sop`。
+- `agenthelm project` 的子命令后面的 `--output json` 现在由入口统一处理（此前各子命令在解析阶段就取值）。
+- 用户级 SOP 与项目习惯里的路径由用户自己确认；写入项目外目录的中间产物需要用户先确认该路径。
+- 只在 macOS 与 Linux 上验证过；`preflight` 对技能、MCP、其他 Python 环境只能检查常见位置，查不到时标为「待核对」，由 Agent 或用户确认。
+
+### 版本
+
+agenthelm 6.9.0、agents-init 6.8.0、project-orchestrator 1.10.0；agent-pack 1.9.0、opinion-manager 0.4.2 不变。
 
 ## 2026-10-27 — agenthelm 6.8.0 / Agents Init 6.7.0 / Agent Pack 1.9.0 / Project Orchestrator 1.9.0：脚手架一致性
 

@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import versioned
+from i18n_opinion import _, N_  # noqa: E402
 
 
-FALLBACK = "完整读取项目根目录 OPINION.md"
+FALLBACK = N_("完整读取项目根目录 OPINION.md")
 PROJECT_PROFILE = Path(".agents") / "moe.sakanano.agent-pack" / "project.json"
 DIRECT = "(direct)"
 EXIT_OK, EXIT_MISSING, EXIT_ERROR, EXIT_FULL = 0, 1, 2, 3
@@ -26,7 +27,7 @@ def project_mode(root: Path) -> str:
         return "tiered"
     mode = versioned.read_object(path).get("opinion", {}).get("loading_mode", "tiered")
     if mode not in ("tiered", "full"):
-        versioned.fail(f"Project Profile 的 opinion.loading_mode 必须为 tiered 或 full：{mode!r}")
+        versioned.fail(_("Project Profile 的 opinion.loading_mode 必须为 tiered 或 full：{0!r}").format(mode))
     return mode
 
 
@@ -36,15 +37,15 @@ def load(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | Non
         profile, lock = versioned.load_profile(args.profile), None
     else:
         if args.project is None:
-            versioned.fail("context 需要 --project 或 --profile")
+            versioned.fail(_("context 需要 --project 或 --profile"))
         root = versioned.safe_path(args.project)
         versioned.verify_project(root)
         lock = versioned.read_object(root / "opinion.lock.json")
         profile = lock["profile"]
         if project_mode(root) == "full":
-            raise FullReading("Project Profile 设为完整读取")
+            raise FullReading(_("Project Profile 设为完整读取"))
     if "loading" not in profile:
-        raise FullReading("当前 Profile 未声明分层加载")
+        raise FullReading(_("当前 Profile 未声明分层加载"))
     return profile, lock
 
 
@@ -58,7 +59,7 @@ def partition(profile: dict[str, Any]) -> dict[str, Any]:
     always = set(loading["core"]) | set(unlisted)
     assigned: dict[str, str] = {}
     for wanted in (True, False):
-        for _, family, value in templates:
+        for _ref, family, value in templates:
             if (family in always) is not wanted:
                 continue
             for ref in value["rules"]:
@@ -100,13 +101,13 @@ def core_text(profile: dict[str, Any], lock: dict[str, Any] | None) -> str:
 def resolve_bundle(parts: dict[str, Any], name: str) -> str:
     family = {ref: family for family, ref in parts["refs"].items()}.get(name, name)
     if family not in {bundle["family"] for bundle in parts["bundles"]}:
-        versioned.fail(f"未知的按需规则束：{name}")
+        versioned.fail(_("未知的按需规则束：{0}").format(name))
     return family
 
 
 def bundle_text(profile: dict[str, Any], names: list[str]) -> str:
     if not names:
-        versioned.fail("bundle 需要至少一个模板系列或精确模板引用")
+        versioned.fail(_("bundle 需要至少一个模板系列或精确模板引用"))
     parts = partition(profile)
     lines: list[str] = []
     for name in names:
@@ -138,12 +139,12 @@ def check(profile: dict[str, Any], signals: list[str], loaded: list[str]) -> dic
     vocabulary = profile["loading"]["signals"]
     declared: dict[str, set[str]] = {}
     for item in signals:
-        key, _, value = item.partition("=")
+        key, _sep, value = item.partition("=")
         if key not in vocabulary or value not in vocabulary[key]:
-            versioned.fail(f"未声明的交付信号：{item}")
+            versioned.fail(_("未声明的交付信号：{0}").format(item))
         declared.setdefault(key, set()).add(value)
     if not declared:
-        versioned.fail("check 至少需要一个 --signal")
+        versioned.fail(_("check 至少需要一个 --signal"))
     have = {resolve_bundle(parts, name) for name in loaded}
     required = [bundle["family"] for bundle in parts["bundles"]
                 if any(all(declared.get(key, set()) & set(values) for key, values in route.items()) for route in bundle["routes"])]
@@ -153,13 +154,13 @@ def check(profile: dict[str, Any], signals: list[str], loaded: list[str]) -> dic
 
 
 def add_command(subparsers: Any) -> None:
-    parser = subparsers.add_parser("context", help="按已确认的加载声明只读切分正文，并核对交付信号")
+    parser = subparsers.add_parser("context", help=_("按已确认的加载声明只读切分正文，并核对交付信号"))
     parser.add_argument("action", choices=("core", "bundle", "index", "check"))
-    parser.add_argument("names", nargs="*", help="bundle 的模板系列或精确模板引用")
+    parser.add_argument("names", nargs="*", help=_("bundle 的模板系列或精确模板引用"))
     parser.add_argument("--project", type=Path)
-    parser.add_argument("--profile", type=Path, help="用候选或已保存的 Profile 预览，不读取项目锁")
-    parser.add_argument("--signal", action="append", default=[], help="交付信号，格式为 键=值，可重复")
-    parser.add_argument("--loaded", action="append", default=[], help="本次已读取的规则束，可重复")
+    parser.add_argument("--profile", type=Path, help=_("用候选或已保存的 Profile 预览，不读取项目锁"))
+    parser.add_argument("--signal", action="append", default=[], help=_("交付信号，格式为 键=值，可重复"))
+    parser.add_argument("--loaded", action="append", default=[], help=_("本次已读取的规则束，可重复"))
     parser.add_argument("--output", choices=("json", "markdown"), default="markdown")
 
 
@@ -175,6 +176,6 @@ def execute(args: argparse.Namespace) -> tuple[int, str]:
         result = check(profile, args.signal, args.loaded)
         return (EXIT_OK if result["ok"] else EXIT_MISSING), versioned.pretty(result)
     except FullReading as exc:
-        return EXIT_FULL, versioned.pretty({"ok": False, "error": str(exc), "fallback": FALLBACK})
+        return EXIT_FULL, versioned.pretty({"ok": False, "error": str(exc), "fallback": _(FALLBACK)})
     except (versioned.OpinionVersionError, OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
-        return EXIT_ERROR, versioned.pretty({"ok": False, "error": str(exc), "fallback": FALLBACK})
+        return EXIT_ERROR, versioned.pretty({"ok": False, "error": str(exc), "fallback": _(FALLBACK)})

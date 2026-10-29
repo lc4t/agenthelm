@@ -60,6 +60,8 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - `npx @sakanano-moe/agenthelm check`：只读报告插件、项目模板/样例与 Opinion 是否落后，并区分代码更新、仅模板/样例更新与不兼容变更。
 - `npx @sakanano-moe/agenthelm update`：预览更新；经用户同意后追加 `--apply`。本地改过的模板生成文件须用户逐个选择 `--accept` 或 `--keep`。
 - 会话开始的静默检查由 agent-pack 完成，不需要 Agent 额外调用。
+- 命令行输出默认英文；要中文：`export AGENTHELM_LANG=zh`，或在 `~/.config/agenthelm/config.json` 写 `{"language": "zh"}`（中文系统 locale 本来就是中文）。
+- 观点候选的自动采集与未决事项提示也由 agent-pack 的 hook 完成：Claude Code 随插件生效；Codex 需在 `/hooks` 中审阅并信任；Cursor 运行 `npx @sakanano-moe/agenthelm nudge install-hooks --client cursor` 预览，确认后加 `--apply`。`nudge status` 查看生效配置，`AGENTHELM_NO_NUDGE=1` 关闭，详见 `plugins/agent-pack/references/nudge.md`。
 
 ## 无客户端命令时的兜底
 

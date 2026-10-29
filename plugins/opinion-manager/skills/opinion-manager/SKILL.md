@@ -1,6 +1,6 @@
 ---
 name: opinion-manager
-description: Generate, compose, review and maintain behavior rules between the user and the Agent. Use when the user asks to create or update OPINION.md, import existing instructions, apply a template directly, pick some of its items, start from blank, propose rule candidates from authorized memory, maintain a personal Profile, check upgrades and conflicts, or review a deliverable against the current Opinion. 中文：生成、组合、审查和维护用户与 Agent 之间的行为规则。用户要求创建或更新 OPINION.md、导入既有说明、直接用模板、选择部分条目、从空白开始、基于已授权记忆提出候选规则、维护个人 Profile、检查升级与冲突或按当前 Opinion 审查交付物时使用。
+description: Generate, compose, review and maintain behavior rules between the user and the Agent. Use when the user asks to create or update OPINION.md, import existing instructions, apply a template directly, pick some of its items, start from blank, propose rule candidates from authorized memory, maintain a personal Profile, check upgrades and conflicts, or review a deliverable against the current Opinion. Also use during ordinary work when the user states a lasting preference or a correction of your behavior (stash it as a candidate), at task completion to confirm new candidates, and when unconfirmed candidates have piled up. 中文：生成、组合、审查和维护用户与 Agent 之间的行为规则。用户要求创建或更新 OPINION.md、导入既有说明、直接用模板、选择部分条目、从空白开始、基于已授权记忆提出候选规则、维护个人 Profile、检查升级与冲突或按当前 Opinion 审查交付物时使用。工作中用户表达长期偏好或对你行为的纠正时暂存为候选，任务完成时集中请用户确认，候选堆积时协助逐条裁决。
 ---
 
 # Opinion Manager（Agent 行为规则管理）
@@ -49,9 +49,22 @@ description: Generate, compose, review and maintain behavior rules between the u
 
 ## 交付物审查与旧格式
 
-实施前完整读取当前项目 `OPINION.md`，按条件选择适用条款；交付前逐条检查并修正明确问题。Profile 声明了分层加载时，改为先运行 `context core` 读取核心规则与规则束索引，任务命中触发条件或判断不清时用 `context bundle` 读取对应规则束，交付前用 `context check` 核对；命令返回 `fallback` 时完整读取正文。维护规则本身时始终完整读取。冲突改变交付时集中请用户裁决。用户反馈只形成候选，经确认才能发布新版本。项目需要记录候选发生次数、灰度使用与规则覆盖时，使用 `lifecycle` 命令在项目私有目录记账：任务结束后提交 `use` 事件，如实记录适用规则、逐条结果、读取的规则束和漏读；测试与演示标为 `fixture`。工具只记账，不在后台学习，也不自动晋升候选或把灰度版本转为正式，这些裁决来自用户。
+实施前完整读取当前项目 `OPINION.md`，按条件选择适用条款；交付前逐条检查并修正明确问题。Profile 声明了分层加载时，改为先运行 `context core` 读取核心规则与规则束索引，任务命中触发条件或判断不清时用 `context bundle` 读取对应规则束，交付前用 `context check` 核对；命令返回 `fallback` 时完整读取正文。维护规则本身时始终完整读取。冲突改变交付时集中请用户裁决。用户反馈只形成候选，经确认才能发布新版本。项目需要记录候选发生次数、灰度使用与规则覆盖时，使用 `lifecycle` 命令在项目私有目录记账：任务结束后提交 `use` 事件，如实记录适用规则、逐条结果、读取的规则束和漏读；测试与演示标为 `fixture`。工具只记账，不在后台学习，也不自动晋升候选或把灰度版本转为正式，这些裁决来自用户。工作中的低成本暂存使用 `inbox`（见下文），`lifecycle` 保留给带证据的灰度与覆盖记账。
 
 旧格式 `templates/*.json`、`compose --template`、`compose --rule` 与 `compose --custom-file` 保持兼容。有锁项目必须使用版本化 Profile 流程，禁止用旧格式写入绕过核验；新项目优先使用版本化 catalog。
+
+## 候选收件箱与自动采集
+
+收件箱让用户在工作中顺手沉淀观点：先低成本暂存，再由用户集中裁决。agent-pack 的 hook（`agenthelm nudge`）会在会话开始注入下面的协议并提示未决事项；没有 hook 的客户端按本节手动执行。命令与数据格式见 [候选收件箱](../../references/inbox.md)，hook 与阈值见 agent-pack 的 `references/nudge.md`。
+
+- **暂存**：用户在工作中表达长期偏好、对你行为的纠正或规则（“以后都……”“不要再……”“记住……”）时，立即用 `inbox add` 暂存标题、完整规则、适用范围和用户原话。不打断当前任务，不需要确认。一次性的任务要求、项目事实和命令不是候选。宁可多暂存，裁决环节会过滤。
+- **匹配**：实施前读取 OPINION.md；用户已同意试行的候选（`inbox list --status trial`，hook 会随协议注入）同样遵循，交付时说明是否适用。
+- **确认**：任务完成或即将完成时，把本次会话新增的候选用编号列表一次性交给用户：正式采纳 / 项目内试行 / 暂缓 / 丢弃。用户明确表态后用 `inbox decide … --confirmed` 记录；每个会话集中确认一次，不逐条追问。
+- **转正式**：`formal` 只记录用户意愿。写入 OPINION.md 仍走上文的完整预览与确认流程，候选正文作为个人规则输入。
+- **边界**：`inbox` 不写 OPINION.md、Profile 或锁；重复出现不等于确认。试行超过设定天数未转正会回到待确认。
+- **隐私**：收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议项目保持私有。`inbox add` 返回 `notice` 时如实转告用户；是否公开仓库、是否排除 `.opinion/` 由用户决定，不要替用户决定，也不要自行修改 `.gitignore`。
+- **语言**：提示与协议有中文、英文两种，命令带 `--lang zh|en`；向用户转告和确认时使用用户正在使用的语言。候选内容是用户自己的话，不翻译。
+- **未决汇总**：开新会话时 agent-pack 按阈值提示待确认数量与久未处理的天数；用户可在 Project Profile 的 `opinion.nudge` 或 `~/.config/agenthelm/config.json` 的 `nudge` 调整，或用 `AGENTHELM_NO_NUDGE=1` 关闭。
 
 ## 完成条件
 
