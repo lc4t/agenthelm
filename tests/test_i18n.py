@@ -245,6 +245,8 @@ class EnglishOutputTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
+        # macOS 的临时目录在符号链接 /var 下，而 opinion-manager 拒绝经过符号链接的路径
+        self.directory.name = str(Path(self.directory.name).resolve())
         self.home = Path(self.directory.name) / "home"
         self.home.mkdir()
         self.environment = {**{key: value for key, value in os.environ.items() if not key.startswith(("XDG_", "AGENTHELM_", "LC_", "LANG"))},
