@@ -43,6 +43,8 @@ class NudgeTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.env = agenthelm.current_env(self.home)
         write(self.project / ".opinion" / "keep", "")
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True)
+        write(self.project / ".gitignore", ".opinion/\n")
         self.config, _ = nudge.merge_config(None, None)
 
     # -- helpers
@@ -169,6 +171,37 @@ class NudgeTests(unittest.TestCase):
         output = self.start(client="cursor")
         self.assertEqual(list(output), ["additional_context"])
         self.assertIn("inbox add", output["additional_context"])
+
+    # -- privacy: the inbox keeps the user's own words
+    def test_first_session_start_tells_the_user_once_where_the_words_are_visible(self) -> None:
+        self.capture("先给结论")
+        (self.project / ".gitignore").unlink()
+        first = self.start()
+        self.assertIn("可能含敏感信息", first["systemMessage"])
+        self.assertIn("由你决定", first["systemMessage"])
+        self.assertIn("当前未被 Git 忽略", first["systemMessage"])
+        self.assertNotIn("给用户的提示", first["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("systemMessage", self.start())
+        self.assertFalse((self.project / ".gitignore").exists(), "the notice must never edit .gitignore")
+
+    def test_other_clients_get_the_notice_through_the_model_when_they_cannot_show_it(self) -> None:
+        self.capture("先给结论")
+        (self.project / ".gitignore").unlink()
+        output = self.start(client="cursor")
+        self.assertIn("请在首次回复里用一句话如实转告", output["additional_context"])
+        self.assertIn("是否处理由用户决定", output["additional_context"])
+
+    def test_no_notice_when_the_inbox_is_already_ignored_or_absent(self) -> None:
+        self.assertNotIn("systemMessage", self.start())
+        self.capture("先给结论")
+        self.assertNotIn("systemMessage", self.start())
+
+    def test_status_shows_where_the_inbox_is_visible(self) -> None:
+        self.capture("规则")
+        arguments = argparse.Namespace(project=self.project, home=self.home)
+        self.assertEqual(nudge.status(arguments, agenthelm)["exposure"]["git"], "ignored")
+        (self.project / ".gitignore").unlink()
+        self.assertEqual(nudge.status(arguments, agenthelm)["exposure"]["git"], "not-ignored")
 
     # -- prompt submit
     def prompt(self, text: str, session: str = "s1", client: str = "claude"):

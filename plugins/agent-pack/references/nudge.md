@@ -39,3 +39,9 @@
 ## 验证状态
 
 单元测试覆盖各客户端的输出格式、阈值、限频、关键词、配置合并和 Cursor hooks.json 合并。以下依据官方文档编写，尚未在真实客户端里逐一验证：Codex 对插件 hook 的信任流程与 `systemMessage` 字段；Cursor 的 sessionStart 注入、`~/.cursor/hooks.json` 的实际加载；Claude Code `Stop` 的 `additionalContext` 在各版本的表现。
+
+## 隐私：收件箱含用户原话
+
+候选的证据是用户的原话，保存在项目内的 `.opinion/inbox.json`，可能含敏感信息（客户名、内部系统、人名、业务细节）。启用本功能的项目建议保持私有，至少不要放进公开渠道。若要公开仓库、放进同步盘或共享目录，是否排除 `.opinion/` 由用户决定。
+
+nudge 只提醒，不替用户决定：第一次 `inbox add` 的返回带 `notice`，每个项目第一次开会话时给一行可见提示（已被 Git 忽略则不提醒），`agenthelm nudge status` 随时显示当前状态。它不会修改 `.gitignore`，也不会删除、改写或拒绝保存任何内容。

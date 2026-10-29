@@ -205,7 +205,7 @@
     "date": "2026-10-29",
     "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。",
     "actions": [
-      "候选保存在项目私有的 .opinion/inbox.json；项目是公开仓库时把 .opinion/ 加入 .gitignore"
+      "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）"
     ]
   },
   {

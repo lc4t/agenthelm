@@ -10,6 +10,7 @@ Opinion 之前只在用户明确提出时才工作：没有 hook，没有低成�
   - `add` 暂存（标题、完整规则、适用范围、用户原话），无需确认；内容相同的候选合并并追加证据；
   - 状态 `pending`（待确认）/ `trial`（项目内试行）/ `formal`（同意转正式）/ `held` / `rejected`；`decide` 必须带 `--confirmed`，批量要么全成功要么全不改；
   - `trial` 的候选全文随会话开始注入，Agent 按其工作；`expire --days N` 把试行超期未转正的退回待确认；
+  - `exposure` 只读报告收件箱在 Git 里的状态（已忽略 / 已跟踪 / 未忽略 / 非 Git 仓库）；
   - `pending` 是“待确认项提供者”，返回统一结构，供 agent-pack 汇总（SOP 等其他来源按同一结构接入）；`brief` 生成会话开始注入的协议与试行候选。
 - `formal` 只记录用户意愿，写入 `OPINION.md` 仍走完整预览与确认；`inbox` 不写 `OPINION.md`、Profile 或锁。
 - `SKILL.md`：触发描述增加“工作中出现长期偏好或纠正”“任务完成时确认”“候选堆积时裁决”；新增候选收件箱与自动采集一节。新增 [`references/inbox.md`](plugins/opinion-manager/references/inbox.md)。
@@ -32,7 +33,7 @@ Opinion 之前只在用户明确提出时才工作：没有 hook，没有低成�
 
 - 无。没有 `.opinion/`、`opinion.lock.json` 或 `opinion.provider: opinion-manager` 的项目不受影响。
 - 启用 Opinion 的项目，新会话会多出约 1500 字符的协议上下文；不需要时设置 `nudge.enabled: false` 或 `AGENTHELM_NO_NUDGE=1`。
-- 项目是公开仓库时，把 `.opinion/` 加入 `.gitignore`：收件箱含用户原话。
+- 收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议启用本功能的项目保持私有。是否公开仓库、是否排除 `.opinion/` 由你决定：工具只在第一次暂存（`inbox add` 返回 `notice`）和每个项目第一次开会话时提醒一次，`inbox exposure` / `agenthelm nudge status` 随时可查；不会替你决定，也不会自动修改 `.gitignore`、删除或改写内容。
 
 ### 版本
 

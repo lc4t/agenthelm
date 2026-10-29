@@ -161,6 +161,40 @@ class InboxTests(unittest.TestCase):
         self.assertTrue(text.startswith("1. **先给结论**"))
         self.assertIn("用户原话：以后都先说结论", text)
 
+    def git(self, *arguments: str) -> None:
+        subprocess.run(["git", "-C", str(self.root), *arguments], capture_output=True, check=True)
+
+    def test_first_add_warns_about_the_users_words_without_deciding_anything(self) -> None:
+        self.git("init", "-q")
+        first = self.add()
+        self.assertIn("可能含敏感信息", first["notice"])
+        self.assertIn("由你决定", first["notice"])
+        self.assertIn("本工具不会替你决定", first["notice"])
+        self.assertIn("当前未被 Git 忽略", first["notice"])
+        self.assertNotIn("notice", self.add(title="用中文", text="使用中文回复"))
+        self.assertEqual(sorted(path.name for path in self.root.iterdir()), [".git", ".opinion"], "no .gitignore is created")
+
+    def test_no_warning_when_the_user_already_ignores_the_inbox(self) -> None:
+        self.git("init", "-q")
+        (self.root / ".gitignore").write_text(".opinion/\n", encoding="utf-8")
+        self.assertNotIn("notice", self.add())
+        self.assertEqual(self.run_action("exposure")["git"], "ignored")
+        self.assertFalse(self.run_action("exposure")["needs_notice"])
+
+    def test_exposure_distinguishes_tracked_untracked_and_non_git_projects(self) -> None:
+        self.assertEqual(self.run_action("exposure")["git"], "no-git")
+        self.assertIn("同步盘", self.run_action("exposure")["message"])
+        self.git("init", "-q")
+        self.add()
+        self.assertEqual(self.run_action("exposure")["git"], "not-ignored")
+        self.git("add", "-f", ".opinion/inbox.json")
+        report = self.run_action("exposure")
+        self.assertEqual(report["git"], "tracked")
+        self.assertIn("提交和推送会包含它", report["message"])
+
+    def test_first_add_outside_git_still_warns(self) -> None:
+        self.assertIn("同步盘", self.add()["notice"])
+
     def test_symlinked_store_is_refused(self) -> None:
         target = self.root / "elsewhere"
         target.mkdir()

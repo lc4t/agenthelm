@@ -235,10 +235,11 @@ def load_state(host: Any, env: Any) -> dict:
         data = host.read_json(state_file(env))
         if isinstance(data, dict) and isinstance(data.get("sessions"), dict):
             data.setdefault("reminders", {})
+            data.setdefault("exposure_noted", {})
             return data
     except (OSError, ValueError):
         pass
-    return {"sessions": {}, "reminders": {}}
+    return {"sessions": {}, "reminders": {}, "exposure_noted": {}}
 
 
 def save_state(host: Any, env: Any, state: dict) -> None:
@@ -297,17 +298,34 @@ def session_start(host: Any, env: Any, payload: dict, client: str, root: Path, c
         return render(client, "session-start", context=context)
     summary = collect(manager, root, session)
     text = reminder_text(summary, config)
-    system = None
+    state = load_state(host, env)
+    shown: list[str] = []
     if text:
-        state = load_state(host, env)
         previous = state["reminders"].get(str(root), {})
         if time.time() - previous.get("at", 0) >= config["reminder_repeat_hours"] * 3600:
             state["reminders"][str(root)] = {"at": time.time()}
-            save_state(host, env, state)
-            system = text
+            shown.append(text)
             hint = f"\n用户已看到提示：「{text}」。不要打断当前任务；用户提起或任务间隙再协助逐条确认（inbox list --status pending --output markdown）。"
             context = (context or "") + hint
-    return render(client, "session-start", context=context, system=system)
+    notice = exposure_notice(manager, root, state)
+    if notice:
+        shown.append(notice)
+        if client != "claude":
+            context = (context or "") + f"\n[给用户的提示，他可能没有看到；请在首次回复里用一句话如实转告，是否处理由用户决定，不要自行改 .gitignore]\n{notice}"
+    if shown:
+        save_state(host, env, state)
+    return render(client, "session-start", context=context, system="\n".join(shown) or None)
+
+
+def exposure_notice(manager: Path, root: Path, state: dict) -> str | None:
+    """收件箱含用户原话：每个项目只在第一次提醒一次是否会随仓库或同步盘被他人看到。只告知，不替用户决定，不改任何文件。"""
+    if not (root / ".opinion" / "inbox.json").is_file() or str(root) in state["exposure_noted"]:
+        return None
+    result = run_manager(manager, "inbox", "exposure", "--project", str(root))
+    if not result or not result.get("needs_notice"):
+        return None
+    state["exposure_noted"][str(root)] = {"at": time.time(), "git": result["git"]}
+    return "[Opinion] " + result["message"]
 
 
 def prompt_submit(host: Any, env: Any, payload: dict, client: str, root: Path, config: dict) -> dict | None:
@@ -422,6 +440,8 @@ def status(args: argparse.Namespace, host: Any) -> dict:
     result["opinion_manager"] = str(manager) if manager else None
     summary = collect(manager, root, "")
     result["summary"] = {key: summary[key] for key in ("pending", "trial", "oldest_days")}
+    if manager is not None and (root / ".opinion" / "inbox.json").is_file():
+        result["exposure"] = run_manager(manager, "inbox", "exposure", "--project", str(root))
     result["reminder"] = reminder_text(summary, config)
     return result
 
@@ -528,6 +548,8 @@ def main(argv: list[str], host: Any) -> int:
             summary = result["summary"]
             lines.append(f"当前：待确认 {summary['pending']} 条，试行 {summary['trial']} 条，最久 {int(summary['oldest_days'])} 天")
             lines.append(result["reminder"] or "按当前阈值，开新会话不会提示。")
+        if result.get("exposure"):
+            lines.append(f"收件箱的可见范围：{result['exposure']['message']}")
         lines += [f"配置警告：{item}" for item in result["warnings"]]
         if result.get("note"):
             lines.append(result["note"])

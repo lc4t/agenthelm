@@ -4,7 +4,9 @@
 
 ## 位置与隐私
 
-- 文件：项目内的 `.opinion/inbox.json`（与 `.opinion/profiles` 同属项目私有目录）。含用户原话，禁止进入公开仓库；项目本身是公开仓库时把 `.opinion/` 加入 `.gitignore`。
+- 文件：项目内的 `.opinion/inbox.json`（与 `.opinion/profiles` 同属项目私有目录）。
+- **含用户原话，可能含敏感信息。**启用本功能的项目建议保持私有（至少不要放进公开渠道）。若要公开仓库、同步到共享目录或让他人看到，是否排除 `.opinion/` 及其中内容由你决定；工具只提醒，不会替你决定，也不会自动修改 `.gitignore`、删除或改写任何内容。
+- 提醒的时机：第一次 `add` 创建收件箱时，返回里带 `notice`（Agent 会转告你）；会话开始时每个项目提醒一次（`nudge` 的 hook）；`inbox exposure` 或 `agenthelm nudge status` 随时查看当前状态（已被 Git 忽略 / 已被跟踪 / 未被忽略 / 不是 Git 仓库）。已被 Git 忽略时不再提醒。
 - 拒绝符号链接；读改写持有 `.opinion/.inbox.lock`，多个会话同时暂存不会丢失。
 
 ## 状态
@@ -25,6 +27,7 @@
 - `present <编号…>`：记录已向用户展示过（hook 在发出确认请求时调用，避免同一候选反复提示）。
 - `expire --days N`：把试行超过 N 天的候选退回 `pending`。退回保留 `last_action_at`，因此仍计入“久未处理”。
 - `pending [--session ID]`：待确认项提供者，见下。
+- `exposure`：只读，报告 `.opinion/inbox.json` 在 Git 里的状态与提醒文字。
 - `brief [--session ID] [--max-chars N]`：生成会话开始时注入的协议与试行候选全文，默认上限 6000 字符。
 
 ## 待确认项提供者契约

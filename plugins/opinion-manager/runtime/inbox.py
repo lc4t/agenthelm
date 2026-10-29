@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,7 +38,20 @@ PROTOCOL = """[Opinion 协议 · agenthelm]
 3. 任务完成或即将完成时，若本次暂存了候选，用编号列表一次性请用户裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃。
    用户明确表态后记录：python3 {runtime} inbox decide <编号…> --project {project} --to trial|formal|held|rejected --confirmed
    采纳为正式只改状态；写入 OPINION.md 须走 opinion-manager 的完整预览与确认。
-4. 未经用户确认，不得把候选写入 OPINION.md，也不得把一次出现当作确认。"""
+4. 未经用户确认，不得把候选写入 OPINION.md，也不得把一次出现当作确认。
+5. inbox add 的结果带 notice（首次暂存时出现）时，用一句话如实转告用户。收件箱保存用户原话，可能含敏感信息；
+   是否公开仓库、是否排除 .opinion/ 由用户决定，不要自行修改 .gitignore、删除或改写内容。"""
+
+
+EXPOSURE_NOTICE = ("收件箱会把你的原话保存在 .opinion/inbox.json，其中可能含敏感信息。启用本功能的项目建议保持私有；"
+                   "若要公开仓库或让他人看到，是否排除 .opinion/ 及其中内容由你决定。本工具不会替你决定，也不会修改 .gitignore。")
+EXPOSURE_STATES = {
+    "ignored": "当前已被 Git 忽略。",
+    "tracked": "当前已被 Git 跟踪，提交和推送会包含它。",
+    "not-ignored": "当前未被 Git 忽略，提交时会被包含。",
+    "no-git": "当前目录不是 Git 仓库；放在同步盘或共享目录里同样会被他人看到。",
+    "unknown": "无法判断 Git 状态。",
+}
 
 
 class InboxError(ValueError):
@@ -71,6 +85,32 @@ def store_path(root: Path) -> Path:
         if item.is_symlink():
             fail(f"拒绝使用符号链接：{item}")
     return root / STORE
+
+
+def git_status(root: Path) -> str:
+    """只读判断 .opinion/inbox.json 在 Git 里的状态；从不修改任何文件。"""
+    def git(*arguments: str) -> int | None:
+        try:
+            return subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, check=False, timeout=5).returncode
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    target = STORE.as_posix()
+    inside = git("rev-parse", "--is-inside-work-tree")
+    if inside is None:
+        return "unknown"
+    if inside != 0:
+        return "no-git"
+    if git("ls-files", "--error-unmatch", "--", target) == 0:
+        return "tracked"
+    ignored = git("check-ignore", "-q", "--", target)
+    return "ignored" if ignored == 0 else ("not-ignored" if ignored == 1 else "unknown")
+
+
+def exposure(root: Path) -> dict[str, Any]:
+    state = git_status(root)
+    return {"ok": True, "status": "read-only", "git": state, "needs_notice": state != "ignored",
+            "message": f"{EXPOSURE_NOTICE}{EXPOSURE_STATES[state]}"}
 
 
 def normalized(title: str, text: str) -> str:
@@ -145,6 +185,7 @@ def add(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     if not scopes:
         fail("候选需要至少一个 --scope（适用范围）")
     moment = now()
+    first = not store_path(root).exists()
     with Locked(root) as data:
         digest = normalized(title, text)
         for existing in data["candidates"].values():
@@ -163,7 +204,12 @@ def add(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             "history": [{"at": stamp(moment), "to": "pending", "note": "暂存"}],
         }
         save(root, data)
-    return {"ok": True, "status": "added", "id": identity, "state": "pending", "writes_stable_rules": False}
+    result = {"ok": True, "status": "added", "id": identity, "state": "pending", "writes_stable_rules": False}
+    if first:
+        notice = exposure(root)
+        if notice["needs_notice"]:
+            result["notice"] = notice["message"]
+    return result
 
 
 def decide(root: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -309,7 +355,7 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
 
 def add_command(subparsers: Any) -> None:
     parser = subparsers.add_parser("inbox", help="项目私有的候选收件箱：暂存、裁决与待确认汇总；不写入规则")
-    parser.add_argument("action", choices=("add", "list", "decide", "present", "expire", "pending", "brief"))
+    parser.add_argument("action", choices=("add", "list", "decide", "present", "expire", "pending", "brief", "exposure"))
     parser.add_argument("ids", nargs="*", help="decide / present 的候选编号")
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--title")
@@ -340,6 +386,8 @@ def run(args: argparse.Namespace) -> dict[str, Any] | str:
         return pending(root, args)
     if args.action == "brief":
         return brief(root, args)
+    if args.action == "exposure":
+        return exposure(root)
     if args.action in ("decide", "present") and not args.ids:
         fail("需要至少一个候选编号")
     if args.action == "decide":
