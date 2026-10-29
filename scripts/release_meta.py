@@ -18,8 +18,9 @@ Usage::
     python3 scripts/release_meta.py --since v6.4.0  # also gate against a release
 
 ``--since`` fails when a plugin or a content pack changed without a version
-bump, and when a bumped plugin has no matching ``release/migrations.json``
-entry. ``latest.json`` carries no commit or tarball digest: those exist only
+bump, when a bumped plugin has no matching ``release/migrations.json`` entry,
+and when that entry does not tell users what the release means for them (the
+declaration below) or ``CHANGELOG.md`` does not mention the new version. ``latest.json`` carries no commit or tarball digest: those exist only
 once a tag is cut, so the release step adds them.
 """
 from __future__ import annotations
@@ -50,6 +51,14 @@ BARE_PLUGIN_ROOT = re.compile(r"\$\{PLUGIN_ROOT\}")
 CHANGE_KINDS = {"code", "content", "both"}
 VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+# Every release entry from here on declares what it means for projects that already use the tool.
+DECLARATION = 2
+DEFAULT_FOR_EXISTING = {"off", "advisory", "on"}
+TEMPLATE_CLASSES = {"cosmetic", "semantic"}
+SESSIONS = {"current", "new"}
+CHANGELOG_FILE = "CHANGELOG.md"
+# Changing what a project is expected to contain must be declared in the entry's "touches".
+EXPECTATION_FILES = ("skills/agents-init/skeleton.json", "skills/agents-init/project.schema.json")
 # Files that ship in a plugin directory but never reach users' behaviour.
 UNSHIPPED_PARTS = {"tests", "__pycache__"}
 IGNORED_NAMES = {".DS_Store"}
@@ -180,6 +189,44 @@ def migration_problems(plugins: list[dict]) -> list[str]:
             problems.append(f"{label}: date must be YYYY-MM-DD")
         if not str(entry.get("summary", "")).strip():
             problems.append(f"{label}: summary is required")
+        if entry.get("declaration") == DECLARATION:
+            problems += declaration_problems(label, entry)
+    return problems
+
+
+def declaration_problems(label: str, entry: dict) -> list[str]:
+    """What a release means for existing projects: who must do what, what it touches, what the default is."""
+    problems = []
+    actions = entry.get("actions")
+    if not isinstance(actions, list) or not all(isinstance(item, str) and item.strip() for item in actions):
+        problems.append(f"{label}: actions must be a list of non-empty strings")
+        actions = []
+    if entry.get("breaking") is True and not actions:
+        problems.append(f"{label}: a breaking release must list what to do in actions")
+    required = entry.get("user_action_required")
+    if not isinstance(required, list):
+        problems.append(f"{label}: user_action_required must be a list (empty when installing needs nothing from the user)")
+        required = []
+    for position, item in enumerate(required):
+        if not isinstance(item, dict) or not str(item.get("what", "")).strip():
+            problems.append(f"{label}: user_action_required[{position}] needs a non-empty 'what'")
+        elif item.get("session", "current") not in SESSIONS:
+            problems.append(f"{label}: user_action_required[{position}].session must be one of {sorted(SESSIONS)}")
+    touches = entry.get("touches")
+    if not isinstance(touches, list) or not all(isinstance(item, str) and item.strip() for item in touches):
+        problems.append(f"{label}: touches must be a list of paths or Profile fields in the user's project")
+    if entry.get("default_for_existing") not in DEFAULT_FOR_EXISTING:
+        problems.append(f"{label}: default_for_existing must be one of {sorted(DEFAULT_FOR_EXISTING)}")
+    changes = entry.get("template_changes")
+    if not isinstance(changes, list):
+        problems.append(f"{label}: template_changes must be a list (empty when no template changed)")
+        changes = []
+    for position, item in enumerate(changes):
+        if not isinstance(item, dict) or not str(item.get("path", "")).strip() or item.get("class") not in TEMPLATE_CLASSES:
+            problems.append(f"{label}: template_changes[{position}] needs 'path' and a 'class' of {sorted(TEMPLATE_CLASSES)}")
+    semantic = any(isinstance(item, dict) and item.get("class") == "semantic" for item in changes)
+    if semantic and entry.get("default_for_existing") != "off" and not required:
+        problems.append(f"{label}: a semantic template change that applies to existing projects needs user_action_required")
     return problems
 
 
@@ -264,11 +311,46 @@ def since_problems(ref: str, plugins: list[dict]) -> list[str]:
             problems.append(
                 f"{name}: {previous['version']} -> {version} has no {MIGRATIONS_FILE} entry"
             )
+        else:
+            entry = next(e for e in read_migrations() if (e.get("plugin"), e.get("from"), e.get("to")) == (name, previous["version"], version))
+            problems += release_declaration_problems(ref, item, relative, entry)
         old_packs = {pack["id"]: pack for pack in (json_at(ref, f"{relative}/{CONTENT_FILE}") or {}).get("packs", [])}
         for pack in (refreshed_content(item) or {}).get("packs", []):
             old = old_packs.get(pack["id"])
             if old and old["version"] == pack["version"] and old["files"] != pack["files"]:
                 problems.append(f"{pack['id']}: content changed since {ref} without a pack version bump")
+    return problems
+
+
+def changelog_mentions(name: str, version: str) -> bool:
+    path = ROOT / CHANGELOG_FILE
+    if not path.is_file():
+        return False
+    words = re.escape(name).replace(r"\-", "[ -]")
+    return re.search(rf"(?i){words}\s+{re.escape(version)}", path.read_text(encoding="utf-8")) is not None
+
+
+def release_declaration_problems(ref: str, item: dict, relative: str, entry: dict) -> list[str]:
+    """A bumped plugin's entry must carry the declaration, match what actually changed, and be in the CHANGELOG."""
+    name, version = item["manifest"]["name"], item["manifest"]["version"]
+    label = f"{name} {entry.get('from')} -> {version}"
+    problems = []
+    if entry.get("declaration") != DECLARATION:
+        return [f"{label}: {MIGRATIONS_FILE} entry needs \"declaration\": {DECLARATION} with user_action_required, "
+                "touches, default_for_existing and template_changes"]
+    if not changelog_mentions(name, version):
+        problems.append(f"{label}: {CHANGELOG_FILE} does not mention {name} {version}")
+    old_packs = {pack["id"]: pack for pack in (json_at(ref, f"{relative}/{CONTENT_FILE}") or {}).get("packs", [])}
+    changed_packs = [pack["id"] for pack in (refreshed_content(item) or {}).get("packs", [])
+                     if pack["id"] in old_packs and old_packs[pack["id"]]["files"] != pack["files"]]
+    if changed_packs and not entry.get("template_changes"):
+        problems.append(f"{label}: content pack(s) {', '.join(changed_packs)} changed; list the files in template_changes "
+                        "with a class of cosmetic or semantic")
+    for expectation in EXPECTATION_FILES:
+        current = item["root"] / expectation
+        before = git("show", f"{ref}:{relative}/{expectation}")
+        if current.is_file() and before is not None and current.read_text(encoding="utf-8") != before and not entry.get("touches"):
+            problems.append(f"{label}: {expectation} changed (what projects are expected to contain); list what it touches in touches")
     return problems
 
 

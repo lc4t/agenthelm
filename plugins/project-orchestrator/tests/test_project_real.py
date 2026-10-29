@@ -268,7 +268,9 @@ class HealthAndRepairTests(RealProjectCase):
         self.assertNotEqual((root / "CLAUDE.md").read_text(encoding="utf-8"), "旧模板渲染的内容\n")
         backup = Path(result["recovery"]) / "CLAUDE.md"
         self.assertEqual(backup.read_text(encoding="utf-8"), "旧模板渲染的内容\n", "被替换的文件先备份")
-        self.assertEqual(json.loads(lock_path.read_text())["packs"]["agents-init/project-contract"]["version"], "1.1.0")
+        shipped = json.loads((Path(__file__).resolve().parents[2] / "agents-init/content.json").read_text(encoding="utf-8"))
+        current = next(pack["version"] for pack in shipped["packs"] if pack["id"] == "agents-init/project-contract")
+        self.assertEqual(json.loads(lock_path.read_text())["packs"]["agents-init/project-contract"]["version"], current)
 
     def test_add_entry_to_a_project_with_its_own_script(self) -> None:
         root = self.make_project("chores", "personal", "--no-entry")

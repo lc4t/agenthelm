@@ -150,6 +150,23 @@ class SinceGateTests(unittest.TestCase):
         self.assertTrue(any("without a version bump" in problem for problem in problems))
         self.assertTrue(any("demo/templates" in problem for problem in problems))
 
+    def bump(self, **entry_changes) -> None:
+        """A template change shipped as demo 1.0.1 with a complete declaration; tests then break one part."""
+        self.write("plugins/demo/templates/a.md", "two\n")
+        self.write("plugins/demo/plugin.json", {"name": "demo", "version": "1.0.1"})
+        content = json.loads((self.root / "plugins/demo/content.json").read_text())
+        content["packs"][0]["version"] = "1.0.1"
+        content["packs"][0]["files"] = release_meta.pack_files(self.root / "plugins/demo", ["templates"])
+        self.write("plugins/demo/content.json", content)
+        entry = {"plugin": "demo", "from": "1.0.0", "to": "1.0.1", "change_kind": "content", "breaking": False,
+                 "date": "2026-10-29", "summary": "template wording", "declaration": 2, "actions": [],
+                 "user_action_required": [{"what": "update-content 逐个选择保留或采用", "session": "current"}],
+                 "touches": ["a.md"], "default_for_existing": "advisory",
+                 "template_changes": [{"path": "a.md", "class": "semantic"}]}
+        entry.update(entry_changes)
+        self.write("release/migrations.json", [{k: v for k, v in entry.items() if v is not None}])
+        self.write("CHANGELOG.md", "# 更新记录\n\n### demo 1.0.1\n\n- 模板措辞\n")
+
     def test_bump_requires_a_migration_entry(self) -> None:
         self.write("plugins/demo/templates/a.md", "two\n")
         self.write("plugins/demo/plugin.json", {"name": "demo", "version": "1.0.1"})
@@ -157,10 +174,68 @@ class SinceGateTests(unittest.TestCase):
         content["packs"][0]["version"] = "1.0.1"
         self.write("plugins/demo/content.json", content)
         self.assertTrue(any("has no release/migrations.json entry" in p for p in self.problems()))
-        self.write("release/migrations.json", [{"plugin": "demo", "from": "1.0.0", "to": "1.0.1",
-                                                "change_kind": "content", "breaking": False,
-                                                "date": "2026-10-21", "summary": "template wording"}])
+
+    def test_complete_declaration_passes(self) -> None:
+        self.bump()
         self.assertEqual(self.problems(), [])
+        self.assertEqual(release_meta.migration_problems(release_meta.load_plugins()), [])
+
+    def test_entry_without_declaration_fails(self) -> None:
+        self.bump(declaration=None)
+        self.assertTrue(any('"declaration": 2' in p for p in self.problems()))
+
+    def test_changelog_must_mention_the_new_version(self) -> None:
+        self.bump()
+        self.write("CHANGELOG.md", "# 更新记录\n\n### demo 1.0.0\n")
+        self.assertTrue(any("CHANGELOG.md does not mention demo 1.0.1" in p for p in self.problems()))
+        (self.root / "CHANGELOG.md").unlink()
+        self.assertTrue(any("CHANGELOG.md does not mention" in p for p in self.problems()))
+
+    def test_changelog_matches_hyphenated_names_written_with_spaces(self) -> None:
+        self.bump()
+        self.write("plugins/demo-pack/plugin.json", {"name": "demo-pack", "version": "2.0.0"})
+        self.assertTrue(release_meta.changelog_mentions("demo", "1.0.1"))
+        self.write("CHANGELOG.md", "## Demo Pack 2.0.0\n")
+        self.assertTrue(release_meta.changelog_mentions("demo-pack", "2.0.0"))
+        self.assertFalse(release_meta.changelog_mentions("demo-pack", "2.0.1"))
+
+    def test_breaking_release_must_say_what_to_do(self) -> None:
+        self.bump(breaking=True, actions=[])
+        self.assertTrue(any("breaking release must list what to do" in p
+                            for p in release_meta.migration_problems(release_meta.load_plugins())))
+
+    def test_semantic_template_change_needs_a_user_action_unless_off_by_default(self) -> None:
+        self.bump(user_action_required=[])
+        self.assertTrue(any("semantic template change" in p for p in release_meta.migration_problems(release_meta.load_plugins())))
+        self.bump(user_action_required=[], default_for_existing="off")
+        self.assertEqual(release_meta.migration_problems(release_meta.load_plugins()), [])
+
+    def test_changed_content_pack_must_list_template_changes(self) -> None:
+        self.bump(template_changes=[])
+        self.assertTrue(any("list the files in template_changes" in p for p in self.problems()))
+
+    def test_declaration_fields_are_validated(self) -> None:
+        for change, expected in ((dict(default_for_existing="maybe"), "default_for_existing"),
+                                 (dict(touches="a.md"), "touches"),
+                                 (dict(user_action_required=[{"what": ""}]), "user_action_required[0]"),
+                                 (dict(user_action_required=[{"what": "x", "session": "later"}]), "session"),
+                                 (dict(template_changes=[{"path": "a.md", "class": "big"}]), "template_changes[0]")):
+            with self.subTest(change=change):
+                self.bump(**change)
+                self.assertTrue(any(expected in p for p in release_meta.migration_problems(release_meta.load_plugins())),
+                                release_meta.migration_problems(release_meta.load_plugins()))
+
+    def test_changing_what_projects_are_expected_to_contain_must_be_declared(self) -> None:
+        self.write("plugins/demo/skills/agents-init/skeleton.json", '{"files": []}\n')
+        self.git("add", "-A")
+        self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "v1b")
+        self.git("tag", "-f", "v1")
+        self.bump(touches=[])
+        self.write("plugins/demo/skills/agents-init/skeleton.json", '{"files": ["new"]}\n')
+        problems = self.problems()
+        self.assertTrue(any("skeleton.json changed" in p for p in problems), problems)
+        self.bump(touches=["new"])
+        self.assertFalse(any("skeleton.json changed" in p for p in self.problems()))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,41 @@
 # 更新记录
 
+## 2026-10-29 — agenthelm 6.9.0 / Agents Init 6.8.0 / Project Orchestrator 1.9.1：接管已有内容的目录、受管区块、发布声明
+
+在已有内容的目录里初始化，或者升级时新模板与你自己的内容冲突，现在有统一的处理原则：**控制新增，不追溯历史**。与骨架冲突的旧文件可以长期并存，不是阻塞项；只有你显式选择，工具才改动已有文件，并且先备份到项目外。
+
+### agents-init 6.8.0
+
+- 新增 `--mode scan`（只读）：扫描已有路径与骨架的碰撞，以及目录含义是否相同（语义碰撞）。每项给出选项和推荐，推荐只是建议：
+  - `AGENTS.md` 已有用户内容：`keep`（不动）、`append`（原文不动，末尾追加带标记的项目契约区块，推荐）、`split`（按章节决定去向）、`side-by-side`（原文整体移到 `AGENT.USER.md`）；
+  - `CLAUDE.md` 已有内容但没有导入 `AGENTS.md`：Claude Code 两者并存时只读 `CLAUDE.md`，项目契约不会加载，推荐追加 `@AGENTS.md` 导入区块；
+  - `cases/`、`memory/` 已有别的内容：并存，或把新 Case / 记忆放到另一个目录（`--case-root` / `--memory-root`）；名字像工作容器的目录可用 `--register-root` 登记为资料根（只读登记）；
+  - 启动器名称已被你的文件占用、符号链接父目录、其他客户端的指令文件（不触碰）。
+- 新增 `--mode adopt`（默认预览，`--apply` 才写入）：已有文件原样保留，只补缺失的骨架；保留下来且与模板不同的文件记入决定文件，`check` 不再追问。改动已有文件（`--agents-policy append|split|side-by-side`、`--claude-policy add-import`）必须带项目外的 `--recovery-dir`；写入失败会还原已改动的文件。`split` 用 `--route <章节序号>=<agents|rules|user|opinion|sop>` 指定去向；`opinion` / `sop` 先放进 `AGENT.USER.md` 并标注待交接。章节去向建议来自关键词启发式，最终由你决定。
+- 新增受管区块（`scripts/regions.py`）：工具只拥有带标记的区块，区块之外永远不动；区块内部被你改过则升级不覆盖。`check` 新增 `region:<文件>#<ID>` 发现（`region-outdated` / `region-modified` / `region-missing`），`--mode region` 逐个 `--keep` 或 `--accept`（替换前备份）。
+- 内容锁新增 `regions`（受管区块的指纹）与 `render_inputs`（模板渲染时用的输入），后者使“用指定版本重新渲染基线”成为可能；`refresh` / `entry` 写锁时保留这些键。渲染对路径、时间、时区和输入组合都是确定的，已有测试覆盖。
+- `CLAUDE.md` 模板改为一行 `@AGENTS.md` 的导入桩（Claude Code 在没有任何 `CLAUDE.md` 时才直接读取 `AGENTS.md`，v2.1.277 起；旧版本与部分会话读不到，导入桩两边都稳）；`AGENT.md` 仍是给其他客户端的文字路由。`AGENTS.md` 模板增加一行：若存在 `AGENT.USER.md`，与本文件一并遵循。项目契约模板内容包 1.2.0。
+- `INITIALIZER_VERSION` 为 6.8.0。
+
+### project-orchestrator 1.9.1
+
+- `health` / 菜单遇到 `update-region` 发现时给出处理说明，不再因未知处理项出错。
+
+### 发布声明与 CI 门禁
+
+- `release/migrations.json` 的条目新增声明（`"declaration": 2`）：`actions`、`user_action_required`（安装新版后需要你参与的事项，`session` 标明当前还是新开 session 处理）、`touches`（触碰的路径与字段）、`default_for_existing`（对已有项目的默认处理 `off` / `advisory` / `on`）、`template_changes`（模板文件的变更等级 `cosmetic` / `semantic`）。
+- `scripts/release_meta.py --since <tag>` 现在还会失败于：升版本的条目没有声明；`breaking` 却没写 `actions`；语义级模板变更对已有项目生效却没有 `user_action_required`；内容包变了却没列 `template_changes`；`skeleton.json` / `project.schema.json` 变了却没写 `touches`；`CHANGELOG.md` 没提到新版本。旧条目不受影响。
+
+### 不兼容点与注意
+
+- 已初始化项目的 `CLAUDE.md` 模板变了：没改过的，`agenthelm update` 会先备份再替换为导入桩；改过的逐个选择。读取 `CLAUDE.md` 里路由文字的外部脚本需改读 `AGENTS.md`。
+- 新增的检查项都是“建议处理”，不改变退出码；`--strict` 会把未解决的 `region:` 发现算作未处理。
+- 已知限制：升级时仍是整文件“保留 / 采用”二选一，真正的三方合并（用旧版本包重新渲染基线）尚未实现，见后续计划；受管区块已避免了接管场景下的大多数合并需求。
+
+### 版本
+
+agenthelm 6.9.0、agents-init 6.8.0、project-orchestrator 1.9.1；agent-pack 1.9.0、opinion-manager 0.4.2 不变。
+
 ## 2026-10-27 — agenthelm 6.8.0 / Agents Init 6.7.0 / Agent Pack 1.9.0 / Project Orchestrator 1.9.0：脚手架一致性
 
 在多台机器、多个客户端上使用同一个项目（例如放在同步盘里）时，只要装好 agenthelm，在任意机器运行 `agenthelm check`（或项目里的 `./menu health`）就能知道：这台机器和这个项目的脚手架是否与最新版一致，两台机器得出同样的结论；有差异时有配套工具修复。不同项目的 Opinion、Profile 里的自有字段与审计字段不参与比较，也不要求统一。

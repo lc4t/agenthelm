@@ -103,3 +103,14 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 - Profile 的 `runtime.source_ref`、`plugin_version`、`source_commit`、`capability_manager_version`、`opinion.tool_version` 现在在 schema 里声明为审计字段：只作记录，运行时不读取，也不参与比较。以前 MIGRATION 里让你改的 `source_ref` 等仍可保留或更新，两者都不影响 `check`。
 
 多机与同步盘的说明见 [README「多机与同步盘」](README.md#多机与同步盘)。
+
+## 6.9.0：CLAUDE.md 导入桩、接管已有内容的目录、受管区块
+
+不用改任何东西也能继续使用。升级后 `agenthelm update`（或 `fix update-content`）会列出 `CLAUDE.md` 与 `AGENTS.md` 的变化：
+
+1. **CLAUDE.md 变成一行 `@AGENTS.md` 的导入桩。** Claude Code 只在工作目录及其上级目录都没有 `CLAUDE.md` 时才直接读取 `AGENTS.md`（v2.1.277 起，[官方文档](https://code.claude.com/docs/en/memory#agents-md)），两者并存时只读 `CLAUDE.md`；旧版本、禁用内置插件以及部分会话读不到 `AGENTS.md`，所以保留导入桩。没改过的 `CLAUDE.md` 先备份再替换；改过的逐个 `--keep` / `--accept`。读取 `CLAUDE.md` 里旧路由文字的外部脚本需要改读 `AGENTS.md`。
+2. **`AGENTS.md` 模板多了一行“用户规则”**，指向 `AGENT.USER.md`（只有接管时从原 `AGENTS.md` 移出内容才会有这个文件）。同样在 `update-content` 里逐文件选择。
+3. **你自己的 `CLAUDE.md` 没导入 `AGENTS.md`？** `init_project.py --mode scan` 会提示项目契约不会被 Claude 加载；`--mode adopt` 不适用于已初始化的项目，这种情况直接在你的 `CLAUDE.md` 里加一行 `@AGENTS.md`，或手动追加受管区块。
+4. 新的发现 `region:<文件>#<ID>` 只在你用 `adopt` 追加过受管区块后出现，处理方式见 `init_project.py --mode region`。
+
+对下游的说明：发布条目（`release/migrations.json`）现在带 `user_action_required`、`touches`、`default_for_existing`、`template_changes`，可据此判断一次升级对你的项目意味着什么；`CHANGELOG.md` 的“不兼容点与注意”仍是完整清单。

@@ -166,6 +166,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 - 构建：TODO
 - 架构/文档：TODO
 - 隐私或禁止路径：未声明
+- 用户规则：若存在 `AGENT.USER.md`（接管项目时从原 `AGENTS.md` 移出的用户内容），与本文件一并遵循。
 ```
 <!-- /agents-init:template -->
 
@@ -222,11 +223,45 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 
 ### CLAUDE.md 与 AGENT.md
 
+Claude Code 在工作目录及其上级目录没有任何 `CLAUDE.md` 时才直接读取 `AGENTS.md`（v2.1.277 起），两者并存时只读 `CLAUDE.md`；旧版本、禁用内置插件以及部分会话也读不到 `AGENTS.md`。因此 `CLAUDE.md` 保留为一行 `@AGENTS.md` 的导入桩，`AGENTS.md` 是唯一内容来源，Claude 专属指令写在导入行下面。`AGENT.md` 给其他客户端，用文字路由。
+
+<!-- agents-init:template CLAUDE.md -->
+```markdown
+@AGENTS.md
+
+## Claude Code
+
+Claude Code 专属指令写在这里；项目通用规则放在 `AGENTS.md` 与 `AGENT.RULES.md`。
+```
+<!-- /agents-init:template -->
+
 <!-- agents-init:template ROUTE.md -->
 ```markdown
 # Agent 路由
 
 读取 `AGENTS.md` 并遵循其中的 Project Profile。加载 `project-orchestrator` 管理项目生命周期；Plugin/Skill/MCP 能力管理交给 `agent-pack`；Opinion 的生成、读取与审查交给 `opinion-manager`。
+```
+<!-- /agents-init:template -->
+
+### 受管区块模板
+
+接管已有文件时，工具只向用户的文件追加带标记的区块（见 `scripts/regions.py`），区块之外的内容保持原样。区块正文来自下面的模板，随内容包更新；区块内部被改过时不会被覆盖，由用户选择。
+
+<!-- agents-init:template region/claude-import -->
+```markdown
+@AGENTS.md
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template region/agents-contract -->
+```markdown
+## agenthelm 项目契约
+
+本项目由 agenthelm 管理项目生命周期。开始实质工作前：
+
+1. 加载 `project-orchestrator`，读取 `.agents/moe.sakanano.agent-pack/project.json`（Project Profile）。
+2. 项目专属约束见 `AGENT.RULES.md`；Plugin/Skill/MCP 管理交给 `agent-pack`；Opinion 交给 `opinion-manager`。
+3. 本文件其余部分是接管项目前就有的用户规则，与上述契约一并遵循。
 ```
 <!-- /agents-init:template -->
 
@@ -329,6 +364,18 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 4. 只有 `project-orchestrator`、`agent-pack` 与 `opinion-manager` 验证通过后，才精简重复的 Agent 入口说明。
 5. 保持历史 Task/Case 与能力源完整，随后使用 `agent-pack` 盘点。
 6. 只有得到明确授权，才能把个人 Opinion 内容移入私有权威源。
+
+### 接管已有内容的目录
+
+目录里已经有自己的文件时，原则是**控制新增，不追溯历史**：与骨架冲突的旧文件可以长期并存，不是阻塞项；只有用户显式选择，才改动已有文件，且先备份到项目外。
+
+1. `--mode scan`（只读）：列出路径碰撞、目录含义是否相同、`AGENTS.md` / `CLAUDE.md` 的状况，每项给出选项和推荐。
+2. `--mode adopt`（默认预览，`--apply` 才写入）：已有文件原样保留，只补缺失的骨架；保留下来且与模板不同的文件记入决定文件，`check` 不再追问。
+3. 改动已有文件才需要显式选择，并带 `--recovery-dir`：`--agents-policy append|split|side-by-side`、`--claude-policy add-import`。`split` 用 `--route <章节序号>=<agents|rules|user|opinion|sop>` 指定每个章节的去向（建议来自关键词启发式，最终由用户决定；`opinion` / `sop` 先放进 `AGENT.USER.md` 并标注待交接）。
+4. 目录含义冲突的用 `--case-root` / `--memory-root` 另设位置，已有的工作容器目录用 `--register-root` 只读登记。
+5. 追加到用户文件里的内容是带标记的受管区块（见 `scripts/regions.py`），区块之外不动；区块内部被改过时升级不覆盖，用 `--mode region` 逐个 `--keep` / `--accept`。
+
+历史内容什么时候迁移由用户决定：之后可以用 `--mode adopt` 以外的迁移工具逐步把旧内容整理进标准结构，不影响日常使用。
 
 ### 将既有项目整理为 Case 工作目录
 

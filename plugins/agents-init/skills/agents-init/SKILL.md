@@ -69,6 +69,21 @@ python3 scripts/init_project.py --mode migrate --project /path/to/project \
   --replace AGENTS.md --recovery-dir /safe/recovery/example-v6 --apply
 ```
 
+目录里已有自己的文件时（没有 Project Profile）先扫描，再接管。原则是控制新增、不追溯历史：与骨架冲突的旧文件可以长期并存，不是阻塞项；只有用户显式选择，才改动已有文件，且先备份到 `--recovery-dir`（项目外）：
+
+```bash
+python3 scripts/init_project.py --project /path/to/project --mode scan            # 只读：冲突、选项与推荐
+python3 scripts/init_project.py --project /path/to/project --mode adopt \
+  --name example --project-type code --vcs github --stack python --runtime local --agent-cli codex   # 预览
+python3 scripts/init_project.py ... --mode adopt --agents-policy append --claude-policy add-import \
+  --recovery-dir /safe/recovery/example --apply                                    # 改动已有文件须显式选择
+```
+
+- `AGENTS.md` 已有用户内容：`keep`（缺省，不动）、`append`（推荐：原文不动，追加带标记的项目契约区块）、`split`（`--route <章节序号>=<agents|rules|user|opinion|sop>`，未指定的章节留下）、`side-by-side`（原文整体移到 `AGENT.USER.md`）。章节去向建议只来自关键词启发式，逐段判断放在 session 里与用户确认，再把结果交给 `--route`；写入始终经由本命令。
+- `CLAUDE.md` 已有内容但没有导入 `AGENTS.md`：Claude Code 两者并存时只读 `CLAUDE.md`，项目契约不会加载，推荐 `--claude-policy add-import`。
+- `cases/`、`memory/` 被别的内容占用：并存，或 `--case-root` / `--memory-root` 另设位置；已有工作容器用 `--register-root` 只读登记。
+- 追加进用户文件的是受管区块（`scripts/regions.py`）：区块之外不动，区块内部被改过时升级不覆盖，用 `--mode region` 逐个 `--keep <文件>#<ID>` / `--accept <文件>#<ID>`。
+
 已初始化的项目对照最新脚手架用 `--mode check`（只读）；其余模式默认只预览，`--apply` 才写入，已有文件不被覆盖，替换前备份到 `--recovery-dir`：
 
 ```bash

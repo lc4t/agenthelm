@@ -47,7 +47,8 @@ SCAFFOLD_NEXT = {"add-skeleton": "按模板补上（只新建，不改已有文�
                  "profile": "把字段改为模板值（先备份，预览里有 diff）",
                  "repair-lock": "按实际版本修复内容锁（不涉及你的文件）",
                  "update-content": "逐文件选择保留或采用新模板",
-                 "case-naming": "查看改名计划与受影响的引用（只给计划，不移动目录）"}
+                 "case-naming": "查看改名计划与受影响的引用（只给计划，不移动目录）",
+                 "update-region": "更新受管区块：运行 init_project.py --mode region（改过的区块逐个 --keep / --accept）"}
 
 
 def _scaffold_findings(scaffold: dict | None, findings: list[dict], ok: list[str]) -> None:
@@ -59,8 +60,9 @@ def _scaffold_findings(scaffold: dict | None, findings: list[dict], ok: list[str
         return
     for item in scaffold["findings"]:
         mark = "（稍后）" if item.get("deferred") else "（期望内容已变化）" if item.get("changed_since_decision") else ""
-        step = {"label": SCAFFOLD_NEXT[item["fix"]], "action": f"fix:{item['fix']}"} if item["fix"] \
-            else {"label": "这一项需要你自己处理", "action": ""}
+        # 菜单只执行 FIXES 里的处理项；其余（如 update-region）只给出怎么处理的说明。
+        step = {"label": SCAFFOLD_NEXT.get(item["fix"], item["fix"]), "action": f"fix:{item['fix']}" if item["fix"] in FIXES else ""} \
+            if item["fix"] else {"label": "这一项需要你自己处理", "action": ""}
         findings.append({"id": item["id"], "level": "suggest", "area": "脚手架", "title": item["title"] + mark,
                          "reason": item["reason"], "impact": "脚手架和最新版不一致；不影响日常使用，"
                          "不想要的可以永久跳过（一次决定，所有机器生效）", "next": [step],

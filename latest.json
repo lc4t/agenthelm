@@ -2,18 +2,18 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-10-27",
+  "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
       "version": "1.9.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.7.0",
+      "version": "6.8.0",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
-          "version": "1.1.0",
+          "version": "1.2.0",
           "kind": "template"
         },
         "agents-init/project-skeleton": {
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.9.0",
+      "version": "1.9.1",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -244,6 +244,62 @@
       "date": "2026-10-27",
       "summary": "health 汇总脚手架差异（建议处理，不改变退出码）；fix 新增 add-skeleton / profile / repair-lock / case-naming / sync-folder，--skip <ID> --reason / --unskip <ID> 记录决定；交互时每项可选 采用 / 永久跳过 / 稍后 / 查看差异；update-content 的 --keep 持久化到决定文件。",
       "actions": []
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.7.0",
+      "to": "6.8.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "接管非空目录：新增 --mode scan / adopt / region 与受管区块（regions.py）；CLAUDE.md 模板改为一行 @AGENTS.md 导入桩；内容锁记录受管区块与渲染输入；AGENTS.md 模板增加“用户规则”一行；项目契约模板内容包 1.2.0。",
+      "actions": [
+        "已初始化的项目：agenthelm update（或 fix update-content）会列出 CLAUDE.md 与 AGENTS.md 的变化，没改过的先备份再替换，改过的逐个 --keep / --accept",
+        "想接管一个已有内容的目录：先 init_project.py --mode scan 看冲突与推荐，再 --mode adopt 预览，确认后 --apply；改动已有文件须带 --recovery-dir",
+        "对外脚本若读取 CLAUDE.md 的路由文字，改为读取 AGENTS.md（CLAUDE.md 现在只有 @AGENTS.md 导入）"
+      ],
+      "declaration": 2,
+      "user_action_required": [
+        {
+          "what": "CLAUDE.md 未改动过的项目：update-content 预览里确认替换为 @AGENTS.md 导入桩（先备份）；改动过的逐个选择 --keep 或 --accept",
+          "session": "current"
+        },
+        {
+          "what": "AGENTS.md 模板多了一行“用户规则”（指向 AGENT.USER.md）：同样在 update-content 里逐文件选择",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "CLAUDE.md",
+        "AGENTS.md",
+        ".agents/moe.sakanano.agent-pack/content.lock.json"
+      ],
+      "default_for_existing": "advisory",
+      "template_changes": [
+        {
+          "path": "CLAUDE.md",
+          "class": "semantic"
+        },
+        {
+          "path": "AGENTS.md",
+          "class": "semantic"
+        }
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.9.0",
+      "to": "1.9.1",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "health / 菜单遇到脚手架的 update-region 发现时给出处理说明，不再因未知的处理项出错。",
+      "actions": [],
+      "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": []
     }
   ]
 }
