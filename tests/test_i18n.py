@@ -349,7 +349,7 @@ class EnglishOutputTests(unittest.TestCase):
         self.assertFalse(CJK.search(case_file.read_text(encoding="utf-8")), "an English project writes an English CASE.md")
 
     def test_sop_commands_speak_english(self) -> None:
-        """SOP 的命令行输出与 --help。SOP.md 本身是中文文件，其中的占位标记【待补充】原样出现在英文提示里。"""
+        """英文项目里 SOP 的命令输出、SOP.md 与执行 Case 全程没有中文（SOP 文件语言跟项目的 language）。"""
         project = Path(self.directory.name) / "sop-project"
         profile = project / ".agents/moe.sakanano.agent-pack/project.json"
         profile.parent.mkdir(parents=True)
@@ -359,13 +359,12 @@ class EnglishOutputTests(unittest.TestCase):
         self.environment["AGENTHELM_SOP_HOME"] = str(sop_home)
         base = [str(AGENTHELM), "project", "--project", str(project), "--no-input", "sop"]
         for tail in (["--help"], ["new", "--help"], ["step", "--help"], ["list"], ["index"], ["due"], ["private"], ["defaults"], ["interview"],
-                     ["new", "--slug", "demo", "--template", "blank", "--apply"], ["list"], ["validate", "demo"], ["preflight", "demo"],
-                     ["interview", "demo"], ["activate", "demo"], ["match", "hello"], ["run", "demo"]):
-            completed = self.run_command(*base, *tail)
-            masked = subprocess.CompletedProcess(completed.args, completed.returncode, completed.stdout.replace("【待补充】", "<placeholder>"), completed.stderr)
-            if tail[0] in ("show", "preflight"):
-                continue  # these print the SOP.md text itself, which is a Chinese file
-            self.assertEnglish(masked, "sop " + " ".join(tail))
+                     ["new", "--slug", "demo", "--template", "blank", "--apply"], ["new", "--slug", "video", "--template", "video-to-transcript", "--apply"],
+                     ["list"], ["show", "demo"], ["show", "video"], ["validate", "demo"], ["preflight", "video"], ["interview", "demo"],
+                     ["activate", "demo"], ["match", "hello"], ["run", "demo"]):
+            self.assertEnglish(self.run_command(*base, *tail), "sop " + " ".join(tail))
+        for path in project.rglob("*.md"):
+            self.assertFalse(CJK.search(path.read_text(encoding="utf-8")), f"{path.relative_to(project)} is written in the project language")
 
     def test_local_only_speaks_english_and_keeps_the_same_facts(self) -> None:
         project = Path(self.directory.name) / "synced"

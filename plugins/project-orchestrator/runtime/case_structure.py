@@ -12,6 +12,7 @@ SECTIONS = {
     "next_action": ("下一动作", "Next action"),
     "decisions": ("决策记录", "Decision log"),
     "work_log": ("工作记录", "Work log"),
+    "blockers": ("阻塞与恢复条件", "Blockers and resume conditions"),
     "result": ("结果", "Result"),
 }
 # 默认文字：新建 Case 时写进去的字段占位。
