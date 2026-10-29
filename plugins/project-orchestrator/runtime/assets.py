@@ -34,7 +34,7 @@ except ImportError:  # Windows
 
 PROFILE = Path(".agents/moe.sakanano.agent-pack/project.json")
 SYNONYMS = Path(".agents/moe.sakanano.agent-pack/asset-synonyms.json")
-ASSET_SCHEMA_VERSION = 1
+ASSET_SCHEMA_VERSION = 2  # 2: 非 shared 的 Case 也登记；旧台账自动重建
 DB_NAME = "assets.sqlite3"
 LOCK_NAME = "assets.lock"
 LAST_NAME = "wf-last.json"
@@ -535,14 +535,10 @@ def scan(project: Project, previous: dict | None = None) -> dict:
     previous = previous or {}
     root = project.root
     containers = _load_containers(project)
-    non_shared = {cid for cid, item in containers.items() if item["sensitivity"] != "shared"}
     skipped: list[dict] = []
     checkouts: list[str] = []
     raw = []
     for rel, stat in _walk(project, skipped, checkouts):
-        container, kind, _ = project.container_of(rel)
-        if kind == "case" and container in non_shared:
-            continue
         raw.append((rel, stat))
     external = _checkout_roots(project, checkouts)
     for directory in sorted(external):
@@ -598,7 +594,7 @@ def scan(project: Project, previous: dict | None = None) -> dict:
             }
     edges, broken = _extract_edges(project, files, containers)
     return {"files": files, "containers": containers, "edges": edges, "broken": broken,
-            "non_shared": sorted(non_shared), "skipped": skipped, "denied": denied, "git": has_git}
+            "skipped": skipped, "denied": denied, "git": has_git}
 
 
 def _prefixes(project: Project) -> tuple[str, ...]:
@@ -828,7 +824,6 @@ def _write_database(path: Path, registry: dict, fingerprint: str, project: Proje
                 "project": str(project.root), "roots": json.dumps(project.roots, ensure_ascii=False),
                 "file_count": str(len(registry["files"])), "edge_count": str(len(registry["edges"])),
                 "denied": str(registry["denied"]), "git": "1" if registry["git"] else "0",
-                "non_shared": json.dumps(registry["non_shared"]),
                 "skipped": json.dumps(registry["skipped"], ensure_ascii=False)}
         connection.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
         connection.executemany(
@@ -935,6 +930,7 @@ def _row_info(row: sqlite3.Row, info: dict, inbound: collections.Counter) -> dic
     return {"path": row["path"], "name": row["name"], "title": row["title"], "role": row["role"],
             "container": row["container"], "container_kind": row["container_kind"],
             "case_title": container.get("title", ""), "status": container.get("status", ""),
+            "sensitivity": container.get("sensitivity", "shared"),
             "modified": _iso(row["mtime_ns"] / 1e9), "size": row["size"],
             "git": row["git_state"] + ("+dirty" if row["git_dirty"] else ""),
             "dataless": bool(row["dataless"]), "referenced_by": inbound.get(row["path"], 0)}

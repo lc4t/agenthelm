@@ -1,5 +1,43 @@
 # 更新记录
 
+## 2026-10-29 — agenthelm 6.9.0 / Opinion Manager 0.5.0 / Agent Pack 1.10.0 / Project Orchestrator 1.9.1：观点自动采集与未决事项提示
+
+Opinion 之前只在用户明确提出时才工作：没有 hook，没有低成本的暂存入口，也没有任何东西提醒用户回头确认。这个版本让它在日常工作中自己转起来：会话开始注入规则和协议，工作中发现长期偏好就暂存，任务完成时集中请用户确认，开新会话时按阈值提示久未处理的候选。采集是自动的，生效与转正式仍然只来自用户的明确确认。
+
+### opinion-manager 0.5.0
+
+- 新增候选收件箱 `opinion_manager.py inbox`（数据在项目私有的 `.opinion/inbox.json`）：
+  - `add` 暂存（标题、完整规则、适用范围、用户原话），无需确认；内容相同的候选合并并追加证据；
+  - 状态 `pending`（待确认）/ `trial`（项目内试行）/ `formal`（同意转正式）/ `held` / `rejected`；`decide` 必须带 `--confirmed`，批量要么全成功要么全不改；
+  - `trial` 的候选全文随会话开始注入，Agent 按其工作；`expire --days N` 把试行超期未转正的退回待确认；
+  - `pending` 是“待确认项提供者”，返回统一结构，供 agent-pack 汇总（SOP 等其他来源按同一结构接入）；`brief` 生成会话开始注入的协议与试行候选。
+- `formal` 只记录用户意愿，写入 `OPINION.md` 仍走完整预览与确认；`inbox` 不写 `OPINION.md`、Profile 或锁。
+- `SKILL.md`：触发描述增加“工作中出现长期偏好或纠正”“任务完成时确认”“候选堆积时裁决”；新增候选收件箱与自动采集一节。新增 [`references/inbox.md`](plugins/opinion-manager/references/inbox.md)。
+
+### agent-pack 1.10.0
+
+- 新增 `agenthelm nudge` 与随附 hook（`hooks/hooks.json`）：
+  - **会话开始**（`startup|resume|clear|compact`）：在启用了 opinion-manager 的项目里注入采集协议与试行候选；待确认 ≥ `pending_threshold`（默认 5）条或最久 ≥ `stale_days`（默认 7）天时给用户一行提示，同一项目每 24 小时至多一次；
+  - **用户消息**：命中长期偏好关键词（可配置）时提醒 Agent 静默暂存，每会话至多 3 次；
+  - **回合结束**：本会话暂存且没展示过的候选存在、最后一条回复像是完成时，让 Agent 用编号列表一次性请用户裁决，每会话至多 1 次。
+- 各客户端：Claude Code 与 Codex 读取同一个 `hooks/hooks.json`（Codex 需在 `/hooks` 中信任）；Cursor 没有 prompt 级注入，用 `agenthelm nudge install-hooks --client cursor` 预览并写入 `hooks.json`，stop 提示默认关闭。其他目录完全无输出，hook 永远退出 0。
+- 配置：Project Profile 的 `opinion.nudge`（随项目）与用户配置的 `nudge`（个人，优先）；缺省即默认值，不进脚手架受检字段。`agenthelm nudge status` 显示生效配置与是否会提示；`AGENTHELM_NO_NUDGE=1` 关闭。详见 [`references/nudge.md`](plugins/agent-pack/references/nudge.md)。
+- 尚未在真实客户端逐一验证：Codex 插件 hook 的信任流程、Cursor 的 sessionStart 注入与 `~/.cursor/hooks.json` 加载、Claude Code `Stop` 的 `additionalContext`；依据官方文档编写，单元测试覆盖输出格式与逻辑。
+
+### project-orchestrator 1.9.1
+
+- `find` / `wf` / `refs` / `check` 的交付物台账不再跳过 `sensitivity` 不是 `shared` 的 Case：私密 Case 的文件也能被找到，结果带 `sensitivity` 字段，菜单里标注“私密”。台账只是索引，不做可见性过滤；凭据类文件名仍不登记，台账仍在用户缓存目录、不进项目。已建立的旧台账下次使用时自动重建。
+
+### 不兼容点与注意
+
+- 无。没有 `.opinion/`、`opinion.lock.json` 或 `opinion.provider: opinion-manager` 的项目不受影响。
+- 启用 Opinion 的项目，新会话会多出约 1500 字符的协议上下文；不需要时设置 `nudge.enabled: false` 或 `AGENTHELM_NO_NUDGE=1`。
+- 项目是公开仓库时，把 `.opinion/` 加入 `.gitignore`：收件箱含用户原话。
+
+### 版本
+
+agenthelm 6.9.0、opinion-manager 0.5.0、agent-pack 1.10.0、project-orchestrator 1.9.1；agents-init 6.7.0 不变。
+
 ## 2026-10-27 — agenthelm 6.8.0 / Agents Init 6.7.0 / Agent Pack 1.9.0 / Project Orchestrator 1.9.0：脚手架一致性
 
 在多台机器、多个客户端上使用同一个项目（例如放在同步盘里）时，只要装好 agenthelm，在任意机器运行 `agenthelm check`（或项目里的 `./menu health`）就能知道：这台机器和这个项目的脚手架是否与最新版一致，两台机器得出同样的结论；有差异时有配套工具修复。不同项目的 Opinion、Profile 里的自有字段与审计字段不参与比较，也不要求统一。

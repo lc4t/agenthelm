@@ -44,3 +44,7 @@ description: Deterministically inventory, verify, install, sync, migrate and rec
 - 不初始化项目、不创建骨架（那是 `agents-init`）。
 - 不选择 Task/Case、不写项目进度、不做 Git 提交（那是 project-orchestrator）。
 - 不把原生客户端 MCP 配置中的凭据复制进可移植包；含密钥条目保持 `blocked` 并留在客户端本地。
+
+## 观点候选采集与未决事项提示（nudge）
+
+插件随附的 hook 调用 `runtime/agenthelm.py nudge hook`：在项目启用了 opinion-manager 时，会话开始注入候选采集协议与试行候选，工作中提醒暂存长期偏好，任务完成时请用户集中确认，并在待确认候选堆积或久未处理时提示一行。该工具只读写 opinion-manager 的收件箱，不写规则、不改项目文件。阈值、客户端差异与关闭方式见 [references/nudge.md](../../references/nudge.md)；`agenthelm nudge status` 显示生效配置，`agenthelm nudge install-hooks --client cursor` 预览 Cursor 的 hook 配置。

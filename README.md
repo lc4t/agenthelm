@@ -177,3 +177,14 @@ npx @sakanano-moe/agenthelm migrate --install --apply
 ## Opinion 首次配置
 
 只提供三个主入口：直接用模板、选择模板的部分条目、从空白开始迭代；另可在已授权范围由 Agent 提出记忆候选。规则来源、个人修改与完整正文集中确认一次，再保存、读回与 verify。详见 [首次使用说明](plugins/opinion-manager/references/onboarding.md) 与 [版本契约](plugins/opinion-manager/references/versioning.md)。
+
+### 自动采集观点与未决事项提示
+
+装好 agent-pack 后，启用了 opinion-manager 的项目（Project Profile 的 `opinion.provider` 为 `opinion-manager`，或存在 `.opinion/`、`opinion.lock.json`）里，三个客户端的 hook 会让 Opinion 自己转起来：
+
+- 会话开始：注入采集协议和你已同意试行的候选；待确认候选 ≥ 5 条或最久 ≥ 7 天未处理时，给你一行提示（每 24 小时至多一次）。
+- 工作中：你说“以后都……”“不要再……”“记住……”这类话时，提醒 Agent 静默暂存为候选，不打断任务。
+- 任务完成时：Agent 把本次暂存的候选编号列出，一次请你裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃。
+- 采集是自动的，生效不是：候选未经你确认不会进入 `OPINION.md`；`formal` 也只记录意愿，写入仍走完整预览与确认。
+
+Claude Code 与 Codex 随插件生效（Codex 需在 `/hooks` 中信任）；Cursor 运行 `agenthelm nudge install-hooks --client cursor` 预览，`--apply` 写入。阈值在 Project Profile 的 `opinion.nudge` 或 `~/.config/agenthelm/config.json` 的 `nudge` 调整，`agenthelm nudge status` 查看生效配置，`AGENTHELM_NO_NUDGE=1` 关闭。候选在项目私有的 `.opinion/inbox.json`，项目是公开仓库时请忽略 `.opinion/`。详见 [nudge 说明](plugins/agent-pack/references/nudge.md) 与 [候选收件箱](plugins/opinion-manager/references/inbox.md)。

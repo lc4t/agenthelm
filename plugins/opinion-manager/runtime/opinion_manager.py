@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import context
+import inbox
 import lifecycle
 import versioned
 from constants import KNOWN_PLACEHOLDERS
@@ -353,6 +354,7 @@ def build_parser() -> argparse.ArgumentParser:
     versioned.add_commands(subparsers, compose, catalog)
     context.add_command(subparsers)
     lifecycle.add_command(subparsers)
+    inbox.add_command(subparsers)
     return parser
 
 
@@ -361,6 +363,8 @@ def execute(args: argparse.Namespace) -> tuple[int, str]:
         return context.execute(args)
     if args.command == "lifecycle":
         return lifecycle.execute(args)
+    if args.command == "inbox":
+        return inbox.execute(args)
     if versioned.handles(args):
         return versioned.execute(args)
     catalog = load_catalog()

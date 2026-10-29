@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "opinion-manager",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Manage Agent behavior rules through templates, partial selection, blank iteration, and authorized-memory candidates, with complete previews and exact version locks.",
   "author": {
     "name": "lc4t"

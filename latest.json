@@ -2,10 +2,10 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-10-27",
+  "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
-      "version": "1.9.0",
+      "version": "1.10.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -23,7 +23,7 @@
       }
     },
     "opinion-manager": {
-      "version": "0.4.2",
+      "version": "0.5.0",
       "source": "./plugins/opinion-manager",
       "content": {
         "opinion-manager/catalog": {
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.9.0",
+      "version": "1.9.1",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -243,6 +243,42 @@
       "breaking": false,
       "date": "2026-10-27",
       "summary": "health 汇总脚手架差异（建议处理，不改变退出码）；fix 新增 add-skeleton / profile / repair-lock / case-naming / sync-folder，--skip <ID> --reason / --unskip <ID> 记录决定；交互时每项可选 采用 / 永久跳过 / 稍后 / 查看差异；update-content 的 --keep 持久化到决定文件。",
+      "actions": []
+    },
+    {
+      "plugin": "opinion-manager",
+      "from": "0.4.2",
+      "to": "0.5.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。",
+      "actions": [
+        "候选保存在项目私有的 .opinion/inbox.json；项目是公开仓库时把 .opinion/ 加入 .gitignore"
+      ]
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.9.0",
+      "to": "1.10.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。",
+      "actions": [
+        "Codex 需要在 /hooks 中审阅并信任插件 hook 后才会运行",
+        "Cursor：运行 agenthelm nudge install-hooks --client cursor 预览，确认后加 --apply；stop 提示默认关闭",
+        "不想要提示：AGENTHELM_NO_NUDGE=1，或把 nudge.enabled 设为 false"
+      ]
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.9.0",
+      "to": "1.9.1",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-29",
+      "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。",
       "actions": []
     }
   ]

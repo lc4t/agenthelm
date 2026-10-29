@@ -4,14 +4,14 @@
     "name": "agenthelm",
     "description": "Cross-agent project management plugins: project contract, lifecycle, extension capabilities and behavior rules. 跨 Agent 的项目管理插件集。",
     "version": "0.7.0",
-    "updated_at": "2026-10-27",
+    "updated_at": "2026-10-29",
     "homepage": "./index.html",
     "domain": "agenthelm.sakanano.moe",
     "legacy_domain": "skill.sakanano.moe"
   },
   "plugin": {
     "manifest": "./plugins/agents-init/plugin.json",
-    "version": "6.8.0",
+    "version": "6.9.0",
     "install_unit": "marketplace",
     "bundled_plugins": [
       "./plugins/project-orchestrator/plugin.json",
@@ -43,7 +43,7 @@
       "id": "project-orchestrator",
       "name": "project-orchestrator / project lifecycle orchestration",
       "description": "Organizes Case workspaces or keeps existing Task/Case layouts; search, lossless migration, verification, scoped Git delivery, and a project menu that works without any AI agent.",
-      "version": "1.9.0",
+      "version": "1.9.1",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",
@@ -55,7 +55,7 @@
       "id": "agent-pack",
       "name": "agent-pack / Agent extension capability management",
       "description": "Inventory, verify, install, sync, migrate and reconcile Plugins, Skills and MCP between projects and Codex / Cursor / Claude; the agenthelm command line and user-level runtime.",
-      "version": "1.9.0",
+      "version": "1.10.0",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/agent-pack/skills/agent-pack/SKILL.md",
@@ -68,7 +68,7 @@
       "id": "opinion-manager",
       "name": "opinion-manager / Agent behavior rule management",
       "description": "Three first-run entry points plus optional memory candidates; one content confirmation, then Profile, body and lock are saved separately, with exact versions and protection of personal edits.",
-      "version": "0.4.2",
+      "version": "0.5.0",
       "status": "experimental",
       "entrypoints": {
         "agent": "./plugins/opinion-manager/skills/opinion-manager/SKILL.md",

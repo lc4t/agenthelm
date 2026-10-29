@@ -135,6 +135,8 @@ def render_find(result: dict) -> list[str]:
         owner = item["case_title"] or ("项目根目录" if item["container"] == "project" else f"目录 {item['container']}/")
         status = GROUP_LABEL.get(item["status"], item["status"]) if item["status"] else ""
         owner_text = f"{owner}（{status}）" if status else owner
+        if item.get("sensitivity", "shared") != "shared":
+            owner_text += "（私密）"
         refs = f" · 被引用 {item['referenced_by']} 处" if item["referenced_by"] else ""
         lines.append(f"     归属：{clip(owner_text, width - 30)}{refs}")
         lines.append(S.dim(f"     {clip(item['path'], width - 6)}"))
