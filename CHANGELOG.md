@@ -4,6 +4,8 @@
 
 项目放在 iCloud、Dropbox、OneDrive 等同步目录、在多台设备上使用时，`.venv`、`node_modules`、工具缓存不该进同步盘。`agenthelm local-only` 把它们放到每台设备自己的 `~/.local/share/agenthelm/local-only/` 下并留软链接，同时检查各设备之间的差异（谁装好了依赖、谁没装、HOME 是否一致）。
 
+6.10.0 同时包含下面 2026-10-28 条目（6.9.0，流程（SOP）管理）的全部变化：6.9.0 没有单独发布，从 6.8.0 升级的用户一次得到两部分。
+
 ### agent-pack 1.10.0：同步盘里的本机专属目录（local-only）
 
 项目放在 iCloud、Dropbox、OneDrive 等同步目录里、在多台设备上使用时，`.venv`、`node_modules`、工具缓存不该进同步盘。新增 `runtime/local_only.py`（只用标准库）、命令 `agenthelm local-only`、只读 MCP Tool `agent_pack_cloud_sync_safety_check`，以及 `references/local-only.md`。
@@ -31,9 +33,9 @@
 
 ### 版本
 
-agenthelm 6.10.0、agent-pack 1.10.0、project-orchestrator 1.11.0；agents-init 6.8.0、opinion-manager 0.4.2 不变。
+agenthelm 6.10.0、agent-pack 1.10.0、project-orchestrator 1.11.0；agents-init 6.8.0 与 project-orchestrator 1.10.0 的变化（6.9.0 条目）首次随本版发布；opinion-manager 0.4.2 不变。
 
-## 2026-10-28 — agenthelm 6.9.0 / Agents Init 6.8.0 / Project Orchestrator 1.10.0：流程（SOP）管理
+## 2026-10-28 — agenthelm 6.9.0 / Agents Init 6.8.0 / Project Orchestrator 1.10.0：流程（SOP）管理（未单独发布，随 6.10.0 一起发布）
 
 把用户常用的流程固化成 SOP（Standard Operating Procedure，标准作业流程），之后让 Agent 按它执行或由场景触发。典型例子：处理一个视频（下载 → 转音频 → 本地或云端转录）、每周复盘。SOP 里工具怎么选、出错怎么办、中间产物放哪，都是用户自己的习惯，建立时逐项谈清，不替用户决定。
 
