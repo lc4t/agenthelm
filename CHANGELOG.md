@@ -24,7 +24,7 @@ rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据
 ### 界面语言未设置时的提示与 `agenthelm config`（#35）
 
 - 新增 `agenthelm config`：`show` 显示生效的设置；`language zh|en|auto` 设置界面语言；`language-hint on|off` 开关提示；`project-language zh|en` 设置当前项目的文件语言。默认只预览，`--apply` 才写入 `~/.config/agenthelm/config.json`，只改要改的键、其余设置原样保留、替换前备份；无法解析的配置文件绝不覆盖。
-- 没有环境变量 `AGENTHELM_LANG`、用户配置里也没有 `language` 时，`agenthelm check` 和会话开始的提示（同一条一天至多一次）说明当前语言从哪来（系统 locale 或默认值）并给出命令；中文 locale 的用户保持中文，提示里写明。提示不改变退出码、`summary` 和任何文件；`language-hint off` 永久关闭。
+- 当界面显示为英文、且没有环境变量 `AGENTHELM_LANG`、用户配置里也没有 `language` 时，`agenthelm check` 和会话开始的提示（同一条一天至多一次）说明当前语言从哪来（系统 locale 或默认值）并给出命令；界面为中文（如中文系统 locale）的用户不会看到这条提示，项目 Profile 没有 `language` 的提示同样只给英文界面。提示不改变退出码、`summary` 和任何文件；`language-hint off` 永久关闭。
 - 已有项目的 Profile 没有 `language` 时，`check` 说明写进项目的文件按中文生成，并给出预览命令 `agenthelm config project-language en`；agents-init 6.8.1 新增 `--mode language`（只改 Profile 的 `language`，先备份，不改写任何已有文件），`check` 报告 `project_language`。
 - 文档与升级说明区分两种语言：界面语言只影响命令输出，项目文件语言随项目同步。
 

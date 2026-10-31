@@ -33,7 +33,7 @@ class StatusTests(unittest.TestCase):
     def test_where_the_interface_language_comes_from(self) -> None:
         cases = [
             ({}, {}, ("en", "default", False, True)),
-            ({"LANG": "zh_CN.UTF-8"}, {}, ("zh", "locale", False, True)),
+            ({"LANG": "zh_CN.UTF-8"}, {}, ("zh", "locale", False, False)),
             ({"LANG": "fr_FR.UTF-8"}, {}, ("en", "locale", False, True)),
             ({"LANG": "C"}, {}, ("en", "default", False, True)),
             ({"AGENTHELM_LANG": "zh", "LANG": "en_US"}, {}, ("zh", "env", True, False)),
@@ -47,11 +47,19 @@ class StatusTests(unittest.TestCase):
                 status = user_settings.language_status(variables, settings)
                 self.assertEqual((status["language"], status["source"], status["explicit"], status["hint"]), expected)
 
-    def test_a_chinese_locale_user_stays_in_chinese_and_is_told_so(self) -> None:
-        status = user_settings.language_status({"LANG": "zh_CN.UTF-8"}, {})
-        text = user_settings.interface_hint(status)
-        self.assertIn("当前使用 中文（来自系统 locale）", text)
-        self.assertNotIn("English（来自", text)
+    def test_a_chinese_interface_is_never_nagged_about_the_language(self) -> None:
+        """界面实际显示中文（系统 locale 为中文）时，没有任何语言提示，包括项目文件语言的提示。"""
+        for settings in ({}, {"language_hint": False}):
+            section = user_settings.report_section({"LANG": "zh_CN.UTF-8"}, settings, {"project_language": {"declared": None, "effective": "zh"}})
+            self.assertEqual((section["hints"], section["session_hint"]), ([], None))
+            self.assertEqual(section["interface"], {"language": "zh", "source": "locale", "explicit": False})
+            self.assertEqual(section["project"], {"declared": None, "effective": "zh"})
+        english = user_settings.report_section({"LANG": "C"}, {}, {"project_language": {"declared": None, "effective": "zh"}})
+        self.assertEqual(len(english["hints"]), 2)
+        self.assertIsNotNone(english["session_hint"])
+        # dismissed: nothing at all, even for an English interface
+        off = user_settings.report_section({"LANG": "C"}, {"language_hint": False}, {"project_language": {"declared": None, "effective": "zh"}})
+        self.assertEqual((off["hints"], off["session_hint"], off["hint_dismissed"]), ([], None, True))
 
     def test_the_report_section_reads_the_project_language_from_the_scaffold_check(self) -> None:
         none_declared = {"project_language": {"declared": None, "effective": "zh"}}
@@ -186,32 +194,44 @@ class CheckHintTests(CommandCase):
     def language(self, *extra: str, env: dict | None = None) -> dict:
         return json.loads(self.check("--output", "json", *extra, env=env).stdout)["language"]
 
-    def test_unset_language_is_explained_and_setting_it_makes_the_hint_go_away(self) -> None:
+    def test_unset_language_is_explained_only_to_an_english_interface(self) -> None:
+        # the fixture environment has a Chinese locale: the interface is Chinese, so nothing is said
         done = self.check()
-        self.assertIn("[语言] 界面语言未设置，当前使用 中文（来自系统 locale）", done.stdout)  # a Chinese locale stays Chinese, and is told so
-        self.assertIn("agenthelm config language zh", done.stdout)
-        self.assertIn("agenthelm config language-hint off", done.stdout)
-        self.assertEqual(len(self.language()["hints"]), 1)
+        self.assertNotIn("[语言]", done.stdout)
+        zh = self.language()
+        self.assertEqual((zh["hints"], zh["session_hint"]), ([], None))
+        self.assertEqual((zh["interface"]["language"], zh["interface"]["source"], zh["interface"]["explicit"]), ("zh", "locale", False))
         english = self.check(env={**self.env, "LANG": "C"})
         self.assertIn("[language] The interface language is not set; it is currently English (from the default).", english.stdout)
+        self.assertIn("agenthelm config language zh", english.stdout)
+        self.assertIn("agenthelm config language-hint off", english.stdout)
+        section = self.language(env={**self.env, "LANG": "C"})
+        self.assertEqual(len(section["hints"]), 1)
+        self.assertIsNotNone(section["session_hint"])
         self.run_cli("config", "language", "en", "--apply")
-        self.assertEqual(self.language()["hints"], [])
-        self.assertNotIn("[语言]", self.check().stdout)
+        self.assertEqual(self.language(env={**self.env, "LANG": "C"})["hints"], [])  # set explicitly: no hint
+        self.assertIsNone(self.language(env={**self.env, "LANG": "C"})["session_hint"])
+        self.assertNotIn("[language]", self.check(env={**self.env, "LANG": "C"}).stdout)
 
     def test_the_environment_variable_also_counts_as_setting_it(self) -> None:
         self.assertEqual(self.language(env={**self.env, "AGENTHELM_LANG": "zh"})["hints"], [])
 
     def test_the_hint_can_be_turned_off_for_good(self) -> None:
+        english = {**self.env, "LANG": "C"}
+        self.assertEqual(len(self.language(env=english)["hints"]), 1)
         self.run_cli("config", "language-hint", "off", "--apply")
-        section = self.language()
-        self.assertEqual((section["hints"], section["hint_dismissed"]), ([], True))
+        section = self.language(env=english)
+        self.assertEqual((section["hints"], section["session_hint"], section["hint_dismissed"]), ([], None, True))
+        self.assertNotIn("[language]", self.check(env=english).stdout)
         self.assertNotIn("[语言]", self.check().stdout)
 
     def test_the_hint_changes_neither_the_exit_code_nor_the_summary_and_writes_nothing(self) -> None:
         before = {path: path.read_bytes() for path in sorted(self.root.rglob("*")) if path.is_file()}
-        plain = self.check("--output", "json", "--strict")
+        english = {**self.env, "LANG": "C"}
+        plain = self.check("--output", "json", "--strict", env=english)
+        self.assertTrue(json.loads(plain.stdout)["language"]["hints"])  # the hint is really shown here
         self.run_cli("config", "language", "en", "--apply")
-        silent = self.check("--output", "json", "--strict")
+        silent = self.check("--output", "json", "--strict", env=english)
         self.assertEqual(plain.returncode, silent.returncode)
         self.assertEqual(json.loads(plain.stdout)["summary"], json.loads(silent.stdout)["summary"])
         self.assertEqual({path: path.read_bytes() for path in sorted(self.root.rglob("*")) if path.is_file()}, before)
@@ -228,6 +248,10 @@ class CheckHintTests(CommandCase):
         self.assertEqual(len(section["hints"]), 1)
         self.assertIn("project-language en", section["hints"][0])
         self.assertIn("[language]", self.check(env=env).stdout)
+        # a Chinese interface (the fixture's locale) is not nagged about the project language either
+        zh = self.language()
+        self.assertEqual((zh["hints"], zh["project"]), ([], {"declared": None, "effective": "zh"}))
+        self.assertNotIn("[语言]", self.check().stdout)
         self.assertEqual(profile_path.read_bytes(), before)  # check never rewrites a project
         declared = self.base / "declared"
         shutil_copy = json.loads(profile_path.read_text())
