@@ -86,6 +86,8 @@ REQUIRED_TEMPLATES = {
     "privacy/undeclared",
     "privacy/declared.en",
     "privacy/undeclared.en",
+    "privacy/rules-line",
+    "privacy/rules-line.en",
     ".agent-doc/plan.md",
     ".agent-doc/progress.md",
     ".agent-doc/chat-summary.md",
@@ -528,6 +530,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher:
         "AGENT_CLI": ", ".join(inputs.agent_cli),
     }
     replacements["PRIVACY_SECTION"] = privacy_section(templates, inputs.language, inputs.privacy_declared)
+    replacements["PRIVACY_RULES_LINE"] = localized(templates, "privacy/rules-line", inputs.language).rstrip("\n")
     agents = render_template(templates["AGENTS.md"], replacements)
     route = render_template(templates["ROUTE.md"], replacements)
     files = {

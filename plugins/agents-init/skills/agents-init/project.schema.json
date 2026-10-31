@@ -349,6 +349,10 @@
               ],
               "description": "项目自己的 Case 工具命令；声明后项目入口不绕过它写 Case。"
             },
+            "schema": {
+              "$ref": "#/$defs/relativePath",
+              "description": "项目自己的 Case 结构 schema 文件（相对项目根）；project-orchestrator 创建与校验 Case 时读取，缺省用内置 schema。"
+            },
             "directory_naming": {
               "type": "object",
               "additionalProperties": true,

@@ -1069,6 +1069,26 @@ class PrivacyConventionTests(unittest.TestCase):
                 self.assertEqual(
                     init_project.files_for(init_project.inputs_from_profile(self.root))[Path("AGENTS.md")], agents)
 
+    def test_rules_md_privacy_line_names_the_field_and_never_contradicts_the_profile(self) -> None:
+        for language, expected in (("zh", "默认禁止读取：以 Project Profile 的 `privacy.forbidden_default_reads` 为准"),
+                                   ("en", "Do not read by default: the Project Profile field `privacy.forbidden_default_reads`")):
+            for reads in (["private/"], []):  # 缺省的非空字段，与被清空的字段
+                with self.subTest(language=language, reads=reads):
+                    self.setUp()
+                    self.create(language)
+                    if not reads:
+                        self.set_reads(reads)
+                        code, done = self.refresh("--apply")
+                        self.assertEqual(code, 0, done)
+                    rules = (self.root / "AGENT.RULES.md").read_text(encoding="utf-8")
+                    self.assertIn(expected, rules)
+                    self.assertNotIn("默认禁止读取：未声明", rules)  # 旧的静态一行
+                    self.assertNotIn("PRIVACY_RULES_LINE", rules)
+                    self.assertNotIn("private/", rules)  # 引用字段名，不复制路径
+                    self.assertIn("privacy.forbidden_default_reads", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+                    self.assertEqual(
+                        init_project.files_for(init_project.inputs_from_profile(self.root))[Path("AGENT.RULES.md")], rules)
+
     def test_changing_the_field_is_reflected_by_check_and_paths_never_need_copying(self) -> None:
         self.create("zh")
         before = (self.root / "AGENTS.md").read_text(encoding="utf-8")
