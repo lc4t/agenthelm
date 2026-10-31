@@ -263,5 +263,18 @@
  "你的版本": "your version",
  "基线": "baseline",
  "新模板": "new template",
- "      冲突块 {0}：": "      Conflict block {0}:"
+ "      冲突块 {0}：": "      Conflict block {0}:",
+ "已应用": "Applied",
+ "仅预览": "Dry-run",
+ "已阻塞": "Blocked",
+ "新建": "create",
+ "替换": "replace",
+ "保留": "preserve",
+ "  已阻塞 [{0}] {1}": "  blocked [{0}] {1}",
+ "  说明：{0}": "  note: {0}",
+ "{0}：入口 ./{1}": "{0}: entry ./{1}",
+ "{0}：{1}（来自 {2}）": "{0}: {1} (from {2})",
+ "{0}：新建 {1}，替换 {2}，保留冲突 {3}": "{0}: {1} create, {2} replace, {3} preserved collisions",
+ "  跳过 {0}（父目录是符号链接）": "  skip {0} (symlinked parent)",
+ "  退役 {0}（已升级进 {1}）": "  retire {0} (upgraded into {1})"
 }
