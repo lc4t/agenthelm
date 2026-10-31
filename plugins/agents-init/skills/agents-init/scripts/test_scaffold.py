@@ -87,6 +87,153 @@ class ScaffoldCase(unittest.TestCase):
             lock.unlink()
 
 
+class ProfileOwnFieldTests(ScaffoldCase):
+    """#38 / #41: the Profile is the project's; the tool describes what it finds and never rewrites a value."""
+
+    def write_profile(self, mutate) -> None:
+        profile = json.loads((self.root / PROFILE).read_text())
+        mutate(profile)
+        (self.root / PROFILE).write_text(json.dumps(profile, ensure_ascii=False))
+
+    # ---- #38
+    def test_free_text_directory_naming_is_not_an_error_and_is_explained_once(self) -> None:
+        self.init("--no-entry")
+        text = "项目自己的命名：<日期>_<客户>_<编号>"
+        self.write_profile(lambda p: p["work"]["case"].update(directory_naming=text))
+        before = (self.root / PROFILE).read_bytes()
+        (self.root / "cases/whatever-name").mkdir(parents=True)
+        (self.root / "cases/whatever-name/CASE.md").write_text("# c\n")
+        report = self.check()
+        self.assertEqual(report["findings"], [])
+        self.assertTrue(report["ok"])
+        self.assertIsNone(report["case_naming"]["error"])
+        self.assertEqual(report["case_naming"]["mismatched_count"], 0)
+        conflicts = [item for item in report["profile_conflicts"] if item["path"] == "work.case.directory_naming"]
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["level"], "info")
+        self.assertEqual(conflicts[0]["options"], ["convert", "keep-as-own-field", "ignore"])
+        self.assertEqual(conflicts[0]["rename_to"], "work.case.project_directory_naming")
+        self.assertEqual(conflicts[0]["example"], {"style": "date-topic"})
+        self.assertEqual((self.root / PROFILE).read_bytes(), before, "the tool must not rewrite the Profile")
+        self.assertIn("directory_naming", scaffold.render_text(report))
+        code, plan = self.run_mode("case-naming")
+        self.assertEqual((code, plan["renames"]), (0, []))
+        self.assertIn("note", plan)
+
+    def test_invalid_object_naming_message_carries_a_legal_example_and_the_keep_option(self) -> None:
+        self.init("--no-entry")
+        self.write_profile(lambda p: p["work"]["case"].update(directory_naming={"style": "weekly"}))
+        found = {item["id"]: item for item in self.check()["findings"]}
+        reason = found["profile:work.case.directory_naming"]["reason"]
+        self.assertIn('{"style": "date-topic"}', reason)
+        self.assertIn('"style": "custom"', reason)
+        self.assertIn("保留原文字不改动", reason)
+        self.assertIn("work.case.project_directory_naming", reason)
+
+    def test_same_principle_for_other_schema_fields(self) -> None:
+        self.init("--no-entry")
+        mine = {"work": {"assets": "我们自己的交付物目录说明"}, "sop": {"root": ["a", "b"]},
+                "memory": {"index_command": ["python", "idx.py"]}, "opinion": {"loading_mode": "lazy", "nudge": "off"},
+                "capabilities": {"mcp_client_policy": "all"}}
+
+        def apply(profile: dict) -> None:
+            for section, values in mine.items():
+                profile.setdefault(section, {})
+                if not isinstance(profile[section], dict):
+                    profile[section] = {}
+                profile[section].update(values)
+        self.write_profile(apply)
+        before = (self.root / PROFILE).read_bytes()
+        report = self.check()
+        self.assertEqual(report["findings"], [])
+        found = {item["path"]: item for item in report["profile_conflicts"]}
+        self.assertTrue({"work.assets", "sop.root", "memory.index_command", "opinion.loading_mode", "opinion.nudge",
+                         "capabilities.mcp_client_policy"} <= set(found), set(found))
+        for item in found.values():
+            self.assertEqual(item["options"], ["convert", "keep-as-own-field", "ignore"])
+            self.assertTrue(item["rename_to"].rsplit(".", 1)[-1].startswith("project_"))
+            self.assertEqual(item["id"], f"conflict:{item['path']}")
+        self.assertEqual(found["sop.root"]["found"], "array")
+        self.assertEqual(found["opinion.loading_mode"]["expected"], '"tiered" / "full"')
+        self.assertEqual((self.root / PROFILE).read_bytes(), before)
+        # fix profile only touches the checked fields; it must leave these values alone
+        self.run_mode("profile", "--recovery-dir", str(self.recovery), "--apply")
+        after = json.loads((self.root / PROFILE).read_text())
+        self.assertEqual(after["sop"]["root"], ["a", "b"])
+        self.assertEqual(after["work"]["assets"], mine["work"]["assets"])
+
+    def test_a_fresh_profile_has_no_conflicts_and_no_extras(self) -> None:
+        for extra in ((), ("--no-entry",), ("--work-mode", "legacy", "--no-entry")):
+            with self.subTest(extra=extra):
+                self.setUp()
+                self.init(*extra)
+                report = self.check()
+                self.assertEqual((report["profile_conflicts"], report["profile_extras"]["total"]), ([], 0))
+
+    # ---- #41
+    def test_extras_are_sorted_into_own_typo_and_read_by_plugin(self) -> None:
+        self.init("--no-entry")
+
+        def apply(profile: dict) -> None:
+            profile["privacy"]["context_requires_confirmation"] = True
+            profile["privacy"]["case_artifacts_require_scope_authorization"] = True
+            profile["privacy"]["forbidden_default_read"] = ["secrets/"]
+            profile["team_notes"] = {"a": 1}
+            profile["work"]["case"]["comand"] = "tool"
+        self.write_profile(apply)
+        schema = json.loads(scaffold.SCHEMA_PATH.read_text())
+        del schema["properties"]["opinion"]["properties"]["nudge"]
+        older = Path(self._temporary.name) / "older.schema.json"
+        older.write_text(json.dumps(schema))
+        self.write_profile(lambda p: p["opinion"].update(nudge={"enabled": False}))
+        with mock.patch.object(scaffold, "SCHEMA_PATH", older):
+            report = self.check()
+        by_path = {item["path"]: item for item in report["extras"] if item["kind"] == "project-field"}
+        self.assertEqual(by_path["privacy.forbidden_default_read"]["category"], "suspected-typo")
+        self.assertEqual(by_path["privacy.forbidden_default_read"]["similar_to"], "privacy.forbidden_default_reads")
+        self.assertEqual(by_path["work.case.comand"]["similar_to"], "work.case.command")
+        self.assertEqual(by_path["opinion.nudge"]["category"], "read-by-plugin")
+        self.assertEqual(by_path["opinion.nudge"]["plugin"], "agent-pack")
+        for path in ("privacy.context_requires_confirmation", "privacy.case_artifacts_require_scope_authorization", "team_notes"):
+            self.assertEqual(by_path[path]["category"], "own", path)
+            self.assertIsNone(by_path[path]["similar_to"])
+        self.assertEqual(report["profile_extras"], {"total": 6, "own": 3, "suspected_typo": 2, "read_by_plugin": 1})
+        self.assertEqual(report["findings"], [])
+        self.assertTrue(report["ok"])
+
+    def test_nudge_is_declared_in_the_schema_so_it_is_no_longer_an_extra(self) -> None:
+        self.init("--no-entry")
+        self.write_profile(lambda p: p["opinion"].update(nudge={"enabled": False, "pending_threshold": 9}))
+        report = self.check()
+        self.assertNotIn("opinion.nudge", {item["path"] for item in report["extras"]})
+        self.assertEqual(report["profile_conflicts"], [])
+
+    def test_extras_never_change_the_exit_code_or_the_fingerprint(self) -> None:
+        self.init("--no-entry")
+        code, plain = self.run_mode("check")
+        self.write_profile(lambda p: p.update(team_notes=1, languge="en"))
+        code_with, report = self.run_mode("check")
+        self.assertEqual((code, code_with), (0, 0))
+        self.assertEqual(report["profile_extras"]["total"], 2)
+        self.assertEqual(report["fingerprint"], plain["fingerprint"])
+
+    def test_json_fields_are_stable(self) -> None:
+        self.init("--no-entry")
+        self.write_profile(lambda p: p.update(team_notes=1))
+        _code, report = self.run_mode("check")
+        self.assertEqual(set(report["profile_extras"]), {"total", "own", "suspected_typo", "read_by_plugin"})
+        self.assertEqual(set(report["extras"][-1]), {"path", "kind", "category", "plugin", "similar_to"})
+        self.assertIsInstance(report["profile_conflicts"], list)
+
+    def test_edit_distance_typo_detection_is_conservative(self) -> None:
+        declared = ["artifact_mode", "root", "command"]
+        self.assertEqual(scaffold._likely_typo("artifact_mod", declared), "artifact_mode")
+        self.assertEqual(scaffold._likely_typo("comand", declared), "command")
+        self.assertIsNone(scaffold._likely_typo("team_notes", declared))
+        self.assertIsNone(scaffold._likely_typo("root", declared))
+        self.assertIsNone(scaffold._likely_typo("ab", ["abc"]))
+
+
 class ManifestTests(ScaffoldCase):
     def test_manifest_matches_what_the_initializer_renders(self) -> None:
         for extra in ((), ("--no-entry",), ("--work-mode", "legacy", "--no-entry")):
@@ -532,7 +679,7 @@ class CaseNamingTests(ScaffoldCase):
 
     def test_a_broken_declaration_is_reported_without_a_fix(self) -> None:
         self.init("--no-entry")
-        for naming in ({"style": "weekly"}, {"style": "custom"}, {"pattern": "("}, "date-topic"):
+        for naming in ({"style": "weekly"}, {"style": "custom"}, {"pattern": "("}):
             with self.subTest(naming=naming):
                 self.declare(naming)
                 found = {item["id"]: item for item in self.check()["findings"]}
