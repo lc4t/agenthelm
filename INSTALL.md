@@ -33,6 +33,8 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 
 若 `npx @sakanano-moe/agenthelm check` 报告旧方式安装（`~/.agents/plugins/plugins/<id>` 或 `~/.claude/skills/<id>` 软链），先预览 `npx @sakanano-moe/agenthelm migrate --install`，经同意后追加 `--apply`。
 
+给了 `--client` 时，旧方式安装仍会列出（它是待迁移的风险），但只有它的路径属于所选客户端时才计入“是否最新”（`up_to_date`）与 `--strict` 退出码：`~/.claude/…` 归 Claude Code，`~/.agents/…`（Codex 个人市场）归 Codex；路径无法判断归属时仍列出、不计入。不带 `--client` 时所有旧方式安装都计入。JSON 里每个旧方式条目带 `owner`，汇总里 `legacy_installs` 是计入的个数，`legacy_other_clients` 是列出但未计入的个数。
+
 安装完成后需要新会话（Claude Code 可用 `/reload-plugins`，Codex 与 Cursor 需重启）才能加载插件。文件安装完成不能证明当前会话已加载插件。
 
 ## 2. 初始化项目
