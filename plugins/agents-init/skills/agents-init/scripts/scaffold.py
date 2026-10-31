@@ -230,7 +230,7 @@ class Context:
 def _lstat(path: Path) -> os.stat_result | None:
     try:
         return path.lstat()
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):  # a user file standing where a parent directory should be
         return None
 
 

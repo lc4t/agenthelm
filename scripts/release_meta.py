@@ -232,6 +232,8 @@ def declaration_problems(label: str, entry: dict) -> list[str]:
     for position, item in enumerate(changes):
         if not isinstance(item, dict) or not str(item.get("path", "")).strip() or item.get("class") not in TEMPLATE_CLASSES:
             problems.append(f"{label}: template_changes[{position}] needs 'path' and a 'class' of {sorted(TEMPLATE_CLASSES)}")
+    if changes and not entry.get("touches"):
+        problems.append(f"{label}: template_changes lists files, so touches must name the paths or Profile fields they affect")
     semantic = any(isinstance(item, dict) and item.get("class") == "semantic" for item in changes)
     if semantic and entry.get("default_for_existing") != "off" and not required:
         problems.append(f"{label}: a semantic template change that applies to existing projects needs user_action_required")
