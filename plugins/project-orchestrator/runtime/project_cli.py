@@ -475,6 +475,11 @@ def cmd_fix(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, lis
         | {path: "append" for path in args.append}
     if args.confirm_discard:
         choices["_confirm"] = "\n".join(args.confirm_discard)
+    for key, values in (("_merge", args.merge), ("_pick", args.pick), ("_diff", args.diff)):
+        if values:
+            choices[key] = "\n".join(values)
+    if args.diff and args.apply:
+        raise EntryError(_("--diff 只用于查看，不能与 --apply 同用"), "usage")
     if args.entry_name:
         choices["entry-name"] = args.entry_name
     ids, targets = _split_targets(args.ids)
@@ -486,7 +491,7 @@ def cmd_fix(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, lis
     lines = header(provider, _("修复与更新")) + render_plan(plan, choices)
     if not args.apply:
         lines.append(S.dim(_("以上为预览，没有写入。确认后加 --apply；定制文件用 --keep / --accept 指定；"
-                             "AGENTS.md / CLAUDE.md 也可用 --append 保留原文、只追加带标记的区块；--accept 会丢弃本地内容时需再加 --confirm-discard <文件>。")))
+                             "AGENTS.md / CLAUDE.md 也可用 --append 保留原文、只追加带标记的区块；--accept 会丢弃本地内容时需再加 --confirm-discard <文件>；也可用 --merge <文件> 三方合并（冲突块用 --pick），--diff <文件> 先看差异。")))
         if any(item.get("options") for step in plan["steps"] for item in step["custom"]):
             lines.append(S.dim(_("不想要其中某项：fix --skip <ID> --reason …（ID 见 health / check）；只处理几项：在处理项后列出路径或字段。")))
         return EXIT_OK, {"plan": plan, "applied": False}, lines
@@ -694,6 +699,11 @@ def parser() -> argparse.ArgumentParser:
     fix.add_argument("--accept", action="append", default=[])
     fix.add_argument("--append", action="append", default=[])
     fix.add_argument("--confirm-discard", action="append", default=[], dest="confirm_discard")
+    fix.add_argument("--merge", action="append", default=[], metavar=_("文件"),
+                     help=_("update-content：三方合并这个文件（还原升级前的基线，保留你的改动并带入新模板的变化；--apply 前先备份）"))
+    fix.add_argument("--pick", action="append", default=[], metavar=_("文件#块=mine|theirs|both"),
+                     help=_("update-content：为 --merge 的冲突块选择 mine（保留你的）/ theirs（取新模板）/ both（两边都留）"))
+    fix.add_argument("--diff", action="append", default=[], metavar=_("文件"), help=_("update-content：只查看这个文件与新模板的完整差异，不写入"))
     fix.add_argument("--entry-name", help=_("add-entry：启动器文件名（缺省 menu）"))
     record = add("record", _("记录事项"))
     record.add_argument("item", help=_("事项，或 new 新建"))
