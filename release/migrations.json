@@ -460,15 +460,15 @@
     "change_kind": "code",
     "breaking": true,
     "date": "2026-10-31",
-    "summary": "新增 agenthelm config（show / language / language-hint / project-language）：设置界面语言、开关“语言未设置”的提示、设置项目文件语言，默认只预览，--apply 才写入，只改要改的键并先备份；没有任何地方指定界面语言时，check 与会话开始的提示说明当前语言并给出命令。agenthelm update 增加 --append / --confirm-discard / --diff：没有基线的已定制文件显示差异摘要与原因，可保留原文并追加带标记的区块；--accept 丢弃本地行需 --confirm-discard；替换文件后输出备份目录与还原方法，仍需选择时不再显示“完成”并以非零退出。",
+    "summary": "新增 agenthelm config（show / language / language-hint / project-language）：设置界面语言、开关“语言未设置”的提示、设置项目文件语言，默认只预览，--apply 才写入，只改要改的键并先备份；界面显示为英文且没有任何地方指定界面语言时，check 与会话开始的提示说明当前语言并给出命令。agenthelm update 增加 --append / --confirm-discard / --diff：没有基线的已定制文件显示差异摘要与原因，可保留原文并追加带标记的区块；--accept 丢弃本地行需 --confirm-discard；替换文件后输出备份目录与还原方法，仍需选择时不再显示“完成”并以非零退出。",
     "actions": [
       "--accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
-      "没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令；不想看到：agenthelm config language-hint off"
+      "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off"
     ],
     "declaration": 2,
     "user_action_required": [
       {
-        "what": "没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令；不想看到：agenthelm config language-hint off",
+        "what": "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
         "session": "current"
       }
     ],
@@ -529,7 +529,7 @@
         "session": "current"
       },
       {
-        "what": "没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令；不想看到：agenthelm config language-hint off",
+        "what": "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
         "session": "current"
       },
       {

@@ -8,8 +8,8 @@
 * **项目文件语言**：写进项目里的文件（Case 小节名、README 追加的说明、SOP）用哪种语言，是项目 Profile 顶层的
   ``language``（``zh`` | ``en``，没有就按中文），随项目同步。
 
-没有任何地方指定界面语言时，``check`` 和会话开始的提示说明当前语言从哪来，并给出设置命令；
-``language_hint`` 设为 ``false`` 永久关闭这些提示。设置命令默认只预览，``--apply`` 才写入，
+界面实际显示英文、且没有任何地方指定界面语言时，``check`` 和会话开始的提示说明当前语言从哪来，并给出设置命令；
+中文界面不提示；项目 Profile 没有 ``language`` 的提示同样只给英文界面。``language_hint`` 设为 ``false`` 永久关闭这些提示。设置命令默认只预览，``--apply`` 才写入，
 并且只改动要改的键：文件里的其他设置原样保留，替换前先备份。
 """
 from __future__ import annotations
@@ -65,7 +65,7 @@ def language_status(variables: Mapping[str, str], settings: Mapping[str, Any]) -
     explicit = source in ("env", "config")
     dismissed = settings.get("language_hint") is False
     return {"language": language, "source": source, "explicit": explicit, "dismissed": dismissed,
-            "hint": not explicit and not dismissed}
+            "hint": not explicit and not dismissed and language == "en"}
 
 
 def interface_hint(status: dict) -> str:
@@ -91,7 +91,7 @@ def report_section(variables: Mapping[str, str], settings: Mapping[str, Any], sc
     status = language_status(variables, settings)
     declared_known = isinstance(scaffold, dict) and isinstance(scaffold.get("project_language"), dict)
     declared = scaffold["project_language"].get("declared") if declared_known else None
-    project_needs_hint = declared_known and declared is None and not status["dismissed"]
+    project_needs_hint = declared_known and declared is None and not status["dismissed"] and status["language"] == "en"
     return {"interface": {"language": status["language"], "source": status["source"], "explicit": status["explicit"]},
             "project": {"declared": declared, "effective": declared or "zh"} if declared_known else None,
             "hint_dismissed": status["dismissed"],
