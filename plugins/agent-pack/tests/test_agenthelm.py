@@ -339,7 +339,9 @@ class AgenthelmOperationTests(unittest.TestCase):
         steps = [agenthelm.Step("update", "claude", "one", [sys.executable, "-c", "raise SystemExit(3)"]),
                  agenthelm.Step("update", "claude", "two", [sys.executable, "-c", "pass"])]
         results = agenthelm.execute_steps(steps, apply=True, recovery_root=None)
-        self.assertEqual([record["status"] for record in results], ["failed"])
+        # The same client's later step is reported as not run; other clients keep going (see test_agenthelm_reporting).
+        self.assertEqual([record["status"] for record in results], ["failed", "not_run"])
+        self.assertEqual(results[0]["exit_code"], 3)
         preview = agenthelm.execute_steps(steps, apply=False, recovery_root=None)
         self.assertEqual([record["status"] for record in preview], ["preview", "preview"])
 

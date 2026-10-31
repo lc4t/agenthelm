@@ -28,8 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from i18n_agent_pack import _  # noqa: E402
-from i18n_agent_pack import _  # noqa: E402
+from i18n_agent_pack import _, N_  # noqa: E402
 
 MARKETPLACE = "agenthelm"
 CLI = "npx @sakanano-moe/agenthelm"
@@ -52,6 +51,10 @@ PLUGIN_ROOT = RUNTIME_DIR.parent
 
 class CheckError(Exception):
     pass
+
+
+class Unavailable(CheckError):
+    """A client cannot be handled on this run for a reason outside the update itself (not a failed update)."""
 
 
 def version_key(value: str) -> tuple[int, ...] | None:
@@ -162,27 +165,41 @@ def _fetch(url: str, timeout: float = FETCH_TIMEOUT_SECONDS) -> dict:
 def load_latest(env: Env, source: str | None = None, *, offline: bool = False,
                 max_age: int = CACHE_TTL_SECONDS, timeout: float = FETCH_TIMEOUT_SECONDS,
                 backoff: bool = False) -> tuple[dict, dict]:
-    """Return (latest, origin). A local path is read directly; URLs go through a daily cache."""
+    """Return (latest, origin). A local path is read directly; URLs go through a daily cache.
+
+    The cache is used only when it came from one of the sources this call would fetch: an explicit
+    ``--latest`` / ``AGENTHELM_LATEST_URL`` that differs from the cached source ignores the cache (and the
+    origin says so), it is never answered with another source's content.
+    """
     source = source or env.get(ENV_LATEST)
     if source and not re.match(r"https?://", source):
         return read_json(Path(source).expanduser()), {"source": source, "cached": False}
     urls = (source,) if source else DEFAULT_LATEST_URLS
     cache_file = env.cache_dir / "latest.json"
     cached = None
+    ignored_cache = None
     try:
         cached = read_json(cache_file)
     except (OSError, ValueError):
         pass
+    if not isinstance(cached, dict) or "latest" not in cached:
+        cached = None
+    if cached and cached.get("url") not in urls:
+        ignored_cache, cached = cached.get("url"), None
+    extra = {"ignored_cache": ignored_cache} if ignored_cache else {}
     if cached and (offline or time.time() - cached.get("fetched_at", 0) < max_age):
         return cached["latest"], {"source": cached.get("url"), "cached": True, "fetched_at": cached.get("fetched_at")}
     if offline:
+        if ignored_cache:
+            raise CheckError(_("离线，且缓存来自另一个来源（{0}），不能代替 {1}").format(ignored_cache, urls[0]))
         raise CheckError(_("离线且没有缓存的 latest.json"))
     failure_file = env.cache_dir / "last_failure.json"
     if backoff:
         try:
             if time.time() - read_json(failure_file).get("at", 0) < FAILURE_BACKOFF_SECONDS:
                 if cached:
-                    return cached["latest"], {"source": cached.get("url"), "cached": True, "stale": True}
+                    return cached["latest"], {"source": cached.get("url"), "cached": True, "stale": True,
+                                              "fetched_at": cached.get("fetched_at")}
                 raise CheckError(_("最近联网失败，稍后再试"))
         except (OSError, ValueError, AttributeError):
             pass
@@ -197,7 +214,7 @@ def load_latest(env: Env, source: str | None = None, *, offline: bool = False,
             write_json_atomic(cache_file, {"url": url, "fetched_at": time.time(), "latest": latest})
         except OSError:
             pass
-        return latest, {"source": url, "cached": False}
+        return latest, {"source": url, "cached": False, **extra}
     try:
         write_json_atomic(failure_file, {"at": time.time()})
     except OSError:
@@ -206,6 +223,19 @@ def load_latest(env: Env, source: str | None = None, *, offline: bool = False,
         return cached["latest"], {"source": cached.get("url"), "cached": True, "stale": True,
                                   "fetched_at": cached.get("fetched_at")}
     raise CheckError(_("无法获取 latest.json：") + "; ".join(errors))
+
+
+def origin_line(origin: dict) -> str:
+    """The version source a run actually used, and whether it came from the cache."""
+    line = _("云端版本源：{0}").format(origin.get("source"))
+    if origin.get("cached"):
+        when = ""
+        if origin.get("fetched_at"):
+            when = _("，获取于 {0}").format(datetime.fromtimestamp(origin["fetched_at"], UTC).strftime("%Y-%m-%d %H:%M UTC"))
+        line += (_("（缓存，已过期，联网失败{0}）") if origin.get("stale") else _("（缓存{0}）")).format(when)
+    if origin.get("ignored_cache"):
+        line += _("（已忽略来自 {0} 的缓存）").format(origin["ignored_cache"])
+    return line
 
 
 # ---------------------------------------------------------------- installed plugins
@@ -533,15 +563,65 @@ def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
     return module.fingerprint(scaffold)
 
 
+CLIENT_NAMES = {"claude": "Claude Code", "codex": "Codex", "cursor": "Cursor"}
+CLIENT_KEYS = ("claude", "codex", "cursor")
+
+
+def ignored_clients(env: Env) -> list[str]:
+    """The clients the user chose to ignore (user config ``ignored_clients``); unknown names are dropped."""
+    try:
+        value = read_json(env.config_file).get("ignored_clients", [])
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [name for name in CLIENT_KEYS if isinstance(value, list) and name in value]
+
+
+def select_clients(env: Env, explicit: list[str] | None) -> dict:
+    """Which clients a run covers. ``--client`` wins over the ignore setting; without it, ignored ones are left out."""
+    ignored = ignored_clients(env)
+    if explicit:
+        chosen = [name for name in CLIENT_KEYS if name in explicit]
+        return {"explicit": chosen, "active": chosen, "ignored": [], "excluded": [n for n in CLIENT_KEYS if n not in chosen]}
+    return {"explicit": None, "active": [n for n in CLIENT_KEYS if n not in ignored], "ignored": ignored, "excluded": []}
+
+
+def active_clients(env: Env, explicit: list[str] | None = None) -> list[str]:
+    """Detected clients minus ignored ones (an explicit ``--client`` list is used as given)."""
+    if explicit:
+        return list(explicit)
+    return [name for name in detect_clients(env) if name not in ignored_clients(env)]
+
+
+def unused_client_hints(env: Env, plugins: list[dict], ignored: list[str]) -> list[str]:
+    """Detected clients that look unused: with several clients around, one that has no agenthelm plugin installed or
+    whose agenthelm plugins are all behind. The caller shows each hint once."""
+    detected = [name for name in detect_clients(env)]
+    if len(detected) < 2:
+        return []
+    hints = []
+    for name in detected:
+        if name in ignored:
+            continue
+        mine = [item for item in plugins if item["client"] == name]
+        if not mine or all(item["status"] == "behind" for item in mine):
+            hints.append(name)
+    return hints
+
+
 def run_check(env: Env, project: Path | None, *, latest_source: str | None = None, offline: bool = False,
-              max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False) -> dict:
+              max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False,
+              clients: list[str] | None = None) -> dict:
     latest, origin = load_latest(
         env, latest_source, offline=offline, max_age=max_age,
         timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS, backoff=hook_mode,
     )
     names = set(latest.get("plugins", {}))
     installed = installed_plugins(env, names)
-    plugins = plugin_findings(latest, installed)
+    selection = select_clients(env, clients)
+    everything = plugin_findings(latest, installed)
+    # A legacy copy belongs to no client: it stays visible whichever clients are selected.
+    plugins = [item for item in everything if item["client"] == "legacy" or item["client"] in selection["active"]]
+    ignored_plugins = [item for item in everything if item["client"] in selection["ignored"]]
     content = content_findings(project, latest) if project else []
     opinion = opinion_findings(project, installed) if project else []
     scaffold = scaffold_report(env, project, reprompt=reprompt)
@@ -552,6 +632,9 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     scaffold_required = sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "must")
     behind = [item for item in plugins if item["status"] == "behind"]
     legacy = [item for item in plugins if item["client"] == "legacy"]
+    by_client = {name: {"behind": sum(1 for item in plugins if item["client"] == name and item["status"] == "behind"),
+                        "total": sum(1 for item in plugins if item["client"] == name)}
+                 for name in selection["active"] if any(item["client"] == name for item in plugins)}
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
     opinion_updates = [item for item in opinion if item["status"] == "update-available"]
     settings = user_settings_module()
@@ -561,6 +644,11 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "latest": {"source": origin, "released_at": latest.get("released_at")},
         "_latest": latest,
         "plugins": plugins,
+        "ignored_plugins": ignored_plugins,
+        "clients": {"selected": selection["explicit"], "ignored": selection["ignored"],
+                    "excluded": selection["excluded"],
+                    "unused": [] if (hook_mode or selection["explicit"])
+                    else unused_client_hints(env, everything, selection["ignored"])},
         "content": content,
         "opinion": opinion,
         "scaffold": scaffold,
@@ -574,6 +662,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
             "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
             "local_only_attention": local_attention,
             "plugins_behind": len(behind),
+            "by_client": by_client,
             "breaking": any(item["breaking"] for item in behind),
             "content_updates": len(content_updates),
             "content_conflicts": sum(1 for item in content if item["status"] == "conflict"),
@@ -599,7 +688,13 @@ def one_line(report: dict) -> str | None:
         return None
     parts = []
     if summary["plugins_behind"]:
-        parts.append(_("{0} 个插件可更新").format(summary['plugins_behind']) + (_("（含不兼容变更）") if summary["breaking"] else ""))
+        text = _("{0} 个插件可更新").format(summary['plugins_behind']) + (_("（含不兼容变更）") if summary["breaking"] else "")
+        per_client = summary.get("by_client") or {}
+        if per_client:
+            text += _("（") + _("；").join(
+                (_("{0}：{1} 个可更新").format(CLIENT_NAMES[name], item["behind"]) if item["behind"]
+                 else _("{0}：已是最新").format(CLIENT_NAMES[name])) for name, item in per_client.items()) + _("）")
+        parts.append(text)
     if summary["content_updates"]:
         parts.append(_("{0} 个模板/样例包可更新").format(summary['content_updates'])
                      + (_("（{0} 个本地有改动，更新时逐文件确认）").format(summary['content_conflicts']) if summary["content_conflicts"] else ""))
@@ -720,7 +815,16 @@ def render_machine(report: dict) -> list[str]:
 def render_text(report: dict, *, show_skipped: bool = False, details: bool = False, show_extras: bool = False) -> str:
     lines = []
     origin = report["latest"]["source"]
-    lines.append(_("云端版本源：{0}").format(origin.get('source')) + (_("（缓存）") if origin.get("cached") else ""))
+    lines.append(origin_line(origin))
+    clients = report.get("clients") or {}
+    if clients.get("selected"):
+        lines.append(_("只处理所选客户端：{0}").format(_("、").join(CLIENT_NAMES[name] for name in clients["selected"])))
+    for name in clients.get("ignored", []):
+        shown = [item for item in report.get("ignored_plugins", []) if item["client"] == name]
+        lines.append(_("  [已忽略] {0}（用户配置 ignored_clients；不参与检查与更新）").format(CLIENT_NAMES[name]))
+        if show_skipped:
+            for item in shown:
+                lines.append(_("      {0} {1} → {2}（未检查）").format(item["plugin"], item.get("version"), item.get("latest")))
     if not report["plugins"]:
         lines.append(_("未发现已安装的 agenthelm 插件。"))
     for item in report["plugins"]:
@@ -874,7 +978,7 @@ def release_source(latest: dict, workdir: Path, source: Path | None = None) -> P
     release = latest.get("release") or github_release(latest)
     tag, digest = release.get("tag"), release.get("tarball_sha256")
     if not tag or not digest:
-        raise CheckError(_("云端 latest.json 没有发布 tag 与摘要；请用 --source 指定本地仓库"))
+        raise Unavailable(_("云端 latest.json 没有发布 tag 与摘要；请用 --source 指定本地仓库"))
     url = release.get("tarball_url") or f"https://github.com/{github_slug(latest)}/releases/download/{tag}/agenthelm-{tag}.tar.gz"
     archive = workdir / "release.tar.gz"
     request = urllib.request.Request(url, headers={"User-Agent": "agenthelm"})
@@ -900,7 +1004,11 @@ def _agent_pack_config():
 
 @dataclass
 class Step:
-    """One planned action; ``command`` runs a client CLI, ``action`` runs in-process."""
+    """One planned action; ``command`` runs a client CLI, ``action`` runs in-process.
+
+    ``verify`` lists the plugins whose installed version is read back before and after the step (``targets`` holds
+    the version each is expected to reach); ``skipped`` marks a step that has nothing to do and why.
+    """
 
     kind: str
     client: str | None
@@ -908,6 +1016,11 @@ class Step:
     command: list[str] | None = None
     action: Any = None
     blocked: str | None = None
+    verify: list[str] | None = None
+    targets: dict[str, str | None] = field(default_factory=dict)
+    scope: str | None = None
+    skipped: str | None = None
+    note: str | None = None
 
     def view(self) -> dict:
         data = {"kind": self.kind, "client": self.client, "description": self.description}
@@ -915,6 +1028,10 @@ class Step:
             data["command"] = " ".join(self.command)
         if self.blocked:
             data["blocked"] = self.blocked
+        if self.skipped:
+            data["skipped"] = self.skipped
+        if self.note:
+            data["note"] = self.note
         return data
 
 
@@ -948,29 +1065,50 @@ def _cli(env: Env, name: str, *args: str) -> tuple[list[str], str | None]:
     return [found or name, *args], (None if found else _("未找到 {0} 命令（已查 PATH 与常见安装位置；可用 AGENTHELM_{1} 指定）").format(name, name.upper()))
 
 
+def installed_versions(env: Env, client: str | None, plugins: list[str], scope: str | None = None) -> dict[str, str | None]:
+    """The version of each plugin installed in ``client`` right now (None: not installed or unreadable)."""
+    found: dict[str, str | None] = {}
+    for item in installed_plugins(env, set(plugins)):
+        if item["client"] != client or (scope and item.get("scope") and item["scope"] != scope):
+            continue
+        kept = found.get(item["plugin"])
+        if item["plugin"] not in found or (version_key(item.get("version") or "") or (0,)) > (version_key(kept or "") or (0,)):
+            found[item["plugin"]] = item.get("version")
+    return {plugin: found.get(plugin) for plugin in plugins}
+
+
+def already_installed_reason(version: str | None, target: str | None) -> str:
+    if version and target and is_newer(target, version):
+        return _("已安装 {0}，云端是 {1}：install 不会升级已安装的插件，请用 `{2} update`").format(version, target, CLI)
+    if version and target and is_newer(version, target):
+        return _("已安装 {0}（高于云端的 {1}）：install 不会改动已安装的插件").format(version, target)
+    return _("已安装 {0}，已是最新：install 不会改动已安装的插件").format(version)
+
+
 def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str], source: Path | None,
                   home: Path, marketplace_source: str | None = None) -> list[Step]:
     slug = marketplace_source or github_slug(latest)
+    targets = {plugin: latest.get("plugins", {}).get(plugin, {}).get("version") for plugin in plugins}
     steps: list[Step] = []
     for client in clients:
-        if client == "claude":
-            command, blocked = _cli(env, "claude", "plugin", "marketplace", "add", slug)
-            steps.append(Step("install", "claude", _("Claude Code 添加 agenthelm 市场（{0}）").format(slug), command, blocked=blocked))
+        present = installed_versions(env, client, plugins)
+        if client in ("claude", "codex"):
+            name = CLIENT_NAMES[client]
+            command, blocked = _cli(env, client, "plugin", "marketplace", "add", slug)
+            steps.append(Step("install", client, _("{0} 添加 agenthelm 市场（{1}）").format(name, slug), command, blocked=blocked))
             for plugin in plugins:
-                command, blocked = _cli(env, "claude", "plugin", "install", f"{plugin}@{MARKETPLACE}")
-                steps.append(Step("install", "claude", _("Claude Code 安装 {0}").format(plugin), command, blocked=blocked))
-        elif client == "codex":
-            command, blocked = _cli(env, "codex", "plugin", "marketplace", "add", slug)
-            steps.append(Step("install", "codex", _("Codex 添加 agenthelm 市场（{0}）").format(slug), command, blocked=blocked))
-            for plugin in plugins:
-                command, blocked = _cli(env, "codex", "plugin", "add", f"{plugin}@{MARKETPLACE}")
-                steps.append(Step("install", "codex", _("Codex 安装 {0}").format(plugin), command, blocked=blocked))
+                add = ("plugin", "install") if client == "claude" else ("plugin", "add")
+                command, blocked = _cli(env, client, *add, f"{plugin}@{MARKETPLACE}")
+                steps.append(Step("install", client, _("{0} 安装 {1}").format(name, plugin), command, blocked=blocked,
+                                  verify=[plugin], targets={plugin: targets[plugin]},
+                                  skipped=already_installed_reason(present[plugin], targets[plugin]) if present[plugin] else None))
         elif client == "cursor":
-            steps.append(cursor_step(latest, plugins, source, home, _("安装")))
+            steps.append(cursor_step(latest, plugins, source, home, _("安装"), env=env))
     return steps
 
 
-def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Path, verb: str) -> Step:
+def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Path, verb: str,
+                env: Env | None = None) -> Step:
     def run(apply: bool, recovery_root: Path | None) -> list[dict]:
         config = _agent_pack_config()
         with tempfile.TemporaryDirectory(prefix="agenthelm-") as temporary:
@@ -978,8 +1116,15 @@ def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Pat
             return [config.install_plugin(root / "plugins" / plugin, "cursor", home=home, apply=apply,
                                           replace=True, recovery_root=recovery_root)
                     for plugin in plugins]
+    note = None
+    if env is not None:
+        present = {plugin: version for plugin, version in installed_versions(env, "cursor", plugins).items() if version}
+        if present:
+            note = _("已安装 {0}；会用发布包里的版本覆盖它们").format(
+                _("、").join(f"{plugin} {version}" for plugin, version in present.items()))
     return Step("install", "cursor", _("Cursor {0} {1} 到 ~/.cursor/plugins/local（重启 Cursor 生效）").format(verb, _('、').join(plugins)),
-                action=run)
+                action=run, verify=list(plugins),
+                targets={plugin: latest.get("plugins", {}).get(plugin, {}).get("version") for plugin in plugins}, note=note)
 
 
 def update_steps(env: Env, report: dict, project: Path | None, source: Path | None, home: Path,
@@ -997,13 +1142,18 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
                 extra = ["--scope", item["scope"]] if item.get("scope") and item["scope"] != "user" else []
                 command, blocked = _cli(env, "claude", "plugin", "update", f"{item['plugin']}@{MARKETPLACE}", *extra)
                 steps.append(Step("update", "claude", _("Claude Code 更新 {0} → {1}").format(item['plugin'], item['latest']),
-                                  command, blocked=blocked))
-        if any(item["client"] == "codex" for item in behind):
+                                  command, blocked=blocked, verify=[item["plugin"]],
+                                  targets={item["plugin"]: item["latest"]}, scope=item.get("scope")))
+        codex = [item for item in behind if item["client"] == "codex"]
+        if codex:
             command, blocked = _cli(env, "codex", "plugin", "marketplace", "upgrade", MARKETPLACE)
-            steps.append(Step("update", "codex", _("Codex 升级 agenthelm 市场与已装插件"), command, blocked=blocked))
+            steps.append(Step("update", "codex", _("Codex 升级 agenthelm 市场与已装插件"), command, blocked=blocked,
+                              verify=sorted({item["plugin"] for item in codex}),
+                              targets={item["plugin"]: item["latest"] for item in codex}))
         cursor = sorted({item["plugin"] for item in behind if item["client"] == "cursor"})
         if cursor:
-            steps.append(cursor_step(latest, cursor, source, home, _("更新")))
+            steps.append(cursor_step(latest, cursor, source, home, _("更新"), env=env))
+            steps[-1].targets = {item["plugin"]: item["latest"] for item in behind if item["client"] == "cursor"}
     if only in (None, "content") and project is not None:
         for item in report["content"]:
             if item.get("status") not in {"update-available", "conflict"}:
@@ -1050,35 +1200,179 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
     return Step("content", None, description, action=run, blocked=blocked)
 
 
+STDERR_LINES = 20
+
+# Failure texts the client CLIs are known to print: (pattern, what it means, what to do next).
+KNOWN_FAILURES = (
+    (re.compile(r"network source differs|differs from the one declared", re.I),
+     N_("市场来源与 settings.json 里的声明不一致：Claude Code 要求这个市场名下的来源，与 settings 里 extraKnownMarketplaces 为它声明的来源一致。"),
+     N_("把 --marketplace-source 改成与 ~/.claude/settings.json 里 extraKnownMarketplaces.agenthelm 声明相同的来源（含 ref），"
+        "或先修改那处声明，再重试。")),
+)
+
+
+def explain_failure(stderr: str) -> tuple[str, str] | None:
+    for pattern, reason, advice in KNOWN_FAILURES:
+        if pattern.search(stderr):
+            return _(reason), _(advice)
+    return None
+
+
+def tail_lines(text: str, limit: int = STDERR_LINES) -> str:
+    lines = text.strip().splitlines()
+    if len(lines) <= limit:
+        return "\n".join(lines)
+    return _("…（前面省略 {0} 行）").format(len(lines) - limit) + "\n" + "\n".join(lines[-limit:])
+
+
+UNCHANGED_REASONS = {
+    "claude": N_("该客户端的市场条目 version 没有变（Claude Code 只看市场条目的 version 判断是否有更新），或市场没有固定到这个版本"),
+    "codex": N_("该客户端的市场没有固定到此版本（可能在跟随默认分支，升级到的是那里的版本）"),
+    "cursor": N_("发布包里的版本与已装的相同，文件已按发布包重写"),
+}
+
+
+def verify_step(step: Step, record: dict, before: dict, after: dict) -> None:
+    """Compare the versions read back around a step that ran fine; say whether it took effect and why not."""
+    changes = []
+    for plugin in step.verify or []:
+        target = step.targets.get(plugin)
+        entry = {"plugin": plugin, "before": before.get(plugin), "after": after.get(plugin), "target": target}
+        entry["changed"] = entry["before"] != entry["after"]
+        changes.append(entry)
+    record["changes"] = changes
+    if len(changes) == 1:
+        record["before"], record["after"] = changes[0]["before"], changes[0]["after"]
+    unchanged = [entry for entry in changes if not entry["changed"]]
+    if not unchanged:
+        return
+    record["status"] = "unchanged"
+    if all(entry["after"] is None for entry in unchanged):
+        record["reason"] = _("命令成功，但读不到该客户端里这个插件的版本，无法确认是否生效")
+    elif all(entry["target"] and entry["after"] == entry["target"] for entry in unchanged):
+        record["reason"] = _("已经是目标版本")
+    else:
+        record["reason"] = _(UNCHANGED_REASONS.get(step.client or "", N_("版本没有变化，原因未知")))
+
+
 def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
-                  child_env: dict[str, str] | None = None) -> list[dict]:
+                  child_env: dict[str, str] | None = None, env: Env | None = None) -> list[dict]:
+    """Run (or preview) the steps. After a failure the same client's remaining steps are not run, other clients' are.
+
+    With ``env`` the installed versions of the plugins a step changes are read back around it, so ``applied`` means the
+    version really moved and ``unchanged`` means the command succeeded but nothing changed.
+    """
     results = []
+    failed_clients: dict[str | None, str] = {}
     for step in steps:
         record = step.view()
-        if step.blocked:
+        if apply and step.client is not None and step.client in failed_clients and not step.blocked:
+            record["status"] = "not_run"
+            record["reason"] = _("同一客户端前面的步骤失败（{0}），这一步没有执行").format(failed_clients[step.client])
+        elif step.blocked:
             record["status"] = "blocked"
-        elif step.action is not None:
-            try:
-                record["result"] = step.action(apply, recovery_root)
-                record["status"] = "applied" if apply else "preview"
-                outcome = record["result"]
-                if apply and isinstance(outcome, dict) and outcome.get("applied") is False and outcome.get("blocked"):
-                    # Files still wait for a choice: nothing was written, so this is not "done".
-                    record["status"], record["needs_choice"] = "blocked", True
-            except Exception as exc:  # noqa: BLE001 - report every step, stop nothing silently
-                record["status"], record["error"] = "failed", str(exc)
-        elif apply:
-            completed = subprocess.run(step.command, capture_output=True, text=True, check=False, env=child_env)
-            record["status"] = "applied" if completed.returncode == 0 else "failed"
-            output = (completed.stdout + completed.stderr).strip()
-            if output:
-                record["output"] = output[-600:]
+        elif step.skipped:
+            record["status"] = "skipped"
         else:
-            record["status"] = "preview"
+            before = installed_versions(env, step.client, step.verify, step.scope) if apply and env and step.verify else {}
+            if step.action is not None:
+                try:
+                    record["result"] = step.action(apply, recovery_root)
+                    record["status"] = "applied" if apply else "preview"
+                    outcome = record["result"]
+                    if apply and isinstance(outcome, dict) and outcome.get("applied") is False and outcome.get("blocked"):
+                        # Files still wait for a choice: nothing was written, so this is not "done".
+                        record["status"], record["needs_choice"] = "blocked", True
+                except Unavailable as exc:
+                    record["status"], record["error"] = "unavailable", str(exc)
+                    if step.client == "cursor":
+                        record["next"] = _("用 --source <本地仓库> 指向本地检出；不使用 Cursor 时用 --client 只选其他客户端，"
+                                           "或长期忽略：{0} config ignore-client cursor --apply").format(CLI)
+                except Exception as exc:  # noqa: BLE001 - report every step, stop nothing silently
+                    record["status"], record["error"] = "failed", str(exc)
+            elif apply:
+                try:
+                    completed = subprocess.run(step.command, capture_output=True, text=True, check=False, env=child_env)
+                except OSError as exc:
+                    record.update({"status": "failed", "exit_code": None, "stderr": "", "error": str(exc)})
+                else:
+                    record["status"] = "applied" if completed.returncode == 0 else "failed"
+                    record["exit_code"] = completed.returncode
+                    output = (completed.stdout + completed.stderr).strip()
+                    if output and completed.returncode == 0:
+                        record["output"] = output[-600:]
+                    if completed.returncode != 0:
+                        record["stderr"] = tail_lines(completed.stderr)
+                        last = next((line.strip() for line in reversed(completed.stderr.splitlines()) if line.strip()), "")
+                        record["error"] = _("命令退出码 {0}").format(completed.returncode) + (f"：{last}" if last else "")
+                        known = explain_failure(completed.stderr)
+                        if known:
+                            record["reason"], record["next"] = known
+            else:
+                record["status"] = "preview"
+            if apply and env and step.verify and record["status"] == "applied":
+                verify_step(step, record, before, installed_versions(env, step.client, step.verify, step.scope))
         results.append(record)
         if apply and record["status"] == "failed":
-            break
+            failed_clients.setdefault(step.client, step.description)
     return results
+
+
+CLIENT_ORDER = {name: index for index, name in enumerate(CLIENT_KEYS)}
+
+
+def step_outcome_ok(results: list[dict]) -> bool:
+    """False when a step failed, ran without effect, or still waits for a choice."""
+    return not any(r["status"] in {"failed", "unchanged"} or r.get("needs_choice") for r in results)
+
+
+def outcome_summary(results: list[dict]) -> dict:
+    """Per-client outcome of an applied run, so one client's trouble neither hides nor taints the others."""
+    rank = {"failed": 0, "unchanged": 1, "unavailable": 2, "blocked": 3, "ok": 4, "skipped": 5}
+    clients: dict[str, dict] = {}
+    for record in results:
+        name = record.get("client") or "content"
+        status = {"applied": "ok", "failed": "failed", "unchanged": "unchanged", "unavailable": "unavailable",
+                  "blocked": "blocked", "skipped": "skipped", "not_run": "failed"}.get(record["status"], "ok")
+        entry = clients.setdefault(name, {"status": "skipped", "steps": 0, "applied": 0, "failed": 0, "unchanged": 0,
+                                          "not_run": 0})
+        entry["steps"] += 1
+        entry["applied"] += record["status"] == "applied"
+        entry["failed"] += record["status"] == "failed"
+        entry["unchanged"] += record["status"] == "unchanged"
+        entry["not_run"] += record["status"] == "not_run"
+        if rank[status] < rank[entry["status"]]:
+            entry["status"] = status
+        if status in {"unavailable"} and record.get("error"):
+            entry["reason"] = record["error"]
+    return {"ok": step_outcome_ok(results), "clients": clients}
+
+
+def render_outcome(results: list[dict]) -> list[str]:
+    """The closing lines of an applied run: what took effect, what did not, and which clients are unaffected."""
+    summary = outcome_summary(results)
+    names = {**CLIENT_NAMES, "content": _("项目内容")}
+    lines = [_("汇总：")]
+    labels = {"ok": _("已完成"), "failed": _("失败"), "unchanged": _("命令成功但版本没有变化"),
+              "unavailable": _("不可用"), "blocked": _("未执行（阻塞）"), "skipped": _("无需操作")}
+    ordered = sorted(summary["clients"].items(), key=lambda item: CLIENT_ORDER.get(item[0], 9))
+    for name, entry in ordered:
+        text = _("  {0}：{1}").format(names.get(name, name), labels[entry['status']])
+        if entry.get("reason"):
+            text += _("（{0}）").format(entry["reason"])
+        if entry["not_run"]:
+            text += _("；其后 {0} 步没有执行").format(entry["not_run"])
+        lines.append(text)
+    bad = [names.get(n, n) for n, e in ordered if e["status"] in {"failed", "unchanged"}]
+    good = [names.get(n, n) for n, e in ordered if e["status"] == "ok"]
+    if bad:
+        lines.append(_("整体：没有全部成功——{0} 需要处理；{1}").format(
+            _("、").join(bad), (_("其他已完成：{0}。").format(_("、").join(good)) if good else _("没有其他客户端完成。"))))
+    elif any(r.get("needs_choice") for r in results):
+        lines.append(_("整体：还有文件等你选择，尚未完成。"))
+    elif summary["ok"] and good:
+        lines.append(_("整体：已完成。"))
+    return lines
 
 
 # ---------------------------------------------------------------- legacy migration
@@ -1272,6 +1566,13 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="agenthelm", description=_("agenthelm：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 插件。"))
     sub = result.add_subparsers(dest="command", required=True)
 
+    def refresh(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--refresh", action="store_true", help=_("忽略一天的缓存，立即联网"))
+
+    def client_filter(command: argparse.ArgumentParser, help_text: str | None = None) -> None:
+        command.add_argument("--client", action="append", choices=CLIENTS,
+                             help=help_text or _("只处理这个客户端（可重复）；默认处理检测到的全部客户端（用户配置 ignored_clients 里的除外）"))
+
     def common(command: argparse.ArgumentParser, *, project: bool = True) -> None:
         command.add_argument("--latest", help=_("latest.json 的 URL 或本地路径（测试、离线镜像）"))
         command.add_argument("--output", choices=("text", "json"), default="text")
@@ -1283,7 +1584,8 @@ def parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", help=_("只读检查插件、模板/样例与 Opinion 是否落后于云端"))
     common(check)
     check.add_argument("--offline", action="store_true", help=_("只用缓存，不联网"))
-    check.add_argument("--refresh", action="store_true", help=_("忽略一天的缓存，立即联网"))
+    refresh(check)
+    client_filter(check)
     check.add_argument("--hook", action="store_true", help=_("会话开始时静默调用：有更新才输出一行"))
     check.add_argument("--hook-format", choices=("text", "claude-hook"), default="text")
     check.add_argument("--strict", action="store_true", help=_("有可更新项或必须处理的脚手架差异时退出码为 1（CI 用；可选与信息性的差异不算）"))
@@ -1299,7 +1601,8 @@ def parser() -> argparse.ArgumentParser:
 
     install = sub.add_parser("install", help=_("经各客户端的原生市场安装 agenthelm 插件（默认预览）"))
     common(install, project=False)
-    install.add_argument("--client", action="append", choices=CLIENTS, help=_("默认安装到检测到的全部客户端"))
+    client_filter(install, _("只安装到这个客户端（可重复）；默认安装到检测到的全部客户端（用户配置 ignored_clients 里的除外）"))
+    refresh(install)
     install.add_argument("--plugin", action="append", help=_("默认安装全部插件"))
     install.add_argument("--source", type=Path, help=_("Cursor 安装用的本地仓库（默认下载发布包）"))
     install.add_argument("--marketplace-source", help=_("市场来源（默认 latest.json 的 GitHub 仓库；可用镜像或本地路径）"))
@@ -1307,6 +1610,8 @@ def parser() -> argparse.ArgumentParser:
 
     update = sub.add_parser("update", help=_("更新落后的插件与模板/样例（默认预览，确认后 --apply）"))
     common(update)
+    client_filter(update)
+    refresh(update)
     update.add_argument("--only", choices=("plugins", "content"))
     update.add_argument("--accept", action="append", default=[], help=_("内容更新：用新模板替换这个本地已改动的文件"))
     update.add_argument("--keep", action="append", default=[], help=_("内容更新：保留这个文件的本地内容"))
@@ -1322,7 +1627,8 @@ def parser() -> argparse.ArgumentParser:
     migrate = sub.add_parser("migrate", help=_("把旧方式安装（agent-pack 复制 + 软链）迁到市场安装（默认预览）"))
     common(migrate, project=False)
     migrate.add_argument("--install", action="store_true", help=_("先经市场安装到检测到的客户端"))
-    migrate.add_argument("--client", action="append", choices=CLIENTS)
+    client_filter(migrate)
+    refresh(migrate)
     migrate.add_argument("--source", type=Path)
     migrate.add_argument("--marketplace-source")
     migrate.add_argument("--apply", action="store_true")
@@ -1351,15 +1657,43 @@ def parser() -> argparse.ArgumentParser:
 
 
 def _print_steps(results: list[dict], apply: bool) -> None:
-    labels = {"preview": _("预览"), "applied": _("完成"), "blocked": _("阻塞"), "failed": _("失败")}
+    labels = {"preview": _("预览"), "applied": _("完成"), "blocked": _("阻塞"), "failed": _("失败"),
+              "unchanged": _("完成，无变化"), "skipped": _("跳过"), "unavailable": _("不可用"), "not_run": _("未执行")}
     for record in results:
         line = f"  [{labels.get(record['status'], record['status'])}] {record['description']}"
         if record.get("command"):
             line += f"\n      $ {record['command']}"
+        if record.get("note"):
+            line += f"\n      {record['note']}"
         if record.get("blocked"):
             line += f"\n      {record['blocked']}"
-        if record.get("error"):
+        if record.get("skipped"):
+            line += f"\n      {record['skipped']}"
+        if record["status"] in {"failed", "unavailable"}:
+            if record.get("exit_code") is not None:
+                line += _("\n      退出码：{0}").format(record["exit_code"])
+            if record.get("error"):
+                line += _("\n      错误：{0}").format(record["error"])
+            if record.get("reason"):
+                line += _("\n      原因：{0}").format(record["reason"])
+            if record.get("next"):
+                line += _("\n      下一步：{0}").format(record["next"])
+            if record.get("stderr"):
+                line += _("\n      客户端 stderr（最多 {0} 行）：").format(STDERR_LINES)
+                line += "".join(f"\n        {text}" for text in record["stderr"].splitlines())
+        elif record.get("error"):
             line += f"\n      {record['error']}"
+        if record["status"] == "not_run":
+            line += f"\n      {record['reason']}"
+        for change in record.get("changes", []) if record["status"] in {"applied", "unchanged"} else []:
+            prefix = f"{change['plugin']}: " if len(record["changes"]) > 1 else ""
+            if change["changed"]:
+                line += f"\n      {prefix}{change['before'] or _('（未安装）')} → {change['after']}" + (
+                    _("（目标 {0}）").format(change["target"]) if change.get("target") and change["after"] != change["target"] else "")
+            else:
+                line += _("\n      {0}仍是 {1}（目标 {2}）").format(prefix, change["after"] or _("（读不到）"), change.get("target") or "?")
+        if record["status"] == "unchanged":
+            line += _("\n      原因：{0}").format(record["reason"])
         result = record.get("result")
         if isinstance(result, dict) and result.get("mode") == "refresh":
             for item in result.get("files", []):
@@ -1371,6 +1705,8 @@ def _print_steps(results: list[dict], apply: bool) -> None:
             if result.get("hint"):
                 line += "\n" + "\n".join(f"      {hint}" for hint in result["hint"].splitlines())
         print(line)
+    if apply and results:
+        print("\n".join(render_outcome(results)))
     if not apply and results:
         print(_("以上为预览；确认后追加 --apply 执行。"))
 
@@ -1482,6 +1818,26 @@ def print_fingerprint(env: Env, report: dict, args: argparse.Namespace, project:
     return 1 if differences else 0
 
 
+def client_hint_text(env: Env, report: dict) -> str:
+    """One-time hint for a detected client that looks unused, with the command that ignores it. Recorded once shown."""
+    pending = (report.get("clients") or {}).get("unused") or []
+    state_file = env.state_dir / "agenthelm" / "client-hints.json"
+    try:
+        seen = read_json(state_file).get("shown", [])
+    except (OSError, ValueError, AttributeError):
+        seen = []
+    fresh = [name for name in pending if name not in seen]
+    if not fresh:
+        return ""
+    try:
+        write_json_atomic(state_file, {"shown": sorted({*seen, *fresh})})
+    except OSError:
+        pass
+    return "".join(_("提示：检测到 {0}，但没有看到你在用它（没有装 agenthelm 插件，或插件都落后）。不使用的话可以忽略它，之后 check / update / "
+                     "会话开始提示都不再统计：{1} config ignore-client {2}（预览；加 --apply 写入）。这条提示只显示一次。\n").format(
+        CLIENT_NAMES[name], CLI, name) for name in fresh)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["project"]:
@@ -1514,7 +1870,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "check":
             report = run_check(env, project, latest_source=args.latest, offline=args.offline,
-                               max_age=0 if args.refresh else CACHE_TTL_SECONDS, reprompt=args.reprompt)
+                               max_age=0 if args.refresh else CACHE_TTL_SECONDS, reprompt=args.reprompt,
+                               clients=args.client)
             report.pop("_latest")
             if args.fingerprint or args.explain:
                 return print_fingerprint(env, report, args, project)
@@ -1522,6 +1879,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(report, ensure_ascii=False, indent=2))
             else:
                 sys.stdout.write(render_text(report, show_skipped=args.show_skipped, details=args.details, show_extras=args.show_extras))
+                sys.stdout.write(client_hint_text(env, report))
             return 1 if args.strict and not report["summary"]["up_to_date"] else 0
         if args.command == "doctor":
             result = doctor(env, run_check(env, project, latest_source=args.latest))
@@ -1534,17 +1892,19 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  [legacy] {item['kind']} {item['name']}: {item['path']}")
                 print(_("没有发现问题。") if result["ok"] and not result["legacy"] else "")
             return 0 if result["ok"] else 1
-        latest, _origin = load_latest(env, args.latest, max_age=0)
+        # install / update / migrate change things, so they always fetch fresh data; --refresh is accepted for symmetry.
+        latest, origin = load_latest(env, args.latest, max_age=0)
         if args.command == "install":
-            clients = args.client or detect_clients(env)
+            clients = active_clients(env, args.client)
             plugins = args.plugin or sorted(latest.get("plugins", {}))
             steps = install_steps(env, latest, clients, plugins, args.source, home, args.marketplace_source)
             results = execute_steps(steps, apply=args.apply, recovery_root=None,
-                                    child_env=env.child_environment())
-            payload: dict = {"ok": all(r["status"] != "failed" for r in results), "applied": args.apply,
+                                    child_env=env.child_environment(), env=env)
+            payload: dict = {"ok": step_outcome_ok(results), "applied": args.apply, "latest": origin,
                              "clients": clients, "steps": results}
         elif args.command == "update":
-            report = run_check(env, project, latest_source=args.latest, max_age=0)
+            report = run_check(env, project, latest_source=args.latest, max_age=0, clients=args.client)
+            origin = report["latest"]["source"]
             recovery = args.recovery_dir
             if args.apply and recovery is None and project is not None:
                 recovery = recovery_dir_for(env, "content")
@@ -1555,9 +1915,9 @@ def main(argv: list[str] | None = None) -> int:
             steps = update_steps(env, report, project, args.source, home, args.accept, args.keep,
                                  recovery, args.only, content_flags=flags)
             results = execute_steps(steps, apply=args.apply, recovery_root=None,
-                                    child_env=env.child_environment())
-            payload = {"ok": all(r["status"] != "failed" and not r.get("needs_choice") for r in results),
-                       "applied": args.apply, "steps": results, "summary": report["summary"]}
+                                    child_env=env.child_environment(), env=env)
+            payload = {"ok": step_outcome_ok(results), "applied": args.apply, "latest": origin,
+                       "steps": results, "summary": report["summary"]}
             backups = [record["result"] for record in results
                        if isinstance(record.get("result"), dict) and record["result"].get("recovery")]
             if args.apply and backups:
@@ -1568,11 +1928,11 @@ def main(argv: list[str] | None = None) -> int:
         else:  # migrate
             names = set(latest.get("plugins", {}))
             artifacts = legacy_artifacts(env, names)
-            steps = install_steps(env, latest, args.client or detect_clients(env), sorted(names),
+            steps = install_steps(env, latest, active_clients(env, args.client), sorted(names),
                                   args.source, home, args.marketplace_source) if args.install else []
             results = execute_steps(steps, apply=args.apply, recovery_root=None,
-                                    child_env=env.child_environment())
-            payload = {"ok": all(r["status"] != "failed" for r in results), "applied": args.apply,
+                                    child_env=env.child_environment(), env=env)
+            payload = {"ok": step_outcome_ok(results), "applied": args.apply, "latest": origin,
                        "steps": results, "legacy": artifacts}
             if args.apply and payload["ok"] and artifacts:
                 recovery = recovery_dir_for(env, "migrate")
@@ -1587,6 +1947,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.output == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
+        print(origin_line(payload["latest"]))
         if payload.get("message"):
             print(payload["message"])
         _print_steps(payload["steps"], args.apply)
