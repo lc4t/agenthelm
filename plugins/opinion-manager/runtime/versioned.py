@@ -524,9 +524,13 @@ def render(profile: dict[str, Any]) -> str:
     lines = ["<!-- opinion-manager:metadata", pretty(metadata).rstrip(), "-->", "", "# Agent Opinion", "", "本文件包含当前环境中用户确认的 Agent 行为、表达、判断与交付要求。"]
     for rule in effective_rules(profile).values():
         lines.extend(("", render_rule(profile, rule)))
-    if profile["custom"]:
-        lines.extend(("", "## 用户自定义规则", "", profile["custom"]))
+    lines.extend(custom_section(profile))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def custom_section(profile: dict[str, Any]) -> list[str]:
+    """OPINION.md 的自定义规则小节（标题属于正文，不随界面语言）；切片输出复用同一份。"""
+    return ["", "## 用户自定义规则", "", profile["custom"]] if profile["custom"] else []
 
 
 def file_state(path: Path) -> str | None:
