@@ -64,6 +64,23 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - 命令行输出默认英文；要中文：`export AGENTHELM_LANG=zh`，或 `agenthelm config language zh --apply`（等同在 `~/.config/agenthelm/config.json` 写 `{"language": "zh"}`；中文系统 locale 本来就是中文）。界面语言只影响输出；写进项目文件的语言是 Profile 的 `language`，用 `agenthelm config project-language zh|en` 查看或设置。界面显示为英文且没有设置界面语言时 `check` 会提示（中文界面不提示），`agenthelm config language-hint off` 关闭提示。
 - 观点候选的自动采集与未决事项提示也由 agent-pack 的 hook 完成：Claude Code 随插件生效；Codex 需在 `/hooks` 中审阅并信任；Cursor 运行 `npx @sakanano-moe/agenthelm nudge install-hooks --client cursor` 预览，确认后加 `--apply`。`nudge status` 查看生效配置，`AGENTHELM_NO_NUDGE=1` 关闭，详见 `plugins/agent-pack/references/nudge.md`。
 
+### 从任意状态升级
+
+`agenthelm check` 开头的“安装状态”按客户端给出结论、下一条命令（预览形式）、是否改动已有安装与原件恢复位置；`--output json` 的 `install_state.clients.<客户端>` 提供同样的稳定字段（`state`、`base_state`、`sub_status`、`installed`、`missing`、`installs`、`conflicts`、`market_conflict`、`untouched`、`summary`、`next_command`、`modifies_existing`、`modifies_note`、`recovery`）。
+
+| 状态（`state`） | 含义 | 下一条命令（先预览） | 会改动已有安装？ | 原件恢复位置 |
+|---|---|---|---|---|
+| `none` | 客户端存在，没有任何 agenthelm 插件 | `agenthelm install --client <客户端>` | 否 | 无 |
+| `partial` | 只装了一部分（`agents-init` 依赖其余插件） | `agenthelm install --client <客户端>`，只补缺的 | 否（Cursor 会整体重写，见右） | Cursor：`~/.agent-pack/recovery/<时间>-cursor-<插件>/` |
+| `marketplace` · `behind` | 市场安装，落后于云端 | `agenthelm update --client <客户端>` | 是，经客户端升级 | Claude Code 在 `~/.claude/plugins/cache/agenthelm/<插件>/` 保留旧版本目录；Codex 由客户端管理，不备份 |
+| `marketplace` · `current` / `ahead` | 已是最新 / 高于云端 | 无需操作 | — | — |
+| `dev` | 来自其他市场名、本地目录市场、指向别处的软链：显示路径与版本 | `agenthelm update --client <客户端>`（预览里标“不会改动”）；缺的插件用 `install` 补装 | 开发版/本地安装**不会**被 `update` / `migrate` 改动 | 无（不动它们）；想纳入市场管理，自行卸载这处安装后运行 `install` |
+| `legacy` | 只有旧方式安装（复制 + 软链） | `agenthelm migrate --install` | 是，旧安装移走 | `~/.agent-pack/recovery/<时间>-agenthelm-migrate/`（含 `migration.json`） |
+| `mixed` | 同一插件有多处不同来源的安装（市场 + 开发版 / 市场 + 旧方式） | 含旧方式：`agenthelm migrate`；否则 `agenthelm doctor` 查看后自行保留一处 | `migrate` 会移走旧安装；`doctor` 只读 | 同 `legacy` |
+| `market-conflict` | `settings.json` 的 `extraKnownMarketplaces.agenthelm` 指向别处，或固定在某个 ref | `agenthelm install --client claude --marketplace-source "<与声明一致的来源，含 #ref>"` | 否 | 无；agenthelm 从不修改 `settings.json`，要么自己改那处声明，要么让 `--marketplace-source` 与它一致 |
+
+要点：识别不等于处理，开发版与本地安装只告知；同一插件有多处安装时，哪一处生效由客户端决定，目前**未确认**，建议只保留一处。指定版本来源测试升级路径：`check --latest <latest.json 的 URL 或路径>`、`update --latest …`；固定到某个 tag 安装：`install --client claude --marketplace-source "owner/repo#<tag>"`（若 `settings.json` 已声明该市场，来源须与声明一致，Claude Code 否则拒绝）。
+
 ## 无客户端命令时的兜底
 
 无法使用客户端市场时，可下载完整仓库，在仓库根目录运行 `python3 scripts/bootstrap_and_init.py --client <codex|cursor|claude> --project <绝对路径> ...`，默认只预演，确认后追加 `--apply`。这种方式不经市场，之后需用 `npx @sakanano-moe/agenthelm migrate --install` 改为市场安装才能自动获得更新。

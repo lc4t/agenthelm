@@ -158,14 +158,16 @@ def _plugin_findings(provider: Any, env: Any, report: dict, findings: list[dict]
     elif plugins:
         ok.append(_("客户端插件（最新）"))
     if not plugins:
-        clients = host.detect_clients(env)
+        # Clients the user chose to ignore are not offered an install; an older host has no active_clients.
+        clients = host.active_clients(env) if hasattr(host, "active_clients") else host.detect_clients(env)
+        everything = host.detect_clients(env)
         if clients:
             findings.append({"id": "no-plugins", "level": "unavailable", "area": _("插件"),
                              "title": _("AI 客户端里还没有安装 agenthelm 插件"),
                              "reason": _("检测到 ") + _("、").join(_(CLIENT_LABEL.get(c, c)) for c in clients) + _("，但没有市场安装"),
                              "impact": _("只影响 AI Agent 使用；本菜单不受影响"),
                              "next": [{"label": _("需要时运行 agenthelm install 预览安装"), "action": ""}]})
-        else:
+        elif not everything:  # clients that exist but are all ignored are no finding at all
             findings.append({"id": "no-ai-client", "level": "unavailable", "area": _("环境"), "title": _("本机没有 AI 客户端"),
                              "reason": _("没有找到 Claude Code、Codex 或 Cursor"),
                              "impact": _("本菜单的日常功能全部不受影响；只有“安装插件到客户端”不可用"),
