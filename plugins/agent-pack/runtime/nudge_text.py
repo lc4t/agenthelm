@@ -82,6 +82,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "err_hooks_json": {"zh": "{target} 不是合法 JSON，已停止：{error}", "en": "{target} is not valid JSON; stopped: {error}"},
     "err_hooks_root": {"zh": "{target} 的根节点必须是对象", "en": "The root of {target} must be an object"},
+    "err_backup": {"zh": "无法备份 {target} 到 {backup}（{error}）；没有改动任何文件。",
+                   "en": "Could not back up {target} to {backup} ({error}); nothing was changed."},
     "status_project": {"zh": "项目：{project}", "en": "Project: {project}"},
     "status_no_project": {"zh": "（不在启用 opinion-manager 的项目里）", "en": "(not in a project that uses opinion-manager)"},
     "status_switch": {"zh": "开关：{state}", "en": "Switch: {state}"},

@@ -317,6 +317,9 @@ def _switch(env: Any, target: Path) -> None:
 
 
 def use(env: Any, version: str, *, apply_change: bool) -> dict:
+    if not version or version in {".", ".."} or "/" in version or "\\" in version or "\0" in version:
+        raise RuntimeInstallError(_("版本号必须是单个目录名（不能含路径分隔符或 ..）：{0}").format(version),
+                                  [_("agenthelm runtime status 可以看到已安装的版本")])
     target = runtimes_dir(env) / version
     if not _read_manifest(target):
         versions = _("、").join(item["version"] for item in installed(env)) or _("（无）")

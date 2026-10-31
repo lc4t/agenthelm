@@ -202,8 +202,13 @@ def _set_key(args: argparse.Namespace, host: Any, env: Any, key: str, value: Any
     elif args.apply:
         if path.is_file():  # 替换前备份，和其他会替换文件的命令一样
             recovery = host.recovery_dir_for(env, "config")
-            recovery.mkdir(parents=True, mode=0o700)
-            (recovery / path.name).write_bytes(path.read_bytes())
+            try:
+                recovery.mkdir(parents=True, mode=0o700)
+                (recovery / path.name).write_bytes(path.read_bytes())
+            except OSError as exc:  # abort before rewriting: no backup, no change
+                message = _("无法备份 {0} 到 {1}（{2}）；没有改动任何文件。").format(path, recovery, exc)
+                _emit(args, {"ok": False, "error": message}, [message])
+                return 2
             payload["recovery"] = str(recovery)
             lines.append(_("原件已备份到：{0}").format(recovery))
         _write_settings(path, updated)

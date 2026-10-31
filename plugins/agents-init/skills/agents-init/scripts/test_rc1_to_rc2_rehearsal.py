@@ -353,6 +353,62 @@ class Rehearsal(unittest.TestCase):
         self.assertIn("Do not touch my words", merged)
         self.assertEqual((recovery / "AGENTS.md").read_bytes(), mine)
 
+    def test_update_only_content_and_fix_reach_the_three_way_merge(self) -> None:
+        """agenthelm update --only content / fix update-content 透传 --merge / --pick / --diff（不再只在 init_project.py 里）。"""
+        root = self.build("edited")
+        mine = (root / "AGENTS.md").read_bytes()
+        before = fx.tree(root)
+        for lang in ("zh", "en"):
+            code, out, err = self.content(root, "--merge", "AGENTS.md", lang=lang)
+            self.assertEqual(code, 0, out + err)
+            self.assertIn("merge", out)
+            self.assertNotIn("找不到这个文件升级前的基线", out)
+            if lang == "en":
+                self.assert_no_cjk(out, "update --merge 预览")
+        self.assert_unchanged(before, root, "update --merge 默认只预览")
+        code, out, err = self.content(root, "--diff", "AGENTS.md")
+        self.assertEqual(code, 0, out + err)
+        self.assert_unchanged(before, root, "update --diff 不写入")
+        recovery = self.base / "rec-update-merge"
+        code, out, err = self.content(root, "--merge", "AGENTS.md", "--apply", "--recovery-dir", str(recovery))
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("Do not touch my words", (root / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertEqual((recovery / "AGENTS.md").read_bytes(), mine, "先备份原件")
+        self.assertIn(str(recovery), out, "输出恢复位置")
+
+    def test_fix_update_content_takes_merge_pick_and_diff(self) -> None:
+        root = self.build("edited")
+        mine = (root / "AGENTS.md").read_bytes()
+        before = fx.tree(root)
+        code, out, err = self.run_new("fix", "--project", str(root), "--offline", "update-content", "--merge", "AGENTS.md")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("三方合并", out)
+        self.assertNotIn("找不到这个文件升级前的基线", out)
+        self.assert_unchanged(before, root, "fix --merge 默认只预览")
+        code, out, err = self.run_new("fix", "--project", str(root), "--offline", "update-content", "--diff", "AGENTS.md")
+        self.assertEqual(code, 0, out + err)
+        self.assert_unchanged(before, root, "fix --diff 不写入")
+        code, out, err = self.run_new("fix", "--project", str(root), "--offline", "update-content", "--diff", "AGENTS.md", "--apply")
+        self.assertNotEqual(code, 0, "--diff 与 --apply 不能同用")
+        self.assert_unchanged(before, root, "被拒绝的 --diff --apply 不写入")
+        code, out, err = self.run_new("fix", "--project", str(root), "--offline", "update-content", "--merge", "AGENTS.md", "--apply")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("Do not touch my words", (root / "AGENTS.md").read_text(encoding="utf-8"))
+        backups = [path for path in (self.home / ".agent-pack" / "recovery").rglob("AGENTS.md") if path.read_bytes() == mine]
+        self.assertTrue(backups, "fix --merge --apply 先把原件备份到项目外")
+
+    def test_no_lock_update_content_points_at_the_baseline_less_differences(self) -> None:
+        root = self.build("nolock")
+        before = fx.tree(root)
+        for lang, words in (("zh", "无基线差异"), ("en", "no baseline")):
+            code, out, err = self.content(root, lang=lang)
+            self.assertEqual(code, 0, out + err)
+            self.assertIn("fix update-content", out)
+            self.assertIn(words, out)
+            if lang == "en":
+                self.assert_no_cjk(out, "update 无内容锁提示")
+        self.assert_unchanged(before, root, "只是预览")
+
     # ------------------------------------------------------------------ D. 状态 1：无内容锁
 
     def test_no_lock_user_written_files_are_never_touched_and_the_lock_is_written_by_fix(self) -> None:
