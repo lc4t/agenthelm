@@ -260,9 +260,9 @@ def help_text() -> str:
                 cyan("o1"), cyan("f1"), cyan("c1"), cyan("p1")) + "\n"
             + _("  {0} 查看全部版本   {1} 谁引用它（r1 2 为两层）   {2} 直接打开").format(cyan("v1"), cyan("r1"), cyan("1")) + "\n"
             + _("  {0} 最近改动   {1} Case 列表   {2} 巡检   {3} 退出").format(
-                cyan("recent"), cyan("cases [词]"), cyan("check"), cyan("q")) + "\n"
+                cyan("recent"), cyan(_("cases [词]")), cyan("check"), cyan("q")) + "\n"
             + _("  过滤：{0}  {1}（也可 draft/source/data）  {2}（限定 Case/目录）").format(
-                cyan("ext:xlsx"), cyan("kind:deliverable"), cyan("in:片段")))
+                cyan("ext:xlsx"), cyan("kind:deliverable"), cyan(_("in:片段"))))
 
 
 def parse_filters(tokens: list[str]) -> tuple[list[str], dict]:

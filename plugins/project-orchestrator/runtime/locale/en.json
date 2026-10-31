@@ -1433,5 +1433,8 @@
  "  未包含（需要处理）：[{0}] {1}": "  Not included (needs handling): [{0}] {1}",
  "……共 {0} 项": "… {0} in total",
  "需要带「接受现状」的 agents-init（更新插件或运行时后再试）": "Needs an agents-init with \"accept current state\" (update the plugin or runtime, then retry)",
- "会影响使用，需要处理": "Affects use; needs handling"
+ "会影响使用，需要处理": "Affects use; needs handling",
+ "cases [词]": "cases [word]",
+ "in:片段": "in:path",
+ "｜可能过期": " | possibly stale"
 }

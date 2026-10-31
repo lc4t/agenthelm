@@ -506,5 +506,7 @@
  "忽略的客户端": "ignored clients",
  "忽略的客户端：{0}": "Ignored clients: {0}",
  "  {0}：{1}": "  {0}: {1}",
- "候选版（-rc.N）与正式版内容不同时，用发布包或 npm 包安装会得到带后缀的目录；从仓库检出安装分不出后缀，需要先移走旧目录": "When a candidate (-rc.N) and the release differ in content, installing from a release tarball or the npm package uses a suffixed directory; an install from a repository checkout cannot tell the suffix, so move the old directory away first"
+ "候选版（-rc.N）与正式版内容不同时，用发布包或 npm 包安装会得到带后缀的目录；从仓库检出安装分不出后缀，需要先移走旧目录": "When a candidate (-rc.N) and the release differ in content, installing from a release tarball or the npm package uses a suffixed directory; an install from a repository checkout cannot tell the suffix, so move the old directory away first",
+ "      - {0}（{1}）": "      - {0} ({1})",
+ "：{0}": ": {0}"
 }
