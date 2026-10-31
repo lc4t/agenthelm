@@ -381,7 +381,8 @@ def _moved_block(found: list[Section], lines: list[str], note: str | None = None
     return "\n\n".join(pieces)
 
 
-def _plan_agents(text: str, policy: str, routes: dict[int, str], expected: str, body: str, language: str = "zh") -> dict:
+def _plan_agents(text: str, policy: str, routes: dict[int, str], expected: str, body: str, language: str = "zh",
+                 privacy_body: str | None = None) -> dict:
     """What a policy does to a user's AGENTS.md: the new text, files that receive moved sections, region records."""
     plan: dict[str, Any] = {"policy": policy, "new_text": None, "replace": False, "user_text": None, "rules_block": None,
                             "region": None, "pending_handoff": [], "moved": {}}
@@ -421,7 +422,10 @@ def _plan_agents(text: str, policy: str, routes: dict[int, str], expected: str, 
             plan["moved"]["user"] = [s.heading for s in user]
         plan["pending_handoff"] = handoff
     new_text, state = regions.upsert(text, "agents-contract", body)
-    plan.update(new_text=new_text, region=("agents-contract", regions.digest(body), state))
+    plan.update(new_text=new_text, region=("agents-contract", regions.digest(body), state), extra_regions=[])
+    if privacy_body is not None and init.privacy_convention_state(new_text, init.load_templates()) == "absent":
+        new_text, privacy_state = regions.upsert(new_text, "privacy-contract", privacy_body)
+        plan.update(new_text=new_text, extra_regions=[("privacy-contract", regions.digest(privacy_body), privacy_state)])
     return plan
 
 
@@ -477,13 +481,17 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         notes.append(_("--agents-policy {0} 没有生效：AGENTS.md 不存在、不可读，或已与模板一致").format(policy))
     elif policy != "keep":
         agents_plan = _plan_agents(agents_text, policy, init_routes(args, agents_text), pristine[AGENTS],
-                                   templates["region/agents-contract"], inputs.language)
+                                   templates["region/agents-contract"], inputs.language,
+                                   init.localized(templates, "region/privacy-contract", inputs.language)
+                                   if inputs.privacy_declared else None)
         if agents_plan["replace"]:
             modifications.append({"path": AGENTS, "kind": "replace", "new_text": agents_plan["new_text"]})
         else:
             modifications.append({"path": AGENTS, "kind": "modify", "new_text": agents_plan["new_text"],
                                   "region": "agents-contract"})
             region_records.setdefault("AGENTS.md", {})["agents-contract"] = agents_plan["region"][1]
+            for region_id, region_digest, _region_state in agents_plan["extra_regions"]:
+                region_records["AGENTS.md"][region_id] = region_digest
         if agents_plan["user_text"] is not None:
             extras[USER_FILE] = file_text(inputs.language, "user_header") + agents_plan["user_text"].rstrip("\n") + "\n"
         pending_handoff = agents_plan["pending_handoff"]
@@ -579,7 +587,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     decided = []
     after = scaffold.check(root, state_dir=getattr(args, "state_dir", None), reprompt=True)
     for finding in after["findings"]:
-        if finding["kind"] == "content-differs":
+        if finding["kind"] == "content-differs" or finding["kind"].startswith("privacy-contract-"):
             scaffold.decide(root, finding["id"], "keep", reason="adopt: kept the file that existed before adoption",
                             fingerprint=finding["fingerprint"], scope="project", apply=True,
                             state_dir=getattr(args, "state_dir", None))

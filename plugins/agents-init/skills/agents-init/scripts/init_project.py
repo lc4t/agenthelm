@@ -79,6 +79,12 @@ REQUIRED_TEMPLATES = {
     "CLAUDE.md",
     "region/claude-import",
     "region/agents-contract",
+    "region/privacy-contract",
+    "region/privacy-contract.en",
+    "privacy/declared",
+    "privacy/undeclared",
+    "privacy/declared.en",
+    "privacy/undeclared.en",
     ".agent-doc/plan.md",
     ".agent-doc/progress.md",
     ".agent-doc/chat-summary.md",
@@ -161,6 +167,7 @@ class Inputs:
     work_mode: str = "case-workspace"
     entry_launcher: str | None = None
     language: str = "zh"
+    privacy_declared: bool = True  # Profile 的 privacy.forbidden_default_reads 非空；决定 AGENTS.md 的隐私约定写哪一版
 
 
 def split_csv(value: str) -> tuple[str, ...]:
@@ -191,6 +198,36 @@ def load_templates(path: Path = TEMPLATE_PATH) -> dict[str, str]:
     if missing:
         raise InitError(_("中文模板缺少生成区块：") + ", ".join(missing), code="template-invalid")
     return templates
+
+
+def privacy_declared_in(profile: dict) -> bool:
+    """The Profile declares private paths: ``privacy.forbidden_default_reads`` holds at least one non-empty string."""
+    privacy = profile.get("privacy") if isinstance(profile.get("privacy"), dict) else {}
+    reads = privacy.get("forbidden_default_reads")
+    return isinstance(reads, list) and any(isinstance(item, str) and item.strip() for item in reads)
+
+
+def localized(templates: dict[str, str], name: str, language: str) -> str:
+    """Template ``name`` in the project's file language; ``<name>.en`` for English, the Chinese one when there is none."""
+    return templates.get(f"{name}.en", templates[name]) if language == "en" else templates[name]
+
+
+def privacy_section(templates: dict[str, str], language: str, declared: bool) -> str:
+    """AGENTS.md's privacy convention: it names the Profile field instead of copying the paths."""
+    return localized(templates, "privacy/declared" if declared else "privacy/undeclared", language).rstrip("\n")
+
+
+def privacy_convention_state(text: str, templates: dict[str, str]) -> str:
+    """How an AGENTS.md carries the privacy convention.
+
+    ``declared`` / ``undeclared``: one of the template versions is in the text (either language, also inside the
+    managed region); ``custom``: the user wrote their own rule naming the field; ``absent``: nothing about it.
+    """
+    for state, name in (("declared", "privacy/declared"), ("undeclared", "privacy/undeclared")):
+        for language in ("zh", "en"):
+            if privacy_section(templates, language, state == "declared").strip() in text:
+                return state
+    return "custom" if "privacy.forbidden_default_reads" in text else "absent"
 
 
 def render_template(template: str, replacements: dict[str, str]) -> str:
@@ -475,6 +512,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
         "RUNTIME": inputs.runtime,
         "AGENT_CLI": ", ".join(inputs.agent_cli),
     }
+    replacements["PRIVACY_SECTION"] = privacy_section(templates, inputs.language, inputs.privacy_declared)
     agents = render_template(templates["AGENTS.md"], replacements)
     route = render_template(templates["ROUTE.md"], replacements)
     files = {
@@ -810,6 +848,7 @@ def inputs_from_profile(root: Path) -> Inputs:
         str((profile.get("work") or {}).get("mode") or "legacy"),
         _profile_launcher(profile),
         project_language(profile),
+        privacy_declared_in(profile),
     )
 
 
@@ -841,7 +880,8 @@ def _unified_diff(relative: str, current: str, new: str, limit: int | None = 200
 
 
 # 保留本地内容、只追加带标记区块的文件 → 区块 ID（模板里的 region/<ID>）。
-APPEND_REGIONS = {Path("AGENTS.md"): "agents-contract", Path("CLAUDE.md"): "claude-import"}
+# AGENTS.md 的 agents-contract 区块已随 rc.1 发布，正文语义不变；隐私约定是独立的 privacy-contract 区块。
+APPEND_REGIONS = {Path("AGENTS.md"): ("agents-contract", "privacy-contract"), Path("CLAUDE.md"): ("claude-import",)}
 CLAUDE_IMPORT_RE = re.compile(r"^\s*@(?:\./)?AGENTS\.md\s*$", re.MULTILINE)
 
 
@@ -977,17 +1017,25 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                         lines_added=added, lines_lost=lost)
         appended_text = None
         if item["action"] == "append":
-            region_id = APPEND_REGIONS[relative]
-            body = templates[f"region/{region_id}"]
-            existing = regions.get(current or "", region_id)
-            if (existing is not None and existing.intact and existing.body == regions.normalize(body)) \
-                    or (relative == Path("CLAUDE.md") and CLAUDE_IMPORT_RE.search(current or "")):
-                item["action"], item["reason"] = "keep", "already-present"
-            else:
-                appended, region_state = regions.upsert(current or "", region_id, body)
+            wanted, appended = [], current or ""
+            for region_id in APPEND_REGIONS[relative]:
+                if region_id == "privacy-contract" and (
+                        not inputs.privacy_declared or privacy_convention_state(appended, templates) in ("declared", "custom")):
+                    continue  # 没有声明私有路径，或文件里已有这条约定（模板原文或用户自己写的）：不追加
+                body = localized(templates, f"region/{region_id}", inputs.language)
+                existing = regions.get(appended, region_id)
+                if (existing is not None and existing.intact and existing.body == regions.normalize(body)) \
+                        or (region_id == "claude-import" and CLAUDE_IMPORT_RE.search(appended)):
+                    continue
+                appended, region_state = regions.upsert(appended, region_id, body)
                 if region_state == "modified":
                     raise InitError(_("{0} 里的受管区块 {1} 被你改过：用 --mode region 处理").format(relative, region_id))
-                item.update(region=region_id, append_lines=len(regions.render(region_id, body).splitlines()))
+                wanted.append((region_id, body))
+            if not wanted:
+                item["action"], item["reason"] = "keep", "already-present"
+            else:
+                item.update(region=wanted[0][0], regions=[region_id for region_id, _body in wanted],
+                            append_lines=sum(len(regions.render(region_id, body).splitlines()) for region_id, body in wanted))
                 appended_text = appended
         if item["action"] in {"replace", "blocked", "create", "append"} or (state == "clean" and item["action"] == "keep") \
                 or relative in show_diff:
@@ -1042,10 +1090,12 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             os.replace(temporary, target)
         elif item["action"] == "append":
             target = root / relative
-            body = templates[f"region/{item['region']}"]
-            text, _region_state = regions.upsert(target.read_text(encoding="utf-8"), item["region"], body)
+            text = target.read_text(encoding="utf-8")
+            for region_id in item["regions"]:
+                body = localized(templates, f"region/{region_id}", inputs.language)
+                text, _region_state = regions.upsert(text, region_id, body)
+                new_regions.setdefault(item["path"], {})[region_id] = regions.digest(body)
             _atomic_write(target, text, os.stat(target).st_mode & 0o7777)
-            new_regions.setdefault(item["path"], {})[item["region"]] = regions.digest(body)
     files = dict(baseline)
     for item in plan:
         if item["action"] in {"replace", "create"} or item["state"] == "unchanged":
@@ -1217,7 +1267,7 @@ def _adopt_text(result: dict) -> str:
         for path in result.get(key, []):
             lines.append(f"  {title} {path}")
     for item in result.get("modify", []):
-        lines.append(f"  {item['action']} {item['path']}" + (_("（区块 {0}）").format(item['region']) if item.get("region") else ""))
+        lines.append(f"  {item['action']} {item['path']}" + (_("（区块 {0}）").format(_("、").join(item.get("regions") or [item["region"]])) if item.get("region") else ""))
     for note in result.get("notes", []):
         lines.append(f"  note: {note}")
     if result.get("needs_recovery_dir") and not result.get("applied"):
