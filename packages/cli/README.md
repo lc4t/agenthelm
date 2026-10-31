@@ -4,7 +4,7 @@
 
 The command line for [agenthelm](https://github.com/lc4t/agenthelm), a set of cross-agent project management plugins for Claude Code, Codex and Cursor: **agents-init** (project contract), **project-orchestrator** (project lifecycle), **agent-pack** (Plugin / Skill / MCP management) and **opinion-manager** (Agent behavior rules).
 
-> The interface and the Skills are currently written in Chinese. An English interface is planned for a later release.
+> The command-line interface is in English by default and can be switched to Chinese (`AGENTHELM_LANG=zh`, or `agenthelm config language zh --apply`). The Skills and the files written into your project are mostly Chinese. See the [root README](https://github.com/lc4t/agenthelm#readme) for the two language settings.
 
 ## What it does
 
