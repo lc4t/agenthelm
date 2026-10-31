@@ -1,6 +1,6 @@
 {
   "name": "agents-init",
-  "version": "6.8.0",
+  "version": "6.8.1",
   "description": "Initialize or migrate an Agent project contract; ships with project-orchestrator, agent-pack and opinion-manager.",
   "author": {
     "name": "lc4t"

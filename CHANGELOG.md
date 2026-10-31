@@ -1,5 +1,47 @@
 # 更新记录
 
+## 2026-10-31 — 6.11.0-rc.2：升级路径修复（agents-init 6.8.1、agent-pack 1.11.1、project-orchestrator 1.11.2）
+
+rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据安全与升级体验问题（发布跟踪 #44，必须修的三项：#30、#35、#36）。仍属于 6.11.0 发布窗口；套件版本不变，三个有改动的插件各升一个补丁版本（Claude Code 只看市场条目的 version 判断插件有没有更新）。内容包没有变化（项目契约模板仍是 1.2.0）。
+
+### 替换文件前自动备份，并告诉你备份在哪（#30）
+
+- agents-init 6.8.1：`refresh`、`adopt`、`region`、`profile`、`entry`、`migrate` 不再要求先提供 `--recovery-dir`。`--apply` 时被替换的原件复制到 `~/.agent-pack/recovery/<UTC 时间>-agenthelm-<模式>/`（与 `agenthelm update`、`migrate` 的位置和命名一致），一次操作一个目录；显式传入的 `--recovery-dir` 仍然优先，必须在项目外，项目内的目录仍被拒绝。备份目录无法创建或写入时，命令在改动任何项目文件之前失败并说明原因，不会跳过备份；预览不创建目录。
+- 输出带恢复位置：文本输出写明目录、文件清单和还原方法，`--output json` 增加 `recovery`、`recovery_files`、`recovery_default`。
+- agent-pack 1.11.1：`agenthelm update` 汇总打印恢复目录（文本与 JSON 的 `recovery`、`recovery_files`）；init_project 的失败（例如备份目录不可用）显示为失败，不再记成“完成”。
+
+### 没有基线的已定制文件：看得见差异、有第三条路径、丢弃要确认（#36）
+
+早期版本初始化的项目没有内容锁基线，所有与新模板不同的文件都会 `blocked`。现在：
+
+- 预览写明原因（内容锁里没有基线，工具无法区分是你改过还是模板变了）和差异摘要：本地行数、模板行数、采用模板会新增和丢弃的行数；`--diff <文件>` 查看完整差异，不写入。
+- 新增 `--append <文件>`（只限 `AGENTS.md`、`CLAUDE.md`）：保留原文，只在末尾追加带标记的受管区块，先备份，记入内容锁的 `regions` 和保留决定，之后 `check` 一致、不再追问。`CLAUDE.md` 已经导入 `AGENTS.md` 时无需追加。
+- `--accept` 会丢弃本地行时必须再加 `--confirm-discard <文件>`，否则保持 `blocked`、不写任何文件。菜单里选 a 的提示已写明丢弃多少行，选择本身就是确认。
+- `--keep` / `--append` 之后不再重复 `blocked`（有测试）。
+- `agenthelm update`：仍需选择时步骤显示“阻塞”并以非零退出，不再显示“完成”；`--append`、`--confirm-discard`、`--diff` 透传给 agents-init。
+- project-orchestrator 1.11.2：`fix update-content` 与菜单“检查与维护”同样显示差异摘要；菜单里 d 查看差异、p 保留原文并追加区块；`fix` 新增 `--append`、`--confirm-discard`；某一步失败时打印失败原因并以非零退出，不再因 KeyError 抛出异常。
+
+### 界面语言未设置时的提示与 `agenthelm config`（#35）
+
+- 新增 `agenthelm config`：`show` 显示生效的设置；`language zh|en|auto` 设置界面语言；`language-hint on|off` 开关提示；`project-language zh|en` 设置当前项目的文件语言。默认只预览，`--apply` 才写入 `~/.config/agenthelm/config.json`，只改要改的键、其余设置原样保留、替换前备份；无法解析的配置文件绝不覆盖。
+- 没有环境变量 `AGENTHELM_LANG`、用户配置里也没有 `language` 时，`agenthelm check` 和会话开始的提示（同一条一天至多一次）说明当前语言从哪来（系统 locale 或默认值）并给出命令；中文 locale 的用户保持中文，提示里写明。提示不改变退出码、`summary` 和任何文件；`language-hint off` 永久关闭。
+- 已有项目的 Profile 没有 `language` 时，`check` 说明写进项目的文件按中文生成，并给出预览命令 `agenthelm config project-language en`；agents-init 6.8.1 新增 `--mode language`（只改 Profile 的 `language`，先备份，不改写任何已有文件），`check` 报告 `project_language`。
+- 文档与升级说明区分两种语言：界面语言只影响命令输出，项目文件语言随项目同步。
+
+### 测试
+
+SOP 到期的测试断言“执行后第二天不到期”，样例是 `weekly:sun`，周六运行时次日恰为周日必然失败；改为用执行当天判断。
+
+### 不兼容点与注意
+
+- 脚本里用 `--accept` 替换“你改过的文件”的，需要补 `--confirm-discard <文件>`（`init_project.py --mode refresh`、`agenthelm update`、`agenthelm fix update-content`）。
+- 替换文件的模式不再因缺少 `--recovery-dir` 报错；依赖这个报错的外部脚本会得到默认备份。
+- 项目契约模板（`AGENT.template.md`）里的操作指引仍写“带 `--recovery-dir`”，写法仍然有效；该文件属于内容包，改它会让所有项目出现一次没有实质变化的内容更新，所以留到下次必须改模板时一并更新。
+
+### 版本
+
+agents-init 6.8.0 → 6.8.1；agent-pack 1.11.0 → 1.11.1；project-orchestrator 1.11.1 → 1.11.2；opinion-manager 0.5.0 与内容包不变。套件版本仍是 6.11.0（候选 `v6.11.0-rc.2`）。
+
 ## 2026-10-29 — Agents Init 6.8.0：接管已有内容的目录、受管区块、发布声明（属于 6.11.0 发布窗口）
 
 在已有内容的目录里初始化，或者升级时新模板与你自己的内容冲突，现在有统一的处理原则：**控制新增，不追溯历史**。与骨架冲突的旧文件可以长期并存，不是阻塞项；只有你显式选择，工具才改动已有文件，并且先备份到项目外。

@@ -30,7 +30,7 @@
       "id": "agents-init",
       "name": "agents-init v6 / Project Profile initialization and migration",
       "description": "Create or migrate the project skeleton and root launcher; checks that project-orchestrator, agent-pack and opinion-manager from the same release are present before writing.",
-      "version": "6.8.0",
+      "version": "6.8.1",
       "status": "stable",
       "entrypoints": {
         "browser": "./plugins/agents-init/skills/agents-init/index.html",
@@ -43,7 +43,7 @@
       "id": "project-orchestrator",
       "name": "project-orchestrator / project lifecycle orchestration",
       "description": "Organizes Case workspaces or keeps existing Task/Case layouts; search, lossless migration, verification, scoped Git delivery, and a project menu that works without any AI agent.",
-      "version": "1.11.1",
+      "version": "1.11.2",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",
@@ -55,7 +55,7 @@
       "id": "agent-pack",
       "name": "agent-pack / Agent extension capability management",
       "description": "Inventory, verify, install, sync, migrate and reconcile Plugins, Skills and MCP between projects and Codex / Cursor / Claude; the agenthelm command line and user-level runtime.",
-      "version": "1.11.0",
+      "version": "1.11.1",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/agent-pack/skills/agent-pack/SKILL.md",

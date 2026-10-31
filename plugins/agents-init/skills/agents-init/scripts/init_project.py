@@ -21,7 +21,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path 
 from i18n_init import _, resolve_language  # noqa: E402
 
 
-INITIALIZER_VERSION = "6.8.0"
+INITIALIZER_VERSION = "6.8.1"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
