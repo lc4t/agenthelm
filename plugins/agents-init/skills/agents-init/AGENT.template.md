@@ -217,6 +217,20 @@ No private paths declared: the Project Profile field `privacy.forbidden_default_
 ```
 <!-- /agents-init:template -->
 
+`AGENT.RULES.md` 的「隐私与外部系统」里“默认禁止读取”一行由 `PRIVACY_RULES_LINE` 渲染，同样**引用字段名而不复制路径**，与 `AGENTS.md` 的隐私约定保持一致（字段为空与非空文字相同，不再写死“未声明”）。英文版本只为这一行提供。已有项目的升级沿用 `update-content` 的既有流程：`AGENT.RULES.md` 未改过则直接更新，改过的走 `--keep` / `--append` / `--accept` / `--merge`。
+
+<!-- agents-init:template privacy/rules-line -->
+```markdown
+默认禁止读取：以 Project Profile 的 `privacy.forbidden_default_reads` 为准（见 `AGENTS.md` 的“隐私约定”），本文件不重复列出路径；字段为空表示未声明
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template privacy/rules-line.en -->
+```markdown
+Do not read by default: the Project Profile field `privacy.forbidden_default_reads` is the source of truth (see "Privacy convention" in `AGENTS.md`); this file does not repeat the paths. An empty field means none declared
+```
+<!-- /agents-init:template -->
+
 保持入口简短。把稳定的项目专属约束放入 `AGENT.RULES.md`；禁止在任一入口文件复制完整生命周期工作流。
 
 ## 5. 其他生成文件
@@ -242,7 +256,7 @@ No private paths declared: the Project Profile field `privacy.forbidden_default_
 
 ## 隐私与外部系统
 
-- 默认禁止读取：未声明
+- PRIVACY_RULES_LINE
 - 需要授权的外部写入：全部，除非另有明确配置
 
 ## 记忆

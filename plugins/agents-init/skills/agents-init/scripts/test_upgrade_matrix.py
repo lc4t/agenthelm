@@ -119,7 +119,7 @@ class UpgradeMatrixTests(unittest.TestCase):
         for path, (state, action) in states.items():
             self.assertIn(state, {"unchanged", "clean"}, f"{tag} {path}")
             self.assertEqual(action, "replace" if state == "clean" else "keep")
-        self.assertEqual(states["AGENT.RULES.md"], ("unchanged", "keep"))
+        self.assertEqual(states["AGENT.RULES.md"], ("clean", "replace"), "隐私一行改为引用 Profile 字段，没改过的 RULES 直接更新")
         self.assertEqual(states["AGENTS.md"], ("clean", "replace"), "旧模板渲染出的、未被改动的文件要换成新模板")
         replaced = [path for path, (_s, action) in states.items() if action == "replace"]
         old_bytes = {path: (root / path).read_bytes() for path in replaced}
@@ -150,13 +150,13 @@ class UpgradeMatrixTests(unittest.TestCase):
         self.assertFalse((base / "recovery").exists())
 
     @per_tag
-    def test_local_edit_where_the_template_did_not_change_is_local_only_and_kept(self, tag: str, base: Path, root: Path) -> None:
+    def test_edited_rules_md_blocks_on_the_privacy_line_and_keep_preserves_it(self, tag: str, base: Path, root: Path) -> None:
         (root / "AGENT.RULES.md").write_text("项目自己的规则\n", encoding="utf-8")
         code, preview = self.refresh(root, base)
-        self.assertEqual(code, 0, preview)
-        self.assertEqual(self.states(preview)["AGENT.RULES.md"], ("local-only", "keep"))
-        code, applied = self.refresh(root, base, "--apply", "--recovery-dir", str(base / "recovery"))
-        self.assertEqual(code, 0, applied)
+        self.assertEqual(code, 1, preview)
+        self.assertEqual(self.states(preview)["AGENT.RULES.md"][0], "modified")
+        code, kept = self.refresh(root, base, "--apply", "--keep", "AGENT.RULES.md", "--recovery-dir", str(base / "recovery"))
+        self.assertEqual((code, kept["applied"]), (0, True), kept)
         self.assertEqual((root / "AGENT.RULES.md").read_text(encoding="utf-8"), "项目自己的规则\n")
 
     @per_tag

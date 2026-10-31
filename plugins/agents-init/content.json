@@ -20,7 +20,7 @@
       ],
       "project_lock": "agenthelm",
       "files": {
-        "skills/agents-init/AGENT.template.md": "6241d94804d892ca9d076e1b440b6568a187e977eb75441b50036e1a85b951a0",
+        "skills/agents-init/AGENT.template.md": "c0e807c2f5b979a1b08370ad01c4c5e6e974e65ae54f714ea34b3817fa45f831",
         "skills/agents-init/launcher.sh": "cf27d6cca786905a192446ea4eefe5635942914c3358c78d12117af912107cad"
       },
       "materializes_from_profile": [
