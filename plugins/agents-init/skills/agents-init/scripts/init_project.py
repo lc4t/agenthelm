@@ -1119,7 +1119,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         chosen_keep = Path(item["path"]) in (keep | append) or item["action"] == "append"
         if chosen_keep and item["state"] in {"modified", "local-only", "kept-by-decision"}:
             _scaffold().decide(root, f"content:{item['path']}", "keep",
-                               reason="refresh --append" if item["action"] == "append" else "refresh --keep",
+                               reason=("refresh --append: kept the local file and appended a managed region" if item["action"] == "append"
+                                       else "refresh --keep: kept the local file"),
                                fingerprint=item["new_sha256"], scope="project", apply=True)
             result.setdefault("decisions", []).append(f"content:{item['path']}")
     result["applied"] = True

@@ -26,6 +26,7 @@ once a tag is cut, so the release step adds them.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import re
@@ -62,6 +63,13 @@ EXPECTATION_FILES = ("skills/agents-init/skeleton.json", "skills/agents-init/pro
 # Files that ship in a plugin directory but never reach users' behaviour.
 UNSHIPPED_PARTS = {"tests", "__pycache__"}
 IGNORED_NAMES = {".DS_Store"}
+# agents-init keeps its tests next to the scripts (scripts/test_*.py), outside any tests/ directory.
+UNSHIPPED_FILE_PATTERN = "test_*.py"
+
+
+def is_unshipped(parts: tuple[str, ...]) -> bool:
+    """True for a relative path (as parts) that never reaches users: tests, caches, test_*.py files."""
+    return bool(UNSHIPPED_PARTS & set(parts)) or fnmatch.fnmatchcase(parts[-1], UNSHIPPED_FILE_PATTERN)
 
 
 def read_json(path: Path):
@@ -105,7 +113,7 @@ def pack_files(root: Path, sources: list[str]) -> dict[str, str]:
         for path in candidates:
             if not path.is_file() or path.name in IGNORED_NAMES or path.suffix == ".pyc":
                 continue
-            if UNSHIPPED_PARTS & set(path.relative_to(root).parts):
+            if is_unshipped(path.relative_to(root).parts):
                 continue
             files[path.relative_to(root).as_posix()] = sha256_file(path)
     return dict(sorted(files.items()))
@@ -281,7 +289,7 @@ def shipped_changes(ref: str, root: Path) -> list[str]:
     untracked = (git("ls-files", "--others", "--exclude-standard", "--", relative) or "").splitlines()
     return sorted(
         path for path in {*changed, *untracked}
-        if not UNSHIPPED_PARTS & set(Path(path).parts) and Path(path).name not in IGNORED_NAMES
+        if not is_unshipped(Path(path).parts) and Path(path).name not in IGNORED_NAMES
     )
 
 

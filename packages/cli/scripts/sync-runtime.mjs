@@ -19,6 +19,8 @@ cpSync(join(repo, "index.json"), join(target, "index.json"));
 for (const name of plugins) {
   cpSync(join(repo, "plugins", name), join(target, "plugins", name), {
     recursive: true,
-    filter: (source) => !skipped.has(basename(source)) && !source.endsWith(".pyc"),
+    // agents-init keeps its tests beside the scripts as test_*.py; they do not ship.
+    filter: (source) =>
+      !skipped.has(basename(source)) && !source.endsWith(".pyc") && !/^test_.*\.py$/.test(basename(source)),
   });
 }

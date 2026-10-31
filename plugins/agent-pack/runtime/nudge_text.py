@@ -90,7 +90,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "status_off": {"zh": "关闭", "en": "off"},
     "status_thresholds": {
         "zh": "阈值：待确认 ≥{pending} 条或最久 ≥{stale} 天；每会话确认 ≤{prompts} 次；试行 {expire} 天未转正回退；任务结束提示 {stop}；语言 {language}",
-        "en": "Thresholds: at least {pending} pending, or the oldest at least {stale} days old; at most {prompts} confirmation request(s) per session; trials revert after {expire} days; end-of-task prompt {stop}; language {language}",
+        "en": "Thresholds: pending ≥ {pending} or oldest age (days) ≥ {stale}; confirmation requests per session ≤ {prompts}; trial expiry (days): {expire}; end-of-task prompt {stop}; language {language}",
     },
     "status_current": {
         "zh": "当前：待确认 {pending} 条，试行 {trial} 条，最久 {days} 天", "en": "Now: {pending} pending, {trial} on trial, the oldest {days} days old"},

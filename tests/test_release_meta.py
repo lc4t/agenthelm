@@ -104,6 +104,70 @@ class AttachReleaseTests(unittest.TestCase):
         self.assertNotIn("release", self.attach(None))
 
 
+NOTES_SPEC = importlib.util.spec_from_file_location("release_notes", ROOT / "scripts/release_notes.py")
+release_notes = importlib.util.module_from_spec(NOTES_SPEC)
+NOTES_SPEC.loader.exec_module(release_notes)
+
+CHANGELOG = """# 更新记录
+
+## 2026-10-31 — 6.11.0-rc.2：升级路径修复
+
+rc.2 正文。
+
+### 小节
+
+- 一条
+
+## 2026-10-29 — agenthelm 6.11.0 / Agent Pack 1.11.0：观点自动采集
+
+6.11.0 正文。
+
+## 2026-10-27 — agenthelm 6.8.0 / Agents Init 6.7.0：脚手架一致性
+
+6.8.0 正文。
+"""
+
+
+class ReleaseNotesTests(unittest.TestCase):
+    def test_a_candidate_gets_its_own_section_with_subsections(self) -> None:
+        text = release_notes.release_notes(CHANGELOG, "v6.11.0-rc.2")
+        self.assertTrue(text.startswith("## 2026-10-31 — 6.11.0-rc.2"))
+        self.assertIn("### 小节", text)
+        self.assertIn("- 一条", text)
+        self.assertNotIn("6.11.0 正文", text)
+        self.assertTrue(text.rstrip().endswith(release_notes.FALLBACK))
+
+    def test_a_candidate_without_its_own_section_uses_the_release_it_leads_to(self) -> None:
+        text = release_notes.release_notes(CHANGELOG, "v6.11.0-rc.1")
+        self.assertIn("6.11.0 正文", text)
+        self.assertNotIn("rc.2 正文", text)
+
+    def test_a_release_does_not_pick_up_its_candidate_section(self) -> None:
+        text = release_notes.release_notes(CHANGELOG, "v6.11.0")
+        self.assertIn("6.11.0 正文", text)
+        self.assertNotIn("rc.2 正文", text)
+        self.assertNotIn("6.8.0 正文", text)
+
+    def test_other_versions_are_not_matched_by_prefix(self) -> None:
+        self.assertEqual(release_notes.release_notes(CHANGELOG, "v6.11"), release_notes.FALLBACK + "\n")
+        self.assertEqual(release_notes.release_notes(CHANGELOG, "v6.1.0"), release_notes.FALLBACK + "\n")
+
+    def test_without_a_section_or_a_changelog_the_fixed_sentence_remains(self) -> None:
+        self.assertEqual(release_notes.release_notes(CHANGELOG, "v9.9.9"), release_notes.FALLBACK + "\n")
+        self.assertEqual(release_notes.release_notes(None, "v6.11.0"), release_notes.FALLBACK + "\n")
+
+    def test_a_very_long_section_is_cut_below_the_github_limit(self) -> None:
+        long = "## 2026-01-01 — 7.0.0：x\n\n" + "\n".join("行" * 50 for _ in range(5000))
+        text = release_notes.release_notes(long, "v7.0.0")
+        self.assertLess(len(text), 125000)
+        self.assertIn("已截断", text)
+
+    def test_the_real_changelog_has_a_section_for_the_current_candidate(self) -> None:
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        index = json.loads((ROOT / "index.json").read_text(encoding="utf-8"))["plugin"]["version"]
+        self.assertIsNotNone(release_notes.notes_for(changelog, f"v{index}"))
+
+
 class SinceGateTests(unittest.TestCase):
     """--since compares a work tree with a release tag in a throwaway repository."""
 
@@ -142,6 +206,18 @@ class SinceGateTests(unittest.TestCase):
 
     def test_tests_only_change_needs_no_bump(self) -> None:
         self.write("plugins/demo/tests/test_demo.py", "# more\n")
+        self.assertEqual(self.problems(), [])
+
+    def test_test_files_beside_scripts_need_no_bump_and_are_not_digested(self) -> None:
+        # agents-init keeps scripts/test_*.py outside any tests/ directory.
+        self.write("plugins/demo/scripts/test_thing.py", "# new test\n")
+        self.write("plugins/demo/scripts/tool.py", "# shipped\n")
+        self.assertEqual(release_meta.shipped_changes("v1", self.root / "plugins/demo"), ["plugins/demo/scripts/tool.py"])
+        files = release_meta.pack_files(self.root / "plugins/demo", ["scripts"])
+        self.assertEqual(sorted(files), ["scripts/tool.py"])
+
+    def test_test_files_beside_scripts_only_change_needs_no_bump(self) -> None:
+        self.write("plugins/demo/scripts/test_thing.py", "# new test\n")
         self.assertEqual(self.problems(), [])
 
     def test_shipped_change_without_bump_fails(self) -> None:

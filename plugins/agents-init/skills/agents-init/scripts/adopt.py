@@ -585,10 +585,15 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     if pack is not None:
         init.write_content_lock(root, pack, baseline, inputs=inputs, regions=region_records or None)
     decided = []
+    # A file that gained a managed region is "kept and appended to"; only untouched files are "kept as they were".
+    appended = {str(m["path"]) for m in modifications if m["kind"] == "modify" and m.get("region")}
     after = scaffold.check(root, state_dir=getattr(args, "state_dir", None), reprompt=True)
     for finding in after["findings"]:
         if finding["kind"] == "content-differs" or finding["kind"].startswith("privacy-contract-"):
-            scaffold.decide(root, finding["id"], "keep", reason="adopt: kept the file that existed before adoption",
+            reason = ("adopt: kept the file that existed before adoption and appended a managed region"
+                      if finding["id"].removeprefix("content:") in appended
+                      else "adopt: kept the file that existed before adoption")
+            scaffold.decide(root, finding["id"], "keep", reason=reason,
                             fingerprint=finding["fingerprint"], scope="project", apply=True,
                             state_dir=getattr(args, "state_dir", None))
             decided.append(finding["id"])

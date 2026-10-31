@@ -345,6 +345,16 @@ class AdoptAppendTests(AdoptCase):
             self.assertEqual((folder / "AGENTS.md").read_text(), USER_AGENTS)  # one operation, one folder
             self.assertEqual((folder / "CLAUDE.md").read_text(), USER_CLAUDE)
 
+    def test_decision_reason_tells_kept_from_kept_and_appended(self) -> None:
+        self.messy_project()
+        with mock.patch.dict(os.environ, {"HOME": str(self.root.parent / "home")}):
+            code, done = self.adopt("--agents-policy", "append")  # AGENTS.md gets a region; CLAUDE.md stays untouched
+        self.assertEqual(code, 0, done)
+        project = scaffold.load_decisions(self.root, self.state)["project"]
+        self.assertEqual(project["content:AGENTS.md"]["reason"],
+                         "adopt: kept the file that existed before adoption and appended a managed region")
+        self.assertEqual(project["content:CLAUDE.md"]["reason"], "adopt: kept the file that existed before adoption")
+
     def test_an_unusable_default_folder_stops_adoption_before_any_change(self) -> None:
         self.messy_project()
         home = self.root.parent / "home"

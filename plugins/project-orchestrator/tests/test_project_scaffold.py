@@ -254,11 +254,11 @@ class AcceptCurrentTests(ScaffoldCase):
         root = self.old_project()
         english = {**self.env, "AGENTHELM_LANG": "en"}
         _, text = self.text(root, env=english)
-        self.assertIn("4 missing file(s)", text)
+        self.assertIn("Missing files: 4", text)
         result = subprocess.run([sys.executable, str(AGENTHELM), "fix", "--project", str(root), "--offline",
                                  "--accept-current", "--reason", "x"], input="", capture_output=True, text=True,
                                 check=False, env=english, timeout=120)
-        self.assertIn("record the current 4 scaffold difference(s)", result.stdout)
+        self.assertIn("record the current scaffold differences (4)", result.stdout)
         self.assertNotRegex(result.stdout, "[\u4e00-\u9fff]")
 
 

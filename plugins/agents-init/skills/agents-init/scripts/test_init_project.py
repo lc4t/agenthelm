@@ -782,6 +782,9 @@ class RefreshWithoutBaselineTests(unittest.TestCase):
         report = scaffold.check(self.root, state_dir=self.home / "state")
         # the user's own text stays; the tool only owns the marked regions, and nothing is left to ask about
         self.assertEqual([f["id"] for f in report["findings"] if f["kind"] != "skel-missing"], [], report["findings"])
+        decisions = scaffold.load_decisions(self.root, self.home / "state")["project"]
+        self.assertEqual(decisions["content:AGENTS.md"]["reason"],
+                         "refresh --append: kept the local file and appended a managed region")
         again_code, again = self.refresh("--append", "AGENTS.md", "--apply")
         self.assertEqual(again_code, 0, again)
         self.assertEqual((self.root / "AGENTS.md").read_text(), agents)  # a second run changes nothing
@@ -809,6 +812,8 @@ class RefreshWithoutBaselineTests(unittest.TestCase):
         self.assertEqual(again["blocked"], [])
         self.assertEqual({self.item(again, "AGENTS.md")["state"], self.item(again, "CLAUDE.md")["state"]}, {"kept-by-decision"})
         self.assertEqual(self.item(again, "AGENTS.md")["action"], "keep")
+        reasons = init_project._scaffold().load_decisions(self.root, self.home / "state")["project"]
+        self.assertEqual(reasons["content:AGENTS.md"]["reason"], "refresh --keep: kept the local file")
 
     def test_a_file_edited_after_a_baseline_exists_is_explained_differently(self) -> None:
         lock = self.root / init_project.CONTENT_LOCK_PATH
