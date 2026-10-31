@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import difflib
 import hashlib
 import json
@@ -193,6 +194,10 @@ def load_templates(path: Path = TEMPLATE_PATH) -> dict[str, str]:
         source = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise InitError(_("无法读取中文模板：{0}").format(path), code="template-invalid") from exc
+    return parse_templates(source)
+
+
+def parse_templates(source: str) -> dict[str, str]:
     templates = {match.group("name"): match.group("body") for match in TEMPLATE_PATTERN.finditer(source)}
     missing = sorted(REQUIRED_TEMPLATES - set(templates))
     if missing:
@@ -451,7 +456,8 @@ def tracked_paths(pack: dict | None, launcher: str | None) -> list[Path]:
     return tracked + ([Path(launcher)] if launcher else [])
 
 
-def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[Path, str]:
+def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher: str | None = None) -> dict[Path, str]:
+    """``launcher`` is the launcher script text; omitted, the one shipped with this plugin."""
     templates = templates or load_templates()
     profile = {
         "$schema": PROFILE_SCHEMA,
@@ -545,7 +551,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None) -> dict[P
     if inputs.work_mode == "case-workspace":
         files[Path("cases/.gitkeep")] = ""
     if inputs.entry_launcher:
-        files[Path(inputs.entry_launcher)] = launcher_text()
+        files[Path(inputs.entry_launcher)] = launcher if launcher is not None else launcher_text()
     return files
 
 
@@ -905,14 +911,94 @@ def _regions():
     return regions
 
 
+def _baseline():
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import baseline  # noqa: PLC0415
+
+    return baseline
+
+
+def _merge3():
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import merge3  # noqa: PLC0415
+
+    return merge3
+
+
+def baseline_providers() -> list:
+    """Where historical content packs come from (runtime cache, local git tags, GitHub Release); tests replace this."""
+    return _baseline().default_providers()
+
+
+def _inputs_from_lock(root: Path, recorded: object, fallback: Inputs) -> Inputs:
+    """The inputs recorded in the content lock; the Profile's when the lock has none or they do not fit."""
+    if not isinstance(recorded, dict):
+        return fallback
+    try:
+        return Inputs(root, str(recorded["name"]), str(recorded["slug"]), tuple(recorded["project_type"]), str(recorded["vcs"]),
+                      tuple(recorded["stack"]), str(recorded["runtime"]), tuple(recorded["agent_cli"]),
+                      str(recorded.get("work_mode") or "legacy"), recorded.get("entry_launcher") or None,
+                      str(recorded.get("language") or "zh"), fallback.privacy_declared)
+    except (KeyError, TypeError):
+        return fallback
+
+
+def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], recorded: object, current: Inputs,
+                  providers: list, pack_id: str) -> dict | None:
+    """Re-render ``relative`` as an earlier content pack did and return it only if it hashes to ``digest``.
+
+    ``digest`` is what the content lock recorded when the file was written, so a match proves the text is exactly the
+    baseline; a wrong guess (another pack version, other inputs) never matches and is skipped.
+    """
+    start = _inputs_from_lock(root, recorded, current)
+    variants = [start, dataclasses.replace(start, privacy_declared=not start.privacy_declared)]
+    seen: set[tuple[str, str]] = set()
+    for provider in providers:
+        try:
+            for source in provider(pack_id, versions):
+                if (source.kind, source.label) in seen:
+                    continue
+                seen.add((source.kind, source.label))
+                try:
+                    templates = parse_templates(source.template)
+                    for variant in variants:
+                        text = files_for(variant, templates, source.launcher).get(relative)
+                        if text is not None and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest:
+                            return {"text": text, "source": source.label, "kind": source.kind, "version": source.version}
+                except (InitError, KeyError, ValueError):
+                    continue
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def _refresh_notes(item: dict) -> list[str]:
     """Human lines for a file refresh cannot silently decide: why, what each choice costs, what to type."""
     path, reason = item["path"], item.get("reason")
     notes: list[str] = []
+    if reason == "baseline-unavailable":
+        notes.append(_("找不到这个文件升级前的基线（旧版本包不在本机运行时缓存和本地 git tag 里，也没能从 GitHub Release 取得），无法三方合并；"
+                       "没有改动任何文件，请改用 --keep / --append / --accept 选择"))
+    elif reason == "merge-conflict":
+        numbers = ", ".join(str(number) for number in item["merge"]["unresolved"])
+        notes.append(_("有 {0} 处冲突需要你选择（第 {1} 块）：--pick {2}#<序号>=mine|theirs|both"
+                       "（mine 保留你的、theirs 取新模板、both 两边都留）").format(len(item["merge"]["unresolved"]), numbers, path))
+    elif reason == "no-baseline" and item.get("merge_requested"):
+        notes.append(_("内容锁里没有它的基线，无法三方合并；请改用 --keep / --append / --accept 选择"))
+    if item["action"] == "merge":
+        merge = item["merge"]
+        notes.append(_("三方合并：新模板的变化已并入你的版本（自动合并 {0} 处，冲突 {1} 处均已选择；基线取自 {2}）；写入前先备份").format(
+            merge["auto_hunks"], len(merge["conflicts"]), merge["source"]))
     if reason == "no-baseline":
         notes.append(_("内容锁里没有它的基线（早期版本初始化的项目），无法判断是你改过还是模板变了；建议先保留你的版本：--keep {0}").format(path))
     elif reason == "edited":
         notes.append(_("你改过这个文件，新模板也变了"))
+        if item["action"] == "blocked" and not item.get("merge_requested"):
+            notes.append(_("也可以三方合并（用旧版本包还原出升级前的基线，保留你的改动并带入新模板的变化）：--merge {0}").format(path))
     elif reason == "discard-unconfirmed":
         notes.append(_("--accept 会丢弃 {0} 行本地内容；确认后追加 --confirm-discard {1}").format(item["lines_lost"], path))
     if "local_lines" in item and item["action"] in {"blocked", "replace"}:
@@ -927,6 +1013,21 @@ def _refresh_notes(item: dict) -> list[str]:
     if reason == "already-present":
         notes.append(_("已经导入或带有这个区块，无需追加"))
     return notes
+
+
+def _parse_picks(values: list[str], merge: set[Path]) -> dict[Path, dict[int, str]]:
+    """``--pick 文件#序号=mine|theirs|both`` → {文件: {序号: 选择}}。"""
+    picks: dict[Path, dict[int, str]] = {}
+    for value in values:
+        target, _sep, choice = value.rpartition("=")
+        name, _hash, number = target.rpartition("#")
+        if not _sep or not _hash or not number.isdigit() or choice not in ("mine", "theirs", "both"):
+            raise InitError(_("--pick 的写法是 <文件>#<冲突块序号>=mine|theirs|both：{0}").format(value))
+        relative = Path(name)
+        if relative not in merge:
+            raise InitError(_("--pick 只能用于同时带 --merge 的文件：{0}").format(name))
+        picks.setdefault(relative, {})[int(number)] = choice
+    return picks
 
 
 def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
@@ -950,6 +1051,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     # every file that differs from the new render counts as locally modified.
     entry = (lock.get("packs") or {}).get(pack["id"]) or {}
     baseline: dict[str, str] = dict(entry.get("files") or {})
+    file_versions: dict[str, str] = dict(entry.get("file_versions") or {})  # 文件基线是哪个内容包版本渲染的（未更新的文件仍是旧版本）
     inputs = inputs_from_profile(root)
     rendered = files_for(inputs)
     accept = {Path(value) for value in args.accept}
@@ -957,13 +1059,15 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     append = {Path(value) for value in getattr(args, "append", [])}
     confirm = {Path(value) for value in getattr(args, "confirm_discard", [])}
     show_diff = {Path(value) for value in getattr(args, "diff", [])}
+    merge = {Path(value) for value in getattr(args, "merge", [])}
+    picks = _parse_picks(getattr(args, "pick", []), merge)
     tracked = tracked_paths(pack, inputs.entry_launcher)
-    unknown = (accept | keep | append | confirm | show_diff) - set(tracked)
+    unknown = (accept | keep | append | confirm | show_diff | merge) - set(tracked)
     if unknown:
         raise InitError(_("不是内容包跟踪的文件：") + ", ".join(sorted(map(str, unknown))))
-    chosen_twice = (accept & keep) | (accept & append) | (keep & append)
+    chosen_twice = (accept & keep) | (accept & append) | (keep & append) | (merge & (accept | keep | append))
     if chosen_twice:
-        raise InitError(_("同一文件只能选一种处理（--accept / --keep / --append）：") + ", ".join(sorted(map(str, chosen_twice))))
+        raise InitError(_("同一文件只能选一种处理（--accept / --keep / --append / --merge）：") + ", ".join(sorted(map(str, chosen_twice))))
     not_appendable = append - set(APPEND_REGIONS)
     if not_appendable:
         raise InitError(_("只有 AGENTS.md 和 CLAUDE.md 可以追加受管区块：") + ", ".join(sorted(map(str, not_appendable))))
@@ -971,7 +1075,10 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         raise InitError(_("--diff 只用于查看，不能与 --apply 同用"))
     templates = load_templates()
     regions = _regions()
+    merge3 = _merge3() if merge else None
+    providers = baseline_providers() if merge else []
     plan: list[dict] = []
+    merged_texts: dict[Path, str] = {}
     kept_before = _scaffold().keep_fingerprints(root)
     for relative in tracked:
         new = rendered[relative]
@@ -983,6 +1090,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
         added, lost = line_delta(current or "", new)
         reason = None
+        merge_info = None
         if current_digest == new_digest:
             state, action = "unchanged", "keep"
         elif current is None:
@@ -997,7 +1105,32 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             state = "modified"
             decided = kept_before.get(relative.as_posix()) == new_digest  # 之前选过保留，且期望内容没变
             reason = "edited" if relative.as_posix() in baseline else "no-baseline"
-            if relative in accept:
+            if relative in merge:
+                action = "blocked"
+                merge_info = {}
+                found = None
+                if reason == "edited":
+                    wanted = [version for version in (file_versions.get(relative.as_posix()), entry.get("version"))
+                              if version and version != UNKNOWN_PACK_VERSION]
+                    found = find_baseline(root, relative, baseline[relative.as_posix()], list(dict.fromkeys(wanted)),
+                                          entry.get("render_inputs"), inputs, providers, pack["id"])
+                    if found is None:
+                        reason = "baseline-unavailable"
+                if found is not None:
+                    merged = merge3.merge_text(found["text"], current, new)
+                    chosen = picks.get(relative, {})
+                    open_blocks = [block.number for block in merged.unresolved(chosen)]
+                    merged_texts[relative] = merged.render(chosen, (_("你的版本"), _("基线"), _("新模板")))
+                    merge_info = {"source": found["source"], "baseline_version": found["version"], "auto_hunks": merged.auto_hunks,
+                                  "conflicts": [{"id": block.number, "mine": "".join(block.mine), "theirs": "".join(block.theirs),
+                                                 "base": "".join(block.base), "pick": chosen.get(block.number)}
+                                                for block in merged.conflicts],
+                                  "unresolved": open_blocks}
+                    if open_blocks:
+                        reason = "merge-conflict"
+                    else:
+                        action, reason = "merge", None
+            elif relative in accept:
                 action = "replace"
                 if lost and relative not in confirm:
                     action, reason = "blocked", "discard-unconfirmed"
@@ -1007,11 +1140,15 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                 action = "keep"
             else:
                 action = "blocked"
-            if decided and relative not in accept:
+            if decided and relative not in accept and relative not in merge:
                 state = "kept-by-decision"
         item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
         if reason:
             item["reason"] = reason
+        if relative in merge:
+            item["merge_requested"] = True
+        if merge_info:
+            item["merge"] = merge_info
         if current is not None and current_digest != new_digest:
             item.update(local_lines=len(current.splitlines()), template_lines=len(new.splitlines()),
                         lines_added=added, lines_lost=lost)
@@ -1038,9 +1175,9 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                             append_lines=sum(len(regions.render(region_id, body).splitlines()) for region_id, body in wanted))
                 appended_text = appended
         if item["action"] in {"replace", "blocked", "create", "append"} or (state == "clean" and item["action"] == "keep") \
-                or relative in show_diff:
-            item["diff"] = _unified_diff(relative.as_posix(), current or "",
-                                         appended_text if appended_text is not None else new,
+                or relative in show_diff or merge_info:
+            shown = appended_text if appended_text is not None else merged_texts.get(relative, new)
+            item["diff"] = _unified_diff(relative.as_posix(), current or "", shown,
                                          None if relative in show_diff else 200)
         item["note"] = _refresh_notes(item)
         plan.append(item)
@@ -1048,8 +1185,19 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     unmet = sorted(path.as_posix() for path in append if path.as_posix() not in satisfied)
     if unmet:
         raise InitError(_("没有本地改动，不需要追加区块：") + ", ".join(unmet))
+    not_modified = sorted(item["path"] for item in plan if Path(item["path"]) in merge and item["state"] != "modified")
+    if not_modified:
+        raise InitError(_("没有需要合并的本地改动（文件没改过，或已与新模板一致）：") + ", ".join(not_modified))
     blocked = [item["path"] for item in plan if item["action"] == "blocked"]
-    replacing = [Path(item["path"]) for item in plan if item["action"] in {"replace", "append"}]
+    replacing = [Path(item["path"]) for item in plan if item["action"] in {"replace", "append", "merge"}]
+    for relative, chosen in picks.items():
+        item = next(item for item in plan if item["path"] == relative.as_posix())
+        if "merge" not in item:
+            continue  # 取不到基线：整个文件退回 --keep / --append / --accept 的选择
+        known = {block["id"] for block in item["merge"]["conflicts"]}
+        if set(chosen) - known:
+            raise InitError(_("--pick 指向的冲突块不存在：{0}#{1}（先用 --merge {0} 查看冲突块序号）").format(
+                relative, ", ".join(str(number) for number in sorted(set(chosen) - known) or [0])))
     result = {
         "ok": not blocked,
         "mode": "refresh",
@@ -1063,7 +1211,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         result["diffs"] = {path.as_posix(): next(item["diff"] for item in plan if item["path"] == path.as_posix()) for path in sorted(show_diff)}
     if blocked:
         hints = []
-        if any(item.get("reason") in {"no-baseline", "edited"} for item in plan if item["action"] == "blocked"):
+        if any(item.get("reason") in {"no-baseline", "edited", "baseline-unavailable"} for item in plan if item["action"] == "blocked"):
             hints.append(_("本地已改动的文件需逐个选择：--keep <文件> 保留你的版本（建议）；--append <文件> 保留并追加带标记的区块（仅 AGENTS.md / CLAUDE.md）；"
                            "--accept <文件> 用新模板替换（先备份，会丢弃本地内容，需再加 --confirm-discard <文件>）；--diff <文件> 先看差异"))
         if any(item.get("reason") == "discard-unconfirmed" for item in plan):
@@ -1088,6 +1236,9 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             if relative == Path(inputs.entry_launcher or "\0"):
                 temporary.chmod(0o755)
             os.replace(temporary, target)
+        elif item["action"] == "merge":
+            target = root / relative
+            _atomic_write(target, merged_texts[relative], os.stat(target).st_mode & 0o7777)
         elif item["action"] == "append":
             target = root / relative
             text = target.read_text(encoding="utf-8")
@@ -1098,11 +1249,18 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             _atomic_write(target, text, os.stat(target).st_mode & 0o7777)
     files = dict(baseline)
     for item in plan:
-        if item["action"] in {"replace", "create"} or item["state"] == "unchanged":
+        if item["action"] in {"replace", "create", "merge"} or item["state"] == "unchanged":
             files[item["path"]] = item["new_sha256"]
+            file_versions[item["path"]] = pack["version"]
+        elif item["state"] == "local-only":
+            file_versions[item["path"]] = pack["version"]  # 新模板渲染结果与基线相同
+        elif item["path"] in baseline and item["path"] not in file_versions and entry.get("version") not in (None, UNKNOWN_PACK_VERSION):
+            file_versions[item["path"]] = entry["version"]  # 没写这个文件：基线仍是升级前的版本
         # Files kept on purpose keep their old baseline: the tool did not write them.
     new_entry = {**entry, "plugin": "agents-init", "version": pack["version"],
                  "files": dict(sorted(files.items())), "render_inputs": render_inputs(inputs)}
+    if file_versions:
+        new_entry["file_versions"] = dict(sorted(file_versions.items()))
     if new_regions:
         merged = {path: dict(ids) for path, ids in (entry.get("regions") or {}).items()}
         for path, ids in new_regions.items():
@@ -1116,10 +1274,11 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     os.replace(temporary, lock_path)
     # 显式 --keep / --append 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
     for item in plan:
-        chosen_keep = Path(item["path"]) in (keep | append) or item["action"] == "append"
+        chosen_keep = Path(item["path"]) in (keep | append) or item["action"] in {"append", "merge"}
         if chosen_keep and item["state"] in {"modified", "local-only", "kept-by-decision"}:
             _scaffold().decide(root, f"content:{item['path']}", "keep",
                                reason=("refresh --append: kept the local file and appended a managed region" if item["action"] == "append"
+                                       else "refresh --merge: merged the local edits with the new template" if item["action"] == "merge"
                                        else "refresh --keep: kept the local file"),
                                fingerprint=item["new_sha256"], scope="project", apply=True)
             result.setdefault("decisions", []).append(f"content:{item['path']}")
@@ -1324,6 +1483,10 @@ def parser() -> argparse.ArgumentParser:
                         help=_("refresh：确认 --accept 会丢弃这个文件里的本地内容"))
     result.add_argument("--diff", action="append", default=[],
                         help=_("refresh：只查看这个文件与新模板的完整差异，不写入"))
+    result.add_argument("--merge", action="append", default=[],
+                        help=_("refresh：三方合并这个本地已改动的文件（用旧版本包还原基线，保留你的改动并带入新模板的变化；默认只预览，先备份）"))
+    result.add_argument("--pick", action="append", default=[],
+                        help=_("refresh --merge：逐块选择冲突，写法 <文件>#<冲突块序号>=mine|theirs|both（可重复）"))
     result.add_argument("--work-mode", choices=("case-workspace", "legacy"), default=None,
                         help=_("新项目默认 case-workspace；既有项目只在显式选择后更改模式"))
     result.add_argument("--replace", action="append", default=[], help="known skeleton path to replace in migrate mode")
@@ -1407,6 +1570,12 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  {item['action']:8} {item['path']} [{item['state']}]")
                     for note in item.get("note", []):
                         print(f"      {note}")
+                    for block in (item.get("merge") or {}).get("conflicts", []):
+                        if block["pick"] is None:
+                            print(_("      冲突块 {0}：").format(block["id"]))
+                            for label, key in ((_("你的版本"), "mine"), (_("基线"), "base"), (_("新模板"), "theirs")):
+                                print(f"        [{label}]")
+                                print("".join(f"          {line}\n" for line in block[key].splitlines()) or "          \n", end="")
                 for path, text in result.get("diffs", {}).items():
                     print(text.rstrip("\n") if text else _("（{0} 与新模板没有差异）").format(path))
                 if result.get("hint"):
