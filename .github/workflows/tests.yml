@@ -33,6 +33,11 @@ jobs:
       - run: python -m unittest discover -s plugins/agent-pack/tests -v
       - run: python -m unittest discover -s plugins/opinion-manager/tests -v
       - run: python -m unittest discover -s plugins/project-orchestrator/tests -v
+      - name: Upgrade matrix (fails instead of skipping when release tags are missing)
+        env:
+          AGENTHELM_REQUIRE_TAGS: '1'
+        run: python -m unittest test_upgrade_matrix -v
+        working-directory: plugins/agents-init/skills/agents-init/scripts
 
   # The runtime picks its language from AGENTHELM_LANG, then the user config, then LANG / LC_*. This job runs the same
   # suites under three host locales so that neither the tests nor the features depend on the machine's locale (#24).

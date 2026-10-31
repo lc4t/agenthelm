@@ -313,6 +313,38 @@ class SinceGateTests(unittest.TestCase):
         self.bump(touches=["new"])
         self.assertFalse(any("skeleton.json changed" in p for p in self.problems()))
 
+    def test_every_declaration_field_is_required_when_it_is_missing(self) -> None:
+        # 反例：逐个删掉声明字段，门禁必须失败并点名该字段。
+        for field in ("actions", "user_action_required", "touches", "default_for_existing", "template_changes"):
+            with self.subTest(missing=field):
+                self.bump(**{field: None})
+                found = release_meta.migration_problems(release_meta.load_plugins()) + self.problems()
+                self.assertTrue(any(field in p for p in found), found)
+
+    def test_a_breaking_release_with_a_complete_declaration_passes(self) -> None:
+        self.bump(breaking=True, actions=["运行 migrate"])
+        self.assertEqual(self.problems(), [])
+
+    def test_template_changes_need_touches(self) -> None:
+        self.bump(touches=[])
+        self.assertTrue(any("touches must name" in p for p in release_meta.migration_problems(release_meta.load_plugins())))
+
+    def test_schema_change_must_be_declared_like_the_skeleton(self) -> None:
+        self.write("plugins/demo/skills/agents-init/project.schema.json", '{"type": "object"}\n')
+        self.git("add", "-A")
+        self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "v1c")
+        self.git("tag", "-f", "v1")
+        self.bump(touches=[])
+        self.write("plugins/demo/skills/agents-init/project.schema.json", '{"type": "object", "required": ["x"]}\n')
+        self.assertTrue(any("project.schema.json changed" in p for p in self.problems()))
+
+    def test_changelog_without_the_new_version_fails_even_for_a_complete_entry(self) -> None:
+        self.bump()
+        self.write("CHANGELOG.md", "# 更新记录\n\n### demo 1.0.0\n")
+        self.assertTrue(any("does not mention demo 1.0.1" in p for p in self.problems()))
+        (self.root / "CHANGELOG.md").unlink()
+        self.assertTrue(any("does not mention demo 1.0.1" in p for p in self.problems()))
+
 
 if __name__ == "__main__":
     unittest.main()
