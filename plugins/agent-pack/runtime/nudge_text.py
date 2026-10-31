@@ -96,6 +96,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "zh": "当前：待确认 {pending} 条，试行 {trial} 条，最久 {days} 天", "en": "Now: {pending} pending, {trial} on trial, the oldest {days} days old"},
     "status_quiet": {"zh": "按当前阈值，开新会话不会提示。", "en": "With the current thresholds, a new session shows no reminder."},
     "status_exposure": {"zh": "收件箱的可见范围：{message}", "en": "Who can see the inbox: {message}"},
+    "status_hook_error": {
+        "zh": "最近一次钩子错误（共记录 {count} 条，钩子已静默跳过，不影响会话）：{line}\n运行 agenthelm nudge status --clear-errors 清除。",
+        "en": "Last hook error ({count} recorded; the hook skipped silently and the session was not affected): {line}\nRun agenthelm nudge status --clear-errors to clear it."},
+    "status_errors_cleared": {"zh": "已清除钩子错误记录。", "en": "Hook error records cleared."},
     "status_warning": {"zh": "配置警告：{item}", "en": "Config warning: {item}"},
     "install_written": {"zh": "已写入", "en": "Written"},
     "install_unchanged": {"zh": "没有变化", "en": "No change"},

@@ -183,20 +183,31 @@ def find_manager(host: Any, env: Any) -> Path | None:
     return found / "runtime" / "opinion_manager.py" if found is not None else None
 
 
+MANAGER_FAILURES: list[str] = []  # opinion-manager calls that failed during this hook run (summaries, no user text)
+
+
+def _manager_failed(arguments: tuple[str, ...], reason: str) -> None:
+    words = [word for word in arguments[:2] if re.fullmatch(r"[a-z][a-z-]*", word)]
+    MANAGER_FAILURES.append(f"opinion-manager {' '.join(words)}: {reason}")
+
+
 def run_manager(manager: Path, *arguments: str, lang: str | None = None) -> Any:
     command = [*arguments, "--lang", lang] if lang else list(arguments)
     try:
         completed = subprocess.run([sys.executable, str(manager), *command], capture_output=True, text=True,
                                    check=False, timeout=SUBPROCESS_TIMEOUT)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        _manager_failed(arguments, type(exc).__name__)
         return None
     if completed.returncode != 0:
+        _manager_failed(arguments, f"exit {completed.returncode}")
         return None
     if "markdown" in arguments:
         return completed.stdout
     try:
         result = json.loads(completed.stdout)
     except ValueError:
+        _manager_failed(arguments, "invalid JSON output")
         return None
     return result if isinstance(result, dict) and result.get("ok") else None
 
@@ -409,7 +420,9 @@ def read_payload() -> dict:
 
 
 def run_hook(args: argparse.Namespace, host: Any, payload: dict | None = None) -> dict | None:
-    """hook 入口：任何异常都吞掉，保证不影响客户端会话。"""
+    """hook 入口：任何异常都吞掉，保证不影响客户端会话；最近一次错误的摘要（不含用户原话）记到用户状态目录，供 nudge status / doctor 查看。"""
+    del MANAGER_FAILURES[:]
+    env = None
     try:
         env = host.current_env(args.home)
         if env.get(ENV_DISABLE) not in (None, "0", "false"):
@@ -422,12 +435,25 @@ def run_hook(args: argparse.Namespace, host: Any, payload: dict | None = None) -
         config, _ = load_config(host, env, root)
         if not config["enabled"]:
             return None
-        return HANDLERS[args.event](host, env, payload, client, root, config)
-    except Exception:  # noqa: BLE001 - a nudge must never break a session
+        output = HANDLERS[args.event](host, env, payload, client, root, config)
+        if MANAGER_FAILURES:
+            _record(host, env, args.event, MANAGER_FAILURES[0])
+        return output
+    except Exception as exc:  # noqa: BLE001 - a nudge must never break a session
+        _record(host, env, args.event, exc, home=args.home)
         if os.environ.get(ENV_DEBUG):
             import traceback
             traceback.print_exc(file=sys.stderr)
         return None
+
+
+def _record(host: Any, env: Any, event: str, error: Any, home: Path | None = None) -> None:
+    try:
+        if env is None:
+            env = host.current_env(home)
+        host.record_hook_error(env, f"nudge {event}", error)
+    except Exception:  # noqa: BLE001 - recording is best effort and silent
+        pass
 
 
 # ---------------------------------------------------------------- status and hook installation
@@ -436,8 +462,10 @@ def status(args: argparse.Namespace, host: Any) -> dict:
     env = host.current_env(args.home)
     root = find_project(host, args.project or Path.cwd())
     config, warnings = load_config(host, env, root)
+    cleared = host.clear_hook_errors(env) if getattr(args, "clear_errors", False) else False
     result: dict[str, Any] = {"ok": True, "project": str(root) if root else None, "config": config, "warnings": warnings,
-                              "disabled_by_environment": env.get(ENV_DISABLE) not in (None, "0", "false")}
+                              "disabled_by_environment": env.get(ENV_DISABLE) not in (None, "0", "false"),
+                              "last_hook_error": host.last_hook_error(env), "hook_errors_cleared": cleared}
     if root is None:
         result["note"] = say("note_no_project", config["lang"])
         return result
@@ -517,6 +545,7 @@ def parser() -> argparse.ArgumentParser:
     hook.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     state = sub.add_parser("status", help="show the effective config, the current pending summary and whether a new session would remind")
     state.add_argument("--project", type=Path)
+    state.add_argument("--clear-errors", action="store_true", help="clear the recorded last hook error")
     state.add_argument("--output", choices=("text", "json"), default="text")
     state.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     install = sub.add_parser("install-hooks", help="write the nudge hooks into Cursor's hooks.json (preview by default)")
@@ -564,6 +593,11 @@ def main(argv: list[str], host: Any) -> int:
         if result.get("exposure"):
             lines.append(say("status_exposure", lang, message=result["exposure"]["message"]))
         lines += [say("status_warning", lang, item=item) for item in result["warnings"]]
+        if result["hook_errors_cleared"]:
+            lines.append(say("status_errors_cleared", lang))
+        failure = result["last_hook_error"]
+        if failure:
+            lines.append(say("status_hook_error", lang, line=host.hook_error_line(failure), count=failure["count"]))
         if result.get("note"):
             lines.append(result["note"])
         print("\n".join(lines))
