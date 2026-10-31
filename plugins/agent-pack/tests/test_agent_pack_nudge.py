@@ -388,6 +388,90 @@ class NudgeTests(unittest.TestCase):
         self.assertIsNone(result["reminder"])
         self.assertEqual(result["config"]["pending_threshold"], 5)
 
+    # -- last hook error (diagnosability)
+    def status_args(self, **extra):
+        return argparse.Namespace(project=self.project, home=self.home, **extra)
+
+    def test_hook_exception_stays_silent_and_is_recorded_for_status(self) -> None:
+        self.capture("先给结论")
+        payload = {"session_id": "s1", "cwd": str(self.project), "source": "startup"}
+        before = self.hook("session-start", payload)
+        self.assertIsNone(nudge.status(self.status_args(), agenthelm)["last_hook_error"])
+        secret = "用户原话-绝不能出现"
+        with mock.patch.object(nudge, "find_manager", side_effect=RuntimeError(f"boom {self.home}/x\n{secret}")):
+            self.assertIsNone(self.hook("session-start", payload))
+        self.assertEqual(self.hook("session-start", payload), before)  # the session output is unchanged afterwards
+        failure = nudge.status(self.status_args(), agenthelm)["last_hook_error"]
+        self.assertEqual((failure["hook"], failure["type"], failure["count"]), ("nudge session-start", "RuntimeError", 1))
+        self.assertEqual(failure["message"], "boom ~/x")
+        self.assertNotIn(secret, json.dumps(failure, ensure_ascii=False))
+        self.assertEqual(set(failure), {"at", "hook", "type", "message", "count"})
+
+    def test_hook_error_log_is_bounded_and_message_truncated(self) -> None:
+        for index in range(agenthelm.HOOK_ERROR_LIMIT + 3):
+            agenthelm.record_hook_error(self.env, "nudge stop", ValueError(f"{index} " + "x" * 1000))
+        entries = agenthelm.read_hook_errors(self.env)
+        self.assertEqual(len(entries), agenthelm.HOOK_ERROR_LIMIT)
+        self.assertTrue(entries[-1]["message"].startswith(str(agenthelm.HOOK_ERROR_LIMIT + 2)))
+        self.assertLessEqual(len(entries[-1]["message"]), agenthelm.HOOK_ERROR_TEXT_CHARS)
+
+    def test_status_clear_errors_removes_the_record_and_text_explains_how(self) -> None:
+        agenthelm.record_hook_error(self.env, "nudge stop", KeyError("k"))
+        with mock.patch.object(sys, "argv", ["x"]), mock.patch("builtins.print") as printed:
+            nudge.main(["status", "--project", str(self.project), "--home", str(self.home)], agenthelm)
+        text = "\n".join(str(call.args[0]) for call in printed.call_args_list)
+        self.assertIn("nudge status --clear-errors", text)
+        self.assertIn("KeyError", text)
+        cleared = nudge.status(self.status_args(clear_errors=True), agenthelm)
+        self.assertTrue(cleared["hook_errors_cleared"])
+        self.assertIsNone(cleared["last_hook_error"])
+        self.assertIsNone(nudge.status(self.status_args(), agenthelm)["last_hook_error"])
+
+    def test_unwritable_state_directory_keeps_the_hook_silent(self) -> None:
+        payload = {"session_id": "s1", "cwd": str(self.project), "source": "startup"}
+        with mock.patch.object(nudge, "find_manager", side_effect=RuntimeError("boom")), \
+                mock.patch.object(agenthelm, "write_json_atomic", side_effect=PermissionError("read-only")):
+            self.assertIsNone(self.hook("session-start", payload))
+        self.assertIsNone(agenthelm.last_hook_error(self.env))
+        blocker = self.env.state_dir / "agenthelm"
+        blocker.parent.mkdir(parents=True, exist_ok=True)
+        blocker.write_text("a file where the directory should be", encoding="utf-8")
+        agenthelm.record_hook_error(self.env, "nudge stop", RuntimeError("x"))  # must not raise
+
+    def test_failing_opinion_manager_is_recorded_but_does_not_change_output(self) -> None:
+        payload = {"session_id": "s1", "cwd": str(self.project), "source": "startup"}
+        broken = self.project / "broken_manager.py"
+        write(broken, "import sys\nsys.exit(3)\n")
+        with mock.patch.object(nudge, "find_manager", return_value=broken):
+            self.hook("session-start", payload)
+        failure = agenthelm.last_hook_error(self.env)
+        self.assertEqual(failure["type"], "Error")
+        self.assertIn("opinion-manager", failure["message"])
+        self.assertIn("exit 3", failure["message"])
+
+    def test_hook_error_text_exists_in_both_languages(self) -> None:
+        failure = {"at": "t", "hook": "h", "type": "E", "message": "m", "count": 1}
+        for lang in nudge_text.LANGUAGES:
+            line = nudge_text.text("status_hook_error", lang, line=agenthelm.hook_error_line(failure), count=1)
+            self.assertIn("--clear-errors", line)
+            self.assertTrue(nudge_text.text("status_errors_cleared", lang))
+
+    def test_doctor_mentions_the_last_hook_error_without_failing(self) -> None:
+        report = {"plugins": [], "_latest": {"plugins": {}}, "summary": {}}
+        self.assertIsNone(agenthelm.doctor(self.env, report)["last_hook_error"])
+        agenthelm.record_hook_error(self.env, "update-check", OSError("disk"))
+        result = agenthelm.doctor(self.env, report)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["last_hook_error"]["type"], "OSError")
+        self.assertIn("hook-error", [issue["issue"] for issue in result["issues"]])
+        self.assertIn("nudge status --clear-errors", result["issues"][-1]["detail"])
+
+    def test_session_hook_records_update_check_failure_and_stays_silent(self) -> None:
+        with mock.patch.object(agenthelm, "run_check", side_effect=RuntimeError("net")), \
+                mock.patch.object(agenthelm, "update_check_enabled", return_value=True):
+            self.assertEqual(agenthelm.hook(self.env, None, "text"), 0)
+        self.assertEqual(agenthelm.last_hook_error(self.env)["hook"], "update-check")
+
     # -- Cursor hook installation
     def install(self, **options):
         defaults = dict(client="cursor", scope="user", project=None, remove=False, apply=False, home=self.home)

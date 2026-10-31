@@ -1203,13 +1203,80 @@ def notice_due(env: Env, message: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------- last hook error (diagnosability)
+
+HOOK_ERROR_LIMIT = 5
+HOOK_ERROR_TEXT_CHARS = 160
+
+
+def hook_error_file(env: Env) -> Path:
+    return env.state_dir / "agenthelm" / "hook-errors.json"
+
+
+def summarize_error(env: Env, error: BaseException | str) -> tuple[str, str]:
+    """Exception type and a one-line, truncated message; the home directory is shortened to ``~``. Never user input."""
+    kind = type(error).__name__ if isinstance(error, BaseException) else "Error"
+    text = str(error) if error is not None else ""
+    text = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    text = text.replace(str(env.home), "~")
+    text = "".join(ch if ch.isprintable() else " " for ch in text)
+    return kind, text[:HOOK_ERROR_TEXT_CHARS]
+
+
+def record_hook_error(env: Env, hook_name: str, error: BaseException | str) -> None:
+    """Remember the latest hook failures (newest last, at most HOOK_ERROR_LIMIT) in the user state dir.
+    Hooks must stay silent, so every failure here is swallowed too."""
+    try:
+        kind, message = summarize_error(env, error)
+        path = hook_error_file(env)
+        try:
+            data = read_json(path)
+            entries = data.get("errors") if isinstance(data, dict) else []
+            entries = [item for item in entries if isinstance(item, dict)] if isinstance(entries, list) else []
+        except (OSError, ValueError):
+            entries = []
+        entries.append({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "hook": str(hook_name)[:40],
+                        "type": kind[:60], "message": message})
+        write_json_atomic(path, {"errors": entries[-HOOK_ERROR_LIMIT:]})
+    except Exception:  # noqa: BLE001 - recording a failure must never itself fail a session
+        pass
+
+
+def read_hook_errors(env: Env) -> list[dict]:
+    try:
+        data = read_json(hook_error_file(env))
+    except (OSError, ValueError):
+        return []
+    entries = data.get("errors") if isinstance(data, dict) else None
+    return [item for item in entries if isinstance(item, dict)] if isinstance(entries, list) else []
+
+
+def last_hook_error(env: Env) -> dict | None:
+    """Stable shape for status/doctor JSON: {at, hook, type, message, count} or None."""
+    entries = read_hook_errors(env)
+    if not entries:
+        return None
+    last = entries[-1]
+    return {"at": str(last.get("at", "")), "hook": str(last.get("hook", "")), "type": str(last.get("type", "")),
+            "message": str(last.get("message", "")), "count": len(entries)}
+
+
+def clear_hook_errors(env: Env) -> bool:
+    try:
+        hook_error_file(env).unlink()
+        return True
+    except OSError:
+        return False
+
+
 def hook(env: Env, project: Path | None, output: str) -> int:
     """Session-start entry: silent unless something is behind; never fails the session."""
     if not update_check_enabled(env):
         return 0
     try:
         report = run_check(env, project, hook_mode=True)
-    except Exception:  # noqa: BLE001 - an update notice must never break a session
+    except Exception as exc:  # noqa: BLE001 - an update notice must never break a session
+        record_hook_error(env, "update-check", exc)
         return 0
     message = "\n".join(part for part in (one_line(report), (report.get("language") or {}).get("session_hint")) if part) or None
     if message is None or not notice_due(env, message):
@@ -1874,6 +1941,13 @@ def locate(env: Env, plugin: str, version: str | None = None, *, include_legacy:
             "path": found[0]["path"] if found else None, "installs": found}
 
 
+INFORMATIONAL_ISSUES = ("update-check-disabled", "hook-error")
+
+
+def hook_error_line(failure: dict) -> str:
+    return f"{failure['at']} [{failure['hook']}] {failure['type']}: {failure['message']}".rstrip(": ")
+
+
 def doctor(env: Env, report: dict) -> dict:
     issues = []
     by_plugin: dict[str, list[dict]] = {}
@@ -1895,8 +1969,13 @@ def doctor(env: Env, report: dict) -> dict:
                        "detail": _("缺少：") + _("、").join(sorted(names - installed_names))})
     if not update_check_enabled(env):
         issues.append({"plugin": None, "issue": "update-check-disabled", "detail": _("会话内更新检查已关闭")})
-    return {"ok": not [issue for issue in issues if issue["issue"] != "update-check-disabled"],
-            "issues": issues, "legacy": legacy_artifacts(env, names), "summary": report["summary"]}
+    failure = last_hook_error(env)
+    if failure:
+        issues.append({"plugin": None, "issue": "hook-error", "detail": _("最近一次钩子错误：{0}").format(hook_error_line(failure))
+                       + _("；运行 {0} nudge status --clear-errors 清除").format(CLI)})
+    return {"ok": not [issue for issue in issues if issue["issue"] not in INFORMATIONAL_ISSUES],
+            "issues": issues, "legacy": legacy_artifacts(env, names), "summary": report["summary"],
+            "last_hook_error": failure}
 
 
 def parser() -> argparse.ArgumentParser:

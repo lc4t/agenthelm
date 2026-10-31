@@ -551,5 +551,7 @@
  "{0} 的 settings 声明 agenthelm 市场指向 {1}（{2}），与 agenthelm 默认来源不同：用默认来源 marketplace add 会被拒绝。": "The settings of {0} declare the agenthelm marketplace as {1} ({2}), which differs from the default source: a marketplace add with the default source is refused.",
  "      - {0}（{1}）": "      - {0} ({1})",
  "：{0}": ": {0}",
- "{0}（{1}：{2}）": "{0} ({1}: {2})"
+ "{0}（{1}：{2}）": "{0} ({1}: {2})",
+ "最近一次钩子错误：{0}": "Last hook error: {0}",
+ "；运行 {0} nudge status --clear-errors 清除": "; run {0} nudge status --clear-errors to clear it"
 }

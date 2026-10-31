@@ -33,7 +33,7 @@
 - `stop_prompt`：`off` / `on-completion` / `always`，或按客户端设置，默认 `{"claude": "on-completion", "codex": "on-completion", "cursor": "off"}`。
 - `keywords`、`completion_keywords`：字符串数组，替换内置列表。
 
-环境变量 `AGENTHELM_NO_NUDGE=1` 临时关闭全部输出；`AGENTHELM_NUDGE_DEBUG=1` 把 hook 内部异常打印到 stderr。`agenthelm nudge status [--project P]` 显示生效配置、当前汇总以及开新会话是否会提示。
+环境变量 `AGENTHELM_NO_NUDGE=1` 临时关闭全部输出；`AGENTHELM_NUDGE_DEBUG=1` 把 hook 内部异常打印到 stderr。`agenthelm nudge status [--project P]` 显示生效配置、当前汇总以及开新会话是否会提示。hook 内部的异常（含 opinion-manager 调用失败）仍然静默、退出码为 0，但会把最近 5 次的摘要（时间、钩子名、异常类型、一行截断消息，不含用户原话）记到用户状态目录的 `agenthelm/hook-errors.json`；`nudge status`（JSON 字段 `last_hook_error`）与 `agenthelm doctor` 会显示最近一次，`nudge status --clear-errors` 清除。
 
 ## 提示语言
 
