@@ -241,5 +241,11 @@
  "{0} 项其他差异": "{0} other difference(s)",
  "{0}：把当前 {1} 项脚手架差异记为已决定、保留现状": "{0}: record the current {1} scaffold difference(s) as decided, keep as is",
  "写入 {0}（随项目同步，理由：{1}）": "Written to {0} (travels with the project; reason: {1})",
- "  未包含（需要处理）：[{0}] {1}": "  Not included (needs handling): [{0}] {1}"
+ "  未包含（需要处理）：[{0}] {1}": "  Not included (needs handling): [{0}] {1}",
+ "AGENTS.md 没有隐私约定，Profile 已声明私有路径": "AGENTS.md has no privacy convention, but the Profile declares private paths",
+ "Profile 的 privacy.forbidden_default_reads 非空，但 AGENTS.md 没有写默认不读、先经用户确认的约定；update-content --append AGENTS.md 可以保留原文并补上": "The Profile's privacy.forbidden_default_reads is not empty, but AGENTS.md has no rule to not read by default and to ask the user first; update-content --append AGENTS.md keeps your text and adds it",
+ "AGENTS.md 写着未声明私有路径，Profile 已声明": "AGENTS.md says no private paths are declared, but the Profile declares them",
+ "Profile 的 privacy.forbidden_default_reads 已非空；update-content 刷新 AGENTS.md 的隐私约定（改过的文件用 --append）": "The Profile's privacy.forbidden_default_reads is no longer empty; update-content refreshes the privacy convention in AGENTS.md (use --append for a file you edited)",
+ "AGENTS.md 写着私有路径约定，Profile 的 privacy.forbidden_default_reads 为空": "AGENTS.md carries the private-path convention, but the Profile's privacy.forbidden_default_reads is empty",
+ "字段为空表示没有私有路径；update-content 刷新 AGENTS.md，或把路径写回该字段": "An empty field means no private paths; refresh AGENTS.md with update-content, or put the paths back in the field"
 }

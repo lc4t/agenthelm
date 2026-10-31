@@ -184,6 +184,7 @@ class Context:
                 tuple(details.get("stack") or ()), str(details.get("runtime") or ""),
                 tuple(details.get("agent_cli") or ()), str(work.get("mode") or "legacy"),
                 module._profile_launcher(self.profile),
+                module.project_language(self.profile), module.privacy_declared_in(self.profile),
             )
 
     def _rendered(self) -> dict[Path, str]:
@@ -282,7 +283,7 @@ def _text_of(path: Path) -> str | None:
         return None
 
 
-def region_rows(root: Path, pack_entry: dict | None) -> list[dict]:
+def region_rows(root: Path, pack_entry: dict | None, language: str = "zh") -> list[dict]:
     """State of every managed region the lock says this tool put into a file the user owns."""
     module, regions = _init(), _regions()
     templates = module.load_templates()
@@ -290,9 +291,9 @@ def region_rows(root: Path, pack_entry: dict | None) -> list[dict]:
     for path, ids in sorted(((pack_entry or {}).get("regions") or {}).items()):
         text = _text_of(root / path)
         for region_id, recorded in sorted(ids.items()):
-            template = templates.get(f"region/{region_id}")
-            if template is None:
+            if f"region/{region_id}" not in templates:
                 continue
+            template = module.localized(templates, f"region/{region_id}", language)
             expected = regions.digest(template)
             region = regions.get(text, region_id) if text is not None else None
             if region is None:
@@ -306,6 +307,34 @@ def region_rows(root: Path, pack_entry: dict | None) -> list[dict]:
             rows.append({"path": path, "id": region_id, "state": state, "expected": expected,
                          "fingerprint": sha(f"{path}#{region_id}:{expected}")})
     return rows
+
+
+def _check_privacy(ctx: Context, root: Path) -> list[dict]:
+    """AGENTS.md's privacy convention against the Profile's ``privacy.forbidden_default_reads``.
+
+    The convention names the field instead of copying the paths, so only the field going empty or non-empty makes
+    the text wrong. Anything the user wrote themselves about the field counts as their own convention.
+    """
+    module = _init()
+    text = _text_of(root / "AGENTS.md")
+    privacy = ctx.profile.get("privacy") if isinstance(ctx.profile.get("privacy"), dict) else {}
+    if text is None or not isinstance(privacy.get("forbidden_default_reads"), list):
+        return []  # 字段缺失由 profile-missing 报告，不重复
+    declared = ctx.inputs.privacy_declared
+    state = module.privacy_convention_state(text, module.load_templates())
+    if declared and state == "absent":
+        kind, title = "privacy-contract-missing", _("AGENTS.md 没有隐私约定，Profile 已声明私有路径")
+        reason = _("Profile 的 privacy.forbidden_default_reads 非空，但 AGENTS.md 没有写默认不读、先经用户确认的约定；update-content --append AGENTS.md 可以保留原文并补上")
+    elif declared and state == "undeclared":
+        kind, title = "privacy-contract-stale", _("AGENTS.md 写着未声明私有路径，Profile 已声明")
+        reason = _("Profile 的 privacy.forbidden_default_reads 已非空；update-content 刷新 AGENTS.md 的隐私约定（改过的文件用 --append）")
+    elif not declared and state == "declared":
+        kind, title = "privacy-contract-stale", _("AGENTS.md 写着私有路径约定，Profile 的 privacy.forbidden_default_reads 为空")
+        reason = _("字段为空表示没有私有路径；update-content 刷新 AGENTS.md，或把路径写回该字段")
+    else:
+        return []
+    return [_finding("privacy-contract", kind, title, reason, sha(f"privacy-contract:{kind}:{declared}"), "update-content",
+                     path="AGENTS.md")]
 
 
 def _check_profile(ctx: Context) -> list[dict]:
@@ -790,7 +819,8 @@ def explain(mine: dict[str, str], theirs: dict[str, str]) -> list[str]:
 LEVEL_BY_KIND = {"profile-invalid": "must", "region-outdated": "info"}
 CATEGORY_BY_KIND = {"skeleton-missing": "skeleton", "content-differs": "content", "region-missing": "region",
                     "region-modified": "region", "region-outdated": "region", "profile-missing": "profile",
-                    "profile-invalid": "profile", "case-naming": "case-naming", "lock-version": "lock"}
+                    "profile-invalid": "profile", "case-naming": "case-naming", "lock-version": "lock",
+                    "privacy-contract-missing": "content", "privacy-contract-stale": "content"}
 LEVEL_ORDER = ("must", "suggest", "info")
 
 
@@ -872,7 +902,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
                                      _("内容锁里没有它的基线，无法判断是你改过还是模板变了"),
                                      entry["fingerprint"], "update-content", path=entry["path"]))
 
-    region_state = region_rows(root, pack_entry)
+    region_state = region_rows(root, pack_entry, ctx.inputs.language)
     for row in region_state:
         identifier = f"region:{row['path']}#{row['id']}"
         if row["state"] == "missing":
@@ -885,6 +915,8 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
         elif row["state"] == "outdated":
             findings.append(_finding(identifier, "region-outdated", _("{0} 里的受管区块 {1} 有新版本").format(row['path'], row['id']),
                                      _("区块完好，可以更新（先备份）"), row["fingerprint"], "update-region", path=row["path"]))
+
+    findings.extend(_check_privacy(ctx, root))
 
     profile_rows = _check_profile(ctx)
     for row in profile_rows:
@@ -1157,7 +1189,7 @@ def update_regions(root: Path, *, accept: list[str], keep: list[str], apply: boo
     lock, _lock_error = read_lock(root)
     ctx = Context(root)
     entry = ((lock or {}).get("packs") or {}).get(ctx.pack["id"]) if ctx.pack else None
-    rows = [row for row in region_rows(root, entry) if row["state"] != "ok"]
+    rows = [row for row in region_rows(root, entry, ctx.inputs.language) if row["state"] != "ok"]
     known = {f"{row['path']}#{row['id']}" for row in rows}
     unknown = (set(accept) | set(keep)) - known
     if unknown:
@@ -1196,9 +1228,10 @@ def update_regions(root: Path, *, accept: list[str], keep: list[str], apply: boo
     for item in replacing:
         path = root / item["path"]
         mode = os.stat(path).st_mode & 0o7777
-        text, _state = regions.upsert(path.read_text(encoding="utf-8"), item["id"], templates[f"region/{item['id']}"], force=True)
+        body = module.localized(templates, f"region/{item['id']}", ctx.inputs.language)
+        text, _state = regions.upsert(path.read_text(encoding="utf-8"), item["id"], body, force=True)
         module._atomic_write(path, text, mode)
-        new_digests.setdefault(item["path"], {})[item["id"]] = regions.digest(templates[f"region/{item['id']}"])
+        new_digests.setdefault(item["path"], {})[item["id"]] = regions.digest(body)
     if new_digests:
         fresh = copy.deepcopy(lock)
         for path_, ids in new_digests.items():

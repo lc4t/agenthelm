@@ -263,11 +263,11 @@ class AdoptDefaultTests(AdoptCase):
         self.messy_project()
         code, result = self.adopt()
         self.assertEqual(code, 0, result)
-        self.assertEqual(set(result["decisions_recorded"]), {"content:AGENTS.md", "content:CLAUDE.md"})
+        self.assertEqual(set(result["decisions_recorded"]), {"content:AGENTS.md", "content:CLAUDE.md", "privacy-contract"})
         self.assertTrue(result["check_after"]["ok"], result["check_after"])
         report = self.check()
         self.assertEqual(report["findings"], [])
-        self.assertEqual({item["id"] for item in report["skipped"]}, {"content:AGENTS.md", "content:CLAUDE.md"})
+        self.assertEqual({item["id"] for item in report["skipped"]}, {"content:AGENTS.md", "content:CLAUDE.md", "privacy-contract"})
 
     def test_history_folders_are_tolerated_by_check(self) -> None:
         self.messy_project()
@@ -467,7 +467,7 @@ class RegionLifecycleTests(AdoptCase):
     def test_a_clean_adoption_has_no_region_findings(self) -> None:
         self.adopted_with_regions()
         report = self.check()
-        self.assertEqual([row["state"] for row in report["regions"]], ["ok", "ok"])
+        self.assertEqual([row["state"] for row in report["regions"]], ["ok", "ok", "ok"])
         self.assertTrue(report["ok"])
 
     def test_outdated_region_is_updated_after_a_backup_and_user_text_stays(self) -> None:
@@ -489,7 +489,7 @@ class RegionLifecycleTests(AdoptCase):
             self.assertTrue(after.startswith(USER_CLAUDE))
             self.assertIn("@AGENT.RULES.md", after)
             self.assertEqual((self.recovery / "r2" / "CLAUDE.md").read_text(), before)
-            self.assertEqual([row["state"] for row in self.check()["regions"]], ["ok", "ok"])
+            self.assertEqual([row["state"] for row in self.check()["regions"]], ["ok", "ok", "ok"])
 
     def test_region_edited_by_the_user_blocks_until_they_choose(self) -> None:
         self.adopted_with_regions()
@@ -528,7 +528,7 @@ class RegionLifecycleTests(AdoptCase):
     def test_removed_region_is_reported_and_can_be_skipped(self) -> None:
         self.adopted_with_regions()
         path = self.root / "AGENTS.md"
-        path.write_text(regions.remove(path.read_text(), "agents-contract")[0])
+        path.write_text(regions.remove(regions.remove(path.read_text(), "agents-contract")[0], "privacy-contract")[0])
         report = self.check()
         finding = next(f for f in report["findings"] if f["kind"] == "region-missing")
         self.assertIsNone(finding["fix"])

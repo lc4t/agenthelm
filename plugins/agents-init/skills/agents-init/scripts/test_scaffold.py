@@ -898,5 +898,17 @@ class FingerprintTests(ScaffoldCase):
         self.assertTrue(report["fingerprint"]["fingerprint"].startswith("sha256:"))
 
 
+class CategoryTableTests(unittest.TestCase):
+    def test_every_finding_kind_the_checker_emits_has_a_category_that_is_not_itself(self) -> None:
+        """A kind missing from CATEGORY_BY_KIND would show up as "other" with no command to run."""
+        import re as _re
+        source = (SCRIPT.parent / "scaffold.py").read_text(encoding="utf-8")
+        kinds = set(_re.findall(r'_finding\([^,]+,\s*"([a-z-]+)"', source)) | set(_re.findall(r'kind, title = "([a-z-]+)"', source))
+        kinds = {kind for kind in kinds if not kind.startswith("profile-")}  # covered by the profile- prefix rule
+        unmapped = sorted(kind for kind in kinds if kind not in scaffold.CATEGORY_BY_KIND)
+        self.assertEqual(unmapped, [], "add these to CATEGORY_BY_KIND")
+        self.assertEqual(scaffold.category_of("privacy-contract-stale"), "content")
+
+
 if __name__ == "__main__":
     unittest.main()

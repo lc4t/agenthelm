@@ -300,6 +300,7 @@ class InitProjectTests(unittest.TestCase):
                 "RUNTIME": "本地",
                 "AGENT_CLI": "codex",
                 "ENTRY_COMMAND": "agenthelm project",
+                "PRIVACY_SECTION": init_project.privacy_section(templates, "zh", True),
             },
         ))
         self.assertEqual(files[Path("docs/refs/README.md")], templates["docs/refs/README.md"])
@@ -976,6 +977,180 @@ class EntryTests(unittest.TestCase):
             self.assertEqual(plan["menu"]["action"], "replace", result.stdout)
             self.assertEqual(launcher.read_text(encoding="utf-8"), init_project.launcher_text())
             self.assertTrue(launcher.stat().st_mode & 0o111)
+
+
+class PrivacyConventionTests(unittest.TestCase):
+    """#40：AGENTS.md 写出私有区域约定，引用 Profile 的 privacy.forbidden_default_reads，不复制路径。"""
+
+    USER = "# 我的规则\n\n- 回答简短\n"
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        base = Path(self._temporary.name).resolve()
+        self.root = base / "project"
+        self.root.mkdir()
+        self.home = base / "home"
+        self.home.mkdir()
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.state = base / "state"
+
+    def run_init(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "--project", str(self.root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--output", "json", "--no-entry", *extra],
+                              capture_output=True, text=True, check=False)
+
+    def create(self, language: str) -> None:
+        done = self.run_init("--language", language, "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def refresh(self, *extra: str) -> tuple[int, dict]:
+        done = self.run_init("--mode", "refresh", *extra)
+        return done.returncode, json.loads(done.stdout)
+
+    def set_reads(self, reads: list[str]) -> None:
+        path = self.root / init_project.PROFILE_PATH
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        profile["privacy"]["forbidden_default_reads"] = reads
+        path.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def check(self) -> dict:
+        return init_project._scaffold().check(self.root, state_dir=self.state)
+
+    def privacy_ids(self, report: dict) -> list[str]:
+        return [f["kind"] for f in report["findings"] if f["id"] == "privacy-contract"]
+
+    def customize(self) -> None:
+        """The user rewrote AGENTS.md: refresh no longer replaces it on its own."""
+        (self.root / "AGENTS.md").write_text(self.USER, encoding="utf-8")
+
+    def test_new_project_agents_md_names_the_profile_field_in_both_languages(self) -> None:
+        for language, heading, once, field_note in (
+                ("zh", "## 隐私约定", "一次确认只对当次任务", "本文件不重复列出路径"),
+                ("en", "## Privacy convention", "One confirmation covers only the current task", "does not repeat the paths")):
+            with self.subTest(language=language):
+                self.setUp()
+                self.create(language)
+                agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+                self.assertIn(heading, agents)
+                self.assertIn("`privacy.forbidden_default_reads`", agents)
+                self.assertIn("`private/`", agents)  # 字段缺省值
+                self.assertIn("sop.py confirm-read", agents)
+                self.assertIn(once, agents)
+                self.assertIn(field_note, agents)
+                self.assertNotIn("隐私或禁止路径：未声明", agents)  # 旧的静态一行已被约定取代
+                claude = (self.root / "CLAUDE.md").read_text(encoding="utf-8")
+                self.assertNotIn("forbidden_default_reads", claude)  # CLAUDE.md 只做跳转
+                self.assertEqual(self.privacy_ids(self.check()), [])
+                profile = json.loads((self.root / init_project.PROFILE_PATH).read_text(encoding="utf-8"))
+                self.assertEqual(profile["privacy"]["forbidden_default_reads"], ["private/"])
+
+    def test_empty_field_writes_no_rule_only_that_no_private_path_is_declared(self) -> None:
+        for language, wording in (("zh", "未声明私有路径"), ("en", "No private paths declared")):
+            with self.subTest(language=language):
+                self.setUp()
+                self.create(language)
+                self.set_reads([])
+                self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-stale"])
+                code, done = self.refresh("--apply")
+                self.assertEqual(code, 0, done)
+                agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+                self.assertIn(wording, agents)
+                self.assertNotIn("sop.py confirm-read", agents)  # 没有路径时不生成无意义的规则
+                self.assertEqual(self.privacy_ids(self.check()), [])
+                self.assertEqual(
+                    init_project.files_for(init_project.inputs_from_profile(self.root))[Path("AGENTS.md")], agents)
+
+    def test_changing_the_field_is_reflected_by_check_and_paths_never_need_copying(self) -> None:
+        self.create("zh")
+        before = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        self.set_reads(["private/", "secrets/"])  # 改路径：AGENTS.md 引用字段，不需要同步
+        self.assertEqual(self.privacy_ids(self.check()), [])
+        self.assertNotIn("secrets/", before)
+        self.set_reads([])
+        self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-stale"])  # 空 ↔ 非空 才不一致
+        self.refresh("--apply")
+        self.set_reads(["private/"])
+        self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-stale"])
+        code, done = self.refresh("--apply")
+        self.assertEqual(code, 0, done)
+        self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), before)
+        self.assertEqual(self.privacy_ids(self.check()), [])
+
+    def test_a_missing_field_is_left_to_the_profile_check(self) -> None:
+        self.create("zh")
+        path = self.root / init_project.PROFILE_PATH
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        profile.pop("privacy")
+        path.write_text(json.dumps(profile), encoding="utf-8")
+        self.assertEqual(self.privacy_ids(self.check()), [])
+
+    def test_customized_agents_md_gets_the_convention_as_a_region_and_the_text_stays(self) -> None:
+        for language, heading in (("zh", "## 隐私约定"), ("en", "## Privacy convention")):
+            with self.subTest(language=language):
+                self.setUp()
+                self.create(language)
+                self.customize()
+                self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-missing"])
+                code, preview = self.refresh("--append", "AGENTS.md")
+                item = next(entry for entry in preview["files"] if entry["path"] == "AGENTS.md")
+                self.assertEqual((code, item["action"], item["regions"]), (0, "append", ["agents-contract", "privacy-contract"]))
+                self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), self.USER)  # 预览不写
+                code, done = self.refresh("--append", "AGENTS.md", "--apply")
+                self.assertEqual(code, 0, done)
+                agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+                self.assertTrue(agents.startswith(self.USER))
+                self.assertIn("<!-- agenthelm:region privacy-contract", agents)
+                self.assertIn(heading, agents)
+                self.assertEqual((Path(done["recovery"]) / "AGENTS.md").read_text(encoding="utf-8"), self.USER)
+                self.assertEqual(self.privacy_ids(self.check()), [])
+                self.assertEqual([row["state"] for row in self.check()["regions"]], ["ok", "ok"])
+                code, again = self.refresh("--append", "AGENTS.md", "--apply")
+                self.assertEqual(code, 0, again)
+                self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), agents)  # 再来一次不变
+
+    def test_rc1_project_with_the_published_contract_region_only_gains_the_new_region(self) -> None:
+        self.create("zh")
+        templates = init_project.load_templates()
+        regions = init_project._regions()
+        contract, _state = regions.upsert(self.USER, "agents-contract", templates["region/agents-contract"])
+        (self.root / "AGENTS.md").write_text(contract, encoding="utf-8")
+        lock_path = self.root / init_project.CONTENT_LOCK_PATH
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        lock["packs"]["agents-init/project-contract"]["regions"] = {
+            "AGENTS.md": {"agents-contract": regions.digest(templates["region/agents-contract"])}}
+        lock_path.write_text(json.dumps(lock), encoding="utf-8")
+        code, done = self.refresh("--append", "AGENTS.md", "--apply")
+        self.assertEqual(code, 0, done)
+        item = next(entry for entry in done["files"] if entry["path"] == "AGENTS.md")
+        self.assertEqual(item["regions"], ["privacy-contract"])
+        agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertTrue(agents.startswith(contract))  # 已发布区块与用户原文一字不动
+        self.assertEqual(regions.get(agents, "agents-contract").body, templates["region/agents-contract"])
+        self.assertEqual([row["state"] for row in self.check()["regions"]], ["ok", "ok"])
+        self.assertEqual(self.privacy_ids(self.check()), [])
+
+    def test_nothing_is_appended_when_the_user_has_their_own_rule_or_no_path_is_declared(self) -> None:
+        self.create("zh")
+        mine = self.USER + "- 读取 `privacy.forbidden_default_reads` 里的路径前先问我\n"
+        (self.root / "AGENTS.md").write_text(mine, encoding="utf-8")
+        self.assertEqual(self.privacy_ids(self.check()), [])  # 用户自己写的约定算数
+        self.assertEqual(self.refresh("--append", "AGENTS.md", "--apply")[0], 0)
+        self.assertNotIn("privacy-contract", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+        self.customize()
+        self.set_reads([])
+        self.assertEqual(self.privacy_ids(self.check()), [])  # 字段为空：不需要规则
+        self.refresh("--append", "AGENTS.md", "--apply")
+        self.assertNotIn("privacy-contract", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+
+    def test_region_templates_exist_in_both_languages_and_match_the_section(self) -> None:
+        templates = init_project.load_templates()
+        for language in ("zh", "en"):
+            self.assertEqual(init_project.localized(templates, "region/privacy-contract", language),
+                             init_project.privacy_section(templates, language, True) + "\n")
 
 
 if __name__ == "__main__":
