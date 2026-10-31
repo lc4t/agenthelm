@@ -944,7 +944,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     naming = check_case_naming(ctx)
     if naming["error"]:
         findings.append(_finding("profile:work.case.directory_naming", "profile-invalid",
-                                 _("Profile 的 work.case.directory_naming 无法使用"), f"{naming['error']}。{_naming_hint()}",
+                                 _("Profile 的 work.case.directory_naming 无法使用"), _("{0}。{1}").format(naming['error'], _naming_hint()),
                                  sha(json.dumps({"field": "work.case.directory_naming", "error": naming["error"]})), None,
                                  field="work.case.directory_naming"))
     elif naming["mismatched_count"]:

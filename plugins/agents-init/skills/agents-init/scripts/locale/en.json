@@ -247,5 +247,6 @@
  "AGENTS.md 写着未声明私有路径，Profile 已声明": "AGENTS.md says no private paths are declared, but the Profile declares them",
  "Profile 的 privacy.forbidden_default_reads 已非空；update-content 刷新 AGENTS.md 的隐私约定（改过的文件用 --append）": "The Profile's privacy.forbidden_default_reads is no longer empty; update-content refreshes the privacy convention in AGENTS.md (use --append for a file you edited)",
  "AGENTS.md 写着私有路径约定，Profile 的 privacy.forbidden_default_reads 为空": "AGENTS.md carries the private-path convention, but the Profile's privacy.forbidden_default_reads is empty",
- "字段为空表示没有私有路径；update-content 刷新 AGENTS.md，或把路径写回该字段": "An empty field means no private paths; refresh AGENTS.md with update-content, or put the paths back in the field"
+ "字段为空表示没有私有路径；update-content 刷新 AGENTS.md，或把路径写回该字段": "An empty field means no private paths; refresh AGENTS.md with update-content, or put the paths back in the field",
+ "{0}。{1}": "{0}. {1}"
 }

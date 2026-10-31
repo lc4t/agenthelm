@@ -475,7 +475,7 @@ class RealProvider:
         if broken:
             first = next(item for result in broken for item in result["issues"] if item["level"] == "error")
             findings.append({"id": "sop", "level": "suggest", "area": _("流程"), "title": _("{0} 个流程有错误").format(len(broken)),
-                             "reason": f"{broken[0]['id']}：{first['message']}"[:160],
+                             "reason": _("{0}：{1}").format(broken[0]['id'], first['message'])[:160],
                              "impact": _("有错误的 active 流程仍会被索引，Agent 可能照着不完整的步骤执行"),
                              "next": [{"label": _("运行 sop validate 查看全部问题"), "action": ""}]})
         else:

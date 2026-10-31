@@ -135,6 +135,7 @@ class Config:
     path: Path
     exists: bool = False
     errors: list[str] = field(default_factory=list)
+    user_error_count: int = 0  # errors[:user_error_count] come from the user config, not the project file (language independent)
     project_id: str | None = None
     home: str | None = None
     service: str | None = None
@@ -198,6 +199,7 @@ def load_config(root: Path, user_config: Path | None = None) -> Config:
                 value = _string_list(section, key, _("用户配置 {0}").format(user_config), config.errors)
                 if value is not None:
                     setattr(config, attribute, value)
+    config.user_error_count = len(config.errors)
     path = config.path
     if path.is_symlink() or not path.is_file():
         return config
@@ -797,7 +799,7 @@ def plan_fix(root: Path, *, home: str | Path, environ: Mapping[str, str] | None 
     home_text = str(home)
     raise_limit = raise_limit or {}
     config = load_config(root, user_config)
-    blocking = [error for error in config.errors if not error.startswith("用户配置")]
+    blocking = config.errors[config.user_error_count:]
     if blocking and (config.exists or os.path.lexists(config.path)):
         raise LocalOnlyError(_("项目配置有问题，先修正再处理（不会覆盖它）：") + _("；").join(blocking), "config-invalid")
     if config.home and config.home != home_text:

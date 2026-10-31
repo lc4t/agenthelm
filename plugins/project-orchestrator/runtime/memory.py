@@ -23,7 +23,6 @@ REQUIRED = ("schema_version", "id", "type", "status", "description", "created", 
 SUMMARY_SECTIONS = ("待确认假设", "未解决冲突", "Opinion 演化候选")
 IDENTITY = re.compile(r"MEM-\d{8}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
-DUE_MARK = "可能过期"
 
 
 class EntryError(ValueError):
@@ -144,7 +143,7 @@ def index_lines(entries: list[dict[str, Any]], policy: dict[str, Any], today: da
         if meta.get("status") != "active":
             continue
         try:
-            mark = f"｜{DUE_MARK}" if is_due(meta, policy, today) else ""
+            mark = _("｜可能过期") if is_due(meta, policy, today) else ""
         except EntryError:
             mark = ""
         lines.append(f"- `{meta.get('id', entry['path'].stem)}`（{meta.get('type', '?')}）：{meta.get('description', '')}{mark}")

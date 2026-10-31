@@ -548,5 +548,7 @@
  "{0} 通过 agenthelm 市场安装，已是最新。": "{0} is installed from the agenthelm marketplace and is up to date.",
  "{0} 通过 agenthelm 市场安装，但读不到版本，无法比较。": "{0} is installed from the agenthelm marketplace, but the version cannot be read, so it cannot be compared.",
  "{0} 的 settings 把 agenthelm 市场固定在 {1}（{2}）：不带它的 marketplace add 会被拒绝，update 也只会跟随这个 ref。": "The settings of {0} pin the agenthelm marketplace to {1} ({2}): a marketplace add without it is refused, and update only follows that ref.",
- "{0} 的 settings 声明 agenthelm 市场指向 {1}（{2}），与 agenthelm 默认来源不同：用默认来源 marketplace add 会被拒绝。": "The settings of {0} declare the agenthelm marketplace as {1} ({2}), which differs from the default source: a marketplace add with the default source is refused."
+ "{0} 的 settings 声明 agenthelm 市场指向 {1}（{2}），与 agenthelm 默认来源不同：用默认来源 marketplace add 会被拒绝。": "The settings of {0} declare the agenthelm marketplace as {1} ({2}), which differs from the default source: a marketplace add with the default source is refused.",
+ "      - {0}（{1}）": "      - {0} ({1})",
+ "：{0}": ": {0}"
 }

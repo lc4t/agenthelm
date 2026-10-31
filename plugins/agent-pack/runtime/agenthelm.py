@@ -1016,7 +1016,7 @@ def render_profile_notes(scaffold: dict, show_extras: bool) -> list[str]:
                 note = _("{0} 会读取它，但 schema 尚未声明").format(item["plugin"])
             else:
                 note = _("项目自有")
-            lines.append(f"      - {item['path']}（{note}）")
+            lines.append(_("      - {0}（{1}）").format(item['path'], note))
     return lines
 
 
@@ -1641,7 +1641,7 @@ def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
                     if completed.returncode != 0:
                         record["stderr"] = tail_lines(completed.stderr)
                         last = next((line.strip() for line in reversed(completed.stderr.splitlines()) if line.strip()), "")
-                        record["error"] = _("命令退出码 {0}").format(completed.returncode) + (f"：{last}" if last else "")
+                        record["error"] = _("命令退出码 {0}").format(completed.returncode) + (_("：{0}").format(last) if last else "")
                         known = explain_failure(completed.stderr)
                         if known:
                             record["reason"], record["next"] = known
