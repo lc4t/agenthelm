@@ -144,6 +144,18 @@ class SinceGateTests(unittest.TestCase):
         self.write("plugins/demo/tests/test_demo.py", "# more\n")
         self.assertEqual(self.problems(), [])
 
+    def test_test_files_beside_scripts_need_no_bump_and_are_not_digested(self) -> None:
+        # agents-init keeps scripts/test_*.py outside any tests/ directory.
+        self.write("plugins/demo/scripts/test_thing.py", "# new test\n")
+        self.write("plugins/demo/scripts/tool.py", "# shipped\n")
+        self.assertEqual(release_meta.shipped_changes("v1", self.root / "plugins/demo"), ["plugins/demo/scripts/tool.py"])
+        files = release_meta.pack_files(self.root / "plugins/demo", ["scripts"])
+        self.assertEqual(sorted(files), ["scripts/tool.py"])
+
+    def test_test_files_beside_scripts_only_change_needs_no_bump(self) -> None:
+        self.write("plugins/demo/scripts/test_thing.py", "# new test\n")
+        self.assertEqual(self.problems(), [])
+
     def test_shipped_change_without_bump_fails(self) -> None:
         self.write("plugins/demo/templates/a.md", "two\n")
         problems = self.problems()
