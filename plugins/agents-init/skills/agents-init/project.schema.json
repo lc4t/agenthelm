@@ -176,6 +176,11 @@
           "type": "string",
           "x-agenthelm-scope": "audit",
           "description": "审计记录：生成该 Opinion 时的工具版本；不参与比较。"
+        },
+        "nudge": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "项目层的提醒设置，由 agent-pack 的 nudge 读取（enabled、language、pending_threshold、stale_days、stop_prompt、keywords 等）；用户配置优先于它。check 不比较此项。"
         }
       }
     },

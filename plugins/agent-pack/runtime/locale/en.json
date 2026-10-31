@@ -433,5 +433,15 @@
  "原件已备份到：{0}": "The original was backed up to: {0}",
  "{0} 已经是这个值，没有需要改的。": "{0} already has this value; nothing to change.",
  "项目文件语言已经是 {0}，没有需要改的。": "The project file language is already {0}; nothing to change.",
- "界面语言未设置，当前使用 {1}（来自{0}）。固定语言：agenthelm config language zh（中文）或 agenthelm config language en（English），默认只预览，加 --apply 写入；不想再看到这条提示：agenthelm config language-hint off。界面语言只影响命令输出，不改动任何项目文件。": "The interface language is not set; it is currently {1} (from {0}). To fix it: agenthelm config language zh (Chinese) or agenthelm config language en (English); it only previews unless you add --apply. To stop seeing this hint: agenthelm config language-hint off. The interface language only affects command output and never changes project files."
+ "界面语言未设置，当前使用 {1}（来自{0}）。固定语言：agenthelm config language zh（中文）或 agenthelm config language en（English），默认只预览，加 --apply 写入；不想再看到这条提示：agenthelm config language-hint off。界面语言只影响命令输出，不改动任何项目文件。": "The interface language is not set; it is currently {1} (from {0}). To fix it: agenthelm config language zh (Chinese) or agenthelm config language en (English); it only previews unless you add --apply. To stop seeing this hint: agenthelm config language-hint off. The interface language only affects command output and never changes project files.",
+ "  [脚手架·信息] Profile 中有 {0} 个 schema 未声明的字段（{1}；工具不读取、不比较）{2}": "  [scaffold · info] The Profile has {0} field(s) the schema does not declare ({1}; the tool does not read or compare them){2}",
+ "  [脚手架·信息] {0}": "  [scaffold · info] {0}",
+ "{0} 会读取它，但 schema 尚未声明": "{0} reads it, but the schema does not declare it yet",
+ "展开 Profile 中 schema 未声明的字段（项目自有、疑似拼写错误、已被其他插件读取）": "List the Profile fields the schema does not declare (the project's own, suspected typos, read by another plugin)",
+ "已被其他插件读取、schema 尚未声明 {0}": "read by another plugin but not yet in the schema: {0}",
+ "疑似拼写错误 {0}": "suspected typos: {0}",
+ "疑似拼写错误，是不是想写 {0}？": "suspected typo; did you mean {0}?",
+ "项目自有": "the project's own",
+ "项目自有 {0}": "the project's own: {0}",
+ "：check --show-extras 展开": ": run check --show-extras to list them"
 }

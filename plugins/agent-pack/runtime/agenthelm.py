@@ -609,7 +609,36 @@ def one_line(report: dict) -> str | None:
     return _("agenthelm：") + _("，").join(parts) + _("。运行 `{0} check` 查看详情；更新前会先预览，由你决定。").format(CLI)
 
 
-def render_scaffold(report: dict, show_skipped: bool) -> list[str]:
+def render_profile_notes(scaffold: dict, show_extras: bool) -> list[str]:
+    """Information only (never a finding, never the exit code): values that no longer fit the schema, and fields it does not declare."""
+    lines = []
+    for item in scaffold.get("profile_conflicts") or []:
+        lines.append(_("  [脚手架·信息] {0}").format(item["message"]))
+    summary = scaffold.get("profile_extras") or {}
+    if not summary.get("total"):
+        return lines
+    parts = [_("项目自有 {0}").format(summary["own"])]
+    if summary.get("suspected_typo"):
+        parts.append(_("疑似拼写错误 {0}").format(summary["suspected_typo"]))
+    if summary.get("read_by_plugin"):
+        parts.append(_("已被其他插件读取、schema 尚未声明 {0}").format(summary["read_by_plugin"]))
+    lines.append(_("  [脚手架·信息] Profile 中有 {0} 个 schema 未声明的字段（{1}；工具不读取、不比较）{2}").format(
+        summary["total"], _("，").join(parts), "" if show_extras else _("：check --show-extras 展开")))
+    if show_extras:
+        for item in scaffold.get("extras") or []:
+            if item.get("kind") != "project-field":
+                continue
+            if item["category"] == "suspected-typo":
+                note = _("疑似拼写错误，是不是想写 {0}？").format(item["similar_to"])
+            elif item["category"] == "read-by-plugin":
+                note = _("{0} 会读取它，但 schema 尚未声明").format(item["plugin"])
+            else:
+                note = _("项目自有")
+            lines.append(f"      - {item['path']}（{note}）")
+    return lines
+
+
+def render_scaffold(report: dict, show_skipped: bool, show_extras: bool = False) -> list[str]:
     scaffold = report.get("scaffold")
     lines = []
     if scaffold is None:
@@ -628,6 +657,7 @@ def render_scaffold(report: dict, show_skipped: bool) -> list[str]:
                      + _("、").join(scaffold["decisions"]["conflict_copies"]) + _("（合并到 check-decisions.json 后删除）"))
     if not scaffold["findings"] and not scaffold["decisions"]["errors"]:
         lines.append(_("  [脚手架] 与期望一致") + (_("（{0} 项已跳过）").format(len(scaffold['skipped'])) if scaffold["skipped"] else ""))
+    lines += render_profile_notes(scaffold, show_extras)
     skipped = [*scaffold["skipped"], *report.get("machine", {}).get("skipped", [])]
     if show_skipped:
         for item in skipped:
@@ -647,7 +677,7 @@ def render_machine(report: dict) -> list[str]:
     return lines
 
 
-def render_text(report: dict, *, show_skipped: bool = False) -> str:
+def render_text(report: dict, *, show_skipped: bool = False, show_extras: bool = False) -> str:
     lines = []
     origin = report["latest"]["source"]
     lines.append(_("云端版本源：{0}").format(origin.get('source')) + (_("（缓存）") if origin.get("cached") else ""))
@@ -690,7 +720,7 @@ def render_text(report: dict, *, show_skipped: bool = False) -> str:
             lines.append(_("  [Opinion] 有新版本：{0}（用 opinion-manager 预览后确认）").format(refs))
         elif item["status"] in {"error", "unknown"}:
             lines.append(f"  [Opinion] {item.get('error')}")
-    lines += render_scaffold(report, show_skipped)
+    lines += render_scaffold(report, show_skipped, show_extras)
     lines += render_machine(report)
     lines += [_("  [语言] {0}").format(hint) for hint in (report.get("language") or {}).get("hints", [])]
     if not report["plugins"]:
@@ -1218,6 +1248,7 @@ def parser() -> argparse.ArgumentParser:
     check.add_argument("--hook-format", choices=("text", "claude-hook"), default="text")
     check.add_argument("--strict", action="store_true", help=_("有可更新项或脚手架差异时退出码为 1（CI 用）"))
     check.add_argument("--show-skipped", action="store_true", help=_("列出被你跳过的项及理由"))
+    check.add_argument("--show-extras", action="store_true", help=_("展开 Profile 中 schema 未声明的字段（项目自有、疑似拼写错误、已被其他插件读取）"))
     check.add_argument("--reprompt", action="store_true", help=_("忽略已记录的决定，重新评估全部脚手架差异"))
     check.add_argument("--fingerprint", action="store_true",
                        help=_("输出脚手架指纹（骨架状态 + 受检 Profile 字段 + 内容锁 + 命名规则；不含 Opinion、自有字段、已跳过项）"))
@@ -1449,7 +1480,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.output == "json":
                 print(json.dumps(report, ensure_ascii=False, indent=2))
             else:
-                sys.stdout.write(render_text(report, show_skipped=args.show_skipped))
+                sys.stdout.write(render_text(report, show_skipped=args.show_skipped, show_extras=args.show_extras))
             return 1 if args.strict and not report["summary"]["up_to_date"] else 0
         if args.command == "doctor":
             result = doctor(env, run_check(env, project, latest_source=args.latest))

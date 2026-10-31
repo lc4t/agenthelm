@@ -336,15 +336,49 @@ def _check_profile(ctx: Context) -> list[dict]:
     return rows
 
 
-def _project_fields(ctx: Context) -> list[str]:
-    """Profile fields the scaffold does not know: the project's own, never compared."""
+# Profile fields other plugins read although the schema does not declare them (path or prefix -> plugin).
+# Declare them in project.schema.json; this list only keeps a project whose schema copy is older from calling them "own".
+READ_BY_OTHER_PLUGINS = {"opinion.nudge": "agent-pack"}
+
+
+def _edit_distance(a: str, b: str) -> int:
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        current = [i]
+        for j, cb in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
+        previous = current
+    return previous[-1]
+
+
+def _likely_typo(key: str, declared: list[str]) -> str | None:
+    """The declared sibling this key is probably a misspelling of (edit distance 1, or 2 for long names)."""
+    if key in declared or len(key) < 4:
+        return None
+    limit = 1 if len(key) <= 6 else 2
+    best = min(((_edit_distance(key.lower(), name.lower()), name) for name in declared), default=(limit + 1, ""))
+    return best[1] if best[0] <= limit else None
+
+
+def _profile_extras(ctx: Context) -> list[dict]:
+    """Profile fields the schema does not declare, sorted into: the project's own, suspected typos, read by another plugin."""
     try:
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
     known = set(ctx.manifest.get("audit_fields", [])) | set(ctx.manifest.get("opinion_fields", [])) \
         | {rule["path"] for rule in ctx.manifest.get("profile", [])}
-    extras: list[str] = []
+    extras: list[dict] = []
+
+    def classify(dotted: str, key: str, props: dict, prefix: str) -> dict:
+        for declared_path, plugin in READ_BY_OTHER_PLUGINS.items():
+            if dotted == declared_path or dotted.startswith(declared_path + "."):
+                return {"path": dotted, "kind": "project-field", "category": "read-by-plugin", "plugin": plugin, "similar_to": None}
+        similar = _likely_typo(key, sorted(props))
+        if similar:
+            return {"path": dotted, "kind": "project-field", "category": "suspected-typo", "plugin": None,
+                    "similar_to": f"{prefix}{similar}"}
+        return {"path": dotted, "kind": "project-field", "category": "own", "plugin": None, "similar_to": None}
 
     def walk(value: dict, props: dict, prefix: str) -> None:
         for key, child in value.items():
@@ -352,12 +386,135 @@ def _project_fields(ctx: Context) -> list[str]:
             declared = props.get(key)
             if declared is None:
                 if not any(item == dotted or item.startswith(dotted + ".") for item in known):
-                    extras.append(dotted)
+                    extras.append(classify(dotted, key, props, prefix))
             elif isinstance(child, dict) and isinstance(declared.get("properties"), dict):
                 walk(child, declared["properties"], dotted + ".")
 
     walk(ctx.profile, schema.get("properties") or {}, "")
-    return sorted(extras)
+    return sorted(extras, key=lambda item: item["path"])
+
+
+def _project_fields(ctx: Context) -> list[str]:
+    """Profile fields the scaffold does not know: the project's own, never compared."""
+    return [item["path"] for item in _profile_extras(ctx)]
+
+
+def _extras_summary(extras: list[dict]) -> dict:
+    fields = [item for item in extras if item["kind"] == "project-field"]
+    return {"total": len(fields),
+            "own": sum(item["category"] == "own" for item in fields),
+            "suspected_typo": sum(item["category"] == "suspected-typo" for item in fields),
+            "read_by_plugin": sum(item["category"] == "read-by-plugin" for item in fields)}
+
+
+# A Profile value whose shape differs from what the schema now declares. The tool never rewrites it.
+SHAPE_SKIP_DESCENT = {"work.case.directory_naming"}  # has its own check (case_naming_spec)
+
+
+def _resolve(node: Any, defs: dict) -> Any:
+    ref = node.get("$ref") if isinstance(node, dict) else None
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        return defs.get(ref.rsplit("/", 1)[-1], node)
+    return node
+
+
+def _json_kind(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    return {str: "string", list: "array", dict: "object", float: "number"}.get(type(value), "object")
+
+
+def _matches_type(value: Any, name: str) -> bool:
+    kind = _json_kind(value)
+    return kind == name or (name == "number" and kind in ("integer", "number"))
+
+
+def _shape_problem(value: Any, node: Any, defs: dict) -> str | None:
+    """Why ``value`` does not fit the declared type or enum; None when it fits or the schema says nothing simple."""
+    node = _resolve(node, defs)
+    if not isinstance(node, dict):
+        return None
+    if "anyOf" in node:
+        branches = [_resolve(branch, defs) for branch in node["anyOf"]]
+        if any(_shape_problem(value, branch, defs) is None for branch in branches):
+            return None
+        return " | ".join(filter(None, (_describe(branch) for branch in branches)))
+    types = node.get("type")
+    types = [types] if isinstance(types, str) else list(types or [])
+    if types and not any(_matches_type(value, name) for name in types):
+        return _describe(node)
+    if "enum" in node and value not in node["enum"]:
+        return _describe(node)
+    return None
+
+
+def _describe(node: Any) -> str:
+    if not isinstance(node, dict):
+        return ""
+    if "enum" in node:
+        return " / ".join(json.dumps(item, ensure_ascii=False) for item in node["enum"])
+    types = node.get("type")
+    return "/".join([types] if isinstance(types, str) else list(types or []))
+
+
+def _example_for(node: Any, defs: dict) -> Any:
+    node = _resolve(node, defs)
+    if not isinstance(node, dict):
+        return None
+    if "enum" in node:
+        return node["enum"][0]
+    types = node.get("type")
+    first = (types if isinstance(types, str) else (types or ["string"])[0])
+    return {"object": {}, "array": [], "string": "...", "boolean": True, "integer": 1, "number": 1}.get(first)
+
+
+def _naming_example() -> dict:
+    return {"style": "date-topic"}
+
+
+def _naming_hint() -> str:
+    return _("可用写法：{0} 或 {1}；要保留原文字不改动：把它移到你自己的字段名下（如 work.case.project_directory_naming），再删掉这一项").format(
+        json.dumps(_naming_example(), ensure_ascii=False),
+        json.dumps({"style": "custom", "pattern": r"^CASE-[0-9]{8}-.+$"}, ensure_ascii=False))
+
+
+def _profile_conflicts(ctx: Context) -> list[dict]:
+    """Values the project wrote before the schema declared the field, whose shape no longer fits: information only."""
+    try:
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    defs = schema.get("$defs") or {}
+    skip = {rule["path"] for rule in ctx.manifest.get("profile", [])} | set(ctx.manifest.get("audit_fields", []))
+    found: list[dict] = []
+
+    def walk(value: dict, props: dict, prefix: str) -> None:
+        for key, child in value.items():
+            node = _resolve(props.get(key), defs)
+            dotted = f"{prefix}{key}"
+            if not isinstance(node, dict) or dotted in skip or child is None:
+                continue
+            problem = _shape_problem(child, node, defs)
+            if problem:
+                found.append(_conflict(dotted, key, prefix, problem, child, node, defs))
+            elif isinstance(child, dict) and isinstance(node.get("properties"), dict) and dotted not in SHAPE_SKIP_DESCENT:
+                walk(child, node["properties"], dotted + ".")
+
+    walk(ctx.profile, schema.get("properties") or {}, "")
+    return sorted(found, key=lambda item: item["path"])
+
+
+def _conflict(dotted: str, key: str, prefix: str, expected: str, value: Any, node: dict, defs: dict) -> dict:
+    example = _naming_example() if dotted == "work.case.directory_naming" else _example_for(node, defs)
+    rename_to = f"{prefix}project_{key}"
+    return {"id": f"conflict:{dotted}", "kind": "profile-conflict", "level": "info", "path": dotted,
+            "expected": expected, "found": _json_kind(value), "example": example, "rename_to": rename_to,
+            "options": ["convert", "keep-as-own-field", "ignore"],
+            "message": _("Profile 的 {0} 是{1}，schema 现在把它声明为 {2}：它按项目自定义处理，工具不读取、不检查，也不会改写你的值。"
+                         "三个选项：转换成 {2} 的写法（例如 {3}）；保留为项目自有字段（改名，如 {4}）；忽略（什么都不用做，不影响退出码）").format(
+                dotted, _json_kind(value), expected, json.dumps(example, ensure_ascii=False), rename_to)}
 
 
 # ---------------------------------------------------------------- decisions
@@ -459,7 +616,8 @@ def case_naming_spec(profile: dict) -> dict:
     if declared is None:
         return {"style": "case-id", "pattern": CASE_STYLES["case-id"], "declared": False, "error": None}
     if not isinstance(declared, dict):
-        return {"style": None, "pattern": None, "declared": True, "error": _("directory_naming 必须是对象")}
+        # Written before the schema declared it: the project's own text. Not an error; the tool does not check names.
+        return {"style": None, "pattern": None, "declared": True, "free_text": True, "error": None}
     pattern = declared.get("pattern")
     style = declared.get("style") or ("custom" if pattern else "case-id")
     if style not in (*CASE_STYLES, "custom"):
@@ -489,7 +647,7 @@ def check_case_naming(ctx: Context) -> dict:
     spec = case_naming_spec(ctx.profile)
     names = _case_directories(ctx)
     mismatched = []
-    if spec["error"] is None and ctx.inputs.work_mode == "case-workspace":
+    if spec["error"] is None and spec["pattern"] and ctx.inputs.work_mode == "case-workspace":
         compiled = re.compile(spec["pattern"])
         mismatched = [name for name in names if not compiled.fullmatch(name)]
     return {**spec, "root": ctx.case_root, "directories": len(names), "mismatched": mismatched[:200],
@@ -546,6 +704,9 @@ def case_naming_plan(root: Path) -> dict:
     result = {"ok": True, "mode": "case-naming", "applied": False, "spec": {k: naming[k] for k in ("style", "pattern", "declared")},
               "error": naming["error"], "renames": [], "declaration_hint": None, "moves_directories": False}
     if naming["error"]:
+        return result
+    if naming.get("free_text"):
+        result["note"] = _("work.case.directory_naming 是项目自己的文字，工具不检查目录命名，也没有改名计划")
         return result
     names = _case_directories(ctx)
     taken = set(names)
@@ -690,7 +851,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     naming = check_case_naming(ctx)
     if naming["error"]:
         findings.append(_finding("profile:work.case.directory_naming", "profile-invalid",
-                                 _("Profile 的 work.case.directory_naming 无法使用"), naming["error"],
+                                 _("Profile 的 work.case.directory_naming 无法使用"), f"{naming['error']}。{_naming_hint()}",
                                  sha(json.dumps({"field": "work.case.directory_naming", "error": naming["error"]})), None,
                                  field="work.case.directory_naming"))
     elif naming["mismatched_count"]:
@@ -701,14 +862,16 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
                                  _("例如 {0}；规则 {1}").format(shown, naming['pattern']),
                                  sha(json.dumps({"style": naming["style"], "pattern": naming["pattern"]})), "case-naming"))
     extras = [{"path": p, "kind": "legacy"} for p in ctx.manifest.get("legacy_paths", []) if _lstat(root / p)]
-    extras += [{"path": f, "kind": "project-field"} for f in _project_fields(ctx)]
+    extras += _profile_extras(ctx)
+    conflicts = _profile_conflicts(ctx)
 
     decisions = load_decisions(root, state_dir)
     active, skipped = partition(findings, decisions, reprompt=reprompt)
     declared = ctx.profile.get("language") if ctx.profile.get("language") in ("zh", "en") else None
     return {"ok": not active, "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
             "project_language": {"declared": declared, "effective": declared or "zh"},
-            "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras, "findings": active, "skipped": skipped,
+            "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras,
+            "profile_extras": _extras_summary(extras), "profile_conflicts": conflicts, "findings": active, "skipped": skipped,
             "decisions": {"path": DECISIONS_PATH.as_posix(), "errors": decisions["errors"],
                           "conflict_copies": decisions["conflict_copies"], "local_path": decisions["local_path"]}}
 
@@ -1100,6 +1263,12 @@ def render_text(result: dict) -> str:
         for item in result["skipped"]:
             reason = item["decision"].get("reason") or _("（未写理由）")
             lines.append(_("  [已跳过 {0}] {1}").format(item['id'], reason))
+        for item in result.get("profile_conflicts", []):
+            lines.append(_("  [信息] {0}").format(item["message"]))
+        summary = result.get("profile_extras") or {}
+        if summary.get("total"):
+            lines.append(_("  [信息] Profile 中有 {0} 个 schema 未声明的字段（项目自有 {1}、疑似拼写错误 {2}、已被其他插件读取 {3}；工具不读取、不比较）：路径在 JSON 输出的 extras 里").format(
+                summary["total"], summary["own"], summary["suspected_typo"], summary["read_by_plugin"]))
         lines.append(_("脚手架与期望一致。") if result["ok"] else _("{0} 项差异。").format(len(result['findings'])))
     else:
         label = _("已执行") if result.get("applied") else _("预览")
