@@ -551,5 +551,8 @@
  "{0} 的 settings 声明 agenthelm 市场指向 {1}（{2}），与 agenthelm 默认来源不同：用默认来源 marketplace add 会被拒绝。": "The settings of {0} declare the agenthelm marketplace as {1} ({2}), which differs from the default source: a marketplace add with the default source is refused.",
  "      - {0}（{1}）": "      - {0} ({1})",
  "：{0}": ": {0}",
- "{0}（{1}：{2}）": "{0} ({1}: {2})"
+ "{0}（{1}：{2}）": "{0} ({1}: {2})",
+ "项目内容锁无法解析，没能检查模板/样例包": "The project content lock could not be parsed, so the template/sample packs were not checked",
+ "项目内容没有检查：{0}。修复或移走这个文件后重试；没有改动任何文件。": "Project content was not checked: {0}. Fix or move that file and try again; no file was changed.",
+ "没有需要更新的内容，--accept / --keep / --append / --diff 指定的文件没有被处理（项目内容已是最新，或项目没有内容锁）；没有改动任何文件。没有内容锁的项目用 {0} fix update-content。": "Nothing to update, so the files named by --accept / --keep / --append / --diff were not handled (the project content is up to date, or the project has no content lock); no file was changed. For a project without a content lock use {0} fix update-content."
 }
