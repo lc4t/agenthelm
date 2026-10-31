@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 from datetime import UTC, datetime
@@ -299,7 +300,7 @@ def pending(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     open_items = select(data, list(OPEN_STATUSES))
     counts = {status: len(select(data, [status])) for status in STATUSES}
     waiting = [item for item in open_items if item["status"] == "pending"]
-    command = f"python3 {RUNTIME} inbox list --project {root} --status pending,trial --output markdown"
+    command = f"python3 {shlex.quote(str(RUNTIME))} inbox list --project {shlex.quote(str(root))} --status pending,trial --output markdown"
     items = [{"id": item["id"], "source": "opinion", "kind": "candidate", "title": item["title"],
               "status": item["status"], "created_at": item["created_at"], "last_action_at": item["last_action_at"],
               "age_days": round(days_since(item["last_action_at"], moment), 1), "hint_command": command}
@@ -316,7 +317,7 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     data = load(root)
     trial = select(data, ["trial"])
     protocol = say("protocol", runtime=RUNTIME, project=root, lang=LANGUAGE,
-                   session=f" --session {args.session}" if args.session else "")
+                   session=words.session_flag(args.session))
     lines = [protocol]
     used = len(protocol)
     shown = []

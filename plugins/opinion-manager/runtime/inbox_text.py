@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Any
 
 
@@ -97,5 +98,17 @@ MESSAGES: dict[str, dict[str, str]] = {
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
+# protocol 里的 {runtime} {project} 会被模型原样当作命令行执行，代入的路径必须经 shell 引用（POSIX）。
+COMMAND_MESSAGES = {"protocol"}
+PATH_FIELDS = ("runtime", "project")
+
+
+def session_flag(session: str) -> str:
+    """命令行里的 `` --session <id>``（会话 ID 同样经 shlex.quote）；没有会话 ID 时为空。"""
+    return f" --session {shlex.quote(str(session))}" if session else ""
+
+
 def text(message_id: str, language: str, /, **fields: Any) -> str:
+    if message_id in COMMAND_MESSAGES:
+        fields = {key: shlex.quote(str(value)) if key in PATH_FIELDS else value for key, value in fields.items()}
     return MESSAGES[message_id][language].format(**fields)

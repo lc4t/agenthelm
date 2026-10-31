@@ -17,20 +17,21 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-from nudge_text import LANGUAGES, resolve_language, text as say
+from nudge_text import LANGUAGES, resolve_language, session_flag, text as say
 
 ENV_DISABLE = "AGENTHELM_NO_NUDGE"
 ENV_DEBUG = "AGENTHELM_NUDGE_DEBUG"
 CLIENTS = ("claude", "codex", "cursor")
 EVENTS = ("session-start", "prompt-submit", "stop")
 STOP_MODES = ("off", "on-completion", "always")
-OURS = re.compile(r"agenthelm\.py\"?\s+nudge\s+hook")
+OURS = re.compile(r"agenthelm\.py['\"]?\s+nudge\s+hook")
 SUBPROCESS_TIMEOUT = 5
 MAX_PROMPT_CHARS = 1500
 SESSION_RETENTION_SECONDS = 14 * 24 * 3600
@@ -354,7 +355,7 @@ def prompt_submit(host: Any, env: Any, payload: dict, client: str, root: Path, c
     manager = find_manager(host, env)
     lang = config["lang"]
     command = say("add_command", lang, manager=manager, root=root, lang=lang,
-                  session=f" --session {session}" if session else "") if manager else say("add_command_fallback", lang)
+                  session=session_flag(session)) if manager else say("add_command_fallback", lang)
     context = say("prompt_hint", lang, hits=say("sep", lang).join(hits[:3]), command=command)
     return render(client, "prompt-submit", context=context)
 
@@ -451,7 +452,9 @@ def status(args: argparse.Namespace, host: Any) -> dict:
 
 
 def cursor_commands(runtime: Path) -> dict[str, dict]:
-    base = f'python3 "{runtime}" nudge hook --client cursor --event'
+    # POSIX 用 shlex.quote（路径含 $、反引号、双引号时双引号不够）；Windows 的 cmd 不认单引号，保留双引号
+    quoted = shlex.quote(str(runtime)) if os.name == "posix" else f'"{runtime}"'
+    base = f"python3 {quoted} nudge hook --client cursor --event"
     return {"sessionStart": {"command": f"{base} session-start", "timeout": 10},
             "stop": {"command": f"{base} stop", "timeout": 10}}
 
