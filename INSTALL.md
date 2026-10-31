@@ -46,11 +46,11 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
    初始化会生成根目录启动器 `menu`（用户选了别的名字时用 `--entry-name`）；向用户说明：不开 Agent 时运行 `./menu` 即可找资料、看进展与检查项目。
 5. 完整读取 opinion-manager 的 Skill、[版本契约](plugins/opinion-manager/references/versioning.md) 与 [首次使用说明](plugins/opinion-manager/references/onboarding.md)。只提供三个主选项：直接用模板、选择模板的部分条目、从空白开始迭代；另可选择基于已授权记忆提出候选规则。正式保存前预览 Profile 与完整正文，用户一次确认；个人来源、Profile、`OPINION.md` 与 `opinion.lock.json` 只保存在目标项目，禁止复制到公开位置。
 
-已有 v5 项目（存在 `.agents/moe.sakanano.project-runtime/project.json`）使用 `--mode migrate --recovery-dir <项目外目录>` 升级 Profile，详见 `AGENT.template.md` 的“从 v5 迁移”。
+已有 v5 项目（存在 `.agents/moe.sakanano.project-runtime/project.json`）使用 `--mode migrate` 升级 Profile（旧 Profile 自动备份到 `~/.agent-pack/recovery/`，也可用 `--recovery-dir <项目外目录>` 指定），详见 `AGENT.template.md` 的“从 v5 迁移”。
 
 ## 3. 不需要 AI Agent 的入口
 
-- 已初始化但没有启动器的项目：`init_project.py --project <项目> --mode entry --entry-name <名称>` 预览，经同意后 `--apply`。根目录已有同名文件时让用户选择 `--keep`（保留）或 `--accept`（替换，先备份到 `--recovery-dir`）。
+- 已初始化但没有启动器的项目：`init_project.py --project <项目> --mode entry --entry-name <名称>` 预览，经同意后 `--apply`。根目录已有同名文件时让用户选择 `--keep`（保留）或 `--accept`（替换，先自动备份到 `~/.agent-pack/recovery/`，输出会写出位置）。
 - 让项目脱离 AI 客户端也能打开菜单：预览 `npx @sakanano-moe/agenthelm runtime install`，经同意后 `--apply`；运行时写入用户数据目录 `~/.local/share/agenthelm/`。
 - 离线安装：解压发布包 `agenthelm-v<版本>.tar.gz`，运行 `python3 <解压目录>/plugins/agent-pack/runtime/agenthelm.py runtime install --apply`。
 - Agent 自己需要查资料或看进展时，调用 `./<启动器> find <词> --output json`、`progress --output json` 等子命令，不另写查找逻辑；写入类子命令默认只预览。

@@ -4,6 +4,15 @@ import os
 
 os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
 
+# The default recovery folder lives under the user's home: give these tests a throw-away one.
+import atexit as _atexit  # noqa: E402
+import shutil as _shutil  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+
+TEST_HOME = _tempfile.mkdtemp(prefix="agenthelm-test-home-")
+os.environ["HOME"] = TEST_HOME
+_atexit.register(_shutil.rmtree, TEST_HOME, ignore_errors=True)
+
 import hashlib
 import io
 import json
@@ -476,15 +485,6 @@ class InitProjectTests(unittest.TestCase):
             self.assertEqual(profile["work"], {"task": {"root": "tasks"}})
             self.assertEqual(profile["opinion"]["provider"], "opinion-workflow")
 
-    def test_migrate_v5_profile_requires_recovery_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            legacy = self.write_v5_profile(root)
-            result = self.run_script(root, "--mode", "migrate", "--apply")
-            self.assertEqual(result.returncode, 2)
-            self.assertTrue(legacy.exists())
-            self.assertFalse((root / ".agents/moe.sakanano.agent-pack").exists())
-
     def test_migrate_skips_symlinked_skill_dir_but_still_upgrades_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as backup, \
                 tempfile.TemporaryDirectory() as outside:
@@ -549,15 +549,133 @@ class InitProjectTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)["code"], "migrate-required")
             self.assertFalse((root / "AGENTS.md").exists())
 
-    def test_migrate_replacement_requires_recovery(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
-            result = self.run_script(
-                root, "--mode", "migrate", "--replace", "AGENTS.md", "--apply"
-            )
-            self.assertEqual(result.returncode, 2)
-            self.assertEqual((root / "AGENTS.md").read_text(), "legacy\n")
+
+class DefaultRecoveryTests(unittest.TestCase):
+    """没有 --recovery-dir 时，替换文件的模式默认备份到 ~/.agent-pack/recovery/<时间>-agenthelm-<模式>/。"""
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.base = Path(self._temporary.name).resolve()
+        self.home = self.base / "home"
+        self.home.mkdir()
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.root = self.base / "project"
+        self.root.mkdir()
+
+    def script(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "--project", str(self.root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--output", "json", *extra],
+                              capture_output=True, text=True, check=False)
+
+    def recovery_dirs(self) -> list[Path]:
+        base = self.home / ".agent-pack" / "recovery"
+        return sorted(base.iterdir()) if base.is_dir() else []
+
+    def test_migrate_replacement_backs_up_to_the_default_folder_and_says_where(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        (self.root / "README.md").write_text("# mine\n", encoding="utf-8")
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        payload = json.loads(result.stdout)
+        (folder,) = self.recovery_dirs()  # one operation, one folder
+        self.assertEqual(Path(payload["recovery"]), folder)
+        self.assertTrue(folder.name.endswith("-agenthelm-migrate"), folder.name)
+        self.assertTrue(payload["recovery_default"])
+        self.assertEqual(payload["recovery_files"], ["AGENTS.md"])
+        self.assertEqual((folder / "AGENTS.md").read_text(), "legacy\n")
+        self.assertNotEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+
+    def test_the_text_output_names_the_folder_and_how_to_restore(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        text = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply", "--output", "text")
+        self.assertEqual(text.returncode, 0, text.stderr)
+        (folder,) = self.recovery_dirs()
+        self.assertIn(f"被替换文件的原件已备份到：{folder}", text.stdout)
+        self.assertIn("还原：", text.stdout)
+
+    def test_migrate_v5_profile_retires_the_old_one_into_the_default_folder(self) -> None:
+        legacy = self.root / ".agents/moe.sakanano.project-runtime/project.json"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(json.dumps({"schema_version": "1.0", "name": "Legacy"}), encoding="utf-8")
+        original = legacy.read_text(encoding="utf-8")
+        result = self.script("--mode", "migrate", "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        (folder,) = self.recovery_dirs()
+        self.assertEqual((folder / ".agents/moe.sakanano.project-runtime/project.json").read_text(), original)
+        self.assertEqual(json.loads(result.stdout)["recovery"], str(folder))
+
+    def test_an_explicit_recovery_dir_still_wins(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        explicit = self.base / "mine"
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--recovery-dir", str(explicit), "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual((explicit / "AGENTS.md").read_text(), "legacy\n")
+        payload = json.loads(result.stdout)
+        self.assertEqual((payload["recovery"], payload["recovery_default"]), (str(explicit), False))
+        self.assertEqual(self.recovery_dirs(), [])
+
+    def test_a_recovery_dir_inside_the_project_is_still_refused(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--recovery-dir", str(self.root / "backup"), "--apply")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+        self.assertFalse((self.root / "backup").exists())
+
+    def test_an_unusable_default_folder_stops_the_command_and_leaves_the_project_alone(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        (self.home / ".agent-pack").write_text("a file where the folder should be\n", encoding="utf-8")
+        before = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*"))
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply")
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["code"], "recovery-unavailable")
+        self.assertIn("项目文件没有改动", payload["error"])
+        self.assertEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+        self.assertEqual(sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*")), before)
+
+    def test_a_default_folder_inside_the_project_is_refused_with_a_hint(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"HOME": str(self.root)}):  # the project is the home folder
+            result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--recovery-dir", json.loads(result.stdout)["error"])
+        self.assertEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+
+    def test_a_preview_creates_no_backup_folder(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIsNone(json.loads(result.stdout)["recovery"])
+        self.assertEqual(self.recovery_dirs(), [])
+
+    def test_refresh_accept_and_entry_replace_use_the_default_folder(self) -> None:
+        self.assertEqual(self.script("--no-entry", "--apply").returncode, 0)
+        (self.root / "AGENTS.md").write_text("my own rules\n", encoding="utf-8")
+        (self.root / init_project.CONTENT_LOCK_PATH).unlink()  # no baseline: the file counts as locally modified
+        refreshed = self.script("--mode", "refresh", "--accept", "AGENTS.md", "--apply")
+        self.assertEqual(refreshed.returncode, 0, refreshed.stdout)
+        payload = json.loads(refreshed.stdout)
+        folder = Path(payload["recovery"])
+        self.assertTrue(folder.name.endswith("-agenthelm-refresh"), folder.name)
+        self.assertEqual((folder / "AGENTS.md").read_text(), "my own rules\n")
+        self.assertEqual(payload["recovery_files"], ["AGENTS.md"])
+        (self.root / "work").write_text("mine\n", encoding="utf-8")
+        entry = self.script("--mode", "entry", "--entry-name", "work", "--accept", "work", "--apply")
+        self.assertEqual(entry.returncode, 0, entry.stdout)
+        payload = json.loads(entry.stdout)
+        self.assertTrue(Path(payload["recovery"]).name.endswith("-agenthelm-entry"))
+        self.assertEqual((Path(payload["recovery"]) / "work").read_text(), "mine\n")
+
+    def test_refresh_without_replacing_anything_makes_no_folder(self) -> None:
+        self.assertEqual(self.script("--apply").returncode, 0)
+        done = self.script("--mode", "refresh", "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertNotIn("recovery", json.loads(done.stdout))
+        self.assertEqual(self.recovery_dirs(), [])
 
 
 class EntryTests(unittest.TestCase):

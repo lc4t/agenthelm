@@ -8,6 +8,15 @@ import os
 
 os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
 
+# The default recovery folder lives under the user's home: give these tests a throw-away one.
+import atexit as _atexit  # noqa: E402
+import shutil as _shutil  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+
+TEST_HOME = _tempfile.mkdtemp(prefix="agenthelm-test-home-")
+os.environ["HOME"] = TEST_HOME
+_atexit.register(_shutil.rmtree, TEST_HOME, ignore_errors=True)
+
 import hashlib
 import json
 import subprocess
@@ -15,6 +24,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("init_project.py")
 sys.path.insert(0, str(SCRIPT.parent))
@@ -299,8 +309,6 @@ class ProfileTests(ScaffoldCase):
         preview = scaffold.fix_profile(self.root, ["runtime.commit_policy"], state_dir=self.state)
         self.assertIn('+    "commit_policy": "explicit"', preview["diff"])
         self.assertEqual(preview["fields"], ["runtime.commit_policy"])
-        with self.assertRaises(init_project.InitError):  # replacing the Profile needs a backup location
-            scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, state_dir=self.state)
         applied = scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, recovery_dir=self.recovery,
                                        state_dir=self.state)
         self.assertTrue(applied["applied"])
@@ -310,6 +318,35 @@ class ProfileTests(ScaffoldCase):
         self.assertEqual(updated["custom"], {"anything": 1})
         self.assertEqual(updated["work"]["case"]["directory_naming"], {"style": "date-topic"})
         self.assertTrue((self.recovery / PROFILE).is_file())
+        self.assertEqual(applied["recovery"], str(self.recovery))
+        self.assertFalse(applied["recovery_default"])
+
+    def test_profile_fix_without_a_recovery_dir_backs_up_to_the_default_folder(self) -> None:
+        self.init("--no-entry")
+        self.drop("runtime.commit_policy")
+        original = (self.root / PROFILE).read_text()
+        home = self.recovery.parent / "home"
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            applied = scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, state_dir=self.state)
+        folder = Path(applied["recovery"])
+        self.assertEqual(folder.parent, home / ".agent-pack" / "recovery")
+        self.assertTrue(folder.name.endswith("-agenthelm-profile"), folder.name)
+        self.assertTrue(applied["recovery_default"])
+        self.assertEqual(applied["recovery_files"], [PROFILE.as_posix()])
+        self.assertEqual((folder / PROFILE).read_text(), original)
+        self.assertIn("被替换文件的原件已备份到：" + str(folder), scaffold.render_text(applied))
+
+    def test_profile_fix_stops_untouched_when_the_default_folder_is_unusable(self) -> None:
+        self.init("--no-entry")
+        self.drop("runtime.commit_policy")
+        before = (self.root / PROFILE).read_bytes()
+        home = self.recovery.parent / "home"
+        home.mkdir()
+        (home / ".agent-pack").write_text("not a folder\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"HOME": str(home)}), self.assertRaises(init_project.InitError) as caught:
+            scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, state_dir=self.state)
+        self.assertEqual(caught.exception.code, "recovery-unavailable")
+        self.assertEqual((self.root / PROFILE).read_bytes(), before)
 
     def test_project_own_fields_are_listed_but_never_flagged(self) -> None:
         self.init("--no-entry")

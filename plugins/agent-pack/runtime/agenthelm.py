@@ -963,9 +963,13 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
         completed = subprocess.run(command, capture_output=True, text=True, check=False,
                                    env=env.child_environment())
         try:
-            return json.loads(completed.stdout)
+            outcome = json.loads(completed.stdout)
         except ValueError as exc:
             raise CheckError((completed.stderr or completed.stdout).strip()[:300]) from exc
+        if completed.returncode not in (0, 1) and isinstance(outcome, dict) and outcome.get("error"):
+            # Exit 1 is a normal "blocked, choose per file"; anything else (e.g. no usable backup folder) is a failure.
+            raise CheckError(str(outcome["error"]))
+        return outcome
 
     blocked = _("先更新 agents-init 插件，再用新模板预览") if stale else None
     return Step("content", None, description, action=run, blocked=blocked)
@@ -1444,6 +1448,11 @@ def main(argv: list[str] | None = None) -> int:
                                     child_env=env.child_environment())
             payload = {"ok": all(r["status"] != "failed" for r in results), "applied": args.apply,
                        "steps": results, "summary": report["summary"]}
+            backups = [record["result"] for record in results
+                       if isinstance(record.get("result"), dict) and record["result"].get("recovery")]
+            if args.apply and backups:
+                payload["recovery"] = backups[0]["recovery"]
+                payload["recovery_files"] = [path for item in backups for path in item.get("recovery_files", [])]
             if not steps:
                 payload["message"] = _("没有需要更新的内容。")
         else:  # migrate
@@ -1473,7 +1482,12 @@ def main(argv: list[str] | None = None) -> int:
         _print_steps(payload["steps"], args.apply)
         for item in payload.get("legacy", []):
             print(_("  [旧安装] {0} {1}: {2}").format(item['kind'], item['name'], item['path']) + (_("（需手动处理）") if item.get("manual") else ""))
-        if payload.get("recovery"):
+        if payload.get("recovery") and args.command == "update":
+            print(_("被替换文件的原件已备份到：{0}").format(payload['recovery']))
+            for path in payload.get("recovery_files", []):
+                print(f"  {path}")
+            print(_("还原：把备份目录里的文件按相同的相对路径复制回项目目录（cp -p <备份目录>/<文件> <项目目录>/<文件>）。"))
+        elif payload.get("recovery"):
             print(_("旧安装已移入：{0}（含 migration.json 清单，可按清单恢复）").format(payload['recovery']))
     return 0 if payload["ok"] else 1
 

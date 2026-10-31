@@ -11,7 +11,9 @@ import os
 import re
 import stat
 import sys
+import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path from other plugins
@@ -90,6 +92,60 @@ class InitError(Exception):
     def __init__(self, message: str, *, code: str = "invalid-request") -> None:
         super().__init__(message)
         self.code = code
+
+
+# ---------------------------------------------------------------- recovery (backup of replaced files)
+
+def default_recovery_dir(label: str) -> Path:
+    """``~/.agent-pack/recovery/<UTC time>-agenthelm-<label>``: the place ``agenthelm update`` and ``migrate`` use."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    return Path.home() / ".agent-pack" / "recovery" / f"{stamp}-agenthelm-{label}"
+
+
+def prepare_recovery_dir(root: Path, recovery_dir: Path | None, label: str) -> tuple[Path, bool]:
+    """The folder replaced files are copied to, ready for writing: ``(path, was_defaulted)``.
+
+    An explicit ``--recovery-dir`` wins; otherwise the default location is used, so nobody has to invent a backup
+    folder first. Either way it must be outside the project and writable. Callers resolve it *before* touching any
+    project file, so a backup folder that cannot be used leaves the project unchanged instead of skipping the backup.
+    """
+    defaulted = recovery_dir is None
+    target = (default_recovery_dir(label) if defaulted else recovery_dir.expanduser()).resolve()
+    if target == root or root in target.parents:
+        if defaulted:
+            raise InitError(_("默认恢复目录 {0} 在项目目录内，请用 --recovery-dir 指定项目外的目录").format(target))
+        raise InitError("--recovery-dir must be outside the project root")
+    try:
+        target.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not target.is_dir():
+            raise OSError(_("不是目录"))
+        with tempfile.TemporaryFile(dir=target):
+            pass
+    except OSError as exc:
+        raise InitError(_("恢复目录 {0} 无法创建或写入：{1}。项目文件没有改动；请检查权限，或用 --recovery-dir 指定其他项目外目录").format(target, exc),
+                        code="recovery-unavailable") from exc
+    return target, defaulted
+
+
+def backup_into(root: Path, recovery: Path, relative: Path) -> None:
+    """Copy ``root/relative`` to the same relative path under ``recovery`` (never overwriting an earlier copy)."""
+    archived = recovery / relative
+    if archived.exists():
+        raise InitError(f"recovery collision: {relative}")
+    archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    archived.write_bytes((root / relative).read_bytes())
+
+
+def recovery_lines(result: dict) -> list[str]:
+    """Text lines telling the user where the originals went and how to get them back."""
+    recovery = result.get("recovery")
+    if not recovery or not result.get("applied"):
+        return []
+    files = [str(path) for path in result.get("recovery_files") or []]
+    lines = [_("被替换文件的原件已备份到：{0}").format(recovery)]
+    lines += [f"  {path}" for path in files]
+    lines.append(_("还原：把备份目录里的文件按相同的相对路径复制回项目目录（cp -p <备份目录>/<文件> <项目目录>/<文件>）。"))
+    return lines
 
 
 @dataclass(frozen=True)
@@ -602,19 +658,14 @@ def apply_migration(
     replace: Iterable[Path],
     recovery_dir: Path | None,
     retire: Iterable[Path] = (),
-) -> None:
+) -> Path | None:
+    """Write the migration; replaced and retired files are moved to the recovery folder first. Returns that folder."""
     create_paths = list(create)
     replace_paths = list(replace)
     retire_paths = list(retire)
-    if (replace_paths or retire_paths) and recovery_dir is None:
-        raise InitError("--recovery-dir is required when --replace is used or a legacy profile is retired")
-    recovery = recovery_dir.expanduser().resolve() if recovery_dir is not None else None
-    if recovery is not None:
-        if recovery == root or root in recovery.parents:
-            raise InitError("--recovery-dir must be outside the project root")
-        recovery.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if recovery.is_symlink() or not recovery.is_dir():
-            raise InitError("--recovery-dir must be a real directory")
+    recovery: Path | None = None
+    if replace_paths or retire_paths or recovery_dir is not None:
+        recovery, _defaulted = prepare_recovery_dir(root, recovery_dir, "migrate")
         conflicts = [path for path in [*replace_paths, *retire_paths] if (recovery / path).exists()]
         if conflicts:
             raise InitError("recovery collision: " + ", ".join(str(path) for path in conflicts))
@@ -656,6 +707,7 @@ def apply_migration(
         raise InitError(f"migration rolled back after write failure: {exc}") from exc
     finally:
         os.close(root_fd)
+    return recovery
 
 
 def contract_pack(plugin_root: Path = PLUGIN_ROOT) -> dict | None:
@@ -863,19 +915,12 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         result["hint"] = _("本地已改动的文件需逐个选择：--accept <文件> 用新模板替换（先备份），或 --keep <文件> 保留本地")
     if not args.apply or blocked:
         return (0 if not blocked else 1), result
-    if replacing and args.recovery_dir is None:
-        raise InitError("--recovery-dir is required when refresh replaces files")
     if replacing:
-        recovery = args.recovery_dir.expanduser().resolve()
-        if recovery == root or root in recovery.parents:
-            raise InitError("--recovery-dir must be outside the project root")
+        recovery, defaulted = prepare_recovery_dir(root, args.recovery_dir, "refresh")
         for relative in replacing:
-            archived = recovery / relative
-            if archived.exists():
-                raise InitError(f"recovery collision: {relative}")
-            archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            archived.write_bytes((root / relative).read_bytes())
-        result["recovery"] = str(recovery)
+            backup_into(root, recovery, relative)
+        result.update(recovery=str(recovery), recovery_default=defaulted,
+                      recovery_files=[path.as_posix() for path in replacing])
     for item in plan:
         relative = Path(item["path"])
         if item["action"] in {"replace", "create"}:
@@ -999,21 +1044,13 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         "readme_snippet": readme_block(name, project_language(profile)) if not readme else "",
     }
     if action == "blocked":
-        result["hint"] = _("{0} 已存在：--accept {1} 用模板替换（先备份到 --recovery-dir），或 --keep {2} 保留你的文件").format(name, name, name)
+        result["hint"] = _("{0} 已存在：--accept {1} 用模板替换（先备份到恢复目录），或 --keep {2} 保留你的文件").format(name, name, name)
     if not args.apply or action == "blocked":
         return (0 if action != "blocked" else 1), result
     if action == "replace":
-        if args.recovery_dir is None:
-            raise InitError("--recovery-dir is required when replacing the launcher")
-        recovery = args.recovery_dir.expanduser().resolve()
-        if recovery == root or root in recovery.parents:
-            raise InitError("--recovery-dir must be outside the project root")
-        archived = recovery / name
-        if archived.exists():
-            raise InitError(f"recovery collision: {name}")
-        archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        archived.write_bytes(target.read_bytes())
-        result["recovery"] = str(recovery)
+        recovery, defaulted = prepare_recovery_dir(root, args.recovery_dir, "entry")
+        backup_into(root, recovery, Path(name))
+        result.update(recovery=str(recovery), recovery_default=defaulted, recovery_files=[name])
     if action in ("create", "replace"):
         _atomic_write(target, template, 0o755)
     if readme:
@@ -1061,11 +1098,12 @@ def _adopt_text(result: dict) -> str:
     for note in result.get("notes", []):
         lines.append(f"  note: {note}")
     if result.get("needs_recovery_dir") and not result.get("applied"):
-        lines.append("  " + _("改动已有文件需要 --recovery-dir（项目外的备份目录）"))
+        lines.append("  " + _("改动已有文件前会先备份到 ~/.agent-pack/recovery/（也可用 --recovery-dir 指定项目外的目录）"))
     if scan.get("recommended_flags"):
         lines.append("  " + _("推荐选项：") + " ".join(scan["recommended_flags"]))
     if result.get("check_after"):
         lines.append("  " + _("接管后检查：") + (_("一致") if result["check_after"]["ok"] else _("仍有 ") + ", ".join(result["check_after"]["findings"])))
+    lines.extend(recovery_lines(result))
     return "\n".join(lines) + "\n"
 
 
@@ -1109,7 +1147,8 @@ def parser() -> argparse.ArgumentParser:
                         help=_("新项目默认 case-workspace；既有项目只在显式选择后更改模式"))
     result.add_argument("--replace", action="append", default=[], help="known skeleton path to replace in migrate mode")
     result.add_argument("--skip", action="append", default=[], help="known skeleton path the project does not want (migrate mode)")
-    result.add_argument("--recovery-dir", type=Path, help="outside-project backup directory required for replacements")
+    result.add_argument("--recovery-dir", type=Path,
+                        help=_("被替换文件的备份目录（必须在项目外）；缺省 ~/.agent-pack/recovery/<UTC 时间>-agenthelm-<模式>/"))
     result.add_argument("--agents-policy", choices=("keep", "append", "split", "side-by-side"), default=None,
                         help=_("adopt：已有 AGENTS.md 怎么处理（缺省 keep，不改动）"))
     result.add_argument("--claude-policy", choices=("keep", "add-import"), default=None,
@@ -1173,6 +1212,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(result["hint"])
                 if result.get("readme_snippet"):
                     print(_("README 里可以加上：\n") + result["readme_snippet"])
+                for line in recovery_lines(result):
+                    print(line)
             return code
         if args.mode == "refresh":
             code, result = refresh_project(args, root)
@@ -1185,6 +1226,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  {item['action']:8} {item['path']} [{item['state']}]")
                 if result.get("hint"):
                     print(result["hint"])
+                for line in recovery_lines(result):
+                    print(line)
             return code
         missing = [flag for flag, value in (("--name", args.name), ("--project-type", args.project_type),
                                             ("--vcs", args.vcs), ("--stack", args.stack),
@@ -1294,6 +1337,7 @@ def main(argv: list[str] | None = None) -> int:
         preserved = [path for path in collisions if path not in requested_replace]
         pack = contract_pack()
         baseline = content_baseline(pack, files, [*create, *replace], inputs.entry_launcher)
+        recovery_used: Path | None = None
         if args.mode == "init":
             applied = bool(args.apply and not collisions)
             if applied:
@@ -1302,7 +1346,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             applied = bool(args.apply)
             if applied:
-                apply_migration(root, files, create, replace, args.recovery_dir, retire)
+                recovery_used = apply_migration(root, files, create, replace, args.recovery_dir, retire)
                 if retire:
                     try:
                         (root / LEGACY_PROFILE_PATH.parent).rmdir()
@@ -1325,6 +1369,9 @@ def main(argv: list[str] | None = None) -> int:
             "skipped_symlinked_parents": [str(path) for path in symlinked],
             "skipped_by_request": sorted(str(path) for path in requested_skip),
             "retire": [str(path) for path in retire],
+            "recovery": str(recovery_used) if recovery_used is not None and (replace or retire) else None,
+            "recovery_default": args.recovery_dir is None if recovery_used is not None else None,
+            "recovery_files": [str(path) for path in [*replace, *retire]] if recovery_used is not None else [],
             "profile_upgraded_from": str(LEGACY_PROFILE_PATH) if retire else None,
             "runtime": runtime_status,
             "entry": {"launcher": inputs.entry_launcher, "command": entry_command(inputs.entry_launcher)},
@@ -1350,6 +1397,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  skip {path} (symlinked parent)")
             for path in retire:
                 print(f"  retire {path} (upgraded into {PROFILE_PATH})")
+            for line in recovery_lines(result):
+                print(line)
         return 0 if ok else 1
     except InitError as error:
         if args.output == "json":

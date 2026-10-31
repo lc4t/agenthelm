@@ -713,17 +713,9 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
 
 # ---------------------------------------------------------------- shared write helpers
 
-def _backup(root: Path, recovery_dir: Path | None, relative: Path) -> str:
-    if recovery_dir is None:
-        raise _fail(_("替换文件前需要 --recovery-dir"))
-    recovery = recovery_dir.expanduser().resolve()
-    if recovery == root or root in recovery.parents:
-        raise _fail("--recovery-dir must be outside the project root")
-    archived = recovery / relative
-    if archived.exists():
-        raise _fail(f"recovery collision: {relative}")
-    archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    archived.write_bytes((root / relative).read_bytes())
+def _backup(root: Path, recovery: Path, relative: Path) -> str:
+    """Copy one file into the (already prepared) recovery folder."""
+    _init().backup_into(root, recovery, relative)
     return str(recovery)
 
 
@@ -811,7 +803,9 @@ def fix_profile(root: Path, fields: list[str] | None, *, apply: bool = False, re
         return result
     if module._read_project_json(root, module.PROFILE_PATH, "Project Profile") != profile:
         raise _fail(_("Profile 刚被改过，请重新预览"), "conflict")
-    result["recovery"] = _backup(root, recovery_dir, module.PROFILE_PATH)
+    recovery, defaulted = module.prepare_recovery_dir(root, recovery_dir, "profile")
+    result.update(recovery=_backup(root, recovery, module.PROFILE_PATH), recovery_default=defaulted,
+                  recovery_files=[module.PROFILE_PATH.as_posix()])
     module._atomic_write(root / module.PROFILE_PATH, module.json_text(updated))
     result["applied"] = True
     return result
@@ -925,13 +919,14 @@ def update_regions(root: Path, *, accept: list[str], keep: list[str], apply: boo
         result["blocked"] = _("区块内部有你的改动，需逐个选择：--accept <文件>#<ID> 用模板替换（先备份），或 --keep <文件>#<ID> 保留")
     if not apply or blocked:
         return (0 if not blocked else 1), result
-    if replacing and recovery_dir is None:
-        raise _fail(_("替换区块前需要 --recovery-dir"))
-    backed_up: set[str] = set()
-    for item in replacing:
-        if item["path"] not in backed_up:
-            result["recovery"] = _backup(root, recovery_dir, Path(item["path"]))
-            backed_up.add(item["path"])
+    backed_up: list[str] = []
+    if replacing:
+        recovery, defaulted = module.prepare_recovery_dir(root, recovery_dir, "region")
+        for item in replacing:
+            if item["path"] not in backed_up:
+                _backup(root, recovery, Path(item["path"]))
+                backed_up.append(item["path"])
+        result.update(recovery=str(recovery), recovery_default=defaulted, recovery_files=backed_up)
     new_digests: dict[str, dict[str, str]] = {}
     for item in replacing:
         path = root / item["path"]
@@ -1078,4 +1073,5 @@ def render_text(result: dict) -> str:
             lines.append(result["diff"].rstrip())
         if result.get("blocked"):
             lines.append(result["blocked"])
+        lines.extend(_init().recovery_lines(result))
     return "\n".join(lines) + "\n"

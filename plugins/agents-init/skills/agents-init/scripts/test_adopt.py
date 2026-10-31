@@ -17,6 +17,15 @@ from unittest import mock
 
 os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; the English output is covered below
 
+# The default recovery folder lives under the user's home: give these tests a throw-away one.
+import atexit as _atexit  # noqa: E402
+import shutil as _shutil  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+
+TEST_HOME = _tempfile.mkdtemp(prefix="agenthelm-test-home-")
+os.environ["HOME"] = TEST_HOME
+_atexit.register(_shutil.rmtree, TEST_HOME, ignore_errors=True)
+
 SCRIPT = Path(__file__).with_name("init_project.py")
 sys.path.insert(0, str(SCRIPT.parent))
 import adopt  # noqa: E402
@@ -116,6 +125,10 @@ class SectionTests(unittest.TestCase):
         self.assertIsNone(found["我的项目"].matched)
 
 
+def snapshot_files(root: Path) -> dict[str, bytes]:
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
 class AdoptCase(unittest.TestCase):
     def setUp(self) -> None:
         self._temporary = tempfile.TemporaryDirectory()
@@ -150,6 +163,10 @@ class AdoptCase(unittest.TestCase):
              "--project-type", "notes", "--vcs", "none", "--stack", "markdown", "--runtime", "local",
              "--agent-cli", "claude", "--output", "json", "--state-dir", str(self.state), *extra],
             capture_output=True, text=True, check=False)
+
+    def default_folders(self) -> list[Path]:
+        base = Path(os.environ["HOME"]) / ".agent-pack" / "recovery"
+        return sorted(base.iterdir()) if base.is_dir() else []
 
     def adopt(self, *extra: str, apply: bool = True, recovery: bool = False) -> tuple[int, dict]:
         args = list(extra)
@@ -310,19 +327,43 @@ class AdoptRootsTests(AdoptCase):
 
 
 class AdoptAppendTests(AdoptCase):
-    def test_changing_a_user_file_needs_an_outside_backup_directory(self) -> None:
+    def test_changing_a_user_file_backs_up_to_the_default_folder(self) -> None:
         self.messy_project()
-        code, preview = self.adopt("--agents-policy", "append", apply=False)
-        self.assertEqual(code, 0)
-        self.assertTrue(preview["needs_recovery_dir"])
-        self.assertEqual((self.root / "AGENTS.md").read_text(), USER_AGENTS)
-        done = self.cmd("adopt", "--agents-policy", "append", "--apply")
+        with mock.patch.dict(os.environ, {"HOME": str(self.root.parent / "home")}):
+            code, preview = self.adopt("--agents-policy", "append", apply=False)
+            self.assertEqual(code, 0)
+            self.assertTrue(preview["needs_recovery_dir"])
+            self.assertEqual(self.default_folders(), [])  # a preview makes no backup folder
+            self.assertEqual((self.root / "AGENTS.md").read_text(), USER_AGENTS)
+            code, done = self.adopt("--agents-policy", "append", "--claude-policy", "add-import")
+            self.assertEqual(code, 0, done)
+            (folder,) = self.default_folders()
+            self.assertTrue(folder.name.endswith("-agenthelm-adopt"), folder.name)
+            self.assertEqual(done["recovery"], str(folder))
+            self.assertTrue(done["recovery_default"])
+            self.assertEqual(sorted(done["recovery_files"]), ["AGENTS.md", "CLAUDE.md"])
+            self.assertEqual((folder / "AGENTS.md").read_text(), USER_AGENTS)  # one operation, one folder
+            self.assertEqual((folder / "CLAUDE.md").read_text(), USER_CLAUDE)
+
+    def test_an_unusable_default_folder_stops_adoption_before_any_change(self) -> None:
+        self.messy_project()
+        home = self.root.parent / "home"
+        home.mkdir()
+        (home / ".agent-pack").write_text("not a folder\n", encoding="utf-8")
+        before = snapshot_files(self.root)
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            done = self.cmd("adopt", "--agents-policy", "append", "--apply")
         self.assertEqual(done.returncode, 2)
-        self.assertIn("--recovery-dir", json.loads(done.stdout)["error"])
-        self.assertEqual((self.root / "AGENTS.md").read_text(), USER_AGENTS)
+        self.assertEqual(json.loads(done.stdout)["code"], "recovery-unavailable")
+        self.assertEqual(snapshot_files(self.root), before)
         self.assertFalse((self.root / init_project.PROFILE_PATH).exists())
+
+    def test_a_backup_folder_inside_the_project_is_still_refused(self) -> None:
+        self.messy_project()
         inside = self.cmd("adopt", "--agents-policy", "append", "--recovery-dir", str(self.root / "backup"), "--apply")
         self.assertEqual(inside.returncode, 2)
+        self.assertEqual((self.root / "AGENTS.md").read_text(), USER_AGENTS)
+        self.assertFalse((self.root / "backup").exists())
 
     def test_append_keeps_the_original_text_and_adds_a_managed_region(self) -> None:
         self.messy_project()
@@ -469,6 +510,20 @@ class RegionLifecycleTests(AdoptCase):
         self.assertEqual(code, 0, taken)
         self.assertNotIn("我加的一行", path.read_text())
         self.assertTrue((self.recovery / "r3" / "CLAUDE.md").is_file())
+
+    def test_region_accept_without_a_recovery_dir_backs_up_to_the_default_folder(self) -> None:
+        self.adopted_with_regions()
+        path = self.root / "CLAUDE.md"
+        edited = path.read_text().replace("@AGENTS.md\n", "@AGENTS.md\n我加的一行\n", 1)
+        path.write_text(edited)
+        with mock.patch.dict(os.environ, {"HOME": str(self.root.parent / "home")}):
+            code, taken = self.region_cmd("--accept", "CLAUDE.md#claude-import", "--apply")
+            self.assertEqual(code, 0, taken)
+            (folder,) = self.default_folders()
+        self.assertTrue(folder.name.endswith("-agenthelm-region"), folder.name)
+        self.assertEqual(taken["recovery"], str(folder))
+        self.assertEqual(taken["recovery_files"], ["CLAUDE.md"])
+        self.assertEqual((folder / "CLAUDE.md").read_text(), edited)
 
     def test_removed_region_is_reported_and_can_be_skipped(self) -> None:
         self.adopted_with_regions()

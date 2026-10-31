@@ -538,12 +538,11 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     if not getattr(args, "apply", False):
         return 0, result
     recovery_dir = getattr(args, "recovery_dir", None)
-    if needs_recovery and recovery_dir is None:
-        raise _fail(_("改动已有文件前需要 --recovery-dir（项目外的备份目录）"))
-    if recovery_dir is not None and needs_recovery:
-        resolved = recovery_dir.expanduser().resolve()
-        if resolved == root or root in resolved.parents:
-            raise _fail("--recovery-dir must be outside the project root")
+    recovery: Path | None = None
+    defaulted = False
+    if needs_recovery:
+        # Before any project file changes: an unusable backup folder stops the adoption.
+        recovery, defaulted = init.prepare_recovery_dir(root, recovery_dir, "adopt")
 
     originals: dict[Path, tuple[str, int]] = {}
     try:
@@ -554,7 +553,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
             original = path.read_text(encoding="utf-8")
             originals[item["path"]] = (original, os.stat(path).st_mode & 0o7777)
         for item in modifications:
-            scaffold._backup(root, recovery_dir, item["path"])
+            scaffold._backup(root, recovery, item["path"])
         for item in modifications:
             init._atomic_write(root / item["path"], item["new_text"], originals[item["path"]][1])
         init.apply_writes(root, files, create)
@@ -586,7 +585,9 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
                             state_dir=getattr(args, "state_dir", None))
             decided.append(finding["id"])
     final = scaffold.check(root, state_dir=getattr(args, "state_dir", None))
-    result.update(applied=True, recovery=str(recovery_dir.expanduser().resolve()) if needs_recovery else None,
+    result.update(applied=True, recovery=str(recovery) if recovery is not None else None,
+                  recovery_default=defaulted if recovery is not None else None,
+                  recovery_files=[str(item["path"]) for item in modifications] if recovery is not None else [],
                   decisions_recorded=decided,
                   check_after={"ok": final["ok"], "findings": [f["id"] for f in final["findings"]]})
     return 0, result

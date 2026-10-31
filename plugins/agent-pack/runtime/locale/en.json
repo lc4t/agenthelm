@@ -381,5 +381,7 @@
  "{0} 建链接后核对失败": "Verification failed after creating the link for {0}",
  "本机目标目录 {0} 已有内容": "The local target directory {0} already has content",
  "读不了对方的输出（需要对方运行 local-only check --fingerprint --output json）：{0}": "Cannot read the other machine's output (it needs to run local-only check --fingerprint --output json): {0}",
- "重建失败（{0}，退出码 {1}）：": "Rebuild failed ({0}, exit code {1}): "
+ "重建失败（{0}，退出码 {1}）：": "Rebuild failed ({0}, exit code {1}): ",
+ "被替换文件的原件已备份到：{0}": "Originals of the replaced files were backed up to: {0}",
+ "还原：把备份目录里的文件按相同的相对路径复制回项目目录（cp -p <备份目录>/<文件> <项目目录>/<文件>）。": "To restore: copy the files from the backup folder back to the project folder under the same relative paths (cp -p <backup>/<file> <project>/<file>)."
 }
