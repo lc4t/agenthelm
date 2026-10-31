@@ -84,17 +84,21 @@ def group_text(profile: dict[str, Any], parts: dict[str, Any], family: str) -> s
 
 def core_text(profile: dict[str, Any], lock: dict[str, Any] | None) -> str:
     parts = partition(profile)
-    origin = f"正文指纹：`{lock['opinion_sha256']}`" if lock else "候选 Profile 预览，尚未生效"
-    lines = ["# Agent Opinion 核心规则", "", f"Profile：`{profile['id']}@{profile['version']}`；{origin}。",
-             "本输出是完整正文的只读切片，始终适用。场景规则束见文末索引，命中时再读取。"]
+    if lock:
+        origin = _("正文指纹：`{0}`").format(lock["opinion_sha256"])
+    else:
+        origin = _("候选 Profile 预览，尚未生效")
+    lines = [_("# Agent Opinion 核心规则"), "",
+             _("Profile：`{0}@{1}`；{2}。").format(profile["id"], profile["version"], origin),
+             _("本输出是完整正文的只读切片，始终适用。场景规则束见文末索引，命中时再读取。")]
     for family in parts["always"]:
         lines.extend(("", group_text(profile, parts, family)))
-    if profile["custom"]:
-        lines.extend(("", "## 用户自定义规则", "", profile["custom"]))
-    lines.extend(("", "## 规则束索引", "", "任务命中触发条件时用 `context bundle <系列>` 读取对应规则束；判断不清时一并读取。"))
+    lines.extend(versioned.custom_section(profile))
+    lines.extend(("", _("## 规则束索引"), "", _("任务命中触发条件时用 `context bundle <系列>` 读取对应规则束；判断不清时一并读取。")))
     for bundle in parts["bundles"]:
         family = bundle["family"]
-        lines.append(f"- `{family}`（{parts['names'][family]}，{len(parts['groups'][family])} 条）：{bundle['trigger']}。不适用：{bundle['exclude']}。")
+        lines.append(_("- `{0}`（{1}，{2} 条）：{3}。不适用：{4}。").format(
+            family, parts["names"][family], len(parts["groups"][family]), bundle["trigger"], bundle["exclude"]))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -112,7 +116,7 @@ def bundle_text(profile: dict[str, Any], names: list[str]) -> str:
     lines: list[str] = []
     for name in names:
         family = resolve_bundle(parts, name)
-        lines.extend((f"# 规则束 `{parts['refs'][family]}`", "", group_text(profile, parts, family), ""))
+        lines.extend((_("# 规则束 `{0}`").format(parts["refs"][family]), "", group_text(profile, parts, family), ""))
     return "\n".join(lines).rstrip() + "\n"
 
 

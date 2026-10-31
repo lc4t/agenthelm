@@ -180,5 +180,14 @@
  "bundle 的模板系列或精确模板引用": "template family or exact template reference of the bundle",
  "用候选或已保存的 Profile 预览，不读取项目锁": "preview with a candidate or saved Profile, without reading the project lock",
  "交付信号，格式为 键=值，可重复": "delivery signal as key=value; repeatable",
- "本次已读取的规则束，可重复": "rule bundles read this time; repeatable"
+ "本次已读取的规则束，可重复": "rule bundles read this time; repeatable",
+ "正文指纹：`{0}`": "Body fingerprint: `{0}`",
+ "候选 Profile 预览，尚未生效": "Candidate Profile preview, not in effect yet",
+ "# Agent Opinion 核心规则": "# Agent Opinion core rules",
+ "Profile：`{0}@{1}`；{2}。": "Profile: `{0}@{1}`; {2}.",
+ "本输出是完整正文的只读切片，始终适用。场景规则束见文末索引，命中时再读取。": "This output is a read-only slice of the full body and always applies. Scenario rule bundles are listed in the index at the end; read them when they match.",
+ "## 规则束索引": "## Rule bundle index",
+ "任务命中触发条件时用 `context bundle <系列>` 读取对应规则束；判断不清时一并读取。": "When a task matches a trigger, read the bundle with `context bundle <family>`; when unsure, read it too.",
+ "- `{0}`（{1}，{2} 条）：{3}。不适用：{4}。": "- `{0}` ({1}; rules: {2}): {3}. Not applicable: {4}.",
+ "# 规则束 `{0}`": "# Rule bundle `{0}`"
 }

@@ -27,10 +27,9 @@ TRANSLATE = ("_", "N_")
 ALLOWED: dict[tuple[str, str], str] = {
     ("agent-pack/runtime/agent_pack_nudge.py", "<module>"): "default trigger keywords: user input words, they come with English siblings",
     ("agent-pack/runtime/agenthelm_runtime.py", "<module>"): "text of the generated launcher script, written to disk",
-    ("opinion-manager/runtime/context.py", "core_text"): "slice of OPINION.md, rendered deterministically from the Profile in both languages (test_the_opinion_files_do_not_depend_on_the_language)",
-    ("opinion-manager/runtime/context.py", "bundle_text"): "same: rule bundle slice of OPINION.md",
     ("opinion-manager/runtime/opinion_manager.py", "render_opinion"): "OPINION.md body, language independent by design",
     ("opinion-manager/runtime/versioned.py", "render"): "OPINION.md body, language independent by design",
+    ("opinion-manager/runtime/versioned.py", "custom_section"): "OPINION.md custom-rules heading, shared by the body and the context slices",
     ("opinion-manager/runtime/versioned.py", "render_rule"): "OPINION.md rule text, language independent by design",
     ("project-orchestrator/runtime/assets.py", "<module>"): "regular expressions that match Chinese file names and dates",
     ("project-orchestrator/runtime/assets.py", "_extract_edges"): "regular expression that stops a path at Chinese punctuation",
