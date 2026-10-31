@@ -548,6 +548,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     machine = machine_findings(env, project, reprompt=reprompt, quick=hook_mode)
     local_attention = sum(1 for item in machine["findings"] if item.get("attention"))
     scaffold_active = len(scaffold["findings"]) if scaffold else 0
+    # 只有“需要处理”的脚手架发现（level must）参与 up_to_date、--strict 与会话开始提示；旧版 agents-init 没有分级时按可选处理。
+    scaffold_required = sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "must")
     behind = [item for item in plugins if item["status"] == "behind"]
     legacy = [item for item in plugins if item["client"] == "legacy"]
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
@@ -566,6 +568,9 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "language": language,
         "summary": {
             "scaffold_findings": scaffold_active,
+            "scaffold_required": scaffold_required,
+            "scaffold_optional": sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level", "suggest") == "suggest"),
+            "scaffold_info": sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "info"),
             "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
             "local_only_attention": local_attention,
             "plugins_behind": len(behind),
@@ -574,7 +579,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
             "content_conflicts": sum(1 for item in content if item["status"] == "conflict"),
             "opinion_updates": len(opinion_updates),
             "legacy_installs": len(legacy),
-            "up_to_date": not (behind or content_updates or opinion_updates or legacy or scaffold_active
+            "up_to_date": not (behind or content_updates or opinion_updates or legacy or scaffold_required
                                or local_attention),
         },
     }
@@ -602,8 +607,8 @@ def one_line(report: dict) -> str | None:
         parts.append(_("Opinion 有新版本模板或规则"))
     if summary["legacy_installs"]:
         parts.append(_("{0} 个旧方式安装待迁移").format(summary['legacy_installs']))
-    if summary["scaffold_findings"]:
-        parts.append(_("项目脚手架有 {0} 项差异").format(summary['scaffold_findings']))
+    if summary["scaffold_required"]:
+        parts.append(_("项目脚手架有 {0} 项需要处理的差异").format(summary['scaffold_required']))
     if summary.get("local_only_attention"):
         parts.append(_("同步目录里有 {0} 项本机专属目录需要处理").format(summary['local_only_attention']))
     return _("agenthelm：") + _("，").join(parts) + _("。运行 `{0} check` 查看详情；更新前会先预览，由你决定。").format(CLI)
@@ -638,7 +643,45 @@ def render_profile_notes(scaffold: dict, show_extras: bool) -> list[str]:
     return lines
 
 
-def render_scaffold(report: dict, show_skipped: bool, show_extras: bool = False) -> list[str]:
+def level_tag(level: str) -> str:
+    return {"must": _("需要处理"), "suggest": _("可选"), "info": _("信息")}.get(level, level)
+
+
+CATEGORY_COMMANDS = {
+    "skeleton": ("fix add-skeleton", None), "content": ("fix update-content", None), "region": ("fix update-region", None),
+    "profile": ("fix profile", None), "case-naming": ("fix case-naming", None), "lock": ("fix repair-lock", None),
+}
+
+
+def _scaffold_item_lines(item: dict) -> str:
+    mark = _("（稍后）") if item.get("deferred") else _("（期望内容已变化，重新提示）") if item.get("changed_since_decision") else ""
+    fix = _("  处理：fix {0}").format(item['fix']) if item.get("fix") else _("  需要你自己处理")
+    return _("  [脚手架] {0}{1}：{2}\n      ID {3}{4}").format(item['title'], mark, item['reason'], item['id'], fix)
+
+
+def render_scaffold_groups(scaffold: dict, details: bool) -> list[str]:
+    """需要处理的逐项列出；可选与信息性的按类别各合并一行（--details 时逐项展开）。"""
+    lines = []
+    groups = {(row["level"], row["category"]): row for row in scaffold.get("categories", [])}
+    by_key: dict[tuple[str, str], list[dict]] = {}
+    for item in scaffold["findings"]:
+        by_key.setdefault((item.get("level", "suggest"), item.get("category") or item["kind"]), []).append(item)
+    for key, members in by_key.items():
+        level, category = key
+        if level == "must" or details or key not in groups:
+            lines += [_scaffold_item_lines(item) for item in members]
+            continue
+        verb = CATEGORY_COMMANDS.get(category)
+        handle = _("；处理：{0}").format(f"{CLI} {verb[0]}") if verb else ""
+        lines.append(_("  [脚手架·{0}] {1}（查看：{2} check --details{3}）").format(
+            level_tag(level), groups[key]["label"], CLI, handle))
+    optional = sum(len(m) for k, m in by_key.items() if k[0] != "must")
+    if optional:
+        lines.append(_("  这 {0} 项都不需要？一次接受现状：{1} fix --accept-current --reason \"<原因>\"（先预览，--apply 写入；之后只提示新出现的差异）").format(optional, CLI))
+    return lines
+
+
+def render_scaffold(report: dict, show_skipped: bool, details: bool = False, show_extras: bool = False) -> list[str]:
     scaffold = report.get("scaffold")
     lines = []
     if scaffold is None:
@@ -646,10 +689,7 @@ def render_scaffold(report: dict, show_skipped: bool, show_extras: bool = False)
     if scaffold.get("error"):
         lines.append(_("  [脚手架] 无法检查：{0}").format(scaffold['error']))
         return lines
-    for item in scaffold["findings"]:
-        mark = _("（稍后）") if item.get("deferred") else _("（期望内容已变化，重新提示）") if item.get("changed_since_decision") else ""
-        fix = _("  处理：fix {0}").format(item['fix']) if item.get("fix") else _("  需要你自己处理")
-        lines.append(_("  [脚手架] {0}{1}：{2}\n      ID {3}{4}").format(item['title'], mark, item['reason'], item['id'], fix))
+    lines += render_scaffold_groups(scaffold, details)
     for message in scaffold["decisions"]["errors"]:
         lines.append(_("  [脚手架] 决定文件有问题：{0}").format(message))
     if scaffold["decisions"]["conflict_copies"]:
@@ -677,7 +717,7 @@ def render_machine(report: dict) -> list[str]:
     return lines
 
 
-def render_text(report: dict, *, show_skipped: bool = False, show_extras: bool = False) -> str:
+def render_text(report: dict, *, show_skipped: bool = False, details: bool = False, show_extras: bool = False) -> str:
     lines = []
     origin = report["latest"]["source"]
     lines.append(_("云端版本源：{0}").format(origin.get('source')) + (_("（缓存）") if origin.get("cached") else ""))
@@ -720,7 +760,7 @@ def render_text(report: dict, *, show_skipped: bool = False, show_extras: bool =
             lines.append(_("  [Opinion] 有新版本：{0}（用 opinion-manager 预览后确认）").format(refs))
         elif item["status"] in {"error", "unknown"}:
             lines.append(f"  [Opinion] {item.get('error')}")
-    lines += render_scaffold(report, show_skipped, show_extras)
+    lines += render_scaffold(report, show_skipped, details, show_extras)
     lines += render_machine(report)
     lines += [_("  [语言] {0}").format(hint) for hint in (report.get("language") or {}).get("hints", [])]
     if not report["plugins"]:
@@ -1246,9 +1286,10 @@ def parser() -> argparse.ArgumentParser:
     check.add_argument("--refresh", action="store_true", help=_("忽略一天的缓存，立即联网"))
     check.add_argument("--hook", action="store_true", help=_("会话开始时静默调用：有更新才输出一行"))
     check.add_argument("--hook-format", choices=("text", "claude-hook"), default="text")
-    check.add_argument("--strict", action="store_true", help=_("有可更新项或脚手架差异时退出码为 1（CI 用）"))
+    check.add_argument("--strict", action="store_true", help=_("有可更新项或必须处理的脚手架差异时退出码为 1（CI 用；可选与信息性的差异不算）"))
     check.add_argument("--show-skipped", action="store_true", help=_("列出被你跳过的项及理由"))
     check.add_argument("--show-extras", action="store_true", help=_("展开 Profile 中 schema 未声明的字段（项目自有、疑似拼写错误、已被其他插件读取）"))
+    check.add_argument("--details", action="store_true", help=_("脚手架差异逐项展开（默认同类合并为一行）"))
     check.add_argument("--reprompt", action="store_true", help=_("忽略已记录的决定，重新评估全部脚手架差异"))
     check.add_argument("--fingerprint", action="store_true",
                        help=_("输出脚手架指纹（骨架状态 + 受检 Profile 字段 + 内容锁 + 命名规则；不含 Opinion、自有字段、已跳过项）"))
@@ -1480,7 +1521,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.output == "json":
                 print(json.dumps(report, ensure_ascii=False, indent=2))
             else:
-                sys.stdout.write(render_text(report, show_skipped=args.show_skipped, show_extras=args.show_extras))
+                sys.stdout.write(render_text(report, show_skipped=args.show_skipped, details=args.details, show_extras=args.show_extras))
             return 1 if args.strict and not report["summary"]["up_to_date"] else 0
         if args.command == "doctor":
             result = doctor(env, run_check(env, project, latest_source=args.latest))

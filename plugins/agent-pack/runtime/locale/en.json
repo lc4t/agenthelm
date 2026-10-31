@@ -18,7 +18,6 @@
  "（{0} 个本地有改动，更新时逐文件确认）": " ({0} with local changes; each file is confirmed on update)",
  "Opinion 有新版本模板或规则": "Opinion has a newer template or rule version",
  "{0} 个旧方式安装待迁移": "{0} legacy install(s) await migration",
- "项目脚手架有 {0} 项差异": "{0} scaffold difference(s) in the project",
  "agenthelm：": "agenthelm: ",
  "，": ", ",
  "。运行 `{0} check` 查看详情；更新前会先预览，由你决定。": ". Run `{0} check` for details; updates are previewed first and you decide.",
@@ -98,7 +97,6 @@
  "只用缓存，不联网": "use the cache only, no network",
  "忽略一天的缓存，立即联网": "ignore the one-day cache and go online now",
  "会话开始时静默调用：有更新才输出一行": "called silently at session start: prints one line only when something can be updated",
- "有可更新项或脚手架差异时退出码为 1（CI 用）": "exit code 1 when anything can be updated or the scaffold differs (for CI)",
  "列出被你跳过的项及理由": "list the items you skipped, with reasons",
  "忽略已记录的决定，重新评估全部脚手架差异": "ignore recorded decisions and re-evaluate every scaffold difference",
  "输出脚手架指纹（骨架状态 + 受检 Profile 字段 + 内容锁 + 命名规则；不含 Opinion、自有字段、已跳过项）": "print the scaffold fingerprint (skeleton state + checked Profile fields + content lock + naming rule; excludes Opinion, your own fields and skipped items)",
@@ -443,5 +441,13 @@
  "疑似拼写错误，是不是想写 {0}？": "suspected typo; did you mean {0}?",
  "项目自有": "the project's own",
  "项目自有 {0}": "the project's own: {0}",
- "：check --show-extras 展开": ": run check --show-extras to list them"
+ "：check --show-extras 展开": ": run check --show-extras to list them",
+ "有可更新项或必须处理的脚手架差异时退出码为 1（CI 用；可选与信息性的差异不算）": "Exit code 1 when updates are available or a scaffold difference needs handling (for CI; optional and informational differences do not count)",
+ "脚手架差异逐项展开（默认同类合并为一行）": "Expand scaffold differences item by item (by default one line per category)",
+ "可选": "optional",
+ "信息": "info",
+ "项目脚手架有 {0} 项需要处理的差异": "the project scaffold has {0} difference(s) that need handling",
+ "；处理：{0}": "; handle: {0}",
+ "  [脚手架·{0}] {1}（查看：{2} check --details{3}）": "  [scaffold · {0}] {1} (details: {2} check --details{3})",
+ "  这 {0} 项都不需要？一次接受现状：{1} fix --accept-current --reason \"<原因>\"（先预览，--apply 写入；之后只提示新出现的差异）": "  Do you need none of these {0}? Accept the current state in one go: {1} fix --accept-current --reason \"<reason>\" (preview first, --apply to write; afterwards only new differences are shown)"
 }

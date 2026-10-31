@@ -37,7 +37,6 @@
  "追加「怎样使用」一节": "Append a how-to section (in the project file language)",
  "add-skeleton：骨架路径；profile：字段；decide：发现 ID（可重复；省略则处理全部可处理项）": "add-skeleton: skeleton paths; profile: fields; decide: finding IDs (repeatable; omit to handle everything that can be handled)",
  "decide：决定；unskip 撤销": "decide: the decision; unskip withdraws it",
- "decide：理由（建议写，随项目同步）": "decide: the reason (recommended; synced with the project)",
  "decide：期望指纹（缺省取该发现当前的指纹）": "decide: the expected fingerprint (by default the finding's current fingerprint)",
  "check：忽略已记录的决定，重新评估全部发现": "check: ignore recorded decisions and re-evaluate every finding",
  "机器本地决定的状态目录（缺省 $XDG_STATE_HOME 或 ~/.local/state）": "state directory for machine-local decisions (default $XDG_STATE_HOME or ~/.local/state)",
@@ -231,5 +230,16 @@
  "  [信息] {0}": "  [info] {0}",
  "Profile 的 {0} 是{1}，schema 现在把它声明为 {2}：它按项目自定义处理，工具不读取、不检查，也不会改写你的值。三个选项：转换成 {2} 的写法（例如 {3}）；保留为项目自有字段（改名，如 {4}）；忽略（什么都不用做，不影响退出码）": "The Profile value {0} is a {1}, but the schema now declares it as {2}. It is treated as the project's own: the tool does not read or check it and never rewrites your value. Three options: convert it to the {2} form (for example {3}); keep it as a project-owned field (rename it, for example to {4}); or ignore it (nothing to do, and it does not affect the exit code)",
  "work.case.directory_naming 是项目自己的文字，工具不检查目录命名，也没有改名计划": "work.case.directory_naming is the project's own text: the tool does not check directory names and has no rename plan",
- "可用写法：{0} 或 {1}；要保留原文字不改动：把它移到你自己的字段名下（如 work.case.project_directory_naming），再删掉这一项": "Valid forms: {0} or {1}. To keep your original text unchanged, move it under a field name of your own (for example work.case.project_directory_naming) and delete this one"
+ "可用写法：{0} 或 {1}；要保留原文字不改动：把它移到你自己的字段名下（如 work.case.project_directory_naming），再删掉这一项": "Valid forms: {0} or {1}. To keep your original text unchanged, move it under a field name of your own (for example work.case.project_directory_naming) and delete this one",
+ "decide / accept-current：理由（建议写，随项目同步）": "decide / accept-current: the reason (recommended; it travels with the project)",
+ "{0} 个缺失文件": "{0} missing file(s)",
+ "{0} 个文件与当前模板不同": "{0} file(s) differ from the current template",
+ "{0} 个受管区块有差异": "{0} managed region(s) differ",
+ "{0} 个 Profile 字段缺失或不符": "{0} Profile field(s) missing or not as expected",
+ "{0} 项 Case 目录命名差异": "{0} Case directory naming difference(s)",
+ "{0} 项内容锁问题": "{0} content-lock issue(s)",
+ "{0} 项其他差异": "{0} other difference(s)",
+ "{0}：把当前 {1} 项脚手架差异记为已决定、保留现状": "{0}: record the current {1} scaffold difference(s) as decided, keep as is",
+ "写入 {0}（随项目同步，理由：{1}）": "Written to {0} (travels with the project; reason: {1})",
+ "  未包含（需要处理）：[{0}] {1}": "  Not included (needs handling): [{0}] {1}"
 }

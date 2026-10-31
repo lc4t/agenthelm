@@ -1241,7 +1241,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--runtime")
     result.add_argument("--agent-cli", type=split_csv)
     result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry", "check", "add-skeleton", "profile",
-                                           "repair-lock", "decide", "case-naming", "scan", "adopt", "region", "language"),
+                                           "repair-lock", "decide", "case-naming", "scan", "adopt", "region", "language", "accept-current"),
                         default="init",
                         help=_("refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件；"
                              "entry：为已初始化的项目补上根目录启动器与 Profile 的 entry 段；"
@@ -1255,7 +1255,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--target", action="append", default=[],
                         help=_("add-skeleton：骨架路径；profile：字段；decide：发现 ID（可重复；省略则处理全部可处理项）"))
     result.add_argument("--decision", choices=("skip", "keep", "later", "unskip"), help=_("decide：决定；unskip 撤销"))
-    result.add_argument("--reason", help=_("decide：理由（建议写，随项目同步）"))
+    result.add_argument("--reason", help=_("decide / accept-current：理由（建议写，随项目同步）"))
     result.add_argument("--fingerprint", help=_("decide：期望指纹（缺省取该发现当前的指纹）"))
     result.add_argument("--reprompt", action="store_true", help=_("check：忽略已记录的决定，重新评估全部发现"))
     result.add_argument("--state-dir", type=Path, help=_("机器本地决定的状态目录（缺省 $XDG_STATE_HOME 或 ~/.local/state）"))
@@ -1324,7 +1324,7 @@ def main(argv: list[str] | None = None) -> int:
                                                       recovery_dir=args.recovery_dir, state_dir=args.state_dir)
             print(json_text(result), end="") if args.output == "json" else print(_scaffold().render_text(result), end="")
             return code
-        if args.mode in ("check", "add-skeleton", "profile", "repair-lock", "decide", "case-naming", "language"):
+        if args.mode in ("check", "add-skeleton", "profile", "repair-lock", "decide", "case-naming", "language", "accept-current"):
             scaffold = _scaffold()
             code, result = scaffold.run_mode(args, root)
             print(json_text(result), end="") if args.output == "json" else print(scaffold.render_text(result), end="")

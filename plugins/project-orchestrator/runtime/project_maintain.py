@@ -60,15 +60,23 @@ def _scaffold_findings(scaffold: dict | None, findings: list[dict], ok: list[str
         findings.append({"id": "scaffold-check", "level": "unavailable", "area": _("脚手架"), "title": _("无法检查项目脚手架"),
                          "reason": scaffold["error"], "impact": _("只影响脚手架一致性提示"), "next": []})
         return
+    rows = {(row["level"], row["category"]): row for row in scaffold.get("categories", [])}
     for item in scaffold["findings"]:
         mark = _("（稍后）") if item.get("deferred") else _("（期望内容已变化）") if item.get("changed_since_decision") else ""
         # 菜单只执行 FIXES 里的处理项；其余（如 update-region）只给出怎么处理的说明。
         step = {"label": _(SCAFFOLD_NEXT.get(item["fix"], item["fix"])), "action": f"fix:{item['fix']}" if item["fix"] in FIXES else ""} \
             if item["fix"] else {"label": _("这一项需要你自己处理"), "action": ""}
-        findings.append({"id": item["id"], "level": "suggest", "area": _("脚手架"), "title": item["title"] + mark,
-                         "reason": item["reason"], "impact": _("脚手架和最新版不一致；不影响日常使用，"
-                         "不想要的可以永久跳过（一次决定，所有机器生效）"), "next": [step],
-                         "decision": {"id": item["id"], "fingerprint": item["fingerprint"], "scope": "project"}})
+        level = item.get("level", "suggest")
+        entry = {"id": item["id"], "level": level, "area": _("脚手架"), "title": item["title"] + mark,
+                 "reason": item["reason"], "impact": _("脚手架和最新版不一致；不影响日常使用，"
+                 "不想要的可以永久跳过（一次决定，所有机器生效）") if level != "must" else _("会影响使用，需要处理"),
+                 "next": [step],
+                 "decision": {"id": item["id"], "fingerprint": item["fingerprint"], "scope": "project"}}
+        row = rows.get((level, item.get("category")))
+        if row is not None and level != "must":
+            # 逐项明细保留在 findings 里（JSON 稳定）；文本显示按 group 把同类项合并为一行。
+            entry["group"] = {"id": f"scaffold:{row['category']}", "label": row["label"], "count": row["count"]}
+        findings.append(entry)
     for message in scaffold["decisions"]["errors"]:
         findings.append({"id": "scaffold-decisions", "level": "unavailable", "area": _("脚手架"),
                          "title": _("决定文件有问题"), "reason": message, "impact": _("已记录的决定暂时不生效"), "next": []})
@@ -729,6 +737,20 @@ def _entry_error(exc: Exception) -> EntryError:
         return exc
     code = {"conflict": "conflict", "profile-invalid": "profile-invalid"}.get(getattr(exc, "code", ""), "usage")
     return EntryError(str(exc), code)
+
+
+def accept_current(provider: Any, reason: str, apply: bool) -> dict:
+    """``fix --accept-current --reason …``: record every current scaffold difference as decided / keep (project decisions file)."""
+    module = scaffold_module(provider)
+    if module is None or not hasattr(module, "accept_current"):
+        raise EntryError(_("需要带「接受现状」的 agents-init（更新插件或运行时后再试）"), "unavailable")
+    env = provider.host.current_env()
+    try:
+        result = module.accept_current(provider.root, reason=reason, apply=apply, state_dir=env.state_dir)
+    except Exception as exc:  # noqa: BLE001
+        raise _entry_error(exc) from exc
+    provider._health = None
+    return result
 
 
 def decide_ids(provider: Any, skip: list[str], unskip: list[str], reason: str, apply: bool) -> dict:

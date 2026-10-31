@@ -43,12 +43,26 @@ class ScaffoldCheckTests(unittest.TestCase):
     def report(self, **kwargs) -> dict:
         return agenthelm.run_check(self.env, self.project, latest_source=str(self.latest), **kwargs)
 
-    def test_missing_file_counts_against_up_to_date_and_one_line(self) -> None:
+    def test_missing_file_is_optional_and_does_not_count_against_up_to_date_or_one_line(self) -> None:
         report = self.report()
         self.assertEqual([item["id"] for item in report["scaffold"]["findings"]], ["skel:.agents/mcp.json"])
-        self.assertFalse(report["summary"]["up_to_date"])
-        self.assertIn("脚手架", agenthelm.one_line(report))
-        self.assertIn("skel:.agents/mcp.json", agenthelm.render_text(report))
+        self.assertEqual(report["scaffold"]["findings"][0]["level"], "suggest")
+        self.assertEqual(report["summary"]["scaffold_findings"], 1)
+        self.assertEqual(report["summary"]["scaffold_optional"], 1)
+        self.assertEqual(report["summary"]["scaffold_required"], 0)
+        self.assertTrue(report["summary"]["up_to_date"])
+        self.assertIsNone(agenthelm.one_line(report))
+        text = agenthelm.render_text(report)
+        self.assertIn("1 个缺失文件", text)
+        self.assertNotIn("skel:.agents/mcp.json", text)
+        self.assertIn("skel:.agents/mcp.json", agenthelm.render_text(report, details=True))
+
+    def test_a_required_finding_counts_against_up_to_date_and_one_line(self) -> None:
+        report = self.report()
+        report["scaffold"]["findings"][0]["level"] = "must"
+        report["summary"]["scaffold_required"] = 1
+        report["summary"]["up_to_date"] = False
+        self.assertIn("1 项需要处理的差异", agenthelm.one_line(report))
 
     def test_a_subdirectory_of_the_project_finds_the_profile(self) -> None:
         inner = self.project / "docs"

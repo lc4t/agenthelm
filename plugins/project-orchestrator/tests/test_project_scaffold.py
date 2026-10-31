@@ -10,6 +10,7 @@ import os
 os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
 
 import json
+import shutil
 import subprocess
 import sys
 import unittest
@@ -170,6 +171,95 @@ class SkipTests(ScaffoldCase):
         self.assertNotIn("install-runtime", self.ids(payload))
         _, payload = self.health(root, env=self.other_machine())
         self.assertIn("install-runtime", self.ids(payload), "另一台机器仍然提示")
+
+
+class AcceptCurrentTests(ScaffoldCase):
+    """#37：成熟项目升级后——同类建议归并、一次接受现状、之后只提示新差异、只有“必须处理”的项影响退出码。"""
+
+    def text(self, root: Path, *args: str, env: dict | None = None) -> tuple[int, str]:
+        result = subprocess.run([sys.executable, str(AGENTHELM), "project", "--project", str(root), "health", "--offline",
+                                 "--no-input", *args], input="", capture_output=True, text=True, check=False,
+                                env=env or self.env, timeout=120)
+        return result.returncode, result.stdout
+
+    def test_health_merges_a_category_into_one_entry_with_correct_counts_and_json_keeps_the_items(self) -> None:
+        root = self.old_project()
+        code, text = self.text(root)
+        self.assertEqual(code, 0)
+        self.assertEqual(text.count("4 个缺失文件"), 1, text)
+        self.assertIn("fix --accept-current", text)
+        self.assertNotIn("原因：期望骨架清单里有", text)
+        _, details = self.text(root, "--details")
+        self.assertEqual(details.count("期望骨架清单里有，项目里没有"), 4, details)
+        _, payload = self.health(root)
+        items = [f for f in payload["data"]["findings"] if f["id"].startswith("skel:")]
+        self.assertEqual(len(items), 4, "JSON 逐项明细保持")
+        self.assertTrue(all(f["group"]["count"] == 4 and f["level"] == "suggest" for f in items))
+        self.assertEqual(self.check(root)["scaffold"]["categories"][0]["count"], 4)
+
+    def test_check_text_merges_too_and_only_required_findings_count_for_exit_code_and_notice(self) -> None:
+        root = self.old_project()
+        result = subprocess.run([sys.executable, str(AGENTHELM), "check", "--project", str(root), "--offline", "--strict"],
+                                capture_output=True, text=True, check=False, env=self.env, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("4 个缺失文件", result.stdout)
+        self.assertNotIn("skel:.agents/mcp.json", result.stdout)
+        report = self.check(root)
+        self.assertEqual((report["summary"]["scaffold_findings"], report["summary"]["scaffold_required"],
+                          report["summary"]["scaffold_optional"]), (4, 0, 4))
+        self.assertTrue(report["summary"]["up_to_date"])
+
+    def test_accept_current_previews_then_applies_and_nothing_is_left_to_suggest(self) -> None:
+        root = self.old_project()
+        before = tree_digest(root)
+        code, preview = self.fix(root, "--accept-current", "--reason", "mature layout")
+        self.assertEqual((code, preview["data"]["applied"], preview["data"]["count"]), (0, False, 4))
+        self.assertEqual(tree_digest(root), before)
+        code, applied = self.fix(root, "--accept-current", "--reason", "mature layout", "--apply")
+        self.assertEqual((code, applied["data"]["applied"]), (0, True))
+        saved = json.loads((root / DECISIONS).read_text(encoding="utf-8"))["decisions"]
+        self.assertEqual(len(saved), 4)
+        self.assertTrue(all(v["decision"] == "keep" and v["reason"] == "mature layout" for v in saved.values()))
+        self.assertEqual(self.check(root)["scaffold"]["findings"], [])
+        _, payload = self.health(root)
+        self.assertFalse({i for i in self.ids(payload) if i.startswith("skel:")})
+        _, text = self.text(root)
+        self.assertNotIn("个缺失文件", text)
+        self.assertIn("4 项已跳过", text)
+        _, again = self.fix(root, "--accept-current", "--apply")
+        self.assertEqual(again["data"]["count"], 0)
+
+    def test_after_accepting_only_a_new_difference_shows_and_another_machine_stays_quiet(self) -> None:
+        root = self.old_project()
+        self.fix(root, "--accept-current", "--reason", "mature layout", "--apply")
+        second = self.other_machine()
+        self.assertEqual(self.check(root, env=second)["scaffold"]["findings"], [])
+        _, payload = self.health(root, env=second)
+        self.assertFalse({i for i in self.ids(payload) if i.startswith("skel:")})
+        (root / ".agent-doc/plan.md").unlink()
+        for env in (self.env, second):
+            report = self.check(root, env=env)
+            self.assertEqual([f["id"] for f in report["scaffold"]["findings"]], ["skel:.agent-doc/plan.md"])
+            _, text = self.text(root, env=env)
+            self.assertIn("1 个缺失文件", text)
+
+    def test_a_project_with_its_own_case_tool_gets_no_default_structure_suggestions(self) -> None:
+        root = self.make_project("own-tool", "notes", "--no-entry", "--work-mode", "case-workspace")
+        shutil.rmtree(root / "cases")
+        self.assertIn("skel:cases/.gitkeep", {f["id"] for f in self.check(root)["scaffold"]["findings"]})
+        self.edit_profile(root, lambda profile: profile["work"]["case"].update({"command": ["./tools/case"]}))
+        self.assertNotIn("skel:cases/.gitkeep", {f["id"] for f in self.check(root)["scaffold"]["findings"]})
+
+    def test_english_output(self) -> None:
+        root = self.old_project()
+        english = {**self.env, "AGENTHELM_LANG": "en"}
+        _, text = self.text(root, env=english)
+        self.assertIn("4 missing file(s)", text)
+        result = subprocess.run([sys.executable, str(AGENTHELM), "fix", "--project", str(root), "--offline",
+                                 "--accept-current", "--reason", "x"], input="", capture_output=True, text=True,
+                                check=False, env=english, timeout=120)
+        self.assertIn("record the current 4 scaffold difference(s)", result.stdout)
+        self.assertNotRegex(result.stdout, "[\u4e00-\u9fff]")
 
 
 class ContentLockTests(ScaffoldCase):
