@@ -61,7 +61,7 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - `npx @sakanano-moe/agenthelm update`：预览更新；经用户同意后追加 `--apply`。本地改过的模板生成文件须用户逐个选择 `--keep`、`--append` 或 `--accept`（后者丢弃本地内容，须再加 `--confirm-discard <文件>`；`--diff <文件>` 先看差异）。
 - 会话开始的静默检查由 agent-pack 完成，不需要 Agent 额外调用。
 - Claude Code 升级插件后，`~/.claude/plugins/cache/agenthelm/<插件>/` 下会留着旧版本目录（例如 agent-pack 的 1.6.3、1.8.0）。这是客户端的缓存行为：`~/.claude/plugins/installed_plugins.json` 指向的是新版本，旧目录不影响使用。想省磁盘可以手动删除不再被 `installed_plugins.json` 引用的版本目录；agenthelm 不会替你清理，也不读取这些旧目录。
-- 命令行输出默认英文；要中文：`export AGENTHELM_LANG=zh`，或 `agenthelm config language zh --apply`（等同在 `~/.config/agenthelm/config.json` 写 `{"language": "zh"}`；中文系统 locale 本来就是中文）。界面语言只影响输出；写进项目文件的语言是 Profile 的 `language`，用 `agenthelm config project-language zh|en` 查看或设置。没有设置界面语言时 `check` 会提示，`agenthelm config language-hint off` 关闭提示。
+- 命令行输出默认英文；要中文：`export AGENTHELM_LANG=zh`，或 `agenthelm config language zh --apply`（等同在 `~/.config/agenthelm/config.json` 写 `{"language": "zh"}`；中文系统 locale 本来就是中文）。界面语言只影响输出；写进项目文件的语言是 Profile 的 `language`，用 `agenthelm config project-language zh|en` 查看或设置。界面显示为英文且没有设置界面语言时 `check` 会提示（中文界面不提示），`agenthelm config language-hint off` 关闭提示。
 - 观点候选的自动采集与未决事项提示也由 agent-pack 的 hook 完成：Claude Code 随插件生效；Codex 需在 `/hooks` 中审阅并信任；Cursor 运行 `npx @sakanano-moe/agenthelm nudge install-hooks --client cursor` 预览，确认后加 `--apply`。`nudge status` 查看生效配置，`AGENTHELM_NO_NUDGE=1` 关闭，详见 `plugins/agent-pack/references/nudge.md`。
 
 ## 无客户端命令时的兜底
