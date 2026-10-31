@@ -383,5 +383,11 @@
  "读不了对方的输出（需要对方运行 local-only check --fingerprint --output json）：{0}": "Cannot read the other machine's output (it needs to run local-only check --fingerprint --output json): {0}",
  "重建失败（{0}，退出码 {1}）：": "Rebuild failed ({0}, exit code {1}): ",
  "被替换文件的原件已备份到：{0}": "Originals of the replaced files were backed up to: {0}",
- "还原：把备份目录里的文件按相同的相对路径复制回项目目录（cp -p <备份目录>/<文件> <项目目录>/<文件>）。": "To restore: copy the files from the backup folder back to the project folder under the same relative paths (cp -p <backup>/<file> <project>/<file>)."
+ "还原：把备份目录里的文件按相同的相对路径复制回项目目录（cp -p <备份目录>/<文件> <项目目录>/<文件>）。": "To restore: copy the files from the backup folder back to the project folder under the same relative paths (cp -p <backup>/<file> <project>/<file>).",
+ "内容更新：保留 AGENTS.md / CLAUDE.md 的本地内容，只在末尾追加带标记的区块（先备份）": "Content update: keep the local content of AGENTS.md / CLAUDE.md and only append a marked region at the end (backed up first)",
+ "内容更新：确认 --accept 会丢弃这个文件里的本地内容": "Content update: confirm that --accept discards the local content of this file",
+ "内容更新：只查看这个文件与新模板的完整差异，不写入": "Content update: only show the full difference between this file and the new template; nothing is written",
+ "被替换文件的备份目录（项目外），缺省 ~/.agent-pack/recovery/": "Backup folder for replaced files (outside the project); default ~/.agent-pack/recovery/",
+ "--diff 只用于查看，不能与 --apply 同用": "--diff is for viewing only and cannot be combined with --apply",
+ "（{0} 与新模板没有差异）": "({0} does not differ from the new template)"
 }

@@ -830,22 +830,72 @@ def _scaffold():
     return scaffold
 
 
-def _unified_diff(relative: str, current: str, new: str, limit: int = 200) -> str:
+def _unified_diff(relative: str, current: str, new: str, limit: int | None = 200) -> str:
     lines = list(difflib.unified_diff(
         current.splitlines(keepends=True), new.splitlines(keepends=True),
         fromfile=f"a/{relative}", tofile=f"b/{relative}",
     ))
-    if len(lines) > limit:
+    if limit is not None and len(lines) > limit:
         lines = lines[:limit] + [f"... ({len(lines) - limit} more diff lines)\n"]
     return "".join(lines)
+
+
+# 保留本地内容、只追加带标记区块的文件 → 区块 ID（模板里的 region/<ID>）。
+APPEND_REGIONS = {Path("AGENTS.md"): "agents-contract", Path("CLAUDE.md"): "claude-import"}
+CLAUDE_IMPORT_RE = re.compile(r"^\s*@(?:\./)?AGENTS\.md\s*$", re.MULTILINE)
+
+
+def line_delta(current: str, new: str) -> tuple[int, int]:
+    """(lines the new text adds, lines of the current text it would drop)."""
+    added = lost = 0
+    matcher = difflib.SequenceMatcher(None, current.splitlines(), new.splitlines(), autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "equal":
+            lost += i2 - i1
+            added += j2 - j1
+    return added, lost
+
+
+def _regions():
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import regions  # noqa: PLC0415
+
+    return regions
+
+
+def _refresh_notes(item: dict) -> list[str]:
+    """Human lines for a file refresh cannot silently decide: why, what each choice costs, what to type."""
+    path, reason = item["path"], item.get("reason")
+    notes: list[str] = []
+    if reason == "no-baseline":
+        notes.append(_("内容锁里没有它的基线（早期版本初始化的项目），无法判断是你改过还是模板变了；建议先保留你的版本：--keep {0}").format(path))
+    elif reason == "edited":
+        notes.append(_("你改过这个文件，新模板也变了"))
+    elif reason == "discard-unconfirmed":
+        notes.append(_("--accept 会丢弃 {0} 行本地内容；确认后追加 --confirm-discard {1}").format(item["lines_lost"], path))
+    if "local_lines" in item and item["action"] in {"blocked", "replace"}:
+        notes.append(_("本地 {0} 行，新模板 {1} 行；采用新模板会新增 {2} 行、丢弃 {3} 行本地内容").format(
+            item["local_lines"], item["template_lines"], item["lines_added"], item["lines_lost"]))
+    if item["action"] == "blocked" and Path(path) in APPEND_REGIONS:
+        notes.append(_("也可以保留你的内容并追加带标记的区块（原文不动）：--append {0}").format(path))
+    if item["action"] == "blocked":
+        notes.append(_("先看差异：--diff {0}").format(path))
+    if item["action"] == "append":
+        notes.append(_("保留你的内容，末尾追加带标记的区块（{0} 行，原文不动，先备份）").format(item["append_lines"]))
+    if reason == "already-present":
+        notes.append(_("已经导入或带有这个区块，无需追加"))
+    return notes
 
 
 def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     """Re-render the tracked template files after a content pack update.
 
-    Files still identical to their install-time baseline are replaced; files the
-    user edited are only replaced with --accept or kept with --keep. Every
-    replaced file is copied to --recovery-dir first.
+    Files still identical to their install-time baseline are replaced; files the user edited are only replaced
+    with --accept (and, when that drops local lines, --confirm-discard), kept with --keep, or kept with a marked
+    region appended to them with --append (AGENTS.md and CLAUDE.md). Every file the command changes is copied to
+    the recovery folder first.
     """
     pack = contract_pack()
     if pack is None:
@@ -864,12 +914,23 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     rendered = files_for(inputs)
     accept = {Path(value) for value in args.accept}
     keep = {Path(value) for value in args.keep}
+    append = {Path(value) for value in getattr(args, "append", [])}
+    confirm = {Path(value) for value in getattr(args, "confirm_discard", [])}
+    show_diff = {Path(value) for value in getattr(args, "diff", [])}
     tracked = tracked_paths(pack, inputs.entry_launcher)
-    unknown = (accept | keep) - set(tracked)
+    unknown = (accept | keep | append | confirm | show_diff) - set(tracked)
     if unknown:
         raise InitError(_("不是内容包跟踪的文件：") + ", ".join(sorted(map(str, unknown))))
-    if accept & keep:
-        raise InitError(_("同一文件不能同时 --accept 与 --keep：") + ", ".join(sorted(map(str, accept & keep))))
+    chosen_twice = (accept & keep) | (accept & append) | (keep & append)
+    if chosen_twice:
+        raise InitError(_("同一文件只能选一种处理（--accept / --keep / --append）：") + ", ".join(sorted(map(str, chosen_twice))))
+    not_appendable = append - set(APPEND_REGIONS)
+    if not_appendable:
+        raise InitError(_("只有 AGENTS.md 和 CLAUDE.md 可以追加受管区块：") + ", ".join(sorted(map(str, not_appendable))))
+    if show_diff and args.apply:
+        raise InitError(_("--diff 只用于查看，不能与 --apply 同用"))
+    templates = load_templates()
+    regions = _regions()
     plan: list[dict] = []
     kept_before = _scaffold().keep_fingerprints(root)
     for relative in tracked:
@@ -880,6 +941,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             raise InitError(f"refusing symlinked file: {relative}")
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
+        added, lost = line_delta(current or "", new)
+        reason = None
         if current_digest == new_digest:
             state, action = "unchanged", "keep"
         elif current is None:
@@ -887,21 +950,58 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             action = "create" if relative in accept else "skip"
         elif new_digest == baseline.get(relative.as_posix()):
             # The new template renders this file exactly as before; the user's edits stay untouched.
-            state, action = "local-only", "keep"
+            state, action = "local-only", "append" if relative in append else "keep"
         elif current_digest == baseline.get(relative.as_posix()):
             state, action = "clean", "keep" if relative in keep else "replace"
         else:
             state = "modified"
             decided = kept_before.get(relative.as_posix()) == new_digest  # 之前选过保留，且期望内容没变
-            action = "replace" if relative in accept else "keep" if relative in keep or decided else "blocked"
+            reason = "edited" if relative.as_posix() in baseline else "no-baseline"
+            if relative in accept:
+                action = "replace"
+                if lost and relative not in confirm:
+                    action, reason = "blocked", "discard-unconfirmed"
+            elif relative in append:
+                action = "append"
+            elif relative in keep or decided:
+                action = "keep"
+            else:
+                action = "blocked"
             if decided and relative not in accept:
                 state = "kept-by-decision"
         item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
-        if action in {"replace", "blocked", "create"} or (state == "clean" and action == "keep"):
-            item["diff"] = _unified_diff(relative.as_posix(), current or "", new)
+        if reason:
+            item["reason"] = reason
+        if current is not None and current_digest != new_digest:
+            item.update(local_lines=len(current.splitlines()), template_lines=len(new.splitlines()),
+                        lines_added=added, lines_lost=lost)
+        appended_text = None
+        if item["action"] == "append":
+            region_id = APPEND_REGIONS[relative]
+            body = templates[f"region/{region_id}"]
+            existing = regions.get(current or "", region_id)
+            if (existing is not None and existing.intact and existing.body == regions.normalize(body)) \
+                    or (relative == Path("CLAUDE.md") and CLAUDE_IMPORT_RE.search(current or "")):
+                item["action"], item["reason"] = "keep", "already-present"
+            else:
+                appended, region_state = regions.upsert(current or "", region_id, body)
+                if region_state == "modified":
+                    raise InitError(_("{0} 里的受管区块 {1} 被你改过：用 --mode region 处理").format(relative, region_id))
+                item.update(region=region_id, append_lines=len(regions.render(region_id, body).splitlines()))
+                appended_text = appended
+        if item["action"] in {"replace", "blocked", "create", "append"} or (state == "clean" and item["action"] == "keep") \
+                or relative in show_diff:
+            item["diff"] = _unified_diff(relative.as_posix(), current or "",
+                                         appended_text if appended_text is not None else new,
+                                         None if relative in show_diff else 200)
+        item["note"] = _refresh_notes(item)
         plan.append(item)
+    satisfied = {item["path"] for item in plan if item["action"] == "append" or item.get("reason") == "already-present"}
+    unmet = sorted(path.as_posix() for path in append if path.as_posix() not in satisfied)
+    if unmet:
+        raise InitError(_("没有本地改动，不需要追加区块：") + ", ".join(unmet))
     blocked = [item["path"] for item in plan if item["action"] == "blocked"]
-    replacing = [Path(item["path"]) for item in plan if item["action"] == "replace"]
+    replacing = [Path(item["path"]) for item in plan if item["action"] in {"replace", "append"}]
     result = {
         "ok": not blocked,
         "mode": "refresh",
@@ -911,9 +1011,17 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         "files": plan,
         "blocked": blocked,
     }
+    if show_diff:
+        result["diffs"] = {path.as_posix(): next(item["diff"] for item in plan if item["path"] == path.as_posix()) for path in sorted(show_diff)}
     if blocked:
-        result["hint"] = _("本地已改动的文件需逐个选择：--accept <文件> 用新模板替换（先备份），或 --keep <文件> 保留本地")
-    if not args.apply or blocked:
+        hints = []
+        if any(item.get("reason") in {"no-baseline", "edited"} for item in plan if item["action"] == "blocked"):
+            hints.append(_("本地已改动的文件需逐个选择：--keep <文件> 保留你的版本（建议）；--append <文件> 保留并追加带标记的区块（仅 AGENTS.md / CLAUDE.md）；"
+                           "--accept <文件> 用新模板替换（先备份，会丢弃本地内容，需再加 --confirm-discard <文件>）；--diff <文件> 先看差异"))
+        if any(item.get("reason") == "discard-unconfirmed" for item in plan):
+            hints.append(_("--accept 会丢弃本地内容：确认后追加 --confirm-discard <文件>"))
+        result["hint"] = "\n".join(hints)
+    if not args.apply or blocked or show_diff:
         return (0 if not blocked else 1), result
     if replacing:
         recovery, defaulted = prepare_recovery_dir(root, args.recovery_dir, "refresh")
@@ -921,6 +1029,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             backup_into(root, recovery, relative)
         result.update(recovery=str(recovery), recovery_default=defaulted,
                       recovery_files=[path.as_posix() for path in replacing])
+    new_regions: dict[str, dict[str, str]] = {}
     for item in plan:
         relative = Path(item["path"])
         if item["action"] in {"replace", "create"}:
@@ -931,22 +1040,36 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             if relative == Path(inputs.entry_launcher or "\0"):
                 temporary.chmod(0o755)
             os.replace(temporary, target)
+        elif item["action"] == "append":
+            target = root / relative
+            body = templates[f"region/{item['region']}"]
+            text, _region_state = regions.upsert(target.read_text(encoding="utf-8"), item["region"], body)
+            _atomic_write(target, text, os.stat(target).st_mode & 0o7777)
+            new_regions.setdefault(item["path"], {})[item["region"]] = regions.digest(body)
     files = dict(baseline)
     for item in plan:
         if item["action"] in {"replace", "create"} or item["state"] == "unchanged":
             files[item["path"]] = item["new_sha256"]
         # Files kept on purpose keep their old baseline: the tool did not write them.
-    lock.setdefault("packs", {})[pack["id"]] = {**entry, "plugin": "agents-init", "version": pack["version"],
-                                               "files": dict(sorted(files.items())), "render_inputs": render_inputs(inputs)}
+    new_entry = {**entry, "plugin": "agents-init", "version": pack["version"],
+                 "files": dict(sorted(files.items())), "render_inputs": render_inputs(inputs)}
+    if new_regions:
+        merged = {path: dict(ids) for path, ids in (entry.get("regions") or {}).items()}
+        for path, ids in new_regions.items():
+            merged.setdefault(path, {}).update(ids)
+        new_entry["regions"] = dict(sorted(merged.items()))
+    lock.setdefault("packs", {})[pack["id"]] = new_entry
     lock_path = root / CONTENT_LOCK_PATH
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = lock_path.with_name(f".{lock_path.name}.{os.getpid()}.tmp")
     temporary.write_text(json_text(lock), encoding="utf-8")
     os.replace(temporary, lock_path)
-    # 显式 --keep 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
+    # 显式 --keep / --append 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
     for item in plan:
-        if Path(item["path"]) in keep and item["state"] in {"modified", "local-only", "kept-by-decision"}:
-            _scaffold().decide(root, f"content:{item['path']}", "keep", reason="refresh --keep",
+        chosen_keep = Path(item["path"]) in (keep | append) or item["action"] == "append"
+        if chosen_keep and item["state"] in {"modified", "local-only", "kept-by-decision"}:
+            _scaffold().decide(root, f"content:{item['path']}", "keep",
+                               reason="refresh --append" if item["action"] == "append" else "refresh --keep",
                                fingerprint=item["new_sha256"], scope="project", apply=True)
             result.setdefault("decisions", []).append(f"content:{item['path']}")
     result["applied"] = True
@@ -1143,6 +1266,12 @@ def parser() -> argparse.ArgumentParser:
                         help=_("在已有 README.md 末尾追加「怎样使用」一节（带标记，只追加一次）；init 时 README 不存在会直接新建"))
     result.add_argument("--accept", action="append", default=[], help=_("refresh：用新模板替换这个本地已改动的文件"))
     result.add_argument("--keep", action="append", default=[], help=_("refresh：保留这个文件的本地内容"))
+    result.add_argument("--append", action="append", default=[],
+                        help=_("refresh：保留 AGENTS.md / CLAUDE.md 的本地内容，只在末尾追加带标记的区块（先备份）"))
+    result.add_argument("--confirm-discard", action="append", default=[], dest="confirm_discard",
+                        help=_("refresh：确认 --accept 会丢弃这个文件里的本地内容"))
+    result.add_argument("--diff", action="append", default=[],
+                        help=_("refresh：只查看这个文件与新模板的完整差异，不写入"))
     result.add_argument("--work-mode", choices=("case-workspace", "legacy"), default=None,
                         help=_("新项目默认 case-workspace；既有项目只在显式选择后更改模式"))
     result.add_argument("--replace", action="append", default=[], help="known skeleton path to replace in migrate mode")
@@ -1224,6 +1353,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{label}: {result['pack']} (from {result['from_version']})")
                 for item in result["files"]:
                     print(f"  {item['action']:8} {item['path']} [{item['state']}]")
+                    for note in item.get("note", []):
+                        print(f"      {note}")
+                for path, text in result.get("diffs", {}).items():
+                    print(text.rstrip("\n") if text else _("（{0} 与新模板没有差异）").format(path))
                 if result.get("hint"):
                     print(result["hint"])
                 for line in recovery_lines(result):

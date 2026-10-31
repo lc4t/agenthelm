@@ -406,6 +406,72 @@ class CaseNamingFixTests(ScaffoldCase):
         self.assertEqual(code, 0, "wf / 进展照常列出这些目录，命名只是声明与检查")
 
 
+class NoBaselineContentTests(ScaffoldCase):
+    """#36 经 fix update-content：没有基线的已定制文件。"""
+
+    MINE = "# 我的规则\n\n- 不要读 ~/secret\n- 回答简短\n"
+
+    def project(self) -> Path:
+        root = self.old_project()
+        (root / "AGENTS.md").write_text(self.MINE, encoding="utf-8")
+        (root / "CLAUDE.md").write_text("先读 AGENTS.md\n隐私：不要记录令牌\n", encoding="utf-8")
+        return root
+
+    def test_the_preview_shows_how_much_differs_and_why(self) -> None:
+        root = self.project()
+        code, preview = self.fix(root, "update-content")
+        self.assertEqual(code, 0, preview)
+        step = preview["data"]["plan"]["steps"][0]
+        text = "\n".join(step["changes"])
+        self.assertIn("本地 4 行", text)
+        self.assertIn("丢弃 3 行本地内容", text)
+        self.assertIn("没有它的基线", text)
+        agents = next(item for item in step["custom"] if item["path"] == "AGENTS.md")
+        self.assertEqual((agents["default"], agents["lost"], agents["append"]), ("keep", 3, True))
+        self.assertIn("-# 我的规则", step["payload"]["diffs"]["AGENTS.md"])
+        self.assertEqual((root / "AGENTS.md").read_text(encoding="utf-8"), self.MINE)
+
+    def test_accept_without_confirmation_writes_nothing_and_says_what_to_add(self) -> None:
+        root = self.project()
+        before = (root / "CLAUDE.md").read_text(encoding="utf-8")
+        code, refused = self.fix(root, "update-content", "--accept", "CLAUDE.md", "--apply")
+        result = refused["data"]["results"][0]
+        self.assertEqual((code, result["status"]), (1, "failed"), refused)  # not "done", and not exit 0
+        self.assertIn("--confirm-discard", result["detail"])
+        self.assertEqual((root / "CLAUDE.md").read_text(encoding="utf-8"), before)
+        code, done = self.fix(root, "update-content", "--accept", "CLAUDE.md", "--confirm-discard", "CLAUDE.md", "--apply")
+        result = done["data"]["results"][0]
+        self.assertEqual(result["status"], "applied", done)
+        self.assertTrue((root / "CLAUDE.md").read_text(encoding="utf-8").startswith("@AGENTS.md"))
+        self.assertEqual((Path(result["recovery"]) / "CLAUDE.md").read_text(encoding="utf-8"), before)
+
+    def test_append_keeps_the_text_and_leaves_nothing_to_ask(self) -> None:
+        root = self.project()
+        code, done = self.fix(root, "update-content", "--append", "AGENTS.md", "--append", "CLAUDE.md", "--apply")
+        result = done["data"]["results"][0]
+        self.assertEqual((code, result["status"], sorted(result["appended"])), (0, "applied", ["AGENTS.md", "CLAUDE.md"]), done)
+        self.assertTrue((root / "AGENTS.md").read_text(encoding="utf-8").startswith(self.MINE))
+        self.assertEqual((Path(result["recovery"]) / "AGENTS.md").read_text(encoding="utf-8"), self.MINE)
+        _, payload = self.health(root)
+        self.assertFalse({"content:AGENTS.md", "content:CLAUDE.md"} & self.ids(payload), payload)
+
+    def test_the_menu_asks_with_the_discard_count_and_can_show_the_diff(self) -> None:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
+        import project_menu
+        item = {"path": "AGENTS.md", "state": "你改过", "content": True, "lost": 3, "append": True}
+        with mock.patch.object(project_menu, "choose", side_effect=["d", "x", "p"]) as asked, \
+                mock.patch("builtins.print") as printed:
+            self.assertEqual(project_menu._decide_content(item, "-旧\n+新"), "append")
+        self.assertIn("丢弃 3 行", asked.call_args_list[0].args[0].replace("会丢弃", "丢弃"))
+        self.assertTrue(any("+新" in str(call) for call in printed.call_args_list))
+        plain = {**item, "path": "docs/x.md", "append": False}
+        for answer, expected in (("k", "keep"), ("a", "accept"), ("", "keep")):
+            with mock.patch.object(project_menu, "choose", return_value=answer or "k"):
+                self.assertEqual(project_menu._decide_content(plain, ""), expected)
+        with mock.patch.object(project_menu, "choose", side_effect=["p", "k"]), mock.patch("builtins.print"):
+            self.assertEqual(project_menu._decide_content(plain, ""), "keep")  # p is only offered where it can work
+
+
 class MenuChoiceTests(unittest.TestCase):
     def test_each_item_offers_adopt_skip_later_and_diff(self) -> None:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))

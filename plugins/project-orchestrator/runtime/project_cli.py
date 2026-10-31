@@ -26,7 +26,7 @@ USAGE = N_("""项目入口：不需要 AI Agent 的项目自助菜单与命令�
     agenthelm project show <事项>       事项详情：编号、旧编号、别名或标题片段都可以
     agenthelm project guide            项目指南
     agenthelm project health           检查项目与环境（含脚手架是否与最新版一致）；有必须处理的项时退出码为 1
-    agenthelm project fix [项…]         修复与更新：默认只预览，--apply 执行；--keep / --accept 选择定制文件
+    agenthelm project fix [项…]         修复与更新：默认只预览，--apply 执行；--keep / --accept / --append 选择定制文件
     agenthelm project fix add-skeleton [路径…]   按模板补上缺少的骨架文件（已有文件不动）
     agenthelm project fix profile [字段…]        只改所选 Profile 字段，预览里有 diff
     agenthelm project fix --skip <ID> --reason …  永久跳过某个发现（记入随项目同步的决定文件）；--unskip <ID> 撤销
@@ -311,7 +311,9 @@ def render_plan(plan: dict, choices: dict[str, str] | None = None) -> list[str]:
             elif item["path"] == "README.md":
                 label = ("" if chosen else _("默认")) + (_("不改") if decision == "keep" else _("追加「怎样使用」"))
             else:
-                label = ("" if chosen else _("默认")) + (_("保留你的版本") if decision == "keep" else _("采用新模板"))
+                lost = _("（丢弃 {0} 行本地内容）").format(item["lost"]) if decision == "accept" and item.get("lost") else ""
+                label = ("" if chosen else _("默认")) + {"keep": _("保留你的版本"), "append": _("保留你的版本并追加带标记的区块")}.get(
+                    decision, _("采用新模板") + lost)
             lines.append(S.yellow(_("     定制文件：{0}（{1}）→ {2}").format(item['path'], item['state'], label)))
         lines.append(_("     联网：{0} · 恢复：{1}").format(_('需要') if step['network'] else _('不需要'), step['recovery']))
         if step["blocked"]:
@@ -328,6 +330,9 @@ def render_apply(result: dict) -> list[str]:
         if item["status"] == "skipped":
             lines.append(S.yellow(_("  跳过 {0}：{1}").format(item['id'], item['detail'])))
             continue
+        if item["status"] == "failed" and "written" not in item:
+            lines.append(S.red(_("  失败 {0}：{1}").format(item['id'], item['detail'])))
+            continue
         lines.append(S.green(_("  {0}已处理 {1}").format(prefix, item['id'])))
         if item["written"]:
             lines.append(_("    写入：{0}").format(_('、').join(item['written'])))
@@ -335,6 +340,8 @@ def render_apply(result: dict) -> list[str]:
             lines.append(_("    保留：{0}（未改动）").format(_('、').join(item['kept'])))
         if item["accepted"]:
             lines.append(_("    采用新模板：{0}").format(_('、').join(item['accepted'])))
+        if item.get("appended"):
+            lines.append(_("    保留原文并追加区块：{0}").format(_('、').join(item['appended'])))
         lines.append(_("    验证：{0}").format(item['verify']))
         lines.append(_("    恢复位置：{0}").format(item['recovery']))
     return lines
@@ -435,7 +442,10 @@ def cmd_health(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, 
 def cmd_fix(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
     if args.skip or args.unskip:
         return _fix_decisions(provider, args)
-    choices = {path: "keep" for path in args.keep} | {path: "accept" for path in args.accept}
+    choices = {path: "keep" for path in args.keep} | {path: "accept" for path in args.accept} \
+        | {path: "append" for path in args.append}
+    if args.confirm_discard:
+        choices["_confirm"] = "\n".join(args.confirm_discard)
     if args.entry_name:
         choices["entry-name"] = args.entry_name
     ids, targets = _split_targets(args.ids)
@@ -446,12 +456,14 @@ def cmd_fix(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, lis
     plan = provider.fix_plan(ids, choices)
     lines = header(provider, _("修复与更新")) + render_plan(plan, choices)
     if not args.apply:
-        lines.append(S.dim(_("以上为预览，没有写入。确认后加 --apply；定制文件用 --keep / --accept 指定。")))
+        lines.append(S.dim(_("以上为预览，没有写入。确认后加 --apply；定制文件用 --keep / --accept 指定；"
+                             "AGENTS.md / CLAUDE.md 也可用 --append 保留原文、只追加带标记的区块；--accept 会丢弃本地内容时需再加 --confirm-discard <文件>。")))
         if any(item.get("options") for step in plan["steps"] for item in step["custom"]):
             lines.append(S.dim(_("不想要其中某项：fix --skip <ID> --reason …（ID 见 health / check）；只处理几项：在处理项后列出路径或字段。")))
         return EXIT_OK, {"plan": plan, "applied": False}, lines
     result = provider.apply_fix(plan, choices)
-    return EXIT_OK, {"plan": plan, "applied": True, **result}, lines + render_apply(result)
+    failed = any(item["status"] == "failed" for item in result["results"])
+    return (EXIT_ATTENTION if failed else EXIT_OK), {"plan": plan, "applied": True, **result}, lines + render_apply(result)
 
 
 def _split_targets(ids: list[str]) -> tuple[list[str], list[str]]:
@@ -625,6 +637,8 @@ def parser() -> argparse.ArgumentParser:
     fix.add_argument("--apply", action="store_true")
     fix.add_argument("--keep", action="append", default=[])
     fix.add_argument("--accept", action="append", default=[])
+    fix.add_argument("--append", action="append", default=[])
+    fix.add_argument("--confirm-discard", action="append", default=[], dest="confirm_discard")
     fix.add_argument("--entry-name", help=_("add-entry：启动器文件名（缺省 menu）"))
     record = add("record", _("记录事项"))
     record.add_argument("item", help=_("事项，或 new 新建"))

@@ -246,7 +246,7 @@ class InitProjectTests(unittest.TestCase):
             root = Path(temporary)
             self.assertEqual(self.run_script(root, "--apply").returncode, 0)
             (root / "AGENTS.md").write_text("my own rules\n", encoding="utf-8")
-            code, applied = self.refresh(root, "--apply", "--accept", "AGENTS.md",
+            code, applied = self.refresh(root, "--apply", "--accept", "AGENTS.md", "--confirm-discard", "AGENTS.md",
                                          "--recovery-dir", str(Path(backup) / "r"))
             self.assertEqual(code, 0, applied)
             self.assertEqual((Path(backup) / "r/AGENTS.md").read_text(), "my own rules\n")
@@ -656,7 +656,7 @@ class DefaultRecoveryTests(unittest.TestCase):
         self.assertEqual(self.script("--no-entry", "--apply").returncode, 0)
         (self.root / "AGENTS.md").write_text("my own rules\n", encoding="utf-8")
         (self.root / init_project.CONTENT_LOCK_PATH).unlink()  # no baseline: the file counts as locally modified
-        refreshed = self.script("--mode", "refresh", "--accept", "AGENTS.md", "--apply")
+        refreshed = self.script("--mode", "refresh", "--accept", "AGENTS.md", "--confirm-discard", "AGENTS.md", "--apply")
         self.assertEqual(refreshed.returncode, 0, refreshed.stdout)
         payload = json.loads(refreshed.stdout)
         folder = Path(payload["recovery"])
@@ -676,6 +676,148 @@ class DefaultRecoveryTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stdout)
         self.assertNotIn("recovery", json.loads(done.stdout))
         self.assertEqual(self.recovery_dirs(), [])
+
+
+class RefreshWithoutBaselineTests(unittest.TestCase):
+    """#36：没有基线的已定制文件——看得见差异、知道为什么 blocked、有第三条路径、丢弃要确认。"""
+
+    MINE = "# 我的规则\n\n- 不要读 ~/secret\n- 回答简短\n"
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        base = Path(self._temporary.name).resolve()
+        self.root = base / "project"
+        self.root.mkdir()
+        self.home = base / "home"
+        self.home.mkdir()
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.run_init("--no-entry", "--apply")
+        # 早期版本初始化的项目：内容锁里没有基线（版本 0.0.0、文件为空），入口文件是用户自己写的。
+        lock = self.root / init_project.CONTENT_LOCK_PATH
+        data = json.loads(lock.read_text())
+        data["packs"]["agents-init/project-contract"].update(version="0.0.0", files={})
+        lock.write_text(json.dumps(data))
+        (self.root / "AGENTS.md").write_text(self.MINE, encoding="utf-8")
+        (self.root / "CLAUDE.md").write_text("先读 AGENTS.md\n隐私：不要记录令牌\n", encoding="utf-8")
+
+    def run_init(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "--project", str(self.root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--output", "json", *extra],
+                              capture_output=True, text=True, check=False)
+
+    def refresh(self, *extra: str) -> tuple[int, dict]:
+        done = self.run_init("--mode", "refresh", *extra)
+        return done.returncode, json.loads(done.stdout)
+
+    def item(self, result: dict, path: str) -> dict:
+        return next(entry for entry in result["files"] if entry["path"] == path)
+
+    def test_a_blocked_file_shows_a_diff_summary_and_says_why(self) -> None:
+        code, preview = self.refresh()
+        self.assertEqual(code, 1)
+        agents = self.item(preview, "AGENTS.md")
+        self.assertEqual((agents["state"], agents["action"], agents["reason"]), ("modified", "blocked", "no-baseline"))
+        self.assertEqual(agents["local_lines"], 4)
+        self.assertEqual((agents["lines_lost"], agents["lines_added"] > 0), (3, True))  # the blank line is shared
+        text = "\n".join(agents["note"])
+        self.assertIn("没有它的基线", text)
+        self.assertIn("--keep AGENTS.md", text)  # the default advice: keep what is yours
+        self.assertIn("--append AGENTS.md", text)
+        self.assertIn("--diff AGENTS.md", text)
+        self.assertIn("--accept", preview["hint"])
+        done = self.run_init("--mode", "refresh", "--output", "text")
+        self.assertIn("本地 4 行", done.stdout)
+
+    def test_diff_shows_the_whole_difference_and_never_writes(self) -> None:
+        before = (self.root / "AGENTS.md").read_text()
+        code, shown = self.refresh("--diff", "AGENTS.md")
+        self.assertEqual(code, 1)  # still blocked: nothing was chosen
+        self.assertIn("-# 我的规则", shown["diffs"]["AGENTS.md"])
+        self.assertIn("+## Project Profile", shown["diffs"]["AGENTS.md"])
+        self.assertNotIn("more diff lines", shown["diffs"]["AGENTS.md"])
+        self.assertEqual((self.root / "AGENTS.md").read_text(), before)
+        refused = self.run_init("--mode", "refresh", "--diff", "AGENTS.md", "--apply")
+        self.assertEqual(refused.returncode, 2)
+        text = self.run_init("--mode", "refresh", "--diff", "AGENTS.md", "--output", "text")
+        self.assertIn("-# 我的规则", text.stdout)
+
+    def test_accept_names_the_lines_it_would_drop_and_needs_an_explicit_confirmation(self) -> None:
+        before = (self.root / "CLAUDE.md").read_text()
+        code, preview = self.refresh("--accept", "CLAUDE.md", "--keep", "AGENTS.md")
+        claude = self.item(preview, "CLAUDE.md")
+        self.assertEqual((code, claude["action"], claude["reason"], claude["lines_lost"]), (1, "blocked", "discard-unconfirmed", 2))
+        self.assertIn("--confirm-discard CLAUDE.md", "".join(claude["note"]))
+        code, refused = self.refresh("--accept", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        self.assertEqual((code, refused["applied"]), (1, False))
+        self.assertEqual((self.root / "CLAUDE.md").read_text(), before)
+        self.assertEqual(list((self.home / ".agent-pack").glob("**/*")) if (self.home / ".agent-pack").exists() else [], [])
+        code, done = self.refresh("--accept", "CLAUDE.md", "--confirm-discard", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        self.assertEqual(code, 0, done)
+        self.assertTrue((self.root / "CLAUDE.md").read_text().startswith("@AGENTS.md"))
+        self.assertEqual((Path(done["recovery"]) / "CLAUDE.md").read_text(), before)  # the original can be taken back
+        self.assertEqual(self.item(done, "CLAUDE.md")["lines_lost"], 2)
+
+    def test_append_keeps_the_original_text_and_check_is_consistent_afterwards(self) -> None:
+        mine = (self.root / "AGENTS.md").read_text()
+        code, preview = self.refresh("--append", "AGENTS.md", "--append", "CLAUDE.md")
+        self.assertEqual(code, 0, preview)
+        self.assertEqual((self.item(preview, "AGENTS.md")["action"], self.item(preview, "CLAUDE.md")["action"]), ("append", "append"))
+        self.assertEqual((self.root / "AGENTS.md").read_text(), mine)  # a preview writes nothing
+        code, done = self.refresh("--append", "AGENTS.md", "--append", "CLAUDE.md", "--apply")
+        self.assertEqual(code, 0, done)
+        agents = (self.root / "AGENTS.md").read_text()
+        self.assertTrue(agents.startswith(mine))
+        self.assertIn("<!-- agenthelm:region agents-contract", agents)
+        claude = (self.root / "CLAUDE.md").read_text()
+        self.assertTrue(claude.startswith("先读 AGENTS.md\n隐私：不要记录令牌\n"))
+        self.assertIn("@AGENTS.md", claude)
+        self.assertEqual(sorted(done["recovery_files"]), ["AGENTS.md", "CLAUDE.md"])
+        self.assertEqual((Path(done["recovery"]) / "AGENTS.md").read_text(), mine)
+        scaffold = init_project._scaffold()
+        report = scaffold.check(self.root, state_dir=self.home / "state")
+        # the user's own text stays; the tool only owns the marked regions, and nothing is left to ask about
+        self.assertEqual([f["id"] for f in report["findings"] if f["kind"] != "skel-missing"], [], report["findings"])
+        again_code, again = self.refresh("--append", "AGENTS.md", "--apply")
+        self.assertEqual(again_code, 0, again)
+        self.assertEqual((self.root / "AGENTS.md").read_text(), agents)  # a second run changes nothing
+
+    def test_append_refuses_files_that_cannot_take_a_region_and_files_with_nothing_to_append(self) -> None:
+        refused = self.run_init("--mode", "refresh", "--append", "AGENT.RULES.md")
+        self.assertEqual(refused.returncode, 2)
+        both = self.run_init("--mode", "refresh", "--append", "AGENTS.md", "--keep", "AGENTS.md")
+        self.assertEqual(both.returncode, 2)
+        nothing = self.run_init("--mode", "refresh", "--append", "AGENT.md")  # unchanged file
+        self.assertEqual(nothing.returncode, 2)
+
+    def test_claude_md_that_already_imports_agents_md_needs_no_region(self) -> None:
+        (self.root / "CLAUDE.md").write_text("@AGENTS.md\n我的补充\n", encoding="utf-8")
+        code, preview = self.refresh("--append", "CLAUDE.md", "--keep", "AGENTS.md")
+        self.assertEqual(code, 0, preview)
+        claude = self.item(preview, "CLAUDE.md")
+        self.assertEqual((claude["action"], claude["reason"]), ("keep", "already-present"))
+
+    def test_after_keep_the_files_are_not_blocked_again(self) -> None:
+        code, kept = self.refresh("--keep", "AGENTS.md", "--keep", "CLAUDE.md", "--apply")
+        self.assertEqual(code, 0, kept)
+        code, again = self.refresh()
+        self.assertEqual(code, 0, again)
+        self.assertEqual(again["blocked"], [])
+        self.assertEqual({self.item(again, "AGENTS.md")["state"], self.item(again, "CLAUDE.md")["state"]}, {"kept-by-decision"})
+        self.assertEqual(self.item(again, "AGENTS.md")["action"], "keep")
+
+    def test_a_file_edited_after_a_baseline_exists_is_explained_differently(self) -> None:
+        lock = self.root / init_project.CONTENT_LOCK_PATH
+        data = json.loads(lock.read_text())
+        data["packs"]["agents-init/project-contract"]["files"] = {"AGENTS.md": "0" * 64}
+        lock.write_text(json.dumps(data))
+        code, preview = self.refresh()
+        self.assertEqual(self.item(preview, "AGENTS.md")["reason"], "edited")
+        self.assertNotIn("没有它的基线", "".join(self.item(preview, "AGENTS.md")["note"]))
+
 
 
 class EntryTests(unittest.TestCase):

@@ -6,6 +6,7 @@ os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; 
 
 import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 import time
@@ -478,6 +479,108 @@ class AgenthelmOperationTests(unittest.TestCase):
             self.assertEqual(agenthelm.github_release(self.latest), release)
             tagged["plugins"]["agent-pack"]["version"] = "0.0.1"
             self.assertEqual(agenthelm.github_release(self.latest), {})
+
+
+
+
+class UpdateContentFlowTests(unittest.TestCase):
+    """`agenthelm update` on a project whose content lock has no baseline (#36), and where the originals go (#30)."""
+
+    REPO = Path(__file__).resolve().parents[3]
+    INIT = REPO / "plugins/agents-init/skills/agents-init/scripts/init_project.py"
+    CLI = RUNTIME / "agenthelm.py"
+    MINE = "# 我的规则\n\n- 不要读 ~/secret\n- 回答简短\n"
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        base = Path(self.temporary.name).resolve()
+        self.home, self.root = base / "home", base / "project"
+        self.home.mkdir()
+        self.root.mkdir()
+        self.env = {**os.environ, "HOME": str(self.home), "AGENTHELM_LANG": "zh", "AGENTHELM_NO_UPDATE_CHECK": "1"}
+        for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME"):
+            self.env.pop(name, None)
+        done = subprocess.run([sys.executable, str(self.INIT), "--project", str(self.root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--no-entry", "--apply", "--output", "json"],
+                              capture_output=True, text=True, check=False, env=self.env)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        lock = self.root / ".agents/moe.sakanano.agent-pack/content.lock.json"
+        data = json.loads(lock.read_text())
+        data["packs"]["agents-init/project-contract"].update(version="0.0.0", files={})
+        lock.write_text(json.dumps(data))
+        (self.root / "AGENTS.md").write_text(self.MINE, encoding="utf-8")
+        (self.root / "CLAUDE.md").write_text("先读 AGENTS.md\n隐私：不要记录令牌\n", encoding="utf-8")
+        manifest = json.loads((self.REPO / "plugins/agents-init/plugin.json").read_text())
+        pack = json.loads((self.REPO / "plugins/agents-init/content.json").read_text())["packs"][0]
+        self.latest = base / "latest.json"
+        write(self.latest, {"schema": 1, "marketplace": "agenthelm", "released_at": "2026-10-31", "migrations": [],
+                            "plugins": {"agents-init": {"version": manifest["version"], "content": {
+                                pack["id"]: {"version": pack["version"], "kind": "template"}}}}})
+
+    def update(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(self.CLI), "update", "--project", str(self.root), "--only", "content",
+                               "--latest", str(self.latest), *extra],
+                              capture_output=True, text=True, check=False, env=self.env)
+
+    def test_the_preview_explains_the_block_and_how_to_look_before_choosing(self) -> None:
+        done = self.update()
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)  # a preview
+        self.assertIn("没有它的基线", done.stdout)
+        self.assertIn("--keep AGENTS.md", done.stdout)
+        self.assertIn("本地 4 行", done.stdout)
+        self.assertIn("--diff AGENTS.md", done.stdout)
+
+    def test_diff_prints_the_difference_and_changes_nothing(self) -> None:
+        done = self.update("--diff", "AGENTS.md")
+        self.assertIn("-# 我的规则", done.stdout)
+        self.assertIn("+## Project Profile", done.stdout)
+        self.assertEqual((self.root / "AGENTS.md").read_text(), self.MINE)
+        refused = self.update("--diff", "AGENTS.md", "--apply")
+        self.assertEqual(refused.returncode, 2, refused.stdout)
+        self.assertEqual((self.root / "AGENTS.md").read_text(), self.MINE)
+
+    def test_accepting_needs_confirmation_and_then_names_the_recovery_folder_in_text_and_json(self) -> None:
+        refused = self.update("--accept", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("[阻塞]", refused.stdout)  # not "[完成]": nothing was written
+        self.assertNotIn("[完成]", refused.stdout)
+        self.assertIn("--confirm-discard CLAUDE.md", refused.stdout)
+        self.assertEqual((self.root / "CLAUDE.md").read_text(), "先读 AGENTS.md\n隐私：不要记录令牌\n")
+        self.assertFalse((self.home / ".agent-pack").exists())
+        args = ("--accept", "CLAUDE.md", "--confirm-discard", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        done = self.update(*args)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        (folder,) = sorted((self.home / ".agent-pack/recovery").iterdir())
+        self.assertIn(f"被替换文件的原件已备份到：{folder}", done.stdout)
+        self.assertIn("CLAUDE.md", done.stdout.split("被替换文件的原件已备份到：")[1])
+        self.assertIn("还原：", done.stdout)
+        self.assertEqual((folder / "CLAUDE.md").read_text(), "先读 AGENTS.md\n隐私：不要记录令牌\n")
+        self.assertEqual((self.root / "AGENTS.md").read_text(), self.MINE)  # --keep: untouched, and not in the backup
+        self.assertFalse((folder / "AGENTS.md").exists())
+        # JSON carries the same facts
+        self.setUp()
+        done = self.update(*args, "--output", "json")
+        payload = json.loads(done.stdout)
+        (folder,) = sorted((self.home / ".agent-pack/recovery").iterdir())
+        self.assertEqual((payload["recovery"], payload["recovery_files"]), (str(folder), ["CLAUDE.md"]))
+        self.assertTrue(folder.name.endswith("-agenthelm-content"))
+
+    def test_append_keeps_the_text_and_the_next_update_has_nothing_left_to_ask(self) -> None:
+        done = self.update("--append", "AGENTS.md", "--append", "CLAUDE.md", "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertTrue((self.root / "AGENTS.md").read_text().startswith(self.MINE))
+        self.assertIn("agenthelm:region", (self.root / "CLAUDE.md").read_text())
+        again = self.update()
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+
+    def test_a_backup_folder_that_cannot_be_used_makes_the_step_fail_and_leaves_files_alone(self) -> None:
+        (self.home / ".agent-pack").write_text("a file, not a folder\n", encoding="utf-8")
+        done = self.update("--accept", "CLAUDE.md", "--confirm-discard", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn("[失败]", done.stdout)
+        self.assertEqual((self.root / "CLAUDE.md").read_text(), "先读 AGENTS.md\n隐私：不要记录令牌\n")
 
 
 if __name__ == "__main__":

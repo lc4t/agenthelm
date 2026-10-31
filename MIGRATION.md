@@ -51,7 +51,7 @@ python3 <agent-pack 目录>/runtime/agenthelm.py locate opinion-manager --versio
 
 ## 项目里的模板文件
 
-v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.lock.json`。之后模板更新时，`npx @sakanano-moe/agenthelm update` 会把与新模板不同的文件都视为本地改动，逐个要求 `--accept`（用新模板，先备份）或 `--keep`（保留本地）；选择后即建立基线。
+v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.lock.json`。之后模板更新时，`npx @sakanano-moe/agenthelm update` 会把与新模板不同的文件都视为本地改动，逐个要求选择：`--keep`（保留本地，建议）、`--append`（`AGENTS.md` / `CLAUDE.md` 专用：保留原文，只在末尾追加带标记的区块）或 `--accept`（用新模板，先备份；会丢弃本地内容，须再加 `--confirm-discard <文件>`）。预览会写明原因（内容锁里没有基线，工具无法区分是你改过还是模板变了）和每个文件的差异摘要（本地行数、新模板行数、会新增和丢弃的行数），`--diff <文件>` 查看完整差异；选择后即建立基线。替换前的原件备份到 `~/.agent-pack/recovery/`，命令输出会写明位置。
 
 ## 6.6.0：给已初始化的项目接入人用入口
 
@@ -83,7 +83,7 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 1. 看有哪些差异：`agenthelm check`。每项带 ID（`skel:<路径>`、`content:<路径>`、`profile:<字段>`、`lock:<包>`、`case-naming`）。
 2. 逐项处理或跳过：
    - 缺失的骨架文件：`agenthelm fix add-skeleton`（预览）→ `--apply`。只新建，已有文件不动。
-   - 与新模板不同的文件（旧项目没有内容锁基线）：`agenthelm fix update-content`，逐个 `--keep <文件>` 或 `--accept <文件>`；`--keep` 会被记住，同样的模板内容不再追问。
+   - 与新模板不同的文件（旧项目没有内容锁基线）：`agenthelm fix update-content`，逐个 `--keep <文件>`、`--append <文件>`（保留原文并追加带标记的区块）或 `--accept <文件> --confirm-discard <文件>`；`--keep` 与 `--append` 会被记住，同样的模板内容不再追问。
    - Profile 缺字段：`agenthelm fix profile`（预览里有 diff，替换前备份）。你自己的字段不会被改动。
    - 内容锁里的 `0.0.0`：`agenthelm fix repair-lock`。如果基线与当前模板不同，会提示改用 `update-content` 逐文件选择。
    - 不想要的：`agenthelm fix --skip <ID> --reason "…" --apply`。决定写入 `.agents/moe.sakanano.agent-pack/check-decisions.json`，随项目同步，换一台机器不会再提示；`--unskip <ID>` 撤销。

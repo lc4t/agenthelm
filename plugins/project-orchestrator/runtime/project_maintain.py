@@ -323,7 +323,15 @@ def _plan_step(provider: Any, fix_id: str, choices: dict[str, str]) -> dict:
     return _plan_content(provider, env, report, choices)
 
 
-def _run_refresh(provider: Any, accept: list[str], keep: list[str], recovery: Path, *, apply: bool) -> dict:
+APPENDABLE = {"AGENTS.md", "CLAUDE.md"}  # agents-init 可以在这两个文件末尾追加带标记的区块、保留原文
+
+
+def _content_flags(append: list[str], confirm: list[str]) -> list[str]:
+    return [value for flag, paths in (("--append", append), ("--confirm-discard", confirm)) for path in paths for value in (flag, path)]
+
+
+def _run_refresh(provider: Any, accept: list[str], keep: list[str], recovery: Path, *, apply: bool,
+                 append: list[str] | None = None, confirm: list[str] | None = None) -> dict:
     """agents-init 的 refresh：模板包版本没有更新、但有文件与当前模板不同（例如没有基线）时直接用它。"""
     script = _init_script(provider)
     if script is None:
@@ -333,7 +341,8 @@ def _run_refresh(provider: Any, accept: list[str], keep: list[str], recovery: Pa
         command += ["--accept", path]
     for path in keep:
         command += ["--keep", path]
-    if apply or accept:
+    command += _content_flags(append or [], confirm or [])
+    if apply or accept or append:
         command += ["--recovery-dir", str(recovery)]
     if apply:
         command.append("--apply")
@@ -348,10 +357,11 @@ def _run_refresh(provider: Any, accept: list[str], keep: list[str], recovery: Pa
 
 
 def _content_preview(provider: Any, env: Any, report: dict | None, accept: list[str], keep: list[str],
-                     recovery: Path) -> tuple[str, list[dict], str, bool]:
+                     recovery: Path, append: list[str], confirm: list[str]) -> tuple[str, list[dict], str, bool]:
     """(说明, 文件计划, 阻塞原因, 是否走 refresh 直通路径)。"""
     host = provider.host
-    steps = host.update_steps(env, report, provider.root, None, env.home, accept, keep, recovery, "content") \
+    steps = host.update_steps(env, report, provider.root, None, env.home, accept, keep, recovery, "content",
+                              content_flags=_content_flags(append, confirm)) \
         if report is not None else []
     if steps:
         step = steps[0]
@@ -362,7 +372,7 @@ def _content_preview(provider: Any, env: Any, report: dict | None, accept: list[
             return step.description, [], preview.get("error", _("预览失败")), False
         return step.description, (preview.get("result") or {}).get("files") or [], "", False
     try:
-        result = _run_refresh(provider, accept, keep, recovery, apply=False)
+        result = _run_refresh(provider, accept, keep, recovery, apply=False, append=append, confirm=confirm)
     except EntryError as exc:
         return _("项目模板/样例"), [], str(exc), True
     files = result.get("files") or []
@@ -375,8 +385,10 @@ def _plan_content(provider: Any, env: Any, report: dict | None, choices: dict[st
     host = provider.host
     accept = sorted(path for path, choice in choices.items() if choice == "accept")
     keep = sorted(path for path, choice in choices.items() if choice == "keep")
+    append = sorted(path for path, choice in choices.items() if choice == "append")
+    confirm = [path for path in (choices.get("_confirm") or "").split("\n") if path]
     recovery = Path(choices.get("_recovery") or host.recovery_dir_for(env, "content"))
-    description, files, error, direct = _content_preview(provider, env, report, accept, keep, recovery)
+    description, files, error, direct = _content_preview(provider, env, report, accept, keep, recovery, append, confirm)
     if error:
         return _step("update-content", description, blocked=error)
 
@@ -385,7 +397,9 @@ def _plan_content(provider: Any, env: Any, report: dict | None, choices: dict[st
 
     step = _Step()
     step.description = description
-    custom = [{"path": item["path"], "state": _("你改过"), "default": "keep"} for item in files
+    custom = [{"path": item["path"], "state": _("你改过"), "default": "keep", "content": True,
+               "lost": item.get("lines_lost", 0), "append": item["path"] in APPENDABLE, "reason": item.get("reason")}
+              for item in files
               if item["state"] == "modified" or (item["path"] in choices and item["state"] in ("modified", "missing"))]
     for item in files:
         if item["state"] == "missing" and not any(entry["path"] == item["path"] for entry in custom):
@@ -398,29 +412,38 @@ def _plan_content(provider: Any, env: Any, report: dict | None, choices: dict[st
             action = "replace" if effective.get(item["path"]) == "accept" else "keep"
         if action == "skip":
             action = "create" if effective.get(item["path"]) == "accept" else "keep"
-        if action in ("replace", "create"):
-            writes.append({"path": item["path"], "scope": _("项目（先备份）") if action == "replace" else _("项目（新建）")})
+        if action in ("replace", "create", "append"):
+            scope = {"replace": _("项目（先备份）"), "create": _("项目（新建）"), "append": _("项目（先备份，只追加区块）")}[action]
+            writes.append({"path": item["path"], "scope": scope})
     # 刷新总会把内容锁更新到新版本（保留的文件沿用旧基线），所以它总在写入范围里。
     writes.append({"path": ".agents/moe.sakanano.agent-pack/content.lock.json", "scope": _("项目（内容锁）")})
+    diffs = {item["path"]: item["diff"] for item in files if item.get("diff")}
     return _step("update-content", step.description, changes=[_content_change(item, effective) for item in files],
                  writes=writes, custom=custom, recovery=str(recovery),
                  verify=_("重新检查模板版本；保留的文件内容不变"),
-                 payload={"recovery": str(recovery), "files": files, "direct": direct})
+                 payload={"recovery": str(recovery), "files": files, "direct": direct, "diffs": diffs, "confirm": confirm})
 
 
 CONTENT_STATE = {"unchanged": N_("与新模板相同"), "clean": N_("没改过"), "modified": N_("你改过"), "missing": N_("目前不存在"),
                  "local-only": N_("只有你的改动，新模板没变")}
 CONTENT_ACTION = {"keep": N_("保留"), "replace": N_("换成新模板（先备份）"), "create": N_("新建"), "skip": N_("不新建"),
-                  "blocked": N_("需要你选择")}
+                  "blocked": N_("需要你选择"), "append": N_("保留原文，末尾追加带标记的区块（先备份）")}
 
 
 def _content_change(item: dict, effective: dict[str, str]) -> str:
     action = item["action"]
+    chosen = effective.get(item["path"], "keep")
     if action in ("blocked", "skip"):
-        chosen = effective.get(item["path"], "keep")
         action = ("replace" if action == "blocked" else "create") if chosen == "accept" else \
             ("keep" if action == "blocked" else "skip")
+    if chosen == "append" and item["state"] == "modified":
+        action = "append"
     note = _("（保留则不含新模板的改动）") if item["state"] == "modified" and action == "keep" else ""
+    if item["state"] == "modified" and "local_lines" in item:
+        note += _("（本地 {0} 行，新模板 {1} 行；采用新模板会丢弃 {2} 行本地内容）").format(
+            item["local_lines"], item["template_lines"], item["lines_lost"])
+    if item.get("reason") == "no-baseline" and item["state"] == "modified":
+        note += _("（内容锁里没有它的基线，无法判断是你改过还是模板变了）")
     return _("{0}：{1} → {2}{3}").format(item['path'], _(CONTENT_STATE.get(item['state'], item['state'])), _(CONTENT_ACTION.get(action, action)), note)
 
 
@@ -837,20 +860,24 @@ def _apply_step(provider: Any, step: dict, choices: dict[str, str]) -> dict:
     custom = {item["path"] for item in step["custom"]}
     keep = [path for path in custom if choices.get(path, "keep") == "keep"]
     accept = [path for path in custom if choices.get(path) == "accept"]
+    append = [path for path in custom if choices.get(path) == "append"]
+    confirm = [path for path in (choices.get("_confirm") or "").split("\n") if path]
     before = {path: _digest(provider.root / path) for path in keep}
     recovery = Path(step["payload"]["recovery"])
     if step["payload"].get("direct"):
-        result = _run_refresh(provider, accept, keep, recovery, apply=True)
+        result = _run_refresh(provider, accept, keep, recovery, apply=True, append=append, confirm=confirm)
         if not result.get("applied"):
             raise EntryError(_("模板更新没有执行：") + str(result.get("hint") or result), "failed")
     else:
-        steps = host.update_steps(env, provider._report, provider.root, None, env.home, accept, keep, recovery, "content")
+        steps = host.update_steps(env, provider._report, provider.root, None, env.home, accept, keep, recovery, "content",
+                                  content_flags=_content_flags(append, confirm))
         outcome = host.execute_steps(steps, apply=True, recovery_root=None, child_env=env.child_environment())[0]
         result = outcome.get("result") or {}
         if outcome["status"] == "failed" or not result.get("applied"):
             raise EntryError(_("模板更新没有执行：") + str(outcome.get("error") or result.get("hint") or result), "failed")
     untouched = all(_digest(provider.root / path) == digest for path, digest in before.items())
-    return {**base, "kept": keep, "accepted": accept, "recovery": result.get("recovery") or _("没有替换文件，无需备份"),
+    return {**base, "kept": keep, "accepted": accept, "appended": append,
+            "recovery": result.get("recovery") or _("没有替换文件，无需备份"),
             "verify": _("重新读取：保留的文件") + (_("内容未变") if untouched else _("被改动了，请检查"))
                       + _("；内容锁已更新到新版本")}
 

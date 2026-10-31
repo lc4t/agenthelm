@@ -97,6 +97,8 @@ python3 scripts/init_project.py --project /path/to/project --mode decide --targe
 python3 scripts/init_project.py --project /path/to/project --mode case-naming   # 只给改名计划，不移动目录
 ```
 
+**内容刷新（`--mode refresh`）遇到你改过的文件**：模板更新后，未改动的文件先备份再替换；你改过的文件必须逐个选择，不会被静默覆盖。没有内容锁基线的项目（早期版本初始化）里，所有与新模板不同的文件都算“你改过”，预览会写明这个原因和每个文件的差异摘要（`local_lines`、`template_lines`、`lines_added`、`lines_lost`）。选择：`--keep <文件>` 保留（建议；会被记住，之后不再追问）；`--append <文件>`（只限 `AGENTS.md`、`CLAUDE.md`）保留原文、只在末尾追加带标记的受管区块；`--accept <文件>` 换成新模板，会丢弃 `lines_lost` 行本地内容，所以须再加 `--confirm-discard <文件>` 才会执行；`--diff <文件>` 只看完整差异，不写入。
+
 **备份与还原**：`refresh`、`adopt`、`region`、`profile`、`entry`、`migrate` 这些会替换用户文件的模式，不必先想一个备份目录——`--apply` 时原件自动复制到 `~/.agent-pack/recovery/<UTC 时间>-agenthelm-<模式>/`（与 `agenthelm update`、`migrate` 的位置和命名一致），一次操作的所有被替换文件放在同一个目录。命令输出（文本和 `--output json` 的 `recovery`、`recovery_files`、`recovery_default` 字段）会说明备份位置；还原就是把备份里的文件按相同的相对路径复制回项目。显式传入的 `--recovery-dir` 仍然优先，但必须在项目外，项目内的目录会被拒绝。备份目录无法创建或写入时，命令在改动任何项目文件之前就失败并说明原因，不会跳过备份。预览（不带 `--apply`）不创建任何目录。
 
 期望骨架清单是 [skeleton.json](skeleton.json)（内容包 `agents-init/project-skeleton`）；Opinion、Profile 里的项目自有字段与审计字段不参与比较。用户的跳过 / 保留决定写入 `.agents/moe.sakanano.agent-pack/check-decisions.json`，随项目同步。日常入口是 `agenthelm check` 与 `agenthelm fix`。

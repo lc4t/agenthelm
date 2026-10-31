@@ -910,7 +910,7 @@ def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Pat
 
 def update_steps(env: Env, report: dict, project: Path | None, source: Path | None, home: Path,
                  accept: list[str], keep: list[str], recovery_dir: Path | None,
-                 only: str | None) -> list[Step]:
+                 only: str | None, *, content_flags: list[str] | None = None) -> list[Step]:
     latest = report["_latest"]
     steps: list[Step] = []
     behind = [item for item in report["plugins"] if item["status"] == "behind"]
@@ -934,12 +934,12 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
         for item in report["content"]:
             if item.get("status") not in {"update-available", "conflict"}:
                 continue
-            steps.append(content_step(env, item, report, project, accept, keep, recovery_dir))
+            steps.append(content_step(env, item, report, project, accept, keep, recovery_dir, content_flags=content_flags))
     return steps
 
 
 def content_step(env: Env, item: dict, report: dict, project: Path, accept: list[str], keep: list[str],
-                 recovery_dir: Path | None) -> Step:
+                 recovery_dir: Path | None, *, content_flags: list[str] | None = None) -> Step:
     if item["plugin"] != "agents-init":
         return Step("content", None, _("{0}：没有可用的刷新工具").format(item['pack']), blocked="unsupported")
     stale = any(entry["plugin"] == "agents-init" and entry["status"] == "behind" for entry in report["plugins"])
@@ -956,6 +956,7 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
             command += ["--accept", path]
         for path in keep:
             command += ["--keep", path]
+        command += content_flags or []  # --append / --confirm-discard / --diff
         if recovery_dir is not None:
             command += ["--recovery-dir", str(recovery_dir)]
         if apply:
@@ -986,6 +987,10 @@ def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
             try:
                 record["result"] = step.action(apply, recovery_root)
                 record["status"] = "applied" if apply else "preview"
+                outcome = record["result"]
+                if apply and isinstance(outcome, dict) and outcome.get("applied") is False and outcome.get("blocked"):
+                    # Files still wait for a choice: nothing was written, so this is not "done".
+                    record["status"], record["needs_choice"] = "blocked", True
             except Exception as exc:  # noqa: BLE001 - report every step, stop nothing silently
                 record["status"], record["error"] = "failed", str(exc)
         elif apply:
@@ -1229,7 +1234,12 @@ def parser() -> argparse.ArgumentParser:
     update.add_argument("--only", choices=("plugins", "content"))
     update.add_argument("--accept", action="append", default=[], help=_("内容更新：用新模板替换这个本地已改动的文件"))
     update.add_argument("--keep", action="append", default=[], help=_("内容更新：保留这个文件的本地内容"))
-    update.add_argument("--recovery-dir", type=Path, help=_("被替换文件的备份目录（项目外）"))
+    update.add_argument("--append", action="append", default=[],
+                        help=_("内容更新：保留 AGENTS.md / CLAUDE.md 的本地内容，只在末尾追加带标记的区块（先备份）"))
+    update.add_argument("--confirm-discard", action="append", default=[], dest="confirm_discard",
+                        help=_("内容更新：确认 --accept 会丢弃这个文件里的本地内容"))
+    update.add_argument("--diff", action="append", default=[], help=_("内容更新：只查看这个文件与新模板的完整差异，不写入"))
+    update.add_argument("--recovery-dir", type=Path, help=_("被替换文件的备份目录（项目外），缺省 ~/.agent-pack/recovery/"))
     update.add_argument("--source", type=Path, help=_("Cursor 更新用的本地仓库（默认下载发布包）"))
     update.add_argument("--apply", action="store_true")
 
@@ -1276,8 +1286,12 @@ def _print_steps(results: list[dict], apply: bool) -> None:
         if isinstance(result, dict) and result.get("mode") == "refresh":
             for item in result.get("files", []):
                 line += f"\n      {item['action']:8} {item['path']} [{item['state']}]"
+                for note in item.get("note", []):
+                    line += f"\n          {note}"
+            for path, diff in (result.get("diffs") or {}).items():
+                line += "\n" + (diff.rstrip("\n") if diff else _("（{0} 与新模板没有差异）").format(path))
             if result.get("hint"):
-                line += f"\n      {result['hint']}"
+                line += "\n" + "\n".join(f"      {hint}" for hint in result["hint"].splitlines())
         print(line)
     if not apply and results:
         print(_("以上为预览；确认后追加 --apply 执行。"))
@@ -1442,12 +1456,16 @@ def main(argv: list[str] | None = None) -> int:
             recovery = args.recovery_dir
             if args.apply and recovery is None and project is not None:
                 recovery = recovery_dir_for(env, "content")
+            if args.diff and args.apply:
+                raise CheckError(_("--diff 只用于查看，不能与 --apply 同用"))
+            flags = [value for flag, paths in (("--append", args.append), ("--confirm-discard", args.confirm_discard),
+                                               ("--diff", args.diff)) for path in paths for value in (flag, path)]
             steps = update_steps(env, report, project, args.source, home, args.accept, args.keep,
-                                 recovery, args.only)
+                                 recovery, args.only, content_flags=flags)
             results = execute_steps(steps, apply=args.apply, recovery_root=None,
                                     child_env=env.child_environment())
-            payload = {"ok": all(r["status"] != "failed" for r in results), "applied": args.apply,
-                       "steps": results, "summary": report["summary"]}
+            payload = {"ok": all(r["status"] != "failed" and not r.get("needs_choice") for r in results),
+                       "applied": args.apply, "steps": results, "summary": report["summary"]}
             backups = [record["result"] for record in results
                        if isinstance(record.get("result"), dict) and record["result"].get("recovery")]
             if args.apply and backups:

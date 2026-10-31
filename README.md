@@ -113,7 +113,7 @@ npx @sakanano-moe/agenthelm update --apply   # 执行
 - 云端版本源是 [`latest.json`](latest.json)。`check` 分别标出插件代码更新、只改模板或样例的更新，以及含不兼容变更的版本和需要做的动作。
 - 在项目目录里运行时，`check`（或项目里的 `./menu health`）还会对比项目的**脚手架**和最新版：缺失的骨架文件、模板文件与新版不同、Profile 受检字段缺失、内容锁版本未知、Case 目录命名与声明不符。Opinion、Profile 里的自有字段和审计字段（`source_ref`、`plugin_version` 等）不参与比较。`check` 始终只读，修复用 `fix`（默认预览，`--apply` 才写入）。
 - 插件更新调用 `claude plugin update`、`codex plugin marketplace upgrade`；Cursor 个人安装从带摘要的发布包更新。
-- 项目里由模板生成的文件：未改动的先备份再替换，你改过的逐个选择 `--accept <文件>`（用新模板）或 `--keep <文件>`（保留本地）。
+- 项目里由模板生成的文件：未改动的先备份再替换，你改过的逐个选择 `--keep <文件>`（保留本地）、`--append <文件>`（仅 `AGENTS.md` / `CLAUDE.md`：保留原文，末尾追加带标记的区块）或 `--accept <文件>`（用新模板；会丢弃本地内容，须再加 `--confirm-discard <文件>`），`--diff <文件>` 先看差异。被替换的原件自动备份，输出写明位置。
 - 会话开始时 agent-pack 每天至多联网检查一次，有更新才提示一行，离线不报错。关闭：设置 `AGENTHELM_NO_UPDATE_CHECK=1`，或在 `~/.config/agenthelm/config.json` 写 `{"update_check": false}`。
 - Claude Code 的第三方市场默认不自动更新；要让客户端自动更新，可在 `/plugin` → Marketplaces 里为 `agenthelm` 打开 Enable auto-update。
 

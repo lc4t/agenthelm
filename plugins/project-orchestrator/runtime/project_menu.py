@@ -265,6 +265,12 @@ def fix_screen(provider, preset: list[str] | None = None) -> None:
                     choices["_reason"] = choose(_("永久跳过的理由（回车略过；会随项目同步，换一台机器也看得到）"), "")
                 asked = True
                 continue
+            if item.get("content"):
+                choices[item["path"]] = _decide_content(item, step["payload"].get("diffs", {}).get(item["path"], ""))
+                if choices[item["path"]] == "accept":  # 提示里已写明会丢弃多少行，这里的 a 就是显式确认
+                    choices["_confirm"] = "\n".join([*(choices.get("_confirm") or "").split("\n"), item["path"]]).strip("\n")
+                asked = True
+                continue
             answer = choose(_("{0} {1}：k 不改（默认）/ a 采用").format(item['path'], item['state']), "k") \
                 if item["path"] == "README.md" else \
                 choose(_("{0} {1}：k 保留你的版本（默认）/ a 采用新模板").format(item['path'], item['state']), "k")
@@ -282,6 +288,22 @@ def fix_screen(provider, preset: list[str] | None = None) -> None:
         return
     print(S.bold(_("5. 验证结果")))
     show(cli.render_apply(provider.apply_fix(plan, choices)))
+
+
+def _decide_content(item: dict, diff: str) -> str:
+    """模板更新里你改过的文件：保留（默认）/ 采用新模板（写明丢弃多少行）/ 保留并追加区块 / 先看差异。"""
+    lost = _("，会丢弃 {0} 行本地内容").format(item["lost"]) if item.get("lost") else ""
+    options = {"k": "keep", "a": "accept", **({"p": "append"} if item.get("append") else {})}
+    menu = _("k 保留你的版本（默认）/ a 采用新模板（先备份{0}）").format(lost) \
+        + (_(" / p 保留原文并追加带标记的区块") if item.get("append") else "") + _(" / d 查看差异")
+    while True:
+        answer = choose(_("{0} {1}：{2}").format(item['path'], item['state'], menu), "k")
+        if answer == "d":
+            print(S.dim(diff or _("（没有差异内容可显示）")))
+            continue
+        if answer in options:
+            return options[answer]
+        print(S.yellow(_("请输入 {0} 或 d。")).format(_("、").join(options)))
 
 
 def _decide_item(item: dict, diff: str) -> str:

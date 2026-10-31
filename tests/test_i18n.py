@@ -348,6 +348,46 @@ class EnglishOutputTests(unittest.TestCase):
         case_file = next((project / "cases").glob("CASE-*/CASE.md"))
         self.assertFalse(CJK.search(case_file.read_text(encoding="utf-8")), "an English project writes an English CASE.md")
 
+    def test_the_recovery_and_no_baseline_flows_speak_english(self) -> None:
+        """#30 / #36：备份位置、无基线的差异说明、丢弃确认、追加区块在英文下没有漏翻的中文。"""
+        project = Path(self.directory.name) / "project"
+        project.mkdir()
+        init = PLUGINS / "agents-init/skills/agents-init/scripts/init_project.py"
+        base = [str(init), "--project", str(project), "--name", "Notes", "--project-type", "study", "--vcs", "none", "--stack", "none",
+                "--runtime", "local", "--agent-cli", "none"]
+        self.run_command(*base, "--no-entry", "--apply", expect=(0,))
+        lock = project / ".agents/moe.sakanano.agent-pack/content.lock.json"
+        data = json.loads(lock.read_text(encoding="utf-8"))
+        data["packs"]["agents-init/project-contract"].update(version="0.0.0", files={})
+        lock.write_text(json.dumps(data), encoding="utf-8")
+        (project / "AGENTS.md").write_text("My rules\n\n- be brief\n", encoding="utf-8")
+        (project / "CLAUDE.md").write_text("Read AGENTS.md first\nPrivacy: never log tokens\n", encoding="utf-8")
+        latest = Path(self.directory.name) / "latest.json"
+        manifest = json.loads((PLUGINS / "agents-init/plugin.json").read_text(encoding="utf-8"))
+        pack = json.loads((PLUGINS / "agents-init/content.json").read_text(encoding="utf-8"))["packs"][0]
+        latest.write_text(json.dumps({"schema": 1, "marketplace": "agenthelm", "released_at": "2026-10-31", "migrations": [],
+                                      "plugins": {"agents-init": {"version": manifest["version"], "content": {
+                                          pack["id"]: {"version": pack["version"], "kind": "template"}}}}}), encoding="utf-8")
+        update = [str(AGENTHELM), "update", "--project", str(project), "--only", "content", "--latest", str(latest)]
+        steps = [
+            [*base, "--mode", "refresh"],
+            [*base, "--mode", "refresh", "--accept", "CLAUDE.md", "--keep", "AGENTS.md"],
+            update,
+            [*update, "--accept", "CLAUDE.md", "--keep", "AGENTS.md", "--apply"],
+        ]
+        for step in steps:
+            self.assertEnglish(self.run_command(*step), " ".join(step[1:6]))
+        for step in ([*base, "--mode", "refresh", "--diff", "AGENTS.md"], [*update, "--diff", "AGENTS.md"]):
+            shown = self.run_command(*step)  # the diff itself quotes the Chinese template body (issue #24), so only the frame is checked
+            self.assertIn("-My rules", shown.stdout)
+            self.assertFalse(CJK.search("\n".join(line for line in shown.stdout.splitlines() if not line.startswith(("+", " ")))), shown.stdout)
+        confirmed = self.run_command(*update, "--accept", "CLAUDE.md", "--confirm-discard", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        self.assertEnglish(confirmed, "update --confirm-discard")
+        self.assertIn("backed up to", confirmed.stdout)
+        self.assertIn("To restore", confirmed.stdout)
+        appended = self.run_command(*base, "--mode", "refresh", "--append", "AGENTS.md", "--apply")
+        self.assertEnglish(appended, "refresh --append")
+
     def test_sop_commands_speak_english(self) -> None:
         """英文项目里 SOP 的命令输出、SOP.md 与执行 Case 全程没有中文（SOP 文件语言跟项目的 language）。"""
         project = Path(self.directory.name) / "sop-project"
