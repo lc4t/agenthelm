@@ -735,6 +735,8 @@
  "重新检查模板版本；保留的文件内容不变": "Check the template versions again; the content of kept files stays the same",
  "与新模板相同": "same as the new template",
  "没改过": "unchanged by you",
+ "你已决定保留": "you decided to keep it",
+ "三方合并（先备份）": "three-way merge (backed up first)",
  "目前不存在": "does not exist yet",
  "只有你的改动，新模板没变": "only your changes; the new template did not change",
  "保留": "keep",
