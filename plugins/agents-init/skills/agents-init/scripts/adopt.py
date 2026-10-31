@@ -363,6 +363,11 @@ def _validate_root(value: str, label: str, root: Path, *, must_exist: bool = Fal
     target = root / path
     if must_exist and not _is_dir(target):
         raise _fail(_("{0} 不是项目里已有的目录：{1}").format(label, value))
+    if not must_exist and target.is_symlink():
+        link = os.readlink(target)
+        kind = _("绝对路径") if os.path.isabs(link) else _("相对路径")
+        raise _fail(_("{0}：{1} 是符号链接（{2}，指向 {3}），出于安全不跟随符号链接。可以用 {4} 另设一个真实目录，"
+                      "或确认链接目标无误后自行把它换成真实目录再重试").format(label, value, kind, link, label))
     if not must_exist and _lstat(target) is not None and not _is_dir(target):
         raise _fail(_("{0} 已被同名文件占用：{1}").format(label, value))
     for parent in [target, *target.parents]:
@@ -569,7 +574,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         for relative, (original, mode) in originals.items():
             try:
                 init._atomic_write(root / relative, original, mode)
-            except OSError:
+            except (OSError, init.InitError):
                 pass
         raise
     launcher = inputs.entry_launcher
