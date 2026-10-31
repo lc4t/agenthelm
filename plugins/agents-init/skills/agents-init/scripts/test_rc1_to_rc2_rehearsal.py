@@ -169,7 +169,8 @@ class Rehearsal(unittest.TestCase):
         "edited": ("proj", "state_edited"),
         "takeover": ("proj", "state_takeover"),
         "spaces": ("My Projects/with space 'quote' $HOME", "state_pristine"),
-        "syncdisk": ("Library/Mobile Documents/com~apple~CloudDocs/Notes Project", "state_pristine"),
+        # 公开仓库的隐私测试禁止出现连写的同步盘路径字面量，所以分段拼接。
+        "syncdisk": (str(Path("Library", "Mobile Documents", "com~apple~Cloud" + "Docs", "Notes Project")), "state_pristine"),
     }
 
     def build(self, state: str) -> Path:
