@@ -4,6 +4,7 @@
 
     agenthelm/runtimes/<发布版本>/   index.json、plugins/<插件>/、bin/agenthelm、runtime.json
     agenthelm/current -> runtimes/<发布版本>
+    候选版带后缀（6.11.0-rc.2），正式版不带（6.11.0），两者不会共用目录
 
 项目根启动器先找 ``current/bin/agenthelm``，所以装好后打开菜单不联网、不经过 npx。
 同一版本装好后不再改写；新版本装在旁边并切换 ``current``，旧版本保留，可用 ``use`` 切回。
@@ -17,6 +18,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -113,6 +115,35 @@ def _shipped_files(root: Path) -> list[Path]:
     return files
 
 
+_PRERELEASE = r"\d+\.\d+\.\d+-[0-9A-Za-z][0-9A-Za-z.-]*"
+
+
+def release_label(root: Path, version: str) -> str:
+    """The directory name for this content: ``version``, plus ``-rc.N`` when the source says it is a candidate.
+
+    index.json carries the release version without the pre-release suffix, so the suffix comes from where the
+    content was delivered: the npm package version (root is <package>/runtime), or the tag in the release
+    tarball's top directory ``agenthelm-v<version>-rc.N`` (also what a local .tar.gz of it unpacks to). A
+    plain checkout carries no such name and keeps the release version.
+    """
+    candidates = []
+    package = root.parent / "package.json"
+    if root.name == "runtime" and package.is_file():
+        try:
+            data = json.loads(package.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        if isinstance(data, dict) and data.get("name") == "@sakanano-moe/agenthelm":
+            candidates.append(str(data.get("version") or ""))
+    matched = re.fullmatch(rf"agenthelm-v?({_PRERELEASE})", root.name)
+    if matched:
+        candidates.append(matched.group(1))
+    for candidate in candidates:
+        if candidate.startswith(version + "-") and re.fullmatch(_PRERELEASE, candidate):
+            return candidate
+    return version
+
+
 def describe(root: Path) -> dict:
     if not _is_release_root(root):
         raise RuntimeInstallError(_("{0} 不是 agenthelm 发布内容（缺少 index.json 或 plugins/<插件>）").format(root),
@@ -127,7 +158,8 @@ def describe(root: Path) -> dict:
         digest.update(relative.as_posix().encode("utf-8") + b"\0" + (root / relative).read_bytes() + b"\0")
     plugins = {name: json.loads((root / "plugins" / name / "plugin.json").read_text(encoding="utf-8")).get("version")
                for name in PLUGINS}
-    return {"version": version, "plugins": plugins, "digest": digest.hexdigest(), "files": len(files)}
+    return {"version": release_label(root, version), "release_version": version, "plugins": plugins,
+            "digest": digest.hexdigest(), "files": len(files)}
 
 
 def _read_manifest(directory: Path) -> dict | None:
@@ -191,8 +223,11 @@ def report(env: Any, latest: dict | None = None) -> dict:
 
 def _newer(candidate: str, existing: str) -> bool:
     def key(value: str) -> tuple:
-        parts = value.split("-", 1)[0].split(".")
-        return tuple(int(part) if part.isdigit() else 0 for part in parts)
+        core, _dash, pre = value.partition("-")
+        numbers = tuple(int(part) if part.isdigit() else 0 for part in core.split("."))
+        # 6.11.0-rc.2 sorts before 6.11.0 and after 6.11.0-rc.1.
+        order = tuple((0, int(part), "") if part.isdigit() else (1, 0, part) for part in pre.split(".")) if pre else ()
+        return numbers, (0, order) if pre else (1, ())
     return key(candidate) > key(existing)
 
 
@@ -206,7 +241,8 @@ def plan(env: Any, root: Path, origin: str, *, link_bin: Path | None = None) -> 
     if existing and existing.get("digest") != info["digest"]:
         raise RuntimeInstallError(_("运行时 {0} 已安装，但内容与来源不同（来源：{1}）").format(info['version'], origin),
                             [_("已装：{0}；同一版本不会被改写").format(target),
-                             _("确认要换掉时先手动移走该目录（例如移到 ~/.agent-pack/recovery/），再重新安装")])
+                             _("确认要换掉时先手动移走该目录（例如移到 ~/.agent-pack/recovery/），再重新安装"),
+                             _("候选版（-rc.N）与正式版内容不同时，用发布包或 npm 包安装会得到带后缀的目录；从仓库检出安装分不出后缀，需要先移走旧目录")])
     writes = []
     if not existing:
         writes.append({"path": str(target), "scope": _("用户数据目录（新版本，旧版本保留）")})

@@ -110,6 +110,65 @@ class RuntimeTests(unittest.TestCase):
         code, payload = self.runtime("install", "--source", str(tarball), "--link-bin", str(bin_dir))
         self.assertEqual(code, 0, "已是本运行时的链接时不报错")
 
+    def tarball_of(self, source: Path, top: str) -> Path:
+        tarball = self.base / f"{top}.tar.gz"
+        with tarfile.open(tarball, "w:gz") as bundle:
+            bundle.add(source, arcname=top)
+        return tarball
+
+    def test_candidate_and_release_tarballs_get_separate_directories(self) -> None:
+        # index.json carries no -rc suffix; the tarball's top directory (agenthelm-<tag>) does.
+        candidate = self.tarball_of(self.release_copy("9.3.0", marker="rc"), "agenthelm-v9.3.0-rc.2")
+        release = self.tarball_of(self.release_copy("9.3.0"), "agenthelm-v9.3.0")
+        code, payload = self.runtime("install", "--apply", "--source", str(candidate))
+        self.assertEqual((code, payload["plan"]["version"]), (0, "9.3.0-rc.2"), payload)
+        self.assertTrue((self.data / "runtimes/9.3.0-rc.2").is_dir())
+        code, payload = self.runtime("install", "--apply", "--source", str(release))
+        self.assertEqual((code, payload["plan"]["version"]), (0, "9.3.0"), payload)
+        self.assertEqual(os.readlink(self.data / "current"), "runtimes/9.3.0")
+        self.assertTrue((self.data / "runtimes/9.3.0-rc.2").is_dir(), "the candidate stays for rollback")
+        code, rc1 = self.runtime("install", "--apply", "--source",
+                                 str(self.tarball_of(self.release_copy("9.3.0", marker="rc1"), "agenthelm-v9.3.0-rc.1")))
+        self.assertEqual((code, rc1["plan"]["version"]), (0, "9.3.0-rc.1"), "rc.1 and rc.2 differ in content and coexist")
+
+    def test_npm_package_layout_takes_the_suffix_from_package_json(self) -> None:
+        package = self.base / "pkg"
+        shutil.copytree(self.release_copy("9.4.0"), package / "runtime")
+        (package / "package.json").write_text(json.dumps({"name": "@sakanano-moe/agenthelm", "version": "9.4.0-rc.3"}))
+        code, payload = self.runtime("install", "--apply", "--source", str(package / "runtime"))
+        self.assertEqual((code, payload["plan"]["version"]), (0, "9.4.0-rc.3"), payload)
+
+    def test_a_checkout_cannot_tell_the_suffix_and_keeps_the_release_version(self) -> None:
+        code, payload = self.runtime("install", "--apply", "--source", str(self.release_copy("9.5.0")))
+        self.assertEqual((code, payload["plan"]["version"]), (0, "9.5.0"))
+        # An unrelated package.json or a name that does not extend the version is not trusted.
+        wrong = self.base / "wrong"
+        shutil.copytree(self.release_copy("9.6.0"), wrong / "runtime")
+        (wrong / "package.json").write_text(json.dumps({"name": "other", "version": "9.6.0-rc.1"}))
+        self.assertEqual(self.runtime("install", "--source", str(wrong / "runtime"))[1]["plan"]["version"], "9.6.0")
+        mismatch = self.tarball_of(self.release_copy("9.7.0"), "agenthelm-v9.8.0-rc.1")
+        self.assertEqual(self.runtime("install", "--source", str(mismatch))[1]["plan"]["version"], "9.7.0")
+
+    def test_refusal_explains_how_to_handle_a_suffixless_clash(self) -> None:
+        self.runtime("install", "--apply", "--source", str(self.release_copy("9.9.0")))
+        code, payload = self.runtime("install", "--source", str(self.release_copy("9.9.0", marker="y")))
+        self.assertEqual(code, 2)
+        self.assertTrue(any("-rc.N" in line for line in payload["next"]), payload["next"])
+
+    def test_release_orders_after_its_candidates(self) -> None:
+        sys.path.insert(0, str(ROOT / "plugins/agent-pack/runtime"))
+        try:
+            import agenthelm_runtime as runtime
+        finally:
+            sys.path.pop(0)
+        newer = runtime._newer
+        self.assertTrue(newer("6.11.0", "6.11.0-rc.2"))
+        self.assertTrue(newer("6.11.0-rc.2", "6.11.0-rc.1"))
+        self.assertTrue(newer("6.11.0-rc.10", "6.11.0-rc.2"))
+        self.assertFalse(newer("6.11.0-rc.2", "6.11.0"))
+        self.assertFalse(newer("6.11.0", "6.11.0"))
+        self.assertTrue(newer("6.11.1-rc.1", "6.11.0"))
+
     def test_link_bin_never_overwrites_a_foreign_file(self) -> None:
         bin_dir = self.base / "bin"
         bin_dir.mkdir()
