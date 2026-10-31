@@ -13,7 +13,7 @@
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
-          "version": "1.2.0",
+          "version": "1.3.0",
           "kind": "template"
         },
         "agents-init/project-skeleton": {
@@ -23,7 +23,7 @@
       }
     },
     "opinion-manager": {
-      "version": "0.5.0",
+      "version": "0.5.1",
       "source": "./plugins/opinion-manager",
       "content": {
         "opinion-manager/catalog": {
@@ -307,24 +307,39 @@
       "plugin": "agents-init",
       "from": "6.8.0",
       "to": "6.8.1",
-      "change_kind": "code",
+      "change_kind": "both",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "refresh / adopt / region / profile / entry / migrate 替换文件前自动备份到 ~/.agent-pack/recovery/<UTC 时间>-agenthelm-<模式>/，不再要求先提供 --recovery-dir（显式传入仍然优先，必须在项目外；备份目录不可写时在改动任何文件之前失败），输出写明备份位置与还原方法。refresh 遇到没有基线的已定制文件：写明原因与差异摘要，--diff 查看完整差异，--append 保留原文并追加带标记的区块（AGENTS.md / CLAUDE.md），--accept 丢弃本地行需 --confirm-discard。新增 --mode language（只改 Profile 的 language），check 报告 project_language。",
+      "summary": "refresh / adopt / region / profile / entry / migrate 替换文件前自动备份到 ~/.agent-pack/recovery/<UTC 时间>-agenthelm-<模式>/，不再要求先提供 --recovery-dir（显式传入仍然优先，必须在项目外；备份目录不可写时在改动任何文件之前失败），输出写明备份位置与还原方法。refresh 遇到没有基线的已定制文件：写明原因与差异摘要，--diff 查看完整差异，--append 保留原文并追加带标记的区块（AGENTS.md / CLAUDE.md），--accept 丢弃本地行需 --confirm-discard。新增 --mode language（只改 Profile 的 language），check 报告 project_language。 同一批次还包括：schema 补入 opinion.nudge、形态与 schema 冲突的自有值改为信息级说明（#38）、check 统计 schema 未声明的字段（#41）；脚手架发现分三级并支持 --mode accept-current（#37）；AGENTS.md 模板新增“隐私约定”，引用 Profile 的 privacy.forbidden_default_reads，已有项目用 update-content --append AGENTS.md 补入受管区块 privacy-contract（#40）；接管决定理由区分“保留”与“保留并追加区块”。内容包 agents-init/project-contract 升到 1.3.0。",
       "actions": [
         "refresh --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
         "替换文件的模式不必再传 --recovery-dir；备份在 ~/.agent-pack/recovery/，输出里有路径",
-        "已有项目没有 language 时 check 会说明按中文生成；想改：agenthelm config project-language en（预览，--apply 写入，只改 Profile）"
+        "已有项目没有 language 时 check 会说明按中文生成；想改：agenthelm config project-language en（预览，--apply 写入，只改 Profile）",
+        "已有项目的 AGENTS.md 没改过：agenthelm update 直接更新；改过的：agenthelm update --only content --append AGENTS.md 保留原文并补入隐私约定区块（先备份），不处理则 check 提示 privacy-contract，可 fix --skip",
+        "成熟项目的脚手架差异不想逐项处理：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入）"
       ],
       "declaration": 2,
-      "user_action_required": [],
+      "user_action_required": [
+        {
+          "what": "已有项目的 AGENTS.md 增加“隐私约定”：没改过的 update-content 直接更新；改过的选 --append AGENTS.md 补入受管区块（原文不变）",
+          "session": "new"
+        }
+      ],
       "touches": [
         "~/.agent-pack/recovery/（替换文件前的备份）",
         "Profile: language（仅在运行 --mode language --apply 时写入）",
-        "CLAUDE.md、AGENTS.md（仅在选择 --append 时追加带标记的区块）"
+        "CLAUDE.md、AGENTS.md（仅在选择 --append 时追加带标记的区块）",
+        "AGENTS.md（受管区块 privacy-contract）",
+        "Profile: privacy.forbidden_default_reads（只读引用）",
+        "AGENT.template.md 中 AGENTS.md 的“隐私约定”小节"
       ],
       "default_for_existing": "advisory",
-      "template_changes": []
+      "template_changes": [
+        {
+          "path": "AGENTS.md",
+          "class": "semantic"
+        }
+      ]
     },
     {
       "plugin": "agents-init",
@@ -333,7 +348,7 @@
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "6.8.0（接管已有内容的目录、受管区块、发布声明；命令行输出多语言）与 6.8.1（替换文件前自动备份并输出恢复位置、没有基线文件的差异与追加区块、项目文件语言）合并后的对照条目：发布门禁拿上一个发布版本 v6.8.0（6.7.0）比较时需要它。客户端按 6.8.0、6.8.1 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 新项目的 Profile 带 sop 段（root=sops）并建立 sops/；骨架清单（内容包 agents-init/project-skeleton 1.1.0）新增 {sop_root}/.gitkeep，仅对声明了 sop 段的项目生效；project.schema.json 声明 sop 段。 init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；新增 Profile 顶层 language（项目文件语言）与 --language {auto,zh,en}，决定新建 Case 的小节名与 README 追加的“怎样使用”；模板、决定文件与指纹不随界面语言变化。 接管已有内容的目录：新增 --mode scan / adopt / region 与受管区块（regions.py）；CLAUDE.md 模板改为一行 @AGENTS.md 导入桩；AGENTS.md 模板增加“用户规则”一行；内容锁记录受管区块与渲染输入；项目契约模板内容包 1.2.0。",
+      "summary": "6.8.0（接管已有内容的目录、受管区块、发布声明；命令行输出多语言）与 6.8.1（替换文件前自动备份并输出恢复位置、没有基线文件的差异与追加区块、项目文件语言）合并后的对照条目：发布门禁拿上一个发布版本 v6.8.0（6.7.0）比较时需要它。客户端按 6.8.0、6.8.1 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 新项目的 Profile 带 sop 段（root=sops）并建立 sops/；骨架清单（内容包 agents-init/project-skeleton 1.1.0）新增 {sop_root}/.gitkeep，仅对声明了 sop 段的项目生效；project.schema.json 声明 sop 段。 init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；新增 Profile 顶层 language（项目文件语言）与 --language {auto,zh,en}，决定新建 Case 的小节名与 README 追加的“怎样使用”；模板、决定文件与指纹不随界面语言变化。 接管已有内容的目录：新增 --mode scan / adopt / region 与受管区块（regions.py）；CLAUDE.md 模板改为一行 @AGENTS.md 导入桩；AGENTS.md 模板增加“用户规则”一行；内容锁记录受管区块与渲染输入；项目契约模板内容包 1.2.0。 同一批次还包括：schema 补入 opinion.nudge、形态与 schema 冲突的自有值改为信息级说明（#38）、check 统计 schema 未声明的字段（#41）；脚手架发现分三级并支持 --mode accept-current（#37）；AGENTS.md 模板新增“隐私约定”，引用 Profile 的 privacy.forbidden_default_reads，已有项目用 update-content --append AGENTS.md 补入受管区块 privacy-contract（#40）；接管决定理由区分“保留”与“保留并追加区块”。内容包 agents-init/project-contract 升到 1.3.0。",
       "actions": [
         "已有项目无需改动：没有 sop 段的项目 check / health 不会多出任何差异",
         "想启用 SOP：在 Profile 加 \"sop\": {\"root\": \"sops\"}，运行 agenthelm fix add-skeleton，或运行 agenthelm project sop init --apply",
@@ -342,7 +357,9 @@
         "已初始化的项目：agenthelm update（或 fix update-content）会列出 CLAUDE.md 与 AGENTS.md 的变化，没改过的先备份再替换，改过的逐个 --keep / --accept",
         "想接管一个已有内容的目录：先 init_project.py --mode scan 看冲突与推荐，再 --mode adopt 预览，确认后 --apply；改动已有文件须带 --recovery-dir",
         "外部脚本若读取 CLAUDE.md 里的路由文字，改为读取 AGENTS.md（CLAUDE.md 现在只有 @AGENTS.md 导入）",
-        "refresh --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）"
+        "refresh --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
+        "已有项目的 AGENTS.md 没改过：agenthelm update 直接更新；改过的：agenthelm update --only content --append AGENTS.md 保留原文并补入隐私约定区块（先备份），不处理则 check 提示 privacy-contract，可 fix --skip",
+        "成熟项目的脚手架差异不想逐项处理：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入）"
       ],
       "declaration": 2,
       "user_action_required": [
@@ -357,6 +374,10 @@
         {
           "what": "AGENTS.md 模板多了一行“用户规则”（指向 AGENT.USER.md）：同样在 update-content 里逐文件选择",
           "session": "current"
+        },
+        {
+          "what": "已有项目的 AGENTS.md 增加“隐私约定”：没改过的 update-content 直接更新；改过的选 --append AGENTS.md 补入受管区块（原文不变）",
+          "session": "new"
         }
       ],
       "touches": [
@@ -364,7 +385,10 @@
         "AGENTS.md",
         ".agents/moe.sakanano.agent-pack/content.lock.json",
         "Profile: language（新增，可选）、sop（新增，可选）",
-        "~/.agent-pack/recovery/（替换文件前的备份）"
+        "~/.agent-pack/recovery/（替换文件前的备份）",
+        "AGENTS.md（受管区块 privacy-contract）",
+        "Profile: privacy.forbidden_default_reads（只读引用）",
+        "AGENT.template.md 中 AGENTS.md 的“隐私约定”小节"
       ],
       "default_for_existing": "on",
       "template_changes": [
@@ -429,10 +453,11 @@
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "1.10.0（SOP 管理）、1.11.0（同步盘本机专属目录汇总）、1.11.1（私密 Case 标注、台账结构升级）与 1.11.2（没有基线文件的差异摘要、追加区块、丢弃确认）合并后的对照条目：6.9.0 不单独发布，随 6.10.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。v6.10.0 发布后可删除（之后门禁对照 v6.10.0）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。Case 的小节名与默认文字按 Profile 的 language（zh | en，缺省 zh）选择；SOP 文件（小节名、步骤子项、前置条件写法、占位标记、样例）与 sop run 写进执行 Case 的清单、记录同样按项目 language 生成，解析器两套词表都认，sop new 新增 --language。",
+      "summary": "1.10.0（SOP 管理）、1.11.0（同步盘本机专属目录汇总）、1.11.1（私密 Case 标注、台账结构升级）与 1.11.2（没有基线文件的差异摘要、追加区块、丢弃确认）合并后的对照条目：6.9.0 不单独发布，随 6.10.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。v6.10.0 发布后可删除（之后门禁对照 v6.10.0）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。Case 的小节名与默认文字按 Profile 的 language（zh | en，缺省 zh）选择；SOP 文件（小节名、步骤子项、前置条件写法、占位标记、样例）与 sop run 写进执行 Case 的清单、记录同样按项目 language 生成，解析器两套词表都认，sop new 新增 --language。 同一批次还包括：fix --accept-current 一次接受当前全部脚手架差异；health 把同类脚手架建议合并为一行（--details 逐项展开）并分“需要处理 / 可选 / 信息”三级，只有“需要处理”的参与退出码；声明了 work.case.command 的项目不再被要求默认的 Case 目录结构。",
       "actions": [
         "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply（写入 ~/.config/agenthelm/config.json 的 language，其余设置原样保留）；中文系统 locale 本来就是中文；解析 agenthelm 文字输出的脚本改用 --output json",
-        "fix update-content --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（菜单里选 a 即已确认）"
+        "fix update-content --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（菜单里选 a 即已确认）",
+        "成熟项目的脚手架建议太多：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入随项目同步的决定文件）"
       ],
       "declaration": 2,
       "user_action_required": [
@@ -448,7 +473,8 @@
       "touches": [
         "资料索引（用户缓存）",
         "Profile: sop、privacy.forbidden_default_reads（新增，可选）",
-        "sops/、private/（启用 SOP 后）"
+        "sops/、private/（启用 SOP 后）",
+        ".agents/moe.sakanano.agent-pack/check-decisions.json（仅运行 fix --accept-current --apply 时写入）"
       ],
       "default_for_existing": "on",
       "template_changes": [
@@ -465,11 +491,11 @@
     {
       "plugin": "opinion-manager",
       "from": "0.4.2",
-      "to": "0.5.0",
+      "to": "0.5.1",
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
+      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。 0.5.1：inbox 命令与协议里代入命令行的项目路径、插件脚本路径、会话 ID 做 shell 引用（路径含空格、引号、$、反引号、中文时候选暂存不再静默失败）。",
       "actions": [
         "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）",
         "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
@@ -489,6 +515,21 @@
         ".opinion/inbox.json"
       ],
       "default_for_existing": "advisory",
+      "template_changes": []
+    },
+    {
+      "plugin": "opinion-manager",
+      "from": "0.5.0",
+      "to": "0.5.1",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-10-31",
+      "summary": "会话开始注入的 Opinion 协议、inbox pending 的提示命令里的项目路径、插件脚本路径与会话 ID 做 shell 引用（shlex.quote）：路径含空格（macOS 的 iCloud Drive 项目）、引号、$、反引号或中文时，inbox add / decide 不再因参数被拆开而静默失败。",
+      "actions": [],
+      "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
       "template_changes": []
     },
     {
@@ -513,21 +554,32 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "新增 agenthelm config（show / language / language-hint / project-language）：设置界面语言、开关“语言未设置”的提示、设置项目文件语言，默认只预览，--apply 才写入，只改要改的键并先备份；界面显示为英文且没有任何地方指定界面语言时，check 与会话开始的提示说明当前语言并给出命令。agenthelm update 增加 --append / --confirm-discard / --diff：没有基线的已定制文件显示差异摘要与原因，可保留原文并追加带标记的区块；--accept 丢弃本地行需 --confirm-discard；替换文件后输出备份目录与还原方法，仍需选择时不再显示“完成”并以非零退出。",
+      "summary": "新增 agenthelm config（show / language / language-hint / project-language）：设置界面语言、开关“语言未设置”的提示、设置项目文件语言，默认只预览，--apply 才写入，只改要改的键并先备份；界面显示为英文且没有任何地方指定界面语言时，check 与会话开始的提示说明当前语言并给出命令。agenthelm update 增加 --append / --confirm-discard / --diff：没有基线的已定制文件显示差异摘要与原因，可保留原文并追加带标记的区块；--accept 丢弃本地行需 --confirm-discard；替换文件后输出备份目录与还原方法，仍需选择时不再显示“完成”并以非零退出。 同一批次还包括：install / update 失败原因与读回验证、--client 与 ignored_clients、显式版本来源不再被缓存覆盖并统一 --refresh；check 的 Profile 未声明字段统计（--show-extras）与形态冲突说明；fix --accept-current 与按类别归并（--details）；协议与提示里的路径 shell 引用；运行时目录带 rc 后缀。",
       "actions": [
         "--accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
-        "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off"
+        "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
+        "install 对已安装的插件改为跳过并提示改用 update；install / update 在步骤“成功但读回版本没变”时显示“完成，无变化”及原因，整体退出码为 1",
+        "步骤失败时显示命令、退出码和客户端 stderr；失败后只有同一客户端的后续步骤不执行，其他客户端继续",
+        "check --strict 与会话开始的提示只统计“需要处理”的脚手架差异；缺文件等可选差异不再让 --strict 失败（CI 想看全部差异用 check --output json）",
+        "只用其中一两个客户端：check / update / install / migrate 加 --client，或 agenthelm config ignore-client <claude|codex|cursor> --apply",
+        "候选版（rc）与正式版的运行时目录分开（runtimes/6.11.0-rc.N 与 6.11.0）；从仓库检出安装的拿不到后缀，仍共用 6.11.0，内容不同时需先移走旧目录"
       ],
       "declaration": 2,
       "user_action_required": [
         {
           "what": "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
           "session": "current"
+        },
+        {
+          "what": "CI 里用 agenthelm check --strict 的项目：脚手架差异分成需要处理 / 可选 / 信息三级，只有“需要处理”的让 --strict 失败",
+          "session": "current"
         }
       ],
       "touches": [
         "~/.config/agenthelm/config.json（language、language_hint；仅在运行 agenthelm config … --apply 时写入）",
-        "~/.agent-pack/recovery/（替换文件前的备份）"
+        "~/.agent-pack/recovery/（替换文件前的备份）",
+        "~/.config/agenthelm/config.json（ignored_clients；仅在运行 agenthelm config ignore-client … --apply 时写入）",
+        "~/.local/share/agenthelm/runtimes/<版本>[-rc.N]/"
       ],
       "default_for_existing": "advisory",
       "template_changes": []
@@ -551,14 +603,16 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "fix update-content / 菜单“检查与维护”处理没有基线的已定制文件：预览写明原因和差异摘要（本地行数、模板行数、会新增与丢弃的行数），菜单里 d 查看差异、p 保留原文并追加带标记的区块（AGENTS.md / CLAUDE.md），a 采用新模板时提示会丢弃多少行；fix 新增 --append / --confirm-discard；某一步失败时输出失败原因并以非零退出，不再抛出异常。",
+      "summary": "fix update-content / 菜单“检查与维护”处理没有基线的已定制文件：预览写明原因和差异摘要（本地行数、模板行数、会新增与丢弃的行数），菜单里 d 查看差异、p 保留原文并追加带标记的区块（AGENTS.md / CLAUDE.md），a 采用新模板时提示会丢弃多少行；fix 新增 --append / --confirm-discard；某一步失败时输出失败原因并以非零退出，不再抛出异常。 同一批次还包括：fix --accept-current 一次接受当前全部脚手架差异；health 把同类脚手架建议合并为一行（--details 逐项展开）并分“需要处理 / 可选 / 信息”三级，只有“需要处理”的参与退出码；声明了 work.case.command 的项目不再被要求默认的 Case 目录结构。",
       "actions": [
-        "fix update-content --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（菜单里选 a 即已确认）"
+        "fix update-content --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（菜单里选 a 即已确认）",
+        "成熟项目的脚手架建议太多：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入随项目同步的决定文件）"
       ],
       "declaration": 2,
       "user_action_required": [],
       "touches": [
-        "~/.agent-pack/recovery/（替换文件前的备份）"
+        "~/.agent-pack/recovery/（替换文件前的备份）",
+        ".agents/moe.sakanano.agent-pack/check-decisions.json（仅运行 fix --accept-current --apply 时写入）"
       ],
       "default_for_existing": "on",
       "template_changes": []
@@ -570,10 +624,15 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "1.10.0（同步盘本机专属目录 local-only）、1.11.0（观点自动采集 nudge 与 hook）与 1.11.1（agenthelm config、语言提示、没有基线文件的差异摘要与追加区块、备份位置输出）合并后的对照条目：6.9.0、6.10.0 都不单独发布，随 6.11.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
+      "summary": "1.10.0（同步盘本机专属目录 local-only）、1.11.0（观点自动采集 nudge 与 hook）与 1.11.1（agenthelm config、语言提示、没有基线文件的差异摘要与追加区块、备份位置输出）合并后的对照条目：6.9.0、6.10.0 都不单独发布，随 6.11.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。 同一批次还包括：install / update 失败原因与读回验证、--client 与 ignored_clients、显式版本来源不再被缓存覆盖并统一 --refresh；check 的 Profile 未声明字段统计（--show-extras）与形态冲突说明；fix --accept-current 与按类别归并（--details）；协议与提示里的路径 shell 引用；运行时目录带 rc 后缀。",
       "actions": [
         "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply（写入 ~/.config/agenthelm/config.json 的 language，其余设置原样保留）；中文系统 locale 本来就是中文；解析 agenthelm 文字输出的脚本改用 --output json",
-        "--accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）"
+        "--accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
+        "install 对已安装的插件改为跳过并提示改用 update；install / update 在步骤“成功但读回版本没变”时显示“完成，无变化”及原因，整体退出码为 1",
+        "步骤失败时显示命令、退出码和客户端 stderr；失败后只有同一客户端的后续步骤不执行，其他客户端继续",
+        "check --strict 与会话开始的提示只统计“需要处理”的脚手架差异；缺文件等可选差异不再让 --strict 失败（CI 想看全部差异用 check --output json）",
+        "只用其中一两个客户端：check / update / install / migrate 加 --client，或 agenthelm config ignore-client <claude|codex|cursor> --apply",
+        "候选版（rc）与正式版的运行时目录分开（runtimes/6.11.0-rc.N 与 6.11.0）；从仓库检出安装的拿不到后缀，仍共用 6.11.0，内容不同时需先移走旧目录"
       ],
       "declaration": 2,
       "user_action_required": [
@@ -596,6 +655,10 @@
         {
           "what": "项目位于 iCloud / Dropbox / OneDrive 等同步目录时，check / health 会多出 local: 开头的发现；按提示处理或用 fix --skip 记录决定",
           "session": "current"
+        },
+        {
+          "what": "CI 里用 agenthelm check --strict 的项目：脚手架差异分成需要处理 / 可选 / 信息三级，只有“需要处理”的让 --strict 失败",
+          "session": "current"
         }
       ],
       "touches": [
@@ -603,7 +666,9 @@
         "~/.config/agenthelm/config.json（language、nudge、local_only）",
         ".opinion/inbox.json",
         ".agents/moe.sakanano.agent-pack/local-only.json",
-        "~/.agent-pack/recovery/（替换文件前的备份）"
+        "~/.agent-pack/recovery/（替换文件前的备份）",
+        "~/.config/agenthelm/config.json（ignored_clients；仅在运行 agenthelm config ignore-client … --apply 时写入）",
+        "~/.local/share/agenthelm/runtimes/<版本>[-rc.N]/"
       ],
       "default_for_existing": "on",
       "template_changes": []

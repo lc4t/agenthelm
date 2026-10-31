@@ -65,7 +65,7 @@
       "name": "opinion-manager",
       "source": "./plugins/opinion-manager",
       "description": "Manage Agent behavior rules through templates, partial selection, blank iteration, and authorized-memory candidates, with complete previews and exact version locks.",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "author": {
         "name": "lc4t"
       },

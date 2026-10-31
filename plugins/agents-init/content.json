@@ -3,7 +3,7 @@
   "packs": [
     {
       "id": "agents-init/project-contract",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "kind": "template",
       "title": "项目契约模板",
       "description": "初始化时渲染为项目入口文件的中文模板与根目录启动器；更新后由用户逐文件选择是否重新渲染。",

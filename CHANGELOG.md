@@ -1,8 +1,8 @@
 # 更新记录
 
-## 2026-10-31 — 6.11.0-rc.2：升级路径修复（agents-init 6.8.1、agent-pack 1.11.1、project-orchestrator 1.11.2）
+## 2026-10-31 — 6.11.0-rc.2：升级路径修复（agents-init 6.8.1、agent-pack 1.11.1、project-orchestrator 1.11.2、opinion-manager 0.5.1）
 
-rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据安全与升级体验问题（发布跟踪 #44，必须修的三项：#30、#35、#36）。仍属于 6.11.0 发布窗口；套件版本不变，三个有改动的插件各升一个补丁版本（Claude Code 只看市场条目的 version 判断插件有没有更新）。内容包没有变化（项目契约模板仍是 1.2.0）。
+rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据安全与升级体验问题（发布跟踪 #44，必须修的三项：#30、#35、#36，以及同一批次一并修掉的 #32、#33、#34、#37、#38、#39、#40、#41、#42、#43）。仍属于 6.11.0 发布窗口；套件版本不变，四个有改动的插件各升一个补丁版本（Claude Code 只看市场条目的 version 判断插件有没有更新）。内容包 `agents-init/project-contract` 因 AGENTS.md 新增隐私约定升到 1.3.0。
 
 ### 替换文件前自动备份，并告诉你备份在哪（#30）
 
@@ -28,6 +28,37 @@ rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据
 - 已有项目的 Profile 没有 `language` 时，`check` 说明写进项目的文件按中文生成，并给出预览命令 `agenthelm config project-language en`；agents-init 6.8.1 新增 `--mode language`（只改 Profile 的 `language`，先备份，不改写任何已有文件），`check` 报告 `project_language`。
 - 文档与升级说明区分两种语言：界面语言只影响命令输出，项目文件语言随项目同步。
 
+### install / update 的报告与版本来源（#32、#33、#34、#39）
+
+- agent-pack 1.11.1：步骤失败时显示命令、退出码和客户端 stderr（末 20 行），已知原因（市场来源与 settings.json 声明不一致）给出解释和下一步；失败后只有同一客户端的后续步骤不执行，其他客户端继续，汇总区分“这个客户端失败”和“其他已完成”。
+- 每个会改变安装状态的步骤执行后读回插件版本：显示“a → b”或“完成，无变化：原因”；存在无变化步骤时不显示整体成功，退出码为 1；JSON 含 `before`/`after`、`exit_code`、`stderr`。对已安装的插件，`install` 跳过并提示改用 `update`。
+- 显式指定的 `--latest` / `AGENTHELM_LATEST_URL` 不再被来自其他来源的缓存覆盖；输出显示实际来源与缓存状态；`check`、`install`、`update`、`migrate` 都接受 `--refresh`。
+- `check` / `update` / `install` / `migrate` 支持 `--client`；用户配置 `ignored_clients` 与 `agenthelm config ignore-client` / `unignore-client`；会话开始提示不再统计被忽略的客户端；Cursor 缺发布包信息时标为“不可用”并给出下一步。
+
+### Profile 自有字段、成熟项目的建议数量（#37、#38、#41）
+
+- agents-init 6.8.1：schema 声明了新字段而项目里已有同名的自有值（如字符串形态的 `work.case.directory_naming`）时，改为信息级说明并给出转换 / 改名 / 忽略的选项，工具不改写你的值；schema 补入 `opinion.nudge`。`check` 统计 schema 未声明的字段（项目自有 / 疑似拼写错误 / 已被其他插件读取），`--show-extras` 展开；JSON 增加 `profile_extras`、`profile_conflicts`。
+- 成熟项目：`agenthelm fix --accept-current --reason "<原因>"`（`init_project.py --mode accept-current`）一次把当前全部脚手架差异记为“已决定、保留现状”，默认预览，之后只提示新出现的差异。脚手架发现分“需要处理 / 可选 / 信息”三级，只有“需要处理”的参与退出码、`--strict` 与会话开始提示；`check` / `health` 把同类建议合并为一行，`--details` 逐项展开。声明了 `work.case.command` 的项目不再被要求默认的 Case 目录结构。
+
+### AGENTS.md 的隐私约定（#40）
+
+- 模板生成的 `AGENTS.md` 带“隐私约定”：引用 Profile 的 `privacy.forbidden_default_reads`（缺省 `private/`），默认不读、读前先经用户确认、一次确认只对当次任务有效；字段为空时写“未声明私有路径”；中英文各一份，随项目文件语言。约定引用字段名而不复制路径，改字段不产生漂移。
+- 已有项目：没改过 `AGENTS.md` 的由 `update-content` 直接更新；改过的用 `--append AGENTS.md` 补入受管区块 `privacy-contract`（原文不变，已发布的 `agents-contract` 区块不变）。`check` 新增 `privacy-contract` 发现。
+- 内容包 `agents-init/project-contract` 升到 1.3.0；模板里“必须带 `--recovery-dir`”的说法改为缺省自动备份。
+
+### 协议里的路径做 shell 引用（#42）
+
+- opinion-manager 0.5.1、agent-pack 1.11.1：会话开始、提示和任务结束时注入给 Agent 的 `inbox add` / `decide` / `list` 命令，对项目路径、插件脚本路径和会话 ID 做 shell 引用；路径含空格、引号、`$`、反引号或中文（如 macOS 的 iCloud Drive 项目）时，候选暂存不再静默失败。Cursor 钩子命令同样做了引用（Windows 保持原写法）。
+
+### 小问题清单（#43）
+
+- 发布包与版本门禁排除 `scripts/` 下的 `test_*.py`，仅改测试不要求升版本；发布流水线固定 Actions 提交 SHA 与 npm 精确版本（11.21.1）。
+- 英文输出不再出现 `1 subdirectories`、`entry(ies)`、`section(s)` 等单复数问题（有测试守住）。
+- 候选版与正式版的运行时目录分开（`runtimes/6.11.0-rc.2` 与 `6.11.0`），rc 排在正式版之前；仓库检出安装拿不到后缀，拒绝时说明处理办法。
+- 接管与 refresh 的决定文件区分“保留原文件”与“保留原文件并追加区块”。
+- GitHub Release 说明带上本次发布的 CHANGELOG 小节（`scripts/release_notes.py`）。
+- `packages/cli/README.md` 的界面语言说明改为现状；`INSTALL.md` 说明 Claude Code 缓存的旧版本目录可手动清理。
+
 ### 测试
 
 SOP 到期的测试断言“执行后第二天不到期”，样例是 `weekly:sun`，周六运行时次日恰为周日必然失败；改为用执行当天判断。
@@ -36,11 +67,13 @@ SOP 到期的测试断言“执行后第二天不到期”，样例是 `weekly:s
 
 - 脚本里用 `--accept` 替换“你改过的文件”的，需要补 `--confirm-discard <文件>`（`init_project.py --mode refresh`、`agenthelm update`、`agenthelm fix update-content`）。
 - 替换文件的模式不再因缺少 `--recovery-dir` 报错；依赖这个报错的外部脚本会得到默认备份。
-- 项目契约模板（`AGENT.template.md`）里的操作指引仍写“带 `--recovery-dir`”，写法仍然有效；该文件属于内容包，改它会让所有项目出现一次没有实质变化的内容更新，所以留到下次必须改模板时一并更新。
+- `check --strict` 与会话开始提示只统计“需要处理”的脚手架差异：缺文件等可选差异不再让 `--strict` 失败。CI 想看全部差异请用 `check --output json`。
+- `install` / `update` 在步骤成功但读回版本没变时退出码为 1，并显示“完成，无变化”。
+- 已有项目的 `AGENTS.md` 会多一条隐私约定（内容包 1.3.0）：没改过的随 `update-content` 更新，改过的用 `--append AGENTS.md` 补入。
 
 ### 版本
 
-agents-init 6.8.0 → 6.8.1；agent-pack 1.11.0 → 1.11.1；project-orchestrator 1.11.1 → 1.11.2；opinion-manager 0.5.0 与内容包不变。套件版本仍是 6.11.0（候选 `v6.11.0-rc.2`）。
+agents-init 6.8.0 → 6.8.1；agent-pack 1.11.0 → 1.11.1；project-orchestrator 1.11.1 → 1.11.2；opinion-manager 0.5.0 → 0.5.1；内容包 agents-init/project-contract 1.2.0 → 1.3.0（其余内容包不变）。套件版本仍是 6.11.0（候选 `v6.11.0-rc.2`）。
 
 ## 2026-10-29 — Agents Init 6.8.0：接管已有内容的目录、受管区块、发布声明（属于 6.11.0 发布窗口）
 

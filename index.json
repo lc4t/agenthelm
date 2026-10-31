@@ -68,7 +68,7 @@
       "id": "opinion-manager",
       "name": "opinion-manager / Agent behavior rule management",
       "description": "Three first-run entry points plus optional memory candidates; one content confirmation, then Profile, body and lock are saved separately, with exact versions and protection of personal edits.",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "status": "experimental",
       "entrypoints": {
         "agent": "./plugins/opinion-manager/skills/opinion-manager/SKILL.md",
