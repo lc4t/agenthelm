@@ -77,8 +77,10 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then echo "release $GITHUB_REF_NAME already exists"; exit 0; fi
           prerelease=""
           if [ "${{ steps.kind.outputs.prerelease }}" = "true" ]; then prerelease="--prerelease"; fi
+          # The CHANGELOG.md section for this version; a fixed sentence when there is none.
+          python scripts/release_notes.py "$GITHUB_REF_NAME" > release-notes.md
           gh release create "$GITHUB_REF_NAME" "agenthelm-${GITHUB_REF_NAME}.tar.gz" release.json $prerelease \
-            --title "$GITHUB_REF_NAME" --notes "版本与迁移说明见 CHANGELOG.md 与 release/migrations.json。"
+            --title "$GITHUB_REF_NAME" --notes-file release-notes.md
 
       # Stage, not publish: a maintainer approves each version on npmjs.com with
       # 2FA. With the package's Trusted Publisher configured for this workflow,
