@@ -26,7 +26,8 @@ from i18n_agent_pack import _, N_, normalize  # noqa: E402
 
 LANGUAGE_NAMES = {"zh": N_("中文"), "en": "English"}
 SOURCE_NAMES = {"locale": N_("系统 locale"), "default": N_("默认值")}
-KNOWN_KEYS = ("language", "language_hint", "update_check")
+KNOWN_KEYS = ("language", "language_hint", "update_check", "ignored_clients")
+CLIENT_CHOICES = ("claude", "codex", "cursor")
 
 
 def read_settings(path: Path) -> tuple[dict, str | None]:
@@ -119,6 +120,11 @@ def build_parser() -> argparse.ArgumentParser:
     hint = sub.add_parser("language-hint", help=_("开关“语言未设置”的提示"))
     hint.add_argument("value", choices=("on", "off"))
     common(hint)
+    for name, text in (("ignore-client", _("忽略一个客户端：check / update / 会话开始提示不再处理它（--client 显式指定仍可处理）")),
+                       ("unignore-client", _("取消忽略一个客户端"))):
+        ignore = sub.add_parser(name, help=text)
+        ignore.add_argument("value", choices=CLIENT_CHOICES)
+        common(ignore)
     project = sub.add_parser("project-language", help=_("设置当前项目的文件语言（Profile 的 language；只改 Profile，不改写已有文件）"))
     project.add_argument("value", choices=("zh", "en"))
     common(project, project=True)
@@ -143,6 +149,11 @@ def _change(settings: dict, key: str, value: Any) -> tuple[dict, list[dict]]:
     return updated, ([{"key": key, "from": before, "to": value}] if before != value else [])
 
 
+def _ignored(settings: Mapping[str, Any]) -> list[str]:
+    value = settings.get("ignored_clients")
+    return [name for name in CLIENT_CHOICES if isinstance(value, list) and name in value]
+
+
 def _emit(args: argparse.Namespace, payload: dict, lines: list[str]) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2) if args.output == "json" else "\n".join(lines))
 
@@ -154,12 +165,13 @@ def _show(args: argparse.Namespace, host: Any, env: Any) -> int:
     payload = {"ok": error is None, "path": str(env.config_file), "exists": env.config_file.is_file(), "error": error,
                "language": {"effective": status["language"], "source": status["source"], "configured": settings.get("language")},
                "language_hint": not status["dismissed"], "update_check": settings.get("update_check", True) is not False,
-               "other_keys": unknown}
+               "ignored_clients": _ignored(settings), "other_keys": unknown}
     sources = {"env": _("环境变量 AGENTHELM_LANG"), "config": _("用户配置"), "locale": _("系统 locale"), "default": _("默认值")}
     lines = [_("用户配置：{0}（{1}）").format(env.config_file, _("存在") if payload["exists"] else _("不存在")),
              _("界面语言：{0}（来自{1}）").format(_(LANGUAGE_NAMES[status["language"]]), sources[status["source"]]),
              _("语言未设置的提示：{0}").format(_("开") if payload["language_hint"] else _("关")),
-             _("联网检查更新：{0}").format(_("开") if payload["update_check"] else _("关"))]
+             _("联网检查更新：{0}").format(_("开") if payload["update_check"] else _("关")),
+             _("忽略的客户端：{0}").format(_("、").join(payload["ignored_clients"]) or _("（无）"))]
     if unknown:
         lines.append(_("其他设置（不由本命令管理）：{0}").format(_("、").join(unknown)))
     if error:
@@ -246,4 +258,11 @@ def main(argv: list[str] | None, host: Any) -> int:
         return _set_key(args, host, env, "language", None if args.value == "auto" else args.value, _("界面语言"))
     if args.action == "language-hint":
         return _set_key(args, host, env, "language_hint", None if args.value == "on" else False, _("语言提示"))
+    if args.action in ("ignore-client", "unignore-client"):
+        settings, error = read_settings(env.config_file)
+        current = set(_ignored(settings))
+        current = current | {args.value} if args.action == "ignore-client" else current - {args.value}
+        # 只改 ignored_clients 这个键；空了就删除键，其他设置原样保留。
+        return _set_key(args, host, env, "ignored_clients", [n for n in CLIENT_CHOICES if n in current] or None,
+                        _("忽略的客户端"))
     return _project_language(args, host, env)
