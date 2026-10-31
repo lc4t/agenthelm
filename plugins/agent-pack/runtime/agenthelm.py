@@ -550,7 +550,7 @@ def _advice(diag: dict, client: str) -> dict:
         else:
             summary, command = _("{0} 通过 agenthelm 市场安装，但读不到版本，无法比较。").format(name), None
     elif state == "dev":
-        where = _("；").join(f"{item['plugin']}（{_origin_text(item)}：{item['path']}）" for item in diag["untouched"])
+        where = _("；").join(_("{0}（{1}：{2}）").format(item['plugin'], _origin_text(item), item['path']) for item in diag["untouched"])
         summary = _("{0} 有开发版/本地安装：{1}。update / migrate 默认不改动它们，由你决定是否纳入市场管理。").format(name, where)
         command = update  # the preview names the untouched installs
         changes = any(item["status"] == "behind" for item in diag["installs"] if item["kind"] == "marketplace")
