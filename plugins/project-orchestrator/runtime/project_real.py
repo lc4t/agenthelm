@@ -534,6 +534,9 @@ class RealProvider:
     def apply_fix(self, plan: dict, choices: dict[str, str]) -> dict:
         return project_maintain.apply(self, plan, choices)
 
+    def accept_current(self, reason: str, apply: bool) -> dict:
+        return project_maintain.accept_current(self, reason, apply)
+
     def decide(self, skip: list[str], unskip: list[str], reason: str, apply: bool) -> dict:
         return project_maintain.decide_ids(self, skip, unskip, reason, apply)
 

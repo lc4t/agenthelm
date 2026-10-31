@@ -155,6 +155,8 @@ class Context:
         case = work.get("case") if isinstance(work.get("case"), dict) else {}
         memory = self.profile.get("memory") if isinstance(self.profile.get("memory"), dict) else {}
         self.case_root = case.get("root") if _relative_ok(case.get("root")) else "cases"
+        # 项目声明了自己的 Case 工具：Case 目录结构由它负责，不再按默认结构要求。
+        self.own_case_tool = bool(case.get("command"))
         self.memory_root = memory.get("root") if _relative_ok(memory.get("root")) else "memory"
         sop = self.profile.get("sop") if isinstance(self.profile.get("sop"), dict) else None
         privacy = self.profile.get("privacy") if isinstance(self.profile.get("privacy"), dict) else {}
@@ -203,7 +205,7 @@ class Context:
         resolved = []
         for entry in self.manifest["files"]:
             when = entry.get("when")
-            if when == "case-workspace" and self.inputs.work_mode != "case-workspace":
+            if when == "case-workspace" and (self.inputs.work_mode != "case-workspace" or self.own_case_tool):
                 continue
             if when == "entry" and not self.inputs.entry_launcher:
                 continue
@@ -310,7 +312,7 @@ def _check_profile(ctx: Context) -> list[dict]:
     work_mode = ctx.inputs.work_mode
     rows = []
     for rule in ctx.manifest.get("profile", []):
-        if rule.get("when") == "case-workspace" and work_mode != "case-workspace":
+        if rule.get("when") == "case-workspace" and (work_mode != "case-workspace" or ctx.own_case_tool):
             continue
         present, value = _get(ctx.profile, rule["path"])
         _found, default = _get(ctx.fresh, rule["path"])
@@ -489,7 +491,9 @@ def check_case_naming(ctx: Context) -> dict:
     spec = case_naming_spec(ctx.profile)
     names = _case_directories(ctx)
     mismatched = []
-    if spec["error"] is None and ctx.inputs.work_mode == "case-workspace":
+    # 项目自带 Case 工具又没有声明命名规则：命名归它管，不拿默认的 CASE-日期-序号-主题去比。
+    own_naming = ctx.own_case_tool and not spec["declared"]
+    if spec["error"] is None and ctx.inputs.work_mode == "case-workspace" and not own_naming:
         compiled = re.compile(spec["pattern"])
         mismatched = [name for name in names if not compiled.fullmatch(name)]
     return {**spec, "root": ctx.case_root, "directories": len(names), "mismatched": mismatched[:200],
@@ -620,10 +624,67 @@ def explain(mine: dict[str, str], theirs: dict[str, str]) -> list[str]:
 
 # ---------------------------------------------------------------- check
 
+# 发现分三级（沿用 health 的 level 词汇）：must 会影响使用，参与退出码、--strict 与会话开始提示；
+# suggest 是脚手架风格上的可选项；info 只是提示。其余类型一律按可选处理。
+LEVEL_BY_KIND = {"profile-invalid": "must", "region-outdated": "info"}
+CATEGORY_BY_KIND = {"skeleton-missing": "skeleton", "content-differs": "content", "region-missing": "region",
+                    "region-modified": "region", "region-outdated": "region", "profile-missing": "profile",
+                    "profile-invalid": "profile", "case-naming": "case-naming", "lock-version": "lock"}
+LEVEL_ORDER = ("must", "suggest", "info")
+
+
+def level_of(kind: str) -> str:
+    return LEVEL_BY_KIND.get(kind, "suggest")
+
+
+def category_of(kind: str) -> str:
+    if kind.startswith("profile-"):
+        return "profile"
+    return CATEGORY_BY_KIND.get(kind, kind)
+
+
 def _finding(identifier: str, kind: str, title: str, reason: str, fingerprint: str, fix: str | None,
              **extra: Any) -> dict:
-    return {"id": identifier, "kind": kind, "level": "suggest", "scope": "project", "title": title,
-            "reason": reason, "fingerprint": fingerprint, "fix": fix, **extra}
+    return {"id": identifier, "kind": kind, "level": level_of(kind), "category": category_of(kind), "scope": "project",
+            "title": title, "reason": reason, "fingerprint": fingerprint, "fix": fix, **extra}
+
+
+def category_label(category: str, count: int) -> str:
+    """The one-line summary of ``count`` findings of one category (用于归并显示)."""
+    labels = {
+        "skeleton": _("{0} 个缺失文件"),
+        "content": _("{0} 个文件与当前模板不同"),
+        "region": _("{0} 个受管区块有差异"),
+        "profile": _("{0} 个 Profile 字段缺失或不符"),
+        "case-naming": _("{0} 项 Case 目录命名差异"),
+        "lock": _("{0} 项内容锁问题"),
+    }
+    return labels.get(category, _("{0} 项其他差异")).format(count)
+
+
+def summarize(findings: list[dict]) -> list[dict]:
+    """Group findings by (level, category): one row each with the count and the ids (明细仍在 findings 里)."""
+    rows: dict[tuple[str, str], dict] = {}
+    for finding in findings:
+        level = finding.get("level") or level_of(finding.get("kind", ""))
+        category = finding.get("category") or category_of(finding.get("kind", ""))
+        row = rows.setdefault((level, category), {"level": level, "category": category, "count": 0, "ids": [],
+                                                  "fixes": []})
+        row["count"] += 1
+        row["ids"].append(finding["id"])
+        if finding.get("fix") and finding["fix"] not in row["fixes"]:
+            row["fixes"].append(finding["fix"])
+    ordered = sorted(rows.values(), key=lambda r: (LEVEL_ORDER.index(r["level"]) if r["level"] in LEVEL_ORDER else 9,
+                                                   r["category"]))
+    return [{**row, "label": category_label(row["category"], row["count"])} for row in ordered]
+
+
+def level_counts(findings: list[dict]) -> dict[str, int]:
+    counts = {level: 0 for level in LEVEL_ORDER}
+    for finding in findings:
+        level = finding.get("level") or level_of(finding.get("kind", ""))
+        counts[level if level in counts else "suggest"] += 1
+    return counts
 
 
 def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) -> dict:
@@ -706,9 +767,10 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     decisions = load_decisions(root, state_dir)
     active, skipped = partition(findings, decisions, reprompt=reprompt)
     declared = ctx.profile.get("language") if ctx.profile.get("language") in ("zh", "en") else None
-    return {"ok": not active, "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
+    return {"ok": not active, "required_ok": not any(f["level"] == "must" for f in active), "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
             "project_language": {"declared": declared, "effective": declared or "zh"},
             "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras, "findings": active, "skipped": skipped,
+            "levels": level_counts(active), "categories": summarize(active),
             "decisions": {"path": DECISIONS_PATH.as_posix(), "errors": decisions["errors"],
                           "conflict_copies": decisions["conflict_copies"], "local_path": decisions["local_path"]}}
 
@@ -1043,6 +1105,38 @@ def decide(root: Path, finding_id: str, decision: str, *, reason: str = "", fing
     return result
 
 
+ACCEPT_REASON = "accept-current"
+
+
+def accept_current(root: Path, *, reason: str = "", apply: bool = False, state_dir: Path | None = None) -> dict:
+    """Record every current scaffold difference as decided / keep-as-is, in the project decisions file.
+
+    Same table and entry format as ``decide``: ``{decision: keep, fingerprint, decided_at, reason}``, so a later
+    change of the expected content (new fingerprint) prompts again. Findings that must be handled (level ``must``)
+    are left alone and listed in ``excluded``; findings that are already decided with the same expectation are untouched.
+    """
+    report = check(root, state_dir=state_dir)
+    path = root / DECISIONS_PATH
+    table, current_sha, error = read_decisions(path)
+    if error:
+        raise _fail(error, "profile-invalid")
+    accepted = [f for f in report["findings"] if f["level"] != "must"]
+    excluded = [{"id": f["id"], "title": f["title"]} for f in report["findings"] if f["level"] == "must"]
+    stamp = now_iso()
+    entries = {}
+    for finding in accepted:
+        entry = {"decision": "keep", "fingerprint": finding["fingerprint"], "decided_at": stamp,
+                 "reason": reason or ACCEPT_REASON}
+        entries[finding["id"]] = entry
+    result = {"ok": True, "mode": "accept-current", "applied": False, "count": len(entries),
+              "entries": entries, "categories": summarize(accepted), "excluded": excluded,
+              "already_decided": len(report["skipped"]), "file": DECISIONS_PATH.as_posix(), "reason": reason or ACCEPT_REASON}
+    if apply and entries:
+        _store(path, {**table, **entries}, current_sha, root, "project")
+        result["applied"] = True
+    return result
+
+
 def undecide(root: Path, finding_id: str, *, apply: bool = False, state_dir: Path | None = None) -> dict:
     scopes = ["machine"] if finding_id.startswith(LOCAL_PREFIX) else ["project", "machine"]
     for scope in scopes:
@@ -1074,6 +1168,8 @@ def run_mode(args: Any, root: Path) -> tuple[int, dict]:
         return (0 if report["ok"] else 1), report
     if args.mode == "case-naming":
         return 0, case_naming_plan(root)
+    if args.mode == "accept-current":
+        return 0, accept_current(root, reason=args.reason or "", apply=args.apply, state_dir=state_dir)
     if args.mode == "language":
         return 0, set_project_language(root, args.language, apply=args.apply, recovery_dir=args.recovery_dir)
     if args.mode == "add-skeleton":
@@ -1101,6 +1197,13 @@ def render_text(result: dict) -> str:
             reason = item["decision"].get("reason") or _("（未写理由）")
             lines.append(_("  [已跳过 {0}] {1}").format(item['id'], reason))
         lines.append(_("脚手架与期望一致。") if result["ok"] else _("{0} 项差异。").format(len(result['findings'])))
+    elif mode == "accept-current":
+        lines.append(_("{0}：把当前 {1} 项脚手架差异记为已决定、保留现状").format(_("已执行") if result["applied"] else _("预览"), result["count"]))
+        for row in result["categories"]:
+            lines.append(f"  {row['label']}")
+        for item in result["excluded"]:
+            lines.append(_("  未包含（需要处理）：[{0}] {1}").format(item["id"], item["title"]))
+        lines.append(_("写入 {0}（随项目同步，理由：{1}）").format(result["file"], result["reason"]))
     else:
         label = _("已执行") if result.get("applied") else _("预览")
         lines.append(_("{0}：{1}").format(label, mode))

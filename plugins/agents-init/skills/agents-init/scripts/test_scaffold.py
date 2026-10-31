@@ -285,6 +285,126 @@ class DecisionTests(ScaffoldCase):
         self.assertIn("skel:.agents/mcp.json", self.ids(self.check()))
 
 
+class AcceptCurrentTests(ScaffoldCase):
+    """#37：成熟项目一次性接受现状；之后只提示新出现的差异。"""
+
+    def mature(self) -> None:
+        self.old_project()  # 缺 4 个骨架文件（旧版项目）
+        self.init_findings = self.check()["findings"]
+        self.assertGreaterEqual(len(self.init_findings), 4)
+
+    def test_findings_carry_a_level_and_a_category_and_the_summary_counts_them(self) -> None:
+        self.mature()
+        report = self.check()
+        self.assertTrue(all(f["level"] == "suggest" and f["category"] == "skeleton" for f in report["findings"]
+                            if f["kind"] == "skeleton-missing"))
+        row = next(r for r in report["categories"] if r["category"] == "skeleton")
+        self.assertEqual(row["count"], len([f for f in report["findings"] if f["kind"] == "skeleton-missing"]))
+        self.assertEqual(sorted(row["ids"]), sorted(f["id"] for f in report["findings"] if f["kind"] == "skeleton-missing"))
+        self.assertIn(f"{row['count']} 个缺失文件", row["label"])
+        self.assertEqual(report["levels"]["suggest"], len(report["findings"]))
+        self.assertEqual(report["levels"]["must"], 0)
+
+    def test_preview_writes_nothing_then_apply_records_keep_for_every_difference(self) -> None:
+        self.mature()
+        preview = scaffold.accept_current(self.root, reason="mature layout", state_dir=self.state)
+        self.assertFalse(preview["applied"])
+        self.assertEqual(preview["count"], len(self.init_findings))
+        self.assertFalse((self.root / DECISIONS).exists())
+        applied = scaffold.accept_current(self.root, reason="mature layout", apply=True, state_dir=self.state)
+        self.assertTrue(applied["applied"])
+        saved = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))
+        self.assertEqual(saved["schema_version"], 1)
+        self.assertEqual(set(saved["decisions"]), {f["id"] for f in self.init_findings})
+        for finding in self.init_findings:
+            entry = saved["decisions"][finding["id"]]
+            self.assertEqual(set(entry), {"decision", "fingerprint", "decided_at", "reason"})
+            self.assertEqual((entry["decision"], entry["reason"], entry["fingerprint"]),
+                             ("keep", "mature layout", finding["fingerprint"]))
+        after = self.check()
+        self.assertEqual(after["findings"], [])
+        self.assertEqual(len(after["skipped"]), len(self.init_findings))
+
+    def test_only_a_new_difference_prompts_afterwards_and_another_machine_sees_the_same(self) -> None:
+        self.mature()
+        scaffold.accept_current(self.root, reason="mature layout", apply=True, state_dir=self.state)
+        (self.root / ".agent-doc/plan.md").unlink()
+        other_machine = Path(self._temporary.name) / "other-state"
+        for state in (self.state, other_machine):
+            self.assertEqual(self.ids(scaffold.check(self.root, state_dir=state)), {"skel:.agent-doc/plan.md"})
+        self.assertFalse(other_machine.exists())
+
+    def test_a_changed_expectation_prompts_again(self) -> None:
+        self.mature()
+        scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        saved = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))
+        saved["decisions"]["skel:.agents/mcp.json"]["fingerprint"] = "template-as-it-was"
+        (self.root / DECISIONS).write_text(json.dumps(saved), encoding="utf-8")
+        again = {f["id"]: f for f in self.check()["findings"]}
+        self.assertEqual(set(again), {"skel:.agents/mcp.json"})
+        self.assertIn("changed_since_decision", again["skel:.agents/mcp.json"])
+
+    def test_existing_decisions_are_left_alone_and_a_missing_reason_gets_a_marker(self) -> None:
+        self.mature()
+        scaffold.decide(self.root, "skel:docs/drafts/.gitkeep", "skip", reason="drafts live elsewhere", apply=True,
+                        state_dir=self.state)
+        before = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))["decisions"]["skel:docs/drafts/.gitkeep"]
+        result = scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        self.assertEqual(result["count"], len(self.init_findings) - 1)
+        table = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))["decisions"]
+        self.assertEqual(table["skel:docs/drafts/.gitkeep"], before)
+        self.assertEqual(table["skel:.agents/mcp.json"]["reason"], scaffold.ACCEPT_REASON)
+
+    def test_refresh_keep_decisions_stay_compatible(self) -> None:
+        self.mature()
+        path = "AGENTS.md"
+        fingerprint = scaffold.sha("expected")
+        scaffold.decide(self.root, f"content:{path}", "keep", reason="refresh --keep", fingerprint=fingerprint,
+                        apply=True, state_dir=self.state)
+        scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        self.assertEqual(scaffold.keep_fingerprints(self.root).get(path), fingerprint)
+        table = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))["decisions"]
+        self.assertEqual(table[f"content:{path}"]["reason"], "refresh --keep")
+
+    def test_a_required_finding_is_never_accepted_in_bulk(self) -> None:
+        self.mature()
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile["work"]["case"]["directory_naming"] = {"style": "custom"}  # 缺 pattern：声明本身无法使用
+        (self.root / PROFILE).write_text(json.dumps(profile))
+        report = self.check()
+        broken = next(f for f in report["findings"] if f["id"] == "profile:work.case.directory_naming")
+        self.assertEqual(broken["level"], "must")
+        self.assertEqual(report["levels"]["must"], 1)
+        result = scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        self.assertEqual([item["id"] for item in result["excluded"]], ["profile:work.case.directory_naming"])
+        self.assertEqual(self.ids(self.check()), {"profile:work.case.directory_naming"})
+
+    def test_cli_mode_previews_then_applies(self) -> None:
+        self.mature()
+        code, preview = self.run_mode("accept-current", "--reason", "mature layout")
+        self.assertEqual((code, preview["applied"]), (0, False))
+        code, applied = self.run_mode("accept-current", "--reason", "mature layout", "--apply")
+        self.assertEqual((code, applied["applied"]), (0, True))
+        self.assertEqual(self.check()["findings"], [])
+
+    def test_a_project_with_its_own_case_tool_is_not_asked_for_the_default_case_structure(self) -> None:
+        self.init("--no-entry", "--work-mode", "case-workspace")
+        (self.root / "cases/.gitkeep").unlink()
+        (self.root / "cases").rmdir()
+        self.assertIn("skel:cases/.gitkeep", self.ids(self.check()))
+        case_dir = self.root / "cases/20260902-grammar"
+        case_dir.mkdir(parents=True)
+        (case_dir / "CASE.md").write_text("# case\n", encoding="utf-8")
+        self.assertIn("case-naming", self.ids(self.check()))
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile["work"]["case"]["command"] = ["./tools/case"]
+        (self.root / PROFILE).write_text(json.dumps(profile))
+        self.assertEqual(self.ids(self.check()), set(), self.check()["findings"])
+        profile["work"]["case"]["directory_naming"] = {"style": "case-id"}  # 自己声明了命名规则时照常检查
+        (self.root / PROFILE).write_text(json.dumps(profile))
+        self.assertEqual(self.ids(self.check()), {"case-naming"})
+
+
 class ProfileTests(ScaffoldCase):
     def drop(self, *paths: str) -> None:
         profile = json.loads((self.root / PROFILE).read_text())

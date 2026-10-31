@@ -29,6 +29,7 @@ USAGE = N_("""项目入口：不需要 AI Agent 的项目自助菜单与命令�
     agenthelm project fix [项…]         修复与更新：默认只预览，--apply 执行；--keep / --accept / --append 选择定制文件
     agenthelm project fix add-skeleton [路径…]   按模板补上缺少的骨架文件（已有文件不动）
     agenthelm project fix profile [字段…]        只改所选 Profile 字段，预览里有 diff
+    agenthelm project fix --accept-current --reason …  把当前全部脚手架差异一次性记为“保留现状”（默认预览，--apply 写入）
     agenthelm project fix --skip <ID> --reason …  永久跳过某个发现（记入随项目同步的决定文件）；--unskip <ID> 撤销
     agenthelm project record <事项|new> 记录事项：默认只预览，--apply 写入
     agenthelm project tools [工具]      项目自行声明的工具；--run --apply 执行
@@ -44,7 +45,7 @@ index-broken|offline|runtime-old|conflict；演示结果都标注「演示」，
 退出码：0 成功；1 没有结果或有必须处理的项；2 用法错误（含 --skip 了现在不存在的发现 ID）；
 3 运行时与项目入口不兼容；4 能力当前不可用（含决定文件损坏）；5 写入冲突（别人刚改过，
 含决定文件刚被另一台机器同步更新）；6 执行失败；130 中断。
-脚手架差异只算“建议处理”，不会让 health 退出码变成 1。
+脚手架差异只算“建议处理”或“信息”，不会让 health 退出码变成 1（只有“必须处理”的项才会）。
 """)
 
 Provider = Any  # DemoProvider 或 project_real.RealProvider：方法与返回结构相同
@@ -62,7 +63,7 @@ GROUPS = (("active", N_("进行中")), ("waiting", N_("等待")), ("captured", N
           ("done", N_("已完成")), ("abandoned", N_("放弃")), ("other", N_("其他状态")))
 GROUP_LABEL = dict(GROUPS)
 CLOSED = {"done", "abandoned"}
-LEVELS = (("must", N_("必须处理")), ("suggest", N_("建议处理")), ("update", N_("可选更新")), ("unavailable", N_("当前不可用")))
+LEVELS = (("must", N_("必须处理")), ("suggest", N_("建议处理")), ("update", N_("可选更新")), ("info", N_("信息")), ("unavailable", N_("当前不可用")))
 LEVEL_LABEL = dict(LEVELS)
 DEMO_BANNER = N_("【演示数据 · 不读写真实文件】")
 
@@ -244,7 +245,7 @@ def render_guide(guide: dict) -> list[str]:
     return lines
 
 
-def render_health(health: dict, show_skipped: bool = False) -> tuple[list[str], list[dict]]:
+def render_health(health: dict, show_skipped: bool = False, details: bool = False) -> tuple[list[str], list[dict]]:
     lines, numbered = [], []
     source = health["update_source"]
     if source["status"] == "online":
@@ -264,9 +265,24 @@ def render_health(health: dict, show_skipped: bool = False) -> tuple[list[str], 
             continue
         colour = S.red if key == "must" else S.yellow if key in ("suggest", "update") else S.dim
         lines.append(colour(S.bold(_("{0}（{1}）").format(_(label), len(members)))))
+        # 同类项合并为一行（统计数字取实际成员数）；--details 或 --output json 看逐项明细，JSON 里的 findings 不变。
+        shown: list[tuple[dict, list[dict]]] = []
+        index: dict[str, int] = {}
         for finding in members:
+            group = finding.get("group")
+            if group and not details:
+                if group["id"] in index:
+                    shown[index[group["id"]]][1].append(finding)
+                    continue
+                index[group["id"]] = len(shown)
+            shown.append((finding, [finding]))
+        for finding, merged in shown:
             numbered.append(finding)
-            lines.append(f" {S.bold(S.cyan(f'{len(numbered):>2}'))}  [{finding['area']}] {S.bold(finding['title'])}")
+            number = S.bold(S.cyan(f'{len(numbered):>2}'))
+            if len(merged) > 1 or (finding.get("group") and not details):
+                lines += _group_lines(number, finding, merged)
+                continue
+            lines.append(f" {number}  [{finding['area']}] {S.bold(finding['title'])}")
             lines.append(_("     原因：{0}").format(finding['reason']))
             lines.append(_("     影响：{0}").format(finding['impact']))
             for step in finding["next"]:
@@ -286,6 +302,17 @@ def render_health(health: dict, show_skipped: bool = False) -> tuple[list[str], 
     if health["ok"]:
         lines.append(S.green(_("正常：")) + _("、").join(health["ok"]))
     return lines, numbered
+
+
+def _group_lines(number: str, first: dict, members: list[dict]) -> list[str]:
+    """One merged entry for several findings of one category: label with the count, a few names, how to view / handle / accept."""
+    names = _("、").join(item["decision"]["id"].split(":", 1)[-1] if item.get("decision") else item["title"] for item in members[:3])
+    lines = [f" {number}  [{first['area']}] {S.bold(first['group']['label'])}",
+             _("     包含：{0}").format(names + (_("……共 {0} 项").format(len(members)) if len(members) > 3 else ""))]
+    for step in first["next"]:
+        lines.append(_("     下一步：{0}").format(step['label']) + S.dim(command_hint(step["action"])))
+    lines.append(S.dim(_("     查看逐项：health --details（或 --output json）；这些都不需要：fix --accept-current --reason …；单项：fix --skip <ID> --reason …")))
+    return lines
 
 
 def command_hint(action: str) -> str:
@@ -434,12 +461,14 @@ def cmd_guide(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, l
 def cmd_health(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
     provider.reprompt = bool(getattr(args, "reprompt", False))
     health = provider.health()
-    lines, _ignored = render_health(health, bool(getattr(args, "show_skipped", False)))
+    lines, _ignored = render_health(health, bool(getattr(args, "show_skipped", False)), bool(getattr(args, "details", False)))
     must = any(finding["level"] == "must" for finding in health["findings"])
     return (EXIT_ATTENTION if must else EXIT_OK), health, header(provider, _("检查项目与环境")) + lines
 
 
 def cmd_fix(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
+    if getattr(args, "accept_current", False):
+        return _fix_accept_current(provider, args)
     if args.skip or args.unskip:
         return _fix_decisions(provider, args)
     choices = {path: "keep" for path in args.keep} | {path: "accept" for path in args.accept} \
@@ -470,6 +499,29 @@ def _split_targets(ids: list[str]) -> tuple[list[str], list[str]]:
     if ids and ids[0] in ("add-skeleton", "profile"):
         return ids[:1], ids[1:]
     return ids, []
+
+
+def _fix_accept_current(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
+    """--accept-current: one batch of keep decisions in the project decisions file; project files stay untouched."""
+    if not hasattr(provider, "accept_current"):
+        raise EntryError(_("演示项目没有决定文件"), "usage")
+    result = provider.accept_current(args.reason or "", args.apply)
+    lines = header(provider, _("接受现状"))
+    verb = _("已记录") if result["applied"] else _("将记录")
+    if not result["count"]:
+        lines.append(_("当前没有需要接受的脚手架差异。"))
+    else:
+        lines.append(_("{0}：把当前 {1} 项脚手架差异记为“已决定、保留现状”").format(verb, result["count"]))
+        lines += [f"  {row['label']}" for row in result["categories"]]
+        lines.append(_("  写入 {0}（随项目同步，换一台机器不再提示；理由：{1}）").format(result["file"], result["reason"]))
+    for item in result["excluded"]:
+        lines.append(S.yellow(_("  未包含（需要处理）：[{0}] {1}").format(item["id"], item["title"])))
+    if not args.reason:
+        lines.append(S.dim(_("没有写理由：建议加 --reason \"<原因>\"，以后审阅决定文件时看得懂。")))
+    if not args.apply and result["count"]:
+        lines.append(S.dim(_("以上为预览，没有写入。确认后加 --apply。之后只有新出现的差异（或模板期望内容变化的项）才会再次提示；"
+                             "撤销单项：fix --unskip <ID>。")))
+    return EXIT_OK, result, lines
 
 
 def _fix_decisions(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
@@ -628,12 +680,15 @@ def parser() -> argparse.ArgumentParser:
     add("guide", _("项目指南"))
     health = add("health", _("检查项目与环境"))
     health.add_argument("--show-skipped", action="store_true", help=_("列出被你跳过的项及理由"))
+    health.add_argument("--details", action="store_true", help=_("同类建议逐项展开（默认合并为一行）"))
     health.add_argument("--reprompt", action="store_true", help=_("忽略已记录的决定，重新评估全部差异"))
     fix = add("fix", _("修复与更新"))
     fix.add_argument("ids", nargs="*", help=_("处理项；add-skeleton / profile 后可跟路径 / 字段"))
     fix.add_argument("--skip", action="append", default=[], metavar="ID", help=_("永久跳过这个发现（记入决定文件）"))
     fix.add_argument("--unskip", action="append", default=[], metavar="ID", help=_("撤销对这个发现的跳过"))
-    fix.add_argument("--reason", help=_("--skip 的理由（建议写；随项目同步，换一台机器也看得到）"))
+    fix.add_argument("--accept-current", action="store_true", dest="accept_current",
+                     help=_("把当前全部脚手架差异一次性记为“已决定、保留现状”（写入随项目同步的决定文件；默认预览，--apply 写入；与 --reason 合用）"))
+    fix.add_argument("--reason", help=_("--skip / --accept-current 的理由（建议写；随项目同步，换一台机器也看得到）"))
     fix.add_argument("--apply", action="store_true")
     fix.add_argument("--keep", action="append", default=[])
     fix.add_argument("--accept", action="append", default=[])
