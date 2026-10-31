@@ -49,6 +49,39 @@ class Merge3Tests(unittest.TestCase):
         self.assertEqual(merge3.merge_text("a\nb", "a\nb", "a\nB").render(), "a\nB\n")
 
 
+class HistoricalTemplateTests(unittest.TestCase):
+    """rc.1 及更早的历史模板没有 rc.2 才加入的隐私区块：渲染旧基线时不能因此被当作“模板无效”。"""
+
+    def old_template(self) -> str:
+        source = init_project.TEMPLATE_PATH.read_text(encoding="utf-8")
+        for name in init_project.PRIVACY_TEMPLATES:
+            source = init_project.TEMPLATE_PATTERN.sub(
+                lambda match, name=name: "" if match.group("name") == name else match.group(0), source)
+        return source.replace("PRIVACY_SECTION", "")
+
+    def test_a_template_without_the_privacy_blocks_is_invalid_for_the_current_release_but_usable_as_a_baseline(self) -> None:
+        old = self.old_template()
+        with self.assertRaises(init_project.InitError):
+            init_project.parse_templates(old)
+        templates = init_project.parse_templates(old, historical=True)
+        self.assertEqual({templates[name] for name in init_project.PRIVACY_TEMPLATES}, {""})
+        inputs = init_project.Inputs(Path("/p"), "X", "x", ("notes",), "none", ("markdown",), "local", ("claude",),
+                                     "case-workspace", "menu", "zh", True)
+        self.assertIn(Path("AGENTS.md"), init_project.files_for(inputs, templates, None))
+
+    def test_find_baseline_accepts_such_a_pack_when_it_renders_the_recorded_digest(self) -> None:
+        old = self.old_template()
+        inputs = init_project.Inputs(Path("/p"), "X", "x", ("notes",), "none", ("markdown",), "local", ("claude",),
+                                     "case-workspace", "menu", "zh", True)
+        templates = init_project.parse_templates(old, historical=True)
+        text = init_project.files_for(inputs, templates, None)[Path("AGENTS.md")]
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        found = init_project.find_baseline(Path("/p"), Path("AGENTS.md"), digest, ["1.2.0"], None, inputs,
+                                           [lambda _pack, _wanted: iter([pack_source(old, version="1.2.0")])], PACK_ID)
+        self.assertIsNotNone(found)
+        self.assertEqual(found["text"], text)
+
+
 def pack_source(template: str, *, version: str = "1.3.0", kind: str = "git-tag", label: str = "git tag v6.8.1") -> baseline.PackSource:
     return baseline.PackSource(label, kind, version, template, None)
 

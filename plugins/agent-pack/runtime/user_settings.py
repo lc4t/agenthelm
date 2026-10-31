@@ -132,6 +132,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _write_settings(path: Path, data: dict) -> None:
+    if path.is_symlink():  # 配置文件可能是 dotfiles 仓库的软链接：写到它指向的文件，不把链接换成普通文件
+        path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

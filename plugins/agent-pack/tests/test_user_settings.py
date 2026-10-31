@@ -124,6 +124,18 @@ class ConfigCommandTests(CommandCase):
         self.assertEqual(self.config_data(), {"language": "en"})
         self.assertFalse((self.home / ".agent-pack").exists())
 
+    def test_a_config_file_that_is_a_symlink_keeps_its_link_and_the_target_gets_the_change(self) -> None:
+        """配置文件常是 dotfiles 仓库的软链接：写到链接指向的文件，链接本身不能被换成普通文件。"""
+        target = self.base / "dotfiles/config.json"
+        target.parent.mkdir()
+        target.write_text(json.dumps({"update_check": False}), encoding="utf-8")
+        self.config.parent.mkdir(parents=True)
+        self.config.symlink_to(target)
+        done = self.run_cli("config", "language", "zh", "--apply", "--output", "json")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(self.config.is_symlink(), "软链接被换成了普通文件")
+        self.assertEqual(json.loads(target.read_text(encoding="utf-8")), {"update_check": False, "language": "zh"})
+
     def test_the_same_value_is_a_no_op_and_auto_removes_the_key(self) -> None:
         self.run_cli("config", "language", "zh", "--apply")
         before = self.config.read_text(encoding="utf-8")

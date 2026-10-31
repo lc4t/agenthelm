@@ -93,6 +93,10 @@ REQUIRED_TEMPLATES = {
 }
 
 
+# 隐私约定相关的区块是 rc.2 才加入的；rc.1 及更早的历史版本包没有它们，渲染旧基线时按空文本处理。
+PRIVACY_TEMPLATES = {name for name in REQUIRED_TEMPLATES if name.startswith(("privacy/", "region/privacy-contract"))}
+
+
 class InitError(Exception):
     """Expected initialization failure."""
 
@@ -197,11 +201,16 @@ def load_templates(path: Path = TEMPLATE_PATH) -> dict[str, str]:
     return parse_templates(source)
 
 
-def parse_templates(source: str) -> dict[str, str]:
+def parse_templates(source: str, *, historical: bool = False) -> dict[str, str]:
+    """Parse a template file. ``historical`` is for an earlier release's template (baseline rendering): the blocks added
+    after it shipped (the privacy convention) may be missing and render as empty."""
     templates = {match.group("name"): match.group("body") for match in TEMPLATE_PATTERN.finditer(source)}
-    missing = sorted(REQUIRED_TEMPLATES - set(templates))
+    missing = sorted(REQUIRED_TEMPLATES - set(templates) - (PRIVACY_TEMPLATES if historical else set()))
     if missing:
         raise InitError(_("中文模板缺少生成区块：") + ", ".join(missing), code="template-invalid")
+    if historical:
+        for name in PRIVACY_TEMPLATES - set(templates):
+            templates[name] = ""
     return templates
 
 
@@ -964,7 +973,7 @@ def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], 
                     continue
                 seen.add((source.kind, source.label))
                 try:
-                    templates = parse_templates(source.template)
+                    templates = parse_templates(source.template, historical=True)
                     for variant in variants:
                         text = files_for(variant, templates, source.launcher).get(relative)
                         if text is not None and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest:

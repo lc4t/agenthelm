@@ -435,9 +435,9 @@ def _plan_content(provider: Any, env: Any, report: dict | None, choices: dict[st
 
 
 CONTENT_STATE = {"unchanged": N_("与新模板相同"), "clean": N_("没改过"), "modified": N_("你改过"), "missing": N_("目前不存在"),
-                 "local-only": N_("只有你的改动，新模板没变")}
+                 "local-only": N_("只有你的改动，新模板没变"), "kept-by-decision": N_("你已决定保留")}
 CONTENT_ACTION = {"keep": N_("保留"), "replace": N_("换成新模板（先备份）"), "create": N_("新建"), "skip": N_("不新建"),
-                  "blocked": N_("需要你选择"), "append": N_("保留原文，末尾追加带标记的区块（先备份）")}
+                  "blocked": N_("需要你选择"), "merge": N_("三方合并（先备份）"), "append": N_("保留原文，末尾追加带标记的区块（先备份）")}
 
 
 def _content_change(item: dict, effective: dict[str, str]) -> str:

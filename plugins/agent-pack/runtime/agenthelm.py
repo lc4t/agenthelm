@@ -940,6 +940,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
                         "total": sum(1 for item in plugins if item["client"] == name)}
                  for name in selection["active"] if any(item["client"] == name for item in plugins)}
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
+    content_errors = [item for item in content if item["status"] == "error"]  # 内容锁无法解析：无法判断，不能当作“已是最新”
     opinion_updates = [item for item in opinion if item["status"] == "update-available"]
     settings = user_settings_module()
     language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold)
@@ -970,12 +971,13 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
             "by_client": by_client,
             "breaking": any(item["breaking"] for item in behind),
             "content_updates": len(content_updates),
+            "content_errors": len(content_errors),
             "content_conflicts": sum(1 for item in content if item["status"] == "conflict"),
             "opinion_updates": len(opinion_updates),
             "legacy_installs": len(legacy),
             "legacy_other_clients": legacy_unattributed,
             "install_states": {name: item["state"] for name, item in state["clients"].items()},
-            "up_to_date": not (behind or content_updates or opinion_updates or legacy or scaffold_required
+            "up_to_date": not (behind or content_updates or content_errors or opinion_updates or legacy or scaffold_required
                                or local_attention),
         },
     }
@@ -1005,6 +1007,8 @@ def one_line(report: dict) -> str | None:
     if summary["content_updates"]:
         parts.append(_("{0} 个模板/样例包可更新").format(summary['content_updates'])
                      + (_("（{0} 个本地有改动，更新时逐文件确认）").format(summary['content_conflicts']) if summary["content_conflicts"] else ""))
+    if summary.get("content_errors"):
+        parts.append(_("项目内容锁无法解析，没能检查模板/样例包"))
     if summary["opinion_updates"]:
         parts.append(_("Opinion 有新版本模板或规则"))
     if summary["legacy_installs"]:
@@ -2291,7 +2295,16 @@ def main(argv: list[str] | None = None) -> int:
                 payload["recovery"] = backups[0]["recovery"]
                 payload["recovery_files"] = [path for item in backups for path in item.get("recovery_files", [])]
             if not steps:
-                payload["message"] = _("没有需要更新的内容。")
+                content_errors = [item for item in report["content"] if item["status"] == "error"] if args.only != "plugins" else []
+                chosen = args.accept or args.keep or args.append or args.confirm_discard or args.diff
+                if content_errors:  # 内容锁坏了不是“没有需要更新的内容”：说明原因并以非零退出
+                    payload["ok"] = False
+                    payload["message"] = _("项目内容没有检查：{0}。修复或移走这个文件后重试；没有改动任何文件。").format(content_errors[0]["error"])
+                elif chosen and args.only != "plugins":  # 用户点名了文件，却没有任何待更新内容：不能装作处理过
+                    payload["message"] = _("没有需要更新的内容，--accept / --keep / --append / --diff 指定的文件没有被处理（项目内容已是最新，或项目没有内容锁）；没有改动任何文件。"
+                                           "没有内容锁的项目用 {0} fix update-content。").format(CLI)
+                else:
+                    payload["message"] = _("没有需要更新的内容。")
         else:  # migrate
             names = set(latest.get("plugins", {}))
             artifacts = legacy_artifacts(env, names)
