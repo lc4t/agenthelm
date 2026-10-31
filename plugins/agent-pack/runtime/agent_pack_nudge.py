@@ -498,8 +498,11 @@ def install_hooks(args: argparse.Namespace, host: Any) -> dict:
     if args.apply and changed:
         if target.is_file():
             backup = target.with_name(target.name + ".agenthelm-bak")
-            if not backup.exists():
-                backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+            if not backup.exists():  # the first original only: it is never refreshed
+                try:
+                    backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+                except (OSError, ValueError) as exc:
+                    raise host.CheckError(say("err_backup", lang, target=target, backup=backup, error=exc)) from exc
                 result["backup"] = str(backup)
         host.write_json_atomic(target, merged)
         result["applied"] = True

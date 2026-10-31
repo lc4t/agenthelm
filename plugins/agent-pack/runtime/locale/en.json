@@ -556,5 +556,12 @@
  "{0}；{1}": "{0}; {1}",
  "项目内容锁无法解析，没能检查模板/样例包": "The project content lock could not be parsed, so the template/sample packs were not checked",
  "项目内容没有检查：{0}。修复或移走这个文件后重试；没有改动任何文件。": "Project content was not checked: {0}. Fix or move that file and try again; no file was changed.",
- "没有需要更新的内容，--accept / --keep / --append / --diff 指定的文件没有被处理（项目内容已是最新，或项目没有内容锁）；没有改动任何文件。没有内容锁的项目用 {0} fix update-content。": "Nothing to update, so the files named by --accept / --keep / --append / --diff were not handled (the project content is up to date, or the project has no content lock); no file was changed. For a project without a content lock use {0} fix update-content."
+ "没有需要更新的内容，--accept / --keep / --append / --diff / --merge 指定的文件没有被处理（项目内容已是最新，或项目没有内容锁）；没有改动任何文件。没有内容锁的项目用 {0} fix update-content。": "Nothing to update, so the files named by --accept / --keep / --append / --diff / --merge were not handled (the project content is up to date, or the project has no content lock); no file was changed. For a project without a content lock use {0} fix update-content.",
+ "内容更新：三方合并这个文件（用旧版本包还原出升级前的基线，保留你的改动并带入新模板的变化；--apply 前先备份）": "Content update: three-way merge this file (restore the pre-upgrade baseline from the old release, keep your edits and bring in the template's changes; backed up before --apply)",
+ "内容更新：为 --merge 的冲突块选择 mine（保留你的）、theirs（取新模板）或 both（两边都留）": "Content update: resolve a --merge conflict block with mine (keep yours), theirs (take the new template) or both (keep both)",
+ "文件#块=mine|theirs|both": "file#block=mine|theirs|both",
+ "有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），请用 {1} fix update-content（或 update --only content --keep/--append/--accept …）逐个处理。": "Differences with no baseline: {0} (the content differs from the template and the content lock has no baseline). Handle them one by one with {1} fix update-content (or update --only content --keep/--append/--accept …).",
+ "无法备份 {0} 到 {1}（{2}）；没有改动任何文件。": "Could not back up {0} to {1} ({2}); nothing was changed.",
+ "版本号必须是单个目录名（不能含路径分隔符或 ..）：{0}": "The version must be a single directory name (no path separators or ..): {0}",
+ "agenthelm runtime status 可以看到已安装的版本": "agenthelm runtime status lists the installed versions"
 }

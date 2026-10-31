@@ -72,6 +72,8 @@ def read_json(path: Path) -> Any:
 
 
 def write_json_atomic(path: Path, data: Any) -> None:
+    # A symlinked dotfile (hooks.json, settings.json) keeps being a symlink: write to its target, temp file beside it.
+    path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -618,7 +620,10 @@ def install_state(env: Env, latest: dict, findings: list[dict], others: list[dic
         mine = [item for item in [*findings, *others] if item["client"] in {client, "legacy"}]
         if client not in detected and not any(item["client"] == client for item in mine):
             continue
-        result["clients"][client] = diagnose_client(client, latest, findings, others,
+        # A legacy entry belongs to the client its path says (same rule as the summary count); unknown owner: both.
+        scoped = [item for item in findings
+                  if item["client"] != "legacy" or legacy_owner(env, item) in {client, None}]
+        result["clients"][client] = diagnose_client(client, latest, scoped, others,
                                                     conflict if client == "claude" else None)
     return result
 
@@ -850,6 +855,15 @@ def local_only_plan(env: Env, project: Path | None, **options: Any) -> dict:
 
 
 # ---------------------------------------------------------------- report
+
+def baseline_less_differences(env: Env, project: Path | None) -> int:
+    """How many project files differ from the template with no baseline in the content lock (check's content-differs findings)."""
+    try:
+        report = scaffold_report(env, project)
+    except Exception:  # noqa: BLE001 - a hint only; never let it break update
+        return 0
+    return sum(1 for item in (report or {}).get("findings", []) if item.get("kind") == "content-differs")
+
 
 def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
     module = scaffold_module(env)
@@ -1991,6 +2005,10 @@ def parser() -> argparse.ArgumentParser:
     update.add_argument("--confirm-discard", action="append", default=[], dest="confirm_discard",
                         help=_("内容更新：确认 --accept 会丢弃这个文件里的本地内容"))
     update.add_argument("--diff", action="append", default=[], help=_("内容更新：只查看这个文件与新模板的完整差异，不写入"))
+    update.add_argument("--merge", action="append", default=[],
+                        help=_("内容更新：三方合并这个文件（用旧版本包还原出升级前的基线，保留你的改动并带入新模板的变化；--apply 前先备份）"))
+    update.add_argument("--pick", action="append", default=[], metavar=_("文件#块=mine|theirs|both"),
+                        help=_("内容更新：为 --merge 的冲突块选择 mine（保留你的）、theirs（取新模板）或 both（两边都留）"))
     update.add_argument("--recovery-dir", type=Path, help=_("被替换文件的备份目录（项目外），缺省 ~/.agent-pack/recovery/"))
     update.add_argument("--source", type=Path, help=_("Cursor 更新用的本地仓库（默认下载发布包）"))
     update.add_argument("--apply", action="store_true")
@@ -2282,7 +2300,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.diff and args.apply:
                 raise CheckError(_("--diff 只用于查看，不能与 --apply 同用"))
             flags = [value for flag, paths in (("--append", args.append), ("--confirm-discard", args.confirm_discard),
-                                               ("--diff", args.diff)) for path in paths for value in (flag, path)]
+                                               ("--diff", args.diff), ("--merge", args.merge), ("--pick", args.pick))
+                     for path in paths for value in (flag, path)]
             steps = update_steps(env, report, project, args.source, home, args.accept, args.keep,
                                  recovery, args.only, content_flags=flags)
             results = execute_steps(steps, apply=args.apply, recovery_root=None,
@@ -2296,15 +2315,19 @@ def main(argv: list[str] | None = None) -> int:
                 payload["recovery_files"] = [path for item in backups for path in item.get("recovery_files", [])]
             if not steps:
                 content_errors = [item for item in report["content"] if item["status"] == "error"] if args.only != "plugins" else []
-                chosen = args.accept or args.keep or args.append or args.confirm_discard or args.diff
+                chosen = args.accept or args.keep or args.append or args.confirm_discard or args.diff or args.merge or args.pick
                 if content_errors:  # 内容锁坏了不是“没有需要更新的内容”：说明原因并以非零退出
                     payload["ok"] = False
                     payload["message"] = _("项目内容没有检查：{0}。修复或移走这个文件后重试；没有改动任何文件。").format(content_errors[0]["error"])
                 elif chosen and args.only != "plugins":  # 用户点名了文件，却没有任何待更新内容：不能装作处理过
-                    payload["message"] = _("没有需要更新的内容，--accept / --keep / --append / --diff 指定的文件没有被处理（项目内容已是最新，或项目没有内容锁）；没有改动任何文件。"
+                    payload["message"] = _("没有需要更新的内容，--accept / --keep / --append / --diff / --merge 指定的文件没有被处理（项目内容已是最新，或项目没有内容锁）；没有改动任何文件。"
                                            "没有内容锁的项目用 {0} fix update-content。").format(CLI)
                 else:
                     payload["message"] = _("没有需要更新的内容。")
+                    differing = baseline_less_differences(env, project) if args.only != "plugins" else 0
+                    if differing:  # check lists them (no baseline in the lock); update has nothing to render for them
+                        payload["message"] += _("有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），"
+                                                "请用 {1} fix update-content（或 update --only content --keep/--append/--accept …）逐个处理。").format(differing, CLI)
         else:  # migrate
             names = set(latest.get("plugins", {}))
             artifacts = legacy_artifacts(env, names)
