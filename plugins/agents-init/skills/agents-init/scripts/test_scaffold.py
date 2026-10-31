@@ -22,6 +22,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -766,6 +767,81 @@ class LockTests(ScaffoldCase):
         table["content:AGENTS.md"]["fingerprint"] = "an-older-render"
         (self.root / DECISIONS).write_text(json.dumps({"schema_version": 1, "decisions": table}))
         self.assertEqual(refresh()[0], 1)
+
+
+class DecisionIdempotenceTests(ScaffoldCase):
+    """重复执行 refresh --keep / decide / accept-current：决定内容不变就不重写文件（decided_at 不动）。"""
+
+    def decisions_bytes(self) -> bytes:
+        return (self.root / DECISIONS).read_bytes()
+
+    def test_decide_with_the_same_content_does_not_rewrite_the_file(self) -> None:
+        self.old_project()
+        finding = self.check()["findings"][0]["id"]
+        args = ("decide", "--target", finding, "--decision", "skip", "--reason", "不需要", "--apply")
+        self.assertEqual(self.run_mode(*args)[0], 0)
+        first = self.decisions_bytes()
+        with mock.patch.object(scaffold, "now_iso", return_value="2999-01-01T00:00:00Z"):
+            result = scaffold.decide(self.root, finding, "skip", reason="不需要", apply=True, state_dir=self.state)
+            self.assertTrue(result["applied"])
+            self.assertNotEqual(result["entry"]["decided_at"], "2999-01-01T00:00:00Z")
+        self.assertEqual(self.decisions_bytes(), first)
+        with mock.patch.object(scaffold, "now_iso", return_value="2999-01-01T00:00:00Z"):
+            scaffold.decide(self.root, finding, "skip", reason="换个理由", apply=True, state_dir=self.state)
+        self.assertNotEqual(self.decisions_bytes(), first, "理由变了就是新决定")
+
+    def test_accept_current_twice_is_byte_identical(self) -> None:
+        self.old_project()
+        scaffold.accept_current(self.root, reason="成熟布局", apply=True, state_dir=self.state)
+        first = self.decisions_bytes()
+        with mock.patch.object(scaffold, "now_iso", return_value="2999-01-01T00:00:00Z"):
+            result = scaffold.accept_current(self.root, reason="成熟布局", apply=True, state_dir=self.state)
+        self.assertEqual(result["count"], 0)  # 已决定的发现不再出现
+        self.assertEqual(self.decisions_bytes(), first)
+
+    def test_repeated_refresh_keep_and_append_are_byte_identical(self) -> None:
+        self.init("--no-entry")
+        (self.root / LOCK).unlink()
+        (self.root / "AGENTS.md").write_text("my contract\n")
+        (self.root / "CLAUDE.md").write_text("my claude\n")
+
+        def refresh(*extra: str) -> int:
+            return subprocess.run(
+                [sys.executable, str(SCRIPT), "--project", str(self.root), "--mode", "refresh", "--output", "json",
+                 "--recovery-dir", str(self.recovery), *extra], capture_output=True, text=True, check=False).returncode
+
+        self.assertEqual(refresh("--keep", "AGENTS.md", "--keep", "CLAUDE.md", "--apply"), 0)
+        first = self.decisions_bytes()
+        # decided_at 有秒级精度：隔一秒再跑，字节仍然一致（靠“内容没变就不写”，不靠运气同一秒）
+        time.sleep(1.1)
+        self.assertEqual(refresh("--keep", "AGENTS.md", "--keep", "CLAUDE.md", "--apply"), 0)
+        self.assertEqual(self.decisions_bytes(), first)
+
+
+class RequiredOnlyExitCodeTests(ScaffoldCase):
+    def test_default_counts_optional_differences_and_required_only_does_not(self) -> None:
+        self.old_project()
+        code, report = self.run_mode("check")
+        self.assertEqual((code, report["required_ok"], report["ok"]), (1, True, False))
+        code, report = self.run_mode("check", "--required-only")
+        self.assertEqual(code, 0)
+        self.assertFalse(report["ok"], "报告内容不变，只有退出码口径变")
+
+    def test_required_only_still_fails_on_a_required_finding(self) -> None:
+        self.init("--no-entry")
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile["work"]["case"]["directory_naming"] = {"style": "nonsense-style"}
+        (self.root / PROFILE).write_text(json.dumps(profile, indent=2))
+        code, report = self.run_mode("check", "--required-only")
+        self.assertFalse(report["required_ok"], report["findings"])
+        self.assertEqual(code, 1)
+
+    def test_required_only_outside_check_is_refused(self) -> None:
+        self.init("--no-entry")
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT), "--project", str(self.root), "--mode", "case-naming", "--required-only"],
+            capture_output=True, text=True, check=False)
+        self.assertEqual(completed.returncode, 2)
 
 
 class CaseNamingTests(ScaffoldCase):

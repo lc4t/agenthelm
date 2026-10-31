@@ -505,8 +505,11 @@ class BackupAndAtomicityTests(unittest.TestCase):
                 "--confirm-discard", "AGENTS.md", "--recovery-dir", str(base / "recovery")]
         with mock.patch.dict(os.environ, {"HOME": str(base / "home")}), \
                 mock.patch.object(init_project.os, "replace", side_effect=flaky), \
-                self.assertRaises(OSError), contextlib.redirect_stdout(io.StringIO()):
-            init_project.main(argv)
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            code = init_project.main(argv)
+        self.assertEqual(code, 2, "写锁失败必须以 InitError 报错（退出码 2），不能抛出未包装的 OSError")
+        self.assertIn("injected failure", out.getvalue())
+        self.assertIn("重新运行", out.getvalue())
         return root, before
 
     def test_a_failure_while_writing_the_lock_loses_no_user_text_and_the_next_refresh_converges(self) -> None:
@@ -518,15 +521,36 @@ class BackupAndAtomicityTests(unittest.TestCase):
             self.assertEqual((code, result["blocked"]), (0, []), result)
             self.assertEqual({item["path"]: item["state"] for item in result["files"]}["AGENTS.md"], "unchanged")
 
-    @unittest.expectedFailure
     def test_a_failure_while_writing_the_lock_leaves_no_temporary_file(self) -> None:
-        # 已知缺口（见汇报“新问题草稿”）：写锁失败时 .content.lock.json.<pid>.tmp 留在项目里。
-        # 修好后这个用例会变成“意外成功”，届时去掉 expectedFailure。
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary).resolve()
             root, _before = self.refresh_failing_at_the_lock(base)
             strays = [p.name for p in root.rglob("*.tmp")]
             self.assertEqual(strays, [])
+
+    def test_a_failure_replacing_a_file_leaves_no_temporary_file_and_the_next_refresh_converges(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            (base / "home").mkdir()
+            root = base / "proj"
+            root.mkdir()
+            init_project_dir(Ctx(base=base, root=root), base / "home")
+            lock = json.loads(lock_path(root).read_text(encoding="utf-8"))
+            lock["packs"]["agents-init/project-contract"]["files"]["AGENTS.md"] = "0" * 64
+            lock_path(root).write_text(json.dumps(lock), encoding="utf-8")
+            (root / "AGENTS.md").write_text("我自己的规则\n", encoding="utf-8")
+            argv = ["--project", str(root), "--mode", "refresh", *BASE_ARGS, "--apply", "--accept", "AGENTS.md",
+                    "--confirm-discard", "AGENTS.md", "--recovery-dir", str(base / "recovery")]
+            with mock.patch.dict(os.environ, {"HOME": str(base / "home")}), \
+                    mock.patch.object(init_project.os, "replace", side_effect=OSError("injected failure")), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                code = init_project.main(argv)
+            self.assertEqual(code, 2)
+            self.assertEqual([p.name for p in root.rglob("*.tmp")], [])
+            self.assertEqual((root / "AGENTS.md").read_text(encoding="utf-8"), "我自己的规则\n")
+            code, result = cli(root, "refresh", "--apply", "--accept", "AGENTS.md", "--confirm-discard", "AGENTS.md",
+                               "--recovery-dir", str(base / "recovery2"), home=base / "home")
+            self.assertEqual((code, result["blocked"]), (0, []), result)
 
 
 if __name__ == "__main__":

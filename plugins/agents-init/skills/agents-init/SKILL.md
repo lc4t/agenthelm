@@ -91,7 +91,7 @@ python3 scripts/init_project.py ... --mode adopt --agents-policy append --claude
 已初始化的项目对照最新脚手架用 `--mode check`（只读）；其余模式默认只预览，`--apply` 才写入，已有文件不被覆盖，替换前自动备份：
 
 ```bash
-python3 scripts/init_project.py --project /path/to/project --mode check
+python3 scripts/init_project.py --project /path/to/project --mode check   # 退出码：有任何差异为 1；加 --required-only 则只有「需要处理」的发现为 1（与 agenthelm check 一致）
 python3 scripts/init_project.py --project /path/to/project --mode add-skeleton [--target docs/refs/README.md]
 python3 scripts/init_project.py --project /path/to/project --mode profile [--target runtime.commit_policy]
 python3 scripts/init_project.py --project /path/to/project --mode repair-lock

@@ -1273,6 +1273,11 @@ def _store(path: Path, table: dict, expect_sha: str | None, root: Path, scope: s
     module._atomic_write(path, text)
 
 
+def _same_decision(old: object, new: dict) -> bool:
+    """Whether a recorded decision already says what ``new`` says (``decided_at`` is not part of the content)."""
+    return isinstance(old, dict) and all(old.get(key) == new.get(key) for key in ("decision", "fingerprint", "reason"))
+
+
 def decide(root: Path, finding_id: str, decision: str, *, reason: str = "", fingerprint: str | None = None,
            scope: str | None = None, apply: bool = False, state_dir: Path | None = None) -> dict:
     """Record skip / keep / later for a finding. ``fingerprint`` defaults to the finding's current expectation."""
@@ -1292,11 +1297,15 @@ def decide(root: Path, finding_id: str, decision: str, *, reason: str = "", fing
     entry = {"decision": decision, "fingerprint": fingerprint, "decided_at": now_iso()}
     if reason:
         entry["reason"] = reason
+    unchanged = _same_decision(table.get(finding_id), entry)
+    if unchanged:
+        entry = table[finding_id]  # 内容没变：保留原 decided_at，不重写文件（同步盘里不产生无意义的冲突副本）
     table = {**table, finding_id: entry}
     result = {"ok": True, "mode": "decide", "applied": False, "id": finding_id, "scope": scope, "entry": entry,
               "file": DECISIONS_PATH.as_posix() if scope == "project" else str(path)}
     if apply:
-        _store(path, table, current_sha, root, scope)
+        if not unchanged:
+            _store(path, table, current_sha, root, scope)
         result["applied"] = True
     return result
 
@@ -1323,12 +1332,13 @@ def accept_current(root: Path, *, reason: str = "", apply: bool = False, state_d
     for finding in accepted:
         entry = {"decision": "keep", "fingerprint": finding["fingerprint"], "decided_at": stamp,
                  "reason": reason or ACCEPT_REASON}
-        entries[finding["id"]] = entry
+        entries[finding["id"]] = table[finding["id"]] if _same_decision(table.get(finding["id"]), entry) else entry
     result = {"ok": True, "mode": "accept-current", "applied": False, "count": len(entries),
               "entries": entries, "categories": summarize(accepted), "excluded": excluded,
               "already_decided": len(report["skipped"]), "file": DECISIONS_PATH.as_posix(), "reason": reason or ACCEPT_REASON}
     if apply and entries:
-        _store(path, {**table, **entries}, current_sha, root, "project")
+        if any(table.get(key) != entry for key, entry in entries.items()):
+            _store(path, {**table, **entries}, current_sha, root, "project")
         result["applied"] = True
     return result
 
@@ -1361,7 +1371,8 @@ def run_mode(args: Any, root: Path) -> tuple[int, dict]:
     if args.mode == "check":
         report = check(root, state_dir=state_dir, reprompt=args.reprompt)
         report["fingerprint"] = fingerprint(report)
-        return (0 if report["ok"] else 1), report
+        passed = report["required_ok"] if getattr(args, "required_only", False) else report["ok"]
+        return (0 if passed else 1), report
     if args.mode == "case-naming":
         return 0, case_naming_plan(root)
     if args.mode == "accept-current":

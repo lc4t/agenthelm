@@ -782,7 +782,8 @@ def render_inputs(inputs: Inputs) -> dict:
     """The inputs a project's template files were rendered with; with the pack version they rebuild the baseline."""
     return {"name": inputs.name, "slug": inputs.slug, "project_type": list(inputs.project_type), "vcs": inputs.vcs,
             "stack": list(inputs.stack), "runtime": inputs.runtime, "agent_cli": list(inputs.agent_cli),
-            "work_mode": inputs.work_mode, "entry_launcher": inputs.entry_launcher, "language": inputs.language}
+            "work_mode": inputs.work_mode, "entry_launcher": inputs.entry_launcher, "language": inputs.language,
+            "privacy_declared": inputs.privacy_declared}
 
 
 def write_content_lock(root: Path, pack: dict, baseline: dict[str, str], *, inputs: Inputs | None = None,
@@ -816,9 +817,7 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str], *, inpu
         updated["regions"] = dict(sorted(merged.items()))
     lock["packs"][pack["id"]] = updated
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json_text(lock), encoding="utf-8")
-    os.replace(temporary, path)
+    _atomic_write(path, json_text(lock))
 
 
 def _read_project_json(root: Path, relative: Path, label: str) -> dict:
@@ -942,7 +941,8 @@ def _inputs_from_lock(root: Path, recorded: object, fallback: Inputs) -> Inputs:
         return Inputs(root, str(recorded["name"]), str(recorded["slug"]), tuple(recorded["project_type"]), str(recorded["vcs"]),
                       tuple(recorded["stack"]), str(recorded["runtime"]), tuple(recorded["agent_cli"]),
                       str(recorded.get("work_mode") or "legacy"), recorded.get("entry_launcher") or None,
-                      str(recorded.get("language") or "zh"), fallback.privacy_declared)
+                      str(recorded.get("language") or "zh"),
+                      recorded["privacy_declared"] if isinstance(recorded.get("privacy_declared"), bool) else fallback.privacy_declared)
     except (KeyError, TypeError):
         return fallback
 
@@ -1231,11 +1231,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         if item["action"] in {"replace", "create"}:
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
-            temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-            temporary.write_text(rendered[relative], encoding="utf-8")
-            if relative == Path(inputs.entry_launcher or "\0"):
-                temporary.chmod(0o755)
-            os.replace(temporary, target)
+            _atomic_write(target, rendered[relative], 0o755 if relative == Path(inputs.entry_launcher or "\0") else None)
         elif item["action"] == "merge":
             target = root / relative
             _atomic_write(target, merged_texts[relative], os.stat(target).st_mode & 0o7777)
@@ -1269,9 +1265,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     lock.setdefault("packs", {})[pack["id"]] = new_entry
     lock_path = root / CONTENT_LOCK_PATH
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = lock_path.with_name(f".{lock_path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json_text(lock), encoding="utf-8")
-    os.replace(temporary, lock_path)
+    _atomic_write(lock_path, json_text(lock))
     # 显式 --keep / --append 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
     for item in plan:
         chosen_keep = Path(item["path"]) in (keep | append) or item["action"] in {"append", "merge"}
@@ -1297,11 +1291,20 @@ def _adopt():
 
 
 def _atomic_write(path: Path, text: str, mode: int | None = None) -> None:
+    """Write ``text`` through a temporary file and ``os.replace``; a failure removes the temporary and raises InitError."""
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(text, encoding="utf-8")
-    if mode is not None:
-        temporary.chmod(mode)
-    os.replace(temporary, path)
+    try:
+        temporary.write_text(text, encoding="utf-8")
+        if mode is not None:
+            temporary.chmod(mode)
+        os.replace(temporary, path)
+    except OSError as exc:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise InitError(_("写入 {0} 失败，临时文件已清理：{1}。已写好的文件与备份保持一致，排除原因后重新运行同一条命令即可继续").format(
+            path.name, exc), code="write-failed") from exc
 
 
 def readme_plan(root: Path, name: str, launcher: str | None, language: str = "zh") -> dict | None:
@@ -1468,6 +1471,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--reason", help=_("decide / accept-current：理由（建议写，随项目同步）"))
     result.add_argument("--fingerprint", help=_("decide：期望指纹（缺省取该发现当前的指纹）"))
     result.add_argument("--reprompt", action="store_true", help=_("check：忽略已记录的决定，重新评估全部发现"))
+    result.add_argument("--required-only", action="store_true", dest="required_only",
+                        help=_("check：退出码只看「需要处理」的发现（与 agenthelm check 一致）；缺省「可选」差异也使退出码为 1"))
     result.add_argument("--state-dir", type=Path, help=_("机器本地决定的状态目录（缺省 $XDG_STATE_HOME 或 ~/.local/state）"))
     result.add_argument("--entry-name", help=_("根目录启动器文件名（init 缺省 {0}；entry 模式必填）").format(DEFAULT_ENTRY))
     result.add_argument("--no-entry", action="store_true", help=_("init：不生成根目录启动器"))
@@ -1521,6 +1526,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         root = validate_root(args.project)
+        if args.required_only and args.mode != "check":
+            raise InitError(_("--required-only 只用于 --mode check"))
         if args.mode == "scan":
             placeholder = Inputs(root, args.name or root.name, "project", tuple(args.project_type or ("code",)),
                                  args.vcs or "git", tuple(args.stack or ("unknown",)), args.runtime or "local",

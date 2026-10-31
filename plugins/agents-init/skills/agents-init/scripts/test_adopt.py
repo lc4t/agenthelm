@@ -326,6 +326,36 @@ class AdoptRootsTests(AdoptCase):
                 self.assertEqual(done.returncode, 2, done.stdout)
 
 
+class AdoptSymlinkedRootTests(AdoptCase):
+    def test_a_symlinked_memory_directory_is_refused_with_a_hint_naming_the_link_and_the_ways_out(self) -> None:
+        self.messy_project()
+        _shutil.rmtree(self.root / "memory", ignore_errors=True)
+        target = self.root.parent / "shared-memory"
+        target.mkdir()
+        (self.root / "memory").symlink_to(target)
+        done = self.cmd("adopt", "--apply")
+        self.assertEqual(done.returncode, 2, done.stdout)
+        message = json.loads(done.stdout)["error"]
+        self.assertIn("符号链接", message)
+        self.assertIn(str(target), message)
+        self.assertIn("绝对路径", message)
+        self.assertIn("--memory-root", message)
+        self.assertNotIn("同名文件", message)
+        self.assertEqual(list(target.iterdir()), [], "拒绝时不碰链接目标")
+
+    def test_a_relative_symlink_is_reported_as_relative(self) -> None:
+        self.messy_project()
+        _shutil.rmtree(self.root / "cases", ignore_errors=True)
+        (self.root.parent / "elsewhere").mkdir()
+        (self.root / "cases").symlink_to("../elsewhere")
+        done = self.cmd("adopt", "--apply")
+        self.assertEqual(done.returncode, 2, done.stdout)
+        message = json.loads(done.stdout)["error"]
+        self.assertIn("相对路径", message)
+        self.assertIn("../elsewhere", message)
+        self.assertIn("--case-root", message)
+
+
 class AdoptAppendTests(AdoptCase):
     def test_changing_a_user_file_backs_up_to_the_default_folder(self) -> None:
         self.messy_project()
