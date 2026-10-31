@@ -269,5 +269,18 @@
  "绝对路径": "absolute path",
  "相对路径": "relative path",
  "check：退出码只看「需要处理」的发现（与 agenthelm check 一致）；缺省「可选」差异也使退出码为 1": "check: the exit code looks only at findings that must be handled (same as agenthelm check); by default optional differences also give exit code 1",
- "--required-only 只用于 --mode check": "--required-only applies only to --mode check"
+ "--required-only 只用于 --mode check": "--required-only applies only to --mode check",
+ "已应用": "Applied",
+ "仅预览": "Dry-run",
+ "已阻塞": "Blocked",
+ "新建": "create",
+ "替换": "replace",
+ "保留": "preserve",
+ "  已阻塞 [{0}] {1}": "  blocked [{0}] {1}",
+ "  说明：{0}": "  note: {0}",
+ "{0}：入口 ./{1}": "{0}: entry ./{1}",
+ "{0}：{1}（来自 {2}）": "{0}: {1} (from {2})",
+ "{0}：新建 {1}，替换 {2}，保留冲突 {3}": "{0}: {1} create, {2} replace, {3} preserved collisions",
+ "  跳过 {0}（父目录是符号链接）": "  skip {0} (symlinked parent)",
+ "  退役 {0}（已升级进 {1}）": "  retire {0} (upgraded into {1})"
 }
