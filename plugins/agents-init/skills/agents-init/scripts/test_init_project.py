@@ -1160,3 +1160,42 @@ class PrivacyConventionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenderInputsPrivacyTests(unittest.TestCase):
+    """内容锁的 render_inputs 记录当时是否声明了隐私约定；旧锁没有这个字段时仍按双取值兜底。"""
+
+    def inputs(self, declared: bool) -> init_project.Inputs:
+        return init_project.Inputs(Path("/p"), "N", "n", ("notes",), "none", ("none",), "local", ("none",), "case-workspace",
+                                   None, "zh", declared)
+
+    def test_the_field_is_recorded_for_both_values(self) -> None:
+        for declared in (True, False):
+            self.assertEqual(init_project.render_inputs(self.inputs(declared))["privacy_declared"], declared)
+
+    def test_recorded_value_wins_over_the_current_profile_and_an_old_lock_falls_back(self) -> None:
+        recorded = init_project.render_inputs(self.inputs(False))
+        current = self.inputs(True)
+        self.assertFalse(init_project._inputs_from_lock(Path("/p"), recorded, current).privacy_declared)
+        old = {key: value for key, value in recorded.items() if key != "privacy_declared"}
+        self.assertTrue(init_project._inputs_from_lock(Path("/p"), old, current).privacy_declared)
+        junk = {**recorded, "privacy_declared": "yes"}
+        self.assertTrue(init_project._inputs_from_lock(Path("/p"), junk, current).privacy_declared)
+
+    def test_baseline_is_found_for_a_lock_with_and_without_the_field_whatever_the_profile_says_now(self) -> None:
+        templates = init_project.load_templates()
+        for rendered_with in (True, False):
+            inputs = self.inputs(rendered_with)
+            text = init_project.files_for(inputs, templates)[Path("AGENTS.md")]
+            digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            source = mock.Mock(kind="pack", label="t", version="1.0.0", launcher=None,
+                               template=init_project.TEMPLATE_PATH.read_text(encoding="utf-8"))
+            for with_field in (True, False):
+                recorded = init_project.render_inputs(inputs)
+                if not with_field:
+                    recorded.pop("privacy_declared")
+                for now in (True, False):
+                    found = init_project.find_baseline(Path("/p"), Path("AGENTS.md"), digest, ["1.0.0"], recorded,
+                                                       self.inputs(now), [lambda *_a, **_k: [source]], "x")
+                    self.assertIsNotNone(found, (rendered_with, with_field, now))
+                    self.assertEqual(found["text"], text)

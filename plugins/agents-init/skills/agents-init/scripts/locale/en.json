@@ -263,5 +263,11 @@
  "你的版本": "your version",
  "基线": "baseline",
  "新模板": "new template",
- "      冲突块 {0}：": "      Conflict block {0}:"
+ "      冲突块 {0}：": "      Conflict block {0}:",
+ "写入 {0} 失败，临时文件已清理：{1}。已写好的文件与备份保持一致，排除原因后重新运行同一条命令即可继续": "Writing {0} failed and the temporary file was removed: {1}. Files already written and their backups stay consistent; fix the cause and rerun the same command to continue",
+ "{0}：{1} 是符号链接（{2}，指向 {3}），出于安全不跟随符号链接。可以用 {4} 另设一个真实目录，或确认链接目标无误后自行把它换成真实目录再重试": "{0}: {1} is a symbolic link ({2}, pointing to {3}); symbolic links are not followed for safety. Use {4} to choose a real directory elsewhere, or confirm the link target and replace it with a real directory yourself, then retry",
+ "绝对路径": "absolute path",
+ "相对路径": "relative path",
+ "check：退出码只看「需要处理」的发现（与 agenthelm check 一致）；缺省「可选」差异也使退出码为 1": "check: the exit code looks only at findings that must be handled (same as agenthelm check); by default optional differences also give exit code 1",
+ "--required-only 只用于 --mode check": "--required-only applies only to --mode check"
 }
