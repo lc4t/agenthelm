@@ -374,7 +374,8 @@ class ScheduleTests(SopTestCase):
         self.assertEqual([row["id"] for row in due["due"]], ["weekly-review"])
         code, run = self.run_sop("run", "weekly-review", "--apply")
         self.assertEqual(code, 0, run)
-        with mock.patch.object(sop, "today", return_value=date.today() + timedelta(days=1)):
+        # 样例是 weekly:sun：用“执行当天”判断，避免在周六（次日恰为周日）时必然到期。
+        with mock.patch.object(sop, "today", return_value=date.today()):
             _, due = self.run_sop("due")
         self.assertEqual(due["due"], [])
         self.assertEqual(due["schedules"][0]["last_run"], date.today().isoformat())
