@@ -1005,7 +1005,11 @@ def _refresh_notes(item: dict) -> list[str]:
         merge = item["merge"]
         notes.append(_("三方合并：新模板的变化已并入你的版本（自动合并 {0} 处，冲突 {1} 处均已选择；基线取自 {2}）；写入前先备份").format(
             merge["auto_hunks"], len(merge["conflicts"]), merge["source"]))
-    if reason == "no-baseline":
+    if reason == "symlink":
+        notes.append(_("{0} 是指向 {1} 的符号链接，refresh 不跟随链接改写，保留原样").format(path, item.get("link")))
+        if item["action"] == "blocked":
+            notes.append(_("确认后用 --keep {0} 记为保留（之后不再追问）；要让模板接管请先把它换成普通文件").format(path))
+    elif reason == "no-baseline":
         notes.append(_("内容锁里没有它的基线（早期版本初始化的项目），无法判断是你改过还是模板变了；建议先保留你的版本：--keep {0}").format(path))
     elif reason == "edited":
         notes.append(_("你改过这个文件，新模板也变了"))
@@ -1025,6 +1029,26 @@ def _refresh_notes(item: dict) -> list[str]:
     if reason == "already-present":
         notes.append(_("已经导入或带有这个区块，无需追加"))
     return notes
+
+
+def _symlink_item(path: Path, relative: Path, new: str, new_digest: str, keep: set[Path], kept_before: dict) -> dict:
+    """A tracked file that is a symbolic link: never written through. Same text as the new render → unchanged;
+    kept explicitly or by an earlier decision → keep; otherwise blocked until the user says --keep."""
+    link = os.readlink(path)
+    try:
+        resolved = path.read_text(encoding="utf-8") if path.is_file() else None
+    except (OSError, UnicodeDecodeError):
+        resolved = None
+    if resolved is not None and hashlib.sha256(resolved.encode("utf-8")).hexdigest() == new_digest:
+        state, action, reason = "unchanged", "keep", None
+    elif relative in keep or kept_before.get(relative.as_posix()) == new_digest:
+        state, action, reason = "symlink", "keep", "symlink"
+    else:
+        state, action, reason = "symlink", "blocked", "symlink"
+    item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest, "link": link}
+    if reason:
+        item["reason"] = reason
+    return item
 
 
 def _parse_picks(values: list[str], merge: set[Path]) -> dict[Path, dict[int, str]]:
@@ -1097,7 +1121,16 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         new_digest = hashlib.sha256(new.encode("utf-8")).hexdigest()
         path = root / relative
         if path.is_symlink():
-            raise InitError(f"refusing symlinked file: {relative}")
+            # 契约文件是符号链接（常见：CLAUDE.md → AGENTS.md）：refresh 不跟随链接改写，逐项处置，不拖垮其他文件。
+            if relative in accept | append | merge:
+                raise InitError(_("{0} 是指向 {1} 的符号链接，refresh 不跟随链接改写，不能用 --accept / --append / --merge；"
+                                  "要保留请用 --keep {0}，要让模板接管请先把它换成普通文件").format(relative, os.readlink(path)))
+            item = _symlink_item(path, relative, new, new_digest, keep, kept_before)
+            if relative in show_diff:
+                item["diff"] = ""
+            item["note"] = _refresh_notes(item)
+            plan.append(item)
+            continue
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
         added, lost = line_delta(current or "", new)
@@ -1223,7 +1256,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         result["diffs"] = {path.as_posix(): next(item["diff"] for item in plan if item["path"] == path.as_posix()) for path in sorted(show_diff)}
     if blocked:
         hints = []
-        if any(item.get("reason") in {"no-baseline", "edited", "baseline-unavailable"} for item in plan if item["action"] == "blocked"):
+        if any(item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "symlink"} for item in plan if item["action"] == "blocked"):
             hints.append(_("本地已改动的文件需逐个选择：--keep <文件> 保留你的版本（建议）；--append <文件> 保留并追加带标记的区块（仅 AGENTS.md / CLAUDE.md）；"
                            "--accept <文件> 用新模板替换（先备份，会丢弃本地内容，需再加 --confirm-discard <文件>）；--diff <文件> 先看差异"))
         if any(item.get("reason") == "discard-unconfirmed" for item in plan):
@@ -1281,7 +1314,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     # 显式 --keep / --append 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
     for item in plan:
         chosen_keep = Path(item["path"]) in (keep | append) or item["action"] in {"append", "merge"}
-        if chosen_keep and item["state"] in {"modified", "local-only", "kept-by-decision"}:
+        if chosen_keep and item["state"] in {"modified", "local-only", "kept-by-decision", "symlink"}:
             _scaffold().decide(root, f"content:{item['path']}", "keep",
                                reason=("refresh --append: kept the local file and appended a managed region" if item["action"] == "append"
                                        else "refresh --merge: merged the local edits with the new template" if item["action"] == "merge"
