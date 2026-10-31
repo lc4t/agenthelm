@@ -269,5 +269,8 @@
  "绝对路径": "absolute path",
  "相对路径": "relative path",
  "check：退出码只看「需要处理」的发现（与 agenthelm check 一致）；缺省「可选」差异也使退出码为 1": "check: the exit code looks only at findings that must be handled (same as agenthelm check); by default optional differences also give exit code 1",
- "--required-only 只用于 --mode check": "--required-only applies only to --mode check"
+ "--required-only 只用于 --mode check": "--required-only applies only to --mode check",
+ "{0} 是指向 {1} 的符号链接，refresh 不跟随链接改写，不能用 --accept / --append / --merge；要保留请用 --keep {0}，要让模板接管请先把它换成普通文件": "{0} is a symbolic link to {1}; refresh does not write through links, so --accept / --append / --merge cannot be used on it. Use --keep {0} to keep it, or replace it with a regular file first to let the template take over",
+ "{0} 是指向 {1} 的符号链接，refresh 不跟随链接改写，保留原样": "{0} is a symbolic link to {1}; refresh does not write through links and leaves it as it is",
+ "确认后用 --keep {0} 记为保留（之后不再追问）；要让模板接管请先把它换成普通文件": "Once confirmed, record it with --keep {0} (it will not be asked about again); to let the template take over, replace it with a regular file first"
 }

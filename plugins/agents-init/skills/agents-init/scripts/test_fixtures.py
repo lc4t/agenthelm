@@ -95,6 +95,10 @@ def cli(root: Path, mode: str, *extra: str, state: Path | None = None, home: Pat
         return done.returncode, {"raw": done.stdout, "stderr": done.stderr}
 
 
+def fx_sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 # ------------------------------------------------------------------ 夹具
 
 
@@ -551,6 +555,75 @@ class BackupAndAtomicityTests(unittest.TestCase):
             code, result = cli(root, "refresh", "--apply", "--accept", "AGENTS.md", "--confirm-discard", "AGENTS.md",
                                "--recovery-dir", str(base / "recovery2"), home=base / "home")
             self.assertEqual((code, result["blocked"]), (0, []), result)
+
+class SymlinkedContractFileTests(unittest.TestCase):
+    """CLAUDE.md 是指向 AGENTS.md 的符号链接（常见做法）：只有这一项被单独处置，其余文件照常更新。"""
+
+    def prepared(self, base: Path) -> tuple[Path, Path]:
+        (base / "home").mkdir()
+        root = base / "proj"
+        root.mkdir()
+        init_project_dir(Ctx(base=base, root=root), base / "home")
+        old = "旧版本的契约\n"
+        (root / "AGENTS.md").write_text(old, encoding="utf-8")
+        lock = json.loads(lock_path(root).read_text(encoding="utf-8"))
+        lock["packs"]["agents-init/project-contract"]["files"]["AGENTS.md"] = fx_sha(old)
+        lock_path(root).write_text(json.dumps(lock), encoding="utf-8")
+        (root / "CLAUDE.md").unlink()
+        (root / "CLAUDE.md").symlink_to("AGENTS.md")
+        return root, base / "home"
+
+    def test_the_symlink_is_blocked_on_its_own_and_the_rest_is_planned(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root, home = self.prepared(Path(temporary).resolve())
+            before = tree(root)
+            code, result = cli(root, "refresh", home=home)
+            self.assertEqual(code, 1, result)
+            items = {item["path"]: item for item in result["files"]}
+            self.assertEqual((items["CLAUDE.md"]["action"], items["CLAUDE.md"]["reason"]), ("blocked", "symlink"))
+            self.assertIn("符号链接", " ".join(items["CLAUDE.md"]["note"]))
+            self.assertIn("AGENTS.md", " ".join(items["CLAUDE.md"]["note"]))
+            self.assertEqual(items["AGENTS.md"]["action"], "replace")
+            self.assertEqual(result["blocked"], ["CLAUDE.md"])
+            self.assertEqual(changed(before, tree(root)), [], "预览不写任何东西")
+
+    def test_keep_updates_the_other_files_leaves_the_link_alone_and_is_remembered(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root, home = self.prepared(base)
+            code, result = cli(root, "refresh", "--keep", "CLAUDE.md", "--apply", "--recovery-dir", str(base / "rec"), home=home)
+            self.assertEqual((code, result["applied"]), (0, True), result)
+            self.assertTrue((root / "CLAUDE.md").is_symlink())
+            self.assertEqual(os.readlink(root / "CLAUDE.md"), "AGENTS.md")
+            self.assertNotEqual((root / "AGENTS.md").read_text(encoding="utf-8"), "旧版本的契约\n")
+            self.assertEqual((base / "rec/AGENTS.md").read_text(encoding="utf-8"), "旧版本的契约\n")
+            self.assertEqual([p.name for p in root.rglob("*.tmp")], [])
+            table = json.loads((root / ".agents/moe.sakanano.agent-pack/check-decisions.json").read_text(encoding="utf-8"))
+            self.assertEqual(table["decisions"]["content:CLAUDE.md"]["decision"], "keep")
+            code, again = cli(root, "refresh", home=home)
+            self.assertEqual((code, again["blocked"]), (0, []), again)
+
+    def test_accept_append_and_merge_on_a_symlink_are_refused_with_an_explanation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root, home = self.prepared(Path(temporary).resolve())
+            before = tree(root)
+            for flag in ("--accept", "--append", "--merge"):
+                with self.subTest(flag=flag):
+                    code, result = cli(root, "refresh", flag, "CLAUDE.md", home=home)
+                    self.assertEqual(code, 2, result)
+                    self.assertIn("符号链接", result["error"])
+                    self.assertIn("--keep CLAUDE.md", result["error"])
+            self.assertEqual(changed(before, tree(root)), [])
+
+    def test_a_link_whose_target_already_matches_the_template_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root, home = self.prepared(base)
+            rendered = init_project.files_for(init_project.inputs_from_profile(root))[Path("CLAUDE.md")]
+            (root / "AGENTS.md").write_text(rendered, encoding="utf-8")
+            code, result = cli(root, "refresh", home=home)
+            items = {item["path"]: item for item in result["files"]}
+            self.assertEqual(items["CLAUDE.md"]["state"], "unchanged", result)
 
 
 if __name__ == "__main__":
