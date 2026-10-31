@@ -19,6 +19,8 @@ description: Deterministically inventory, verify, install, sync, migrate and rec
 
 `runtime/agenthelm.py` 另有两个面向人的入口：`project` 转交 project-orchestrator 的项目入口（不需要 AI Agent）；`runtime install|update|use|status` 管理用户级运行时（`~/.local/share/agenthelm/`，项目根目录的启动器优先使用它），写操作默认预览、`--apply` 才执行，新版本装在旁边、旧版本保留。
 
+`agenthelm config` 管理用户级设置（`~/.config/agenthelm/config.json`），默认只预览，`--apply` 才写入，只改要改的键，替换前备份原文件：`config show` 显示生效的设置；`config language zh|en|auto` 设置界面语言（命令行输出用哪种语言，不改动项目文件）；`config language-hint on|off` 开关“界面语言未设置”的提示；`config project-language zh|en [--project <目录>]` 设置当前项目的文件语言（Profile 的 `language`，写进项目的文件用哪种语言；只改 Profile）。没有任何地方指定界面语言时，`agenthelm check` 与会话开始的提示会说明当前语言从哪来并给出命令，已有项目没有 `language` 时 `check` 也会说明。两种语言的区别要向用户讲清楚：界面语言只影响屏幕上的文字，项目文件语言随项目同步。
+
 ## 执行顺序
 
 1. 盘点来源与目标（`inventory --source project:/path | plugin:/path | client:codex | client:cursor | client:claude`）；

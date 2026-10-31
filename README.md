@@ -136,7 +136,11 @@ npx @sakanano-moe/agenthelm check --show-skipped       # 列出被跳过的项�
 
 ## 界面语言
 
-命令行输出、菜单、`--help` 与错误信息有中文和英文两种，**默认英文**。按这个顺序决定：环境变量 `AGENTHELM_LANG`（`zh` / `en`）→ `~/.config/agenthelm/config.json` 的 `{"language": "zh"}` → 系统 locale（中文 locale 用中文）→ 英文。要继续看中文：`export AGENTHELM_LANG=zh`。
+命令行输出、菜单、`--help` 与错误信息有中文和英文两种，**默认英文**。按这个顺序决定：环境变量 `AGENTHELM_LANG`（`zh` / `en`）→ `~/.config/agenthelm/config.json` 的 `{"language": "zh"}` → 系统 locale（中文 locale 用中文）→ 英文。要继续看中文：`export AGENTHELM_LANG=zh`，或 `agenthelm config language zh --apply`（写入用户配置，其余设置原样保留，原文件先备份；不带 `--apply` 只预览）。
+
+**两种语言互不相干**：*界面语言*决定命令输出用哪种语言，只影响屏幕上的文字；*项目文件语言*决定写进项目的文件（Case 小节名、README 追加的说明、SOP）用哪种语言，是 Profile 顶层的 `language`，随项目同步。
+
+没有任何地方指定界面语言（没有环境变量、用户配置里没有 `language`）时，`agenthelm check` 和会话开始的提示会说明当前语言从哪来，并给出设置命令；已有项目的 Profile 没有 `language` 时，`check` 说明写进项目的文件按中文生成，`agenthelm config project-language en`（预览，`--apply` 写入，只改 Profile、不改写已有文件）可以改。这些提示不改变退出码和“是否最新”，`agenthelm config language-hint off` 永久关闭。`agenthelm config show` 显示生效的设置。
 
 - 机器可读输出（`--output json` 的字段与结构、退出码）不随语言变化；解析文字输出的脚本请改用 `--output json`。
 - 界面语言不改动项目文件。Case 的小节名与 README 追加的“怎样使用”由项目文件语言决定：Profile 顶层 `language`（`zh` | `en`，缺省 `zh`），`agents-init --language {auto,zh,en}` 在初始化时设置，`auto` 取当时的界面语言。SOP 的小节名与字段名也按它生成（`sop new --language` 可单独指定）。OPINION.md 与锁、记忆索引等其余内容仍为中文，所以两种语言下指纹与决定文件一致。

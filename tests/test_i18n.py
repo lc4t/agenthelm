@@ -388,6 +388,53 @@ class EnglishOutputTests(unittest.TestCase):
         appended = self.run_command(*base, "--mode", "refresh", "--append", "AGENTS.md", "--apply")
         self.assertEnglish(appended, "refresh --append")
 
+    def test_the_language_hint_and_config_command_speak_english(self) -> None:
+        """#35：没有任何语言配置时的提示、agenthelm config 各子命令、项目文件语言的预览，英文下没有漏翻的中文。"""
+        project = Path(self.directory.name) / "project"
+        project.mkdir()
+        init = PLUGINS / "agents-init/skills/agents-init/scripts/init_project.py"
+        self.run_command(str(init), "--project", str(project), "--name", "Notes", "--project-type", "study", "--vcs", "none",
+                         "--stack", "none", "--runtime", "local", "--agent-cli", "none", "--no-entry", "--apply", expect=(0,))
+        profile = project / ".agents/moe.sakanano.agent-pack/project.json"
+        data = json.loads(profile.read_text(encoding="utf-8"))
+        data.pop("language")
+        profile.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        latest = Path(self.directory.name) / "latest.json"
+        manifest = json.loads((PLUGINS / "agents-init/plugin.json").read_text(encoding="utf-8"))
+        pack = json.loads((PLUGINS / "agents-init/content.json").read_text(encoding="utf-8"))["packs"][0]
+        latest.write_text(json.dumps({"schema": 1, "marketplace": "agenthelm", "released_at": "2026-10-31", "migrations": [],
+                                      "plugins": {"agents-init": {"version": manifest["version"], "content": {
+                                          pack["id"]: {"version": pack["version"], "kind": "template"}}}}}), encoding="utf-8")
+        # Nothing sets the language: no AGENTHELM_LANG, no config file, a locale that is not Chinese.
+        unset = {key: value for key, value in self.environment.items() if key != "AGENTHELM_LANG"}
+        unset["LANG"] = "C"
+
+        def run(*arguments: str) -> subprocess.CompletedProcess:
+            completed = subprocess.run([sys.executable, str(AGENTHELM), *arguments], capture_output=True, text=True, env=unset,
+                                       timeout=120, check=False)
+            self.assertIn(completed.returncode, (0, 1), completed.stderr)
+            return completed
+
+        checked = run("check", "--project", str(project), "--latest", str(latest))
+        self.assertIn("The interface language is not set; it is currently English (from the default).", checked.stdout)
+        self.assertIn("project-language en", checked.stdout)
+        steps = [
+            ["check", "--project", str(project), "--latest", str(latest)],
+            ["config", "show"],
+            ["config", "language", "zh"],
+            ["config", "language", "en", "--apply"],  # once written, output follows the new setting at once
+            ["config", "language", "zh"],
+            ["config", "language-hint", "off"],
+            ["config", "project-language", "en", "--project", str(project)],
+            ["config", "project-language", "en", "--project", str(project), "--apply"],
+            ["config", "project-language", "en", "--project", str(project)],
+            ["config", "--help"],
+        ]
+        for step in steps:
+            done = run(*step)
+            self.assertEnglish(done, " ".join(step[:3]))
+        self.assertEqual(json.loads(profile.read_text(encoding="utf-8"))["language"], "en")
+
     def test_sop_commands_speak_english(self) -> None:
         """英文项目里 SOP 的命令输出、SOP.md 与执行 Case 全程没有中文（SOP 文件语言跟项目的 language）。"""
         project = Path(self.directory.name) / "sop-project"

@@ -1241,7 +1241,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--runtime")
     result.add_argument("--agent-cli", type=split_csv)
     result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry", "check", "add-skeleton", "profile",
-                                           "repair-lock", "decide", "case-naming", "scan", "adopt", "region"),
+                                           "repair-lock", "decide", "case-naming", "scan", "adopt", "region", "language"),
                         default="init",
                         help=_("refresh：内容包更新后按 Profile 重新渲染已跟踪的模板文件；"
                              "entry：为已初始化的项目补上根目录启动器与 Profile 的 entry 段；"
@@ -1250,7 +1250,8 @@ def parser() -> argparse.ArgumentParser:
                              "decide：记录或撤销对某个发现的决定；case-naming：只输出 Case 目录改名计划与受影响的引用，不移动任何目录；"
                              "scan：只读，扫描已有内容与骨架的冲突并给出选项和推荐；"
                              "adopt：接管非空目录（已有文件原样保留，只补骨架；改动已有文件须显式选择并备份）；"
-                             "region：更新受管区块（--accept / --keep <文件>#<区块ID>）"))
+                             "region：更新受管区块（--accept / --keep <文件>#<区块ID>）；"
+                             "language：只把 Profile 的 language 设为 --language zh|en（项目文件语言；默认预览，先备份，不改写任何已有文件）"))
     result.add_argument("--target", action="append", default=[],
                         help=_("add-skeleton：骨架路径；profile：字段；decide：发现 ID（可重复；省略则处理全部可处理项）"))
     result.add_argument("--decision", choices=("skip", "keep", "later", "unskip"), help=_("decide：决定；unskip 撤销"))
@@ -1323,7 +1324,7 @@ def main(argv: list[str] | None = None) -> int:
                                                       recovery_dir=args.recovery_dir, state_dir=args.state_dir)
             print(json_text(result), end="") if args.output == "json" else print(_scaffold().render_text(result), end="")
             return code
-        if args.mode in ("check", "add-skeleton", "profile", "repair-lock", "decide", "case-naming"):
+        if args.mode in ("check", "add-skeleton", "profile", "repair-lock", "decide", "case-naming", "language"):
             scaffold = _scaffold()
             code, result = scaffold.run_mode(args, root)
             print(json_text(result), end="") if args.output == "json" else print(scaffold.render_text(result), end="")

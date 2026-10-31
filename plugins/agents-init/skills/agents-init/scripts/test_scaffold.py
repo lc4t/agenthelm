@@ -348,6 +348,49 @@ class ProfileTests(ScaffoldCase):
         self.assertEqual(caught.exception.code, "recovery-unavailable")
         self.assertEqual((self.root / PROFILE).read_bytes(), before)
 
+    def test_check_reports_whether_the_project_declares_its_file_language(self) -> None:
+        self.init("--no-entry", "--language", "en")
+        self.assertEqual(self.check()["project_language"], {"declared": "en", "effective": "en"})
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile.pop("language")
+        (self.root / PROFILE).write_text(json.dumps(profile, indent=2))
+        self.assertEqual(self.check()["project_language"], {"declared": None, "effective": "zh"})
+
+    def test_language_mode_sets_only_the_language_after_a_backup(self) -> None:
+        self.init("--no-entry")
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile.pop("language")
+        profile["custom"] = {"anything": 1}
+        (self.root / PROFILE).write_text(json.dumps(profile, indent=2))
+        before = (self.root / PROFILE).read_text()
+        files_before = snapshot(self.root)
+        preview = scaffold.set_project_language(self.root, "en")
+        self.assertEqual((preview["applied"], preview["changed"], preview["from"]), (False, True, None))
+        self.assertIn('+  "language": "en"', preview["diff"])
+        self.assertEqual(snapshot(self.root), files_before)  # a preview writes nothing
+        applied = scaffold.set_project_language(self.root, "en", apply=True, recovery_dir=self.recovery)
+        self.assertTrue(applied["applied"])
+        updated = json.loads((self.root / PROFILE).read_text())
+        self.assertEqual(updated["language"], "en")
+        self.assertEqual(list(updated)[:5], ["$schema", "schema_version", "initializer_version", "name", "language"])
+        self.assertEqual({key: value for key, value in updated.items() if key != "language"},
+                         {key: value for key, value in json.loads(before).items()})
+        after = snapshot(self.root)
+        self.assertEqual({path for path in after if after[path] != files_before.get(path)}, {PROFILE.as_posix()})  # no other file moved
+        self.assertEqual((self.recovery / PROFILE).read_text(), before)
+        again = scaffold.set_project_language(self.root, "en", apply=True, recovery_dir=self.recovery / "unused")
+        self.assertEqual((again["changed"], again["applied"]), (False, False))
+        with self.assertRaises(init_project.InitError):
+            scaffold.set_project_language(self.root, "fr")
+
+    def test_language_mode_through_the_command_line(self) -> None:
+        self.init("--no-entry", "--language", "zh")
+        code, preview = self.run_mode("language", "--language", "en")
+        self.assertEqual((code, preview["changed"], preview["applied"]), (0, True, False))
+        code, applied = self.run_mode("language", "--language", "en", "--recovery-dir", str(self.recovery), "--apply")
+        self.assertEqual((code, applied["applied"]), (0, True), applied)
+        self.assertEqual(json.loads((self.root / PROFILE).read_text())["language"], "en")
+
     def test_project_own_fields_are_listed_but_never_flagged(self) -> None:
         self.init("--no-entry")
         profile = json.loads((self.root / PROFILE).read_text())

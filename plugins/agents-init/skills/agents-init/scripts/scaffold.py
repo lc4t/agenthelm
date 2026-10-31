@@ -705,10 +705,50 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
 
     decisions = load_decisions(root, state_dir)
     active, skipped = partition(findings, decisions, reprompt=reprompt)
+    declared = ctx.profile.get("language") if ctx.profile.get("language") in ("zh", "en") else None
     return {"ok": not active, "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
+            "project_language": {"declared": declared, "effective": declared or "zh"},
             "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras, "findings": active, "skipped": skipped,
             "decisions": {"path": DECISIONS_PATH.as_posix(), "errors": decisions["errors"],
                           "conflict_copies": decisions["conflict_copies"], "local_path": decisions["local_path"]}}
+
+
+# ---------------------------------------------------------------- project file language
+
+def set_project_language(root: Path, language: str, *, apply: bool = False, recovery_dir: Path | None = None) -> dict:
+    """Write the Profile's top-level ``language`` (the language of files the tool writes into the project).
+
+    Nothing else in the Profile changes and no existing project file is rewritten; the Profile itself is copied to the
+    recovery folder first. It is separate from the interface language, which only affects what commands print.
+    """
+    module = _init()
+    if language not in ("zh", "en"):
+        raise _fail(_("项目文件语言只能是 zh 或 en（用 --language 指定）"))
+    profile = module._read_project_json(root, module.PROFILE_PATH, "Project Profile")
+    if "language" in profile:
+        updated = {**profile, "language": language}  # keeps its place
+    else:
+        updated = {}
+        for key, value in profile.items():  # a new key goes right after "name", where init puts it
+            updated[key] = value
+            if key == "name":
+                updated["language"] = language
+        updated["language"] = language
+    changed = updated != profile
+    result = {"ok": True, "mode": "language", "applied": False, "language": language,
+              "from": profile.get("language") if profile.get("language") in ("zh", "en") else None, "changed": changed,
+              "diff": module._unified_diff(module.PROFILE_PATH.as_posix(), module.json_text(profile),
+                                           module.json_text(updated)) if changed else ""}
+    if not apply or not changed:
+        return result
+    if module._read_project_json(root, module.PROFILE_PATH, "Project Profile") != profile:
+        raise _fail(_("Profile 刚被改过，请重新预览"), "conflict")
+    recovery, defaulted = module.prepare_recovery_dir(root, recovery_dir, "language")
+    result.update(recovery=_backup(root, recovery, module.PROFILE_PATH), recovery_default=defaulted,
+                  recovery_files=[module.PROFILE_PATH.as_posix()])
+    module._atomic_write(root / module.PROFILE_PATH, module.json_text(updated))
+    result["applied"] = True
+    return result
 
 
 # ---------------------------------------------------------------- shared write helpers
@@ -1025,7 +1065,7 @@ def undecide(root: Path, finding_id: str, *, apply: bool = False, state_dir: Pat
 # ---------------------------------------------------------------- command line (called by init_project)
 
 def run_mode(args: Any, root: Path) -> tuple[int, dict]:
-    """Handle ``--mode check | add-skeleton | profile | repair-lock | decide | case-naming`` of init_project.py."""
+    """Handle ``--mode check | add-skeleton | profile | repair-lock | decide | case-naming | language`` of init_project.py."""
     state_dir = args.state_dir
     targets = list(args.target) or None
     if args.mode == "check":
@@ -1034,6 +1074,8 @@ def run_mode(args: Any, root: Path) -> tuple[int, dict]:
         return (0 if report["ok"] else 1), report
     if args.mode == "case-naming":
         return 0, case_naming_plan(root)
+    if args.mode == "language":
+        return 0, set_project_language(root, args.language, apply=args.apply, recovery_dir=args.recovery_dir)
     if args.mode == "add-skeleton":
         return 0, add_skeleton(root, targets, apply=args.apply, state_dir=state_dir)
     if args.mode == "profile":
@@ -1073,5 +1115,7 @@ def render_text(result: dict) -> str:
             lines.append(result["diff"].rstrip())
         if result.get("blocked"):
             lines.append(result["blocked"])
+        if mode == "language" and not result.get("changed"):
+            lines.append(_("项目文件语言已经是 {0}，没有需要改的。").format(result["language"]))
         lines.extend(_init().recovery_lines(result))
     return "\n".join(lines) + "\n"

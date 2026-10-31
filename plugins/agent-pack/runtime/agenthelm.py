@@ -552,6 +552,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     legacy = [item for item in plugins if item["client"] == "legacy"]
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
     opinion_updates = [item for item in opinion if item["status"] == "update-available"]
+    settings = user_settings_module()
+    language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold)
     return {
         "ok": True,
         "latest": {"source": origin, "released_at": latest.get("released_at")},
@@ -561,6 +563,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "opinion": opinion,
         "scaffold": scaffold,
         "machine": machine,
+        "language": language,
         "summary": {
             "scaffold_findings": scaffold_active,
             "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
@@ -689,6 +692,7 @@ def render_text(report: dict, *, show_skipped: bool = False) -> str:
             lines.append(f"  [Opinion] {item.get('error')}")
     lines += render_scaffold(report, show_skipped)
     lines += render_machine(report)
+    lines += [_("  [语言] {0}").format(hint) for hint in (report.get("language") or {}).get("hints", [])]
     if not report["plugins"]:
         lines.append(_("运行 `{0} install` 预览安装。").format(CLI))
     else:
@@ -723,7 +727,7 @@ def hook(env: Env, project: Path | None, output: str) -> int:
         report = run_check(env, project, hook_mode=True)
     except Exception:  # noqa: BLE001 - an update notice must never break a session
         return 0
-    message = one_line(report)
+    message = "\n".join(part for part in (one_line(report), (report.get("language") or {}).get("session_hint")) if part) or None
     if message is None or not notice_due(env, message):
         return 0
     if output == "claude-hook":
@@ -1260,6 +1264,8 @@ def parser() -> argparse.ArgumentParser:
                    help=_("只属于这台机器的目录（.venv、node_modules、缓存）不进云同步盘：check / fix / config（详见 local-only --help）"))
     sub.add_parser("runtime", add_help=False,
                    help=_("用户级运行时：install / update / use / status（日常只需要 Python，不经过 npx）"))
+    sub.add_parser("config", add_help=False,
+                   help=_("用户级设置：界面语言、语言提示、项目文件语言（config show / language / language-hint / project-language；默认只预览）"))
     sub.add_parser("project", add_help=False,
                    help=_("项目自助入口：找资料、看进展、项目指南、检查（不需要 AI Agent；详见 project --help）"))
     locate_parser = sub.add_parser("locate", help=_("输出插件的已安装位置（最新优先），供下游脚本查找"))
@@ -1325,6 +1331,18 @@ def run_nudge(argv: list[str]) -> int:
     import agent_pack_nudge  # noqa: PLC0415 - shipped next to this file
 
     return agent_pack_nudge.main(argv, sys.modules[__name__])
+
+
+def user_settings_module():
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import user_settings  # noqa: PLC0415 - shipped next to this file
+
+    return user_settings
+
+
+def run_config(argv: list[str]) -> int:
+    """``agenthelm config``: interface language, the language hint and the project file language."""
+    return user_settings_module().main(argv, sys.modules[__name__])
 
 
 def run_local_only(argv: list[str]) -> int:
@@ -1402,6 +1420,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_runtime(argv[1:])
     if argv[:1] == ["nudge"]:
         return run_nudge(argv[1:])
+    if argv[:1] == ["config"]:
+        return run_config(argv[1:])
     if argv[:1] == ["local-only"]:
         return run_local_only(argv[1:])
     args = parser().parse_args(argv)
