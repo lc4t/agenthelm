@@ -318,6 +318,23 @@ def installed_plugins(env: Env, names: set[str]) -> list[dict]:
     return found
 
 
+def legacy_owner(env: Env, item: dict) -> str | None:
+    """The client a legacy (pre-marketplace) entry belongs to, judged from its recorded path; None when unknown.
+
+    ``~/.claude/...`` is Claude Code's; ``~/.agents/...`` is the Codex personal marketplace the old bootstrap wrote
+    (``[plugins."<name>@personal"]`` in Codex's config). Anything else, or a path that cannot be read, has no owner.
+    """
+    try:
+        path = Path(str(item.get("path", ""))).expanduser().resolve()
+        roots = {"claude": [env.home / ".claude", env.claude_dir], "codex": [env.home / ".agents", env.codex_dir]}
+        for client, candidates in roots.items():
+            if any(path == root.resolve() or root.resolve() in path.parents for root in candidates):
+                return client
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return None
+
+
 def other_installs(env: Env, names: set[str]) -> list[dict]:
     """Installs of agenthelm plugins that no ``agenthelm`` marketplace manages: another marketplace name (a fork, a
     local-directory marketplace under its own name). Not found here: a Claude Code ``--plugin-dir`` session (it
@@ -911,7 +928,14 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     # 只有“需要处理”的脚手架发现（level must）参与 up_to_date、--strict 与会话开始提示；旧版 agents-init 没有分级时按可选处理。
     scaffold_required = sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "must")
     behind = [item for item in plugins if item["status"] == "behind"]
-    legacy = [item for item in plugins if item["client"] == "legacy"]
+    # With --client, a legacy entry stays listed (it is a migration risk) but counts toward up_to_date only when its
+    # path says it belongs to a selected client; an entry whose owner cannot be told is listed and not counted.
+    for item in plugins:
+        if item["client"] == "legacy":
+            item["owner"] = legacy_owner(env, item)
+    legacy = [item for item in plugins if item["client"] == "legacy"
+              and (not selection["explicit"] or item["owner"] in selection["active"])]
+    legacy_unattributed = sum(1 for item in plugins if item["client"] == "legacy") - len(legacy)
     by_client = {name: {"behind": sum(1 for item in plugins if item["client"] == name and item["status"] == "behind"),
                         "total": sum(1 for item in plugins if item["client"] == name)}
                  for name in selection["active"] if any(item["client"] == name for item in plugins)}
@@ -949,6 +973,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
             "content_conflicts": sum(1 for item in content if item["status"] == "conflict"),
             "opinion_updates": len(opinion_updates),
             "legacy_installs": len(legacy),
+            "legacy_other_clients": legacy_unattributed,
             "install_states": {name: item["state"] for name, item in state["clients"].items()},
             "up_to_date": not (behind or content_updates or opinion_updates or legacy or scaffold_required
                                or local_attention),
@@ -1182,6 +1207,9 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
     else:
         if any(item["status"] == "legacy" for item in report["plugins"]):
             lines.append(_("旧方式安装可用 `{0}` 预览迁移。").format(UPDATE_HINTS['legacy']))
+        if report["summary"].get("legacy_other_clients"):
+            lines.append(_("其中 {0} 个旧方式安装不属于所选客户端（或无法判断归属），已列出但未计入“是否最新”。").format(
+                report["summary"]["legacy_other_clients"]))
         lines.append(one_line(report) or _("全部为最新。"))
     return "\n".join(lines) + "\n"
 
@@ -1606,10 +1634,12 @@ def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
         if apply and step.client is not None and step.client in failed_clients and not step.blocked:
             record["status"] = "not_run"
             record["reason"] = _("同一客户端前面的步骤失败（{0}），这一步没有执行").format(failed_clients[step.client])
+        elif step.skipped:
+            # Nothing would run, so a missing client command is irrelevant: skipped wins over blocked.
+            record["status"] = "skipped"
+            record.pop("blocked", None)
         elif step.blocked:
             record["status"] = "blocked"
-        elif step.skipped:
-            record["status"] = "skipped"
         else:
             before = installed_versions(env, step.client, step.verify, step.scope) if apply and env and step.verify else {}
             if step.action is not None:

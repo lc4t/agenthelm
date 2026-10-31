@@ -468,11 +468,11 @@ def _plan_runtime(provider: Any, env: Any, fix_id: str) -> dict:
         if provider.offline:
             return _step(fix_id, title, network=True, blocked=_("当前离线：需要下载发布包，只能预览；也可用 agenthelm runtime install --source <发布包>"))
         try:
-            latest, _origin = host.load_latest(env, None)
+            latest, latest_origin = host.load_latest(env, None)
         except (host.CheckError, OSError, ValueError) as exc:
             return _step(fix_id, title, network=True, blocked=_("拿不到版本信息：{0}").format(exc))
         version = runtime.release_version(latest)
-        return _step(fix_id, title, network=True, changes=[_("下载发布包 {0} 并核对摘要").format(version or _('（最新）'))],
+        return _step(fix_id, title, network=True, changes=[_("下载发布包 {0} 并核对摘要").format(version or _('（最新）')), host.origin_line(latest_origin)],
                      writes=[{"path": str(runtime.runtimes_dir(env) / (version or _("<最新版本>"))), "scope": _("用户数据目录（新版本）")},
                              {"path": str(runtime.current_link(env)), "scope": _("切换当前版本")}],
                      recovery=_("旧版本保留；agenthelm runtime use <旧版本> --apply 切回"), verify=_("重新读取当前运行时版本"),
@@ -862,10 +862,11 @@ def _apply_step(provider: Any, step: dict, choices: dict[str, str]) -> dict:
         if step["payload"].get("from_release"):
             import tempfile
             with tempfile.TemporaryDirectory(prefix="agenthelm-runtime-") as temporary:
-                latest, _origin = host.load_latest(env, None, max_age=0)
+                latest, latest_origin = host.load_latest(env, None, max_age=0)
                 root = host.release_source(latest, Path(temporary))
                 planned = runtime.plan(env, root, _("GitHub Release（已核对摘要）"))
                 result = runtime.apply(env, planned, root)
+                result = {**result, "verify": _("{0}；{1}").format(result['verify'], host.origin_line(latest_origin))}
         else:
             planned = step["payload"]["plan"]
             result = runtime.apply(env, planned, runtime.bundled_root())

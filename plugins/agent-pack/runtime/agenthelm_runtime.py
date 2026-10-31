@@ -332,7 +332,8 @@ def use(env: Any, version: str, *, apply_change: bool) -> dict:
 
 # ---------------------------------------------------------------- sources
 
-def resolve_source(host: Any, env: Any, args: argparse.Namespace, workdir: Path, *, prefer_release: bool) -> tuple[Path, str]:
+def resolve_source(host: Any, env: Any, args: argparse.Namespace, workdir: Path, *, prefer_release: bool) -> tuple[Path, str, str | None]:
+    """Return (root, origin text, version-source line); the line is None unless latest.json was consulted."""
     if args.source is not None:
         source = args.source.expanduser().resolve()
         if source.is_file():
@@ -342,14 +343,14 @@ def resolve_source(host: Any, env: Any, args: argparse.Namespace, workdir: Path,
             roots = [path for path in extracted.iterdir() if path.is_dir()]
             if len(roots) != 1:
                 raise RuntimeInstallError(_("发布包结构不符合预期"))
-            return roots[0], _("本地发布包 {0}").format(source.name)
-        return source, _("本地目录 {0}").format(source)
+            return roots[0], _("本地发布包 {0}").format(source.name), None
+        return source, _("本地目录 {0}").format(source), None
     bundled = bundled_root()
     if bundled is not None and not prefer_release and not args.from_release:
-        return bundled, _("随附内容（{0}）").format(running_from(env))
+        return bundled, _("随附内容（{0}）").format(running_from(env)), None
     try:
-        latest, _origin = host.load_latest(env, args.latest, max_age=0)
-        return host.release_source(latest, workdir), _("GitHub Release（已核对摘要）")
+        latest, latest_origin = host.load_latest(env, args.latest, max_age=0)
+        return host.release_source(latest, workdir), _("GitHub Release（已核对摘要）"), host.origin_line(latest_origin)
     except (host.CheckError, OSError, ValueError) as exc:
         raise RuntimeInstallError(_("无法下载发布包：{0}").format(exc),
                             [_("离线时用 --source 指向发布包（.tar.gz）或仓库检出"),
@@ -399,14 +400,16 @@ def main(argv: list[str], host: Any) -> int:
     try:
         if args.action == "status":
             try:
-                latest, _origin = host.load_latest(env, args.latest, offline=args.offline)
+                latest, latest_origin = host.load_latest(env, args.latest, offline=args.offline)
             except (host.CheckError, OSError, ValueError):
-                latest = None
+                latest, latest_origin = None, None
             data = report(env, latest)
             active = data["current"]
             lines = [_("当前运行时：{0}（{1}）").format(active['version'], active['path']) if active else _("当前运行时：未安装"),
                      _("已安装：{0}").format(_('、').join(item['version'] for item in data['installed']) or _('（无）')),
                      _("本次命令来自：{0}").format(data['running_from'])]
+            if latest_origin is not None:
+                lines.append(host.origin_line(latest_origin))
             if data["update_available"]:
                 lines.append(_("有新版本 {0}：agenthelm runtime update 预览").format(data['latest_release']))
             if not active:
@@ -421,9 +424,11 @@ def main(argv: list[str], host: Any) -> int:
             _print({"ok": True, **result}, args.output, lines)
             return 0
         with tempfile.TemporaryDirectory(prefix="agenthelm-runtime-") as temporary:
-            root, origin = resolve_source(host, env, args, Path(temporary), prefer_release=args.action == "update")
+            root, origin, source_line = resolve_source(host, env, args, Path(temporary), prefer_release=args.action == "update")
             planned = plan(env, root, origin, link_bin=args.link_bin)
             lines = [_("运行时 {0}（来源：{1}）").format(planned['version'], origin)]
+            if source_line:
+                lines.append(source_line)
             lines += [_("  将写入：{0}（{1}）").format(item['path'], item['scope']) for item in planned["writes"]] or [_("  已是当前版本，无需改动。")]
             if not args.apply or planned["action"] == "none" and not planned["link"]:
                 if args.apply is False and planned["writes"]:
