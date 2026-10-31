@@ -233,7 +233,8 @@ class Rehearsal(unittest.TestCase):
     def test_pristine_project_updates_with_backup_recovery_hint_and_is_idempotent(self) -> None:
         root = self.build("pristine")
         old_agents = (root / "AGENTS.md").read_bytes()
-        others = {name: (root / name).read_bytes() for name in ("AGENT.RULES.md", "CLAUDE.md", "AGENT.md", "menu")}
+        old_rules = (root / "AGENT.RULES.md").read_bytes()
+        others = {name: (root / name).read_bytes() for name in ("CLAUDE.md", "AGENT.md", "menu")}
         recovery = self.base / "recovery"
         code, out, err = self.content(root, "--apply", "--recovery-dir", str(recovery))
         self.assertEqual(code, 0, out + err)
@@ -241,6 +242,10 @@ class Rehearsal(unittest.TestCase):
         self.assertIn(str(recovery), out, "输出里要有恢复位置")
         self.assertIn("cp -p", out, "还原方法")
         self.assertNotEqual((root / "AGENTS.md").read_bytes(), old_agents)
+        # rc.2 also changed the AGENT.RULES.md template (the privacy line now points at the Profile field, #40):
+        # an untouched rc.1 file is replaced, after its original was backed up.
+        self.assertNotEqual((root / "AGENT.RULES.md").read_bytes(), old_rules)
+        self.assertEqual((recovery / "AGENT.RULES.md").read_bytes(), old_rules, "替换前必须先备份原件")
         for name, payload in others.items():
             self.assertEqual((root / name).read_bytes(), payload, f"{name} 未改动的文件字节不变")
         lock = json.loads((root / LOCK).read_text(encoding="utf-8"))
