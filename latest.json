@@ -5,11 +5,11 @@
   "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
-      "version": "1.11.1",
+      "version": "1.11.2",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.8.1",
+      "version": "6.8.2",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.11.2",
+      "version": "1.11.3",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -352,7 +352,7 @@
     {
       "plugin": "agents-init",
       "from": "6.7.0",
-      "to": "6.8.1",
+      "to": "6.8.2",
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-31",
@@ -465,7 +465,7 @@
     {
       "plugin": "project-orchestrator",
       "from": "1.9.0",
-      "to": "1.11.2",
+      "to": "1.11.3",
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-29",
@@ -640,7 +640,7 @@
     {
       "plugin": "agent-pack",
       "from": "1.9.0",
-      "to": "1.11.1",
+      "to": "1.11.2",
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-29",
@@ -694,6 +694,51 @@
         "~/.local/share/agenthelm/runtimes/<版本>[-rc.N]/",
         "~/.local/state/agenthelm/hook-errors.json（仅钩子出错时写，最多 5 条）"
       ],
+      "default_for_existing": "on",
+      "template_changes": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.11.1",
+      "to": "1.11.2",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-01",
+      "summary": "6.11.0-rc.3 占位条目：最终文案由协调者在合并所有工作包后写入。",
+      "actions": [],
+      "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": []
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.8.1",
+      "to": "6.8.2",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-01",
+      "summary": "6.11.0-rc.3 占位条目：最终文案由协调者在合并所有工作包后写入。",
+      "actions": [],
+      "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": []
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.11.2",
+      "to": "1.11.3",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-01",
+      "summary": "6.11.0-rc.3 占位条目：最终文案由协调者在合并所有工作包后写入。",
+      "actions": [],
+      "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
       "default_for_existing": "on",
       "template_changes": []
     }
