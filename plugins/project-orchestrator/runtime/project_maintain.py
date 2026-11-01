@@ -205,7 +205,7 @@ def _plugin_findings(provider: Any, env: Any, report: dict, findings: list[dict]
             if issue["issue"] == "version-skew" and len(skewed) > 1:
                 # 多个插件各有一条：id 带插件名保持唯一，文本默认合并为一行（--details 逐项）。
                 entry["id"] += f":{issue['plugin']}"
-                entry["title"] = f"{title}：{issue['plugin']}"
+                entry["title"] = _("{0}：{1}").format(title, issue["plugin"])
                 entry["group"] = {"id": "plugins:version-skew", "kind": "plain", "count": len(skewed),
                                   "label": _("{0} 个插件在各客户端的版本不一致").format(len(skewed)), "member": issue["plugin"]}
             findings.append(entry)
