@@ -2,7 +2,56 @@
 
 ## 2026-11-01 — 6.11.0-rc.3：升级主路径与输出整理（agents-init 6.8.2、agent-pack 1.11.2、project-orchestrator 1.11.3）
 
-（占位：最终文案由协调者在合并所有工作包后写入。）
+rc.2 在真实机器上验收（rc.1 → rc.2）时，升级主路径上发现的一批缺陷（发布跟踪 #44）。仍属于 6.11.0 发布窗口；套件版本不变，三个有改动的插件各升一个补丁版本（opinion-manager 0.5.1 不变）。Cursor 直接从发布版本更新见 #47，不在 6.11.0；本版只处理“Cursor 不可用时不计入落后”的口径。
+
+### 升级路径：先发现问题，再动手（A1、A2、A9）
+
+- **市场声明与已登记市场不一致时预览直接阻塞（A1）。** `agenthelm update` 预览比较 `~/.claude/settings.json` 里的市场声明（来源、ref）与 Claude Code 已登记的市场（`known_marketplaces.json`）；不一致、未登记或登记文件无法读取时，Claude 的步骤标“阻塞”，写明原因和下一步（重启 Claude Code，或 `claude plugin marketplace add <源>#<ref>`）。以前要等到 `--apply` 的第一步才报 `Marketplace 'agenthelm' not found`。带 `--apply` 时不执行任何 Claude 命令，退出码 1；其他客户端照常。JSON 增加 `market_sync`、步骤的 `blocker` 与 `next`。
+- **固定 ref 的判定（A2）。** 市场固定的 ref 等于目标版本时，`check` 不再报 market-conflict，`install_state` 增加 `market_pin`（已固定到目标版本），建议命令不再要求 `--marketplace-source ...#<同一个 ref>`；固定在旧 ref 时，`update` 预览说明“更新只会跟随该 ref”，并给出目标 tag。
+- **Codex “完成，无变化”给出下一步（A9）。** 原因是市场没固定到此版本时，附 `codex plugin marketplace add <slug> --ref <tag>`（命令依据 OpenAI Codex 官方文档；同名市场已存在时的行为未确认，文案里写了先 remove 的退路）。
+
+### 提示命令与 Cursor 口径（A11、#26）
+
+- **会话开始提示与 `check` 建议里的命令带版本（A11）。** 当前运行时是候选版时写 `npx @sakanano-moe/agenthelm@<当前版本> check`（以前不带标签，会解析到 npm `latest` 即稳定版，版本与当前运行时不一致）；稳定版不变。该版本需已发布到 npm。
+- **Cursor 在 `update` 预览里是“不可用”时不再计入“可更新”。** `check` 的 `plugins_behind` 与会话开始提示的“N 个可更新”不含它，单列为“Cursor：N 个不可用，需 --source 本地源”，并给出 `update --source <本地仓库>` 与 `config ignore-client cursor` 两条出路，`up_to_date` 因此可以被用户操作消除。`check` 与 `update` 共用同一个判定函数；`check` 新增 `--source`。JSON：`summary.plugins_behind` 口径变化（不含不可用的 Cursor），新增 `summary.plugins_unavailable`、`summary.by_client.<c>.unavailable`、`plugins[].unavailable`。
+
+### `runtime install` 对候选版默认不切换 current（A5）
+
+- 安装候选版（版本带 `-rc.N`）时，只把它装在旁边（`runtimes/6.11.0-rc.N`），**current 不变**；预览和输出写明“current 未切换（当前 current=…）”以及切换方法：安装时加 `--use`，或之后运行 `agenthelm runtime use <版本> --apply`。`runtime status` 增加“已安装但未启用”一行。
+- 稳定版的行为不变；第一次安装（还没有 current）仍设为当前，否则项目启动器没有运行时可用。`--use` 同时加在 `runtime install` 与 `runtime update`。npx 入口和插件 hook 直接运行各自的代码，不依赖 current；项目启动器 `current/bin/agenthelm` 在不切换时继续用旧运行时。
+- **向候选版用户说明：以前 `runtime install --apply` 会自动切到候选版，现在要显式加 `--use`。**
+
+### 内容预览与合并（A7、A6、A8）
+
+- **先 `--keep` / `--append` 再 `--merge` 不再得到“没有需要更新的内容”（A7）。** 原因（已在夹具里复现）：`--keep` / `--append` 之后内容锁的包版本已是最新，`update` 因此一个内容步骤都没有生成。现在用户点名文件（`--merge` / `--diff` / `--keep` / `--accept` / `--append` / `--pick`）时，即使内容锁已是最新也交给 `refresh`；显式的 `--merge` 覆盖此前的保留决定，冲突未选完不写入、写入前备份并输出恢复位置的行为不变。
+- **没有基线摘要的文件，`--merge` 只给一条原因。** 内容锁里没有这个文件的起点摘要时，工具无法验证哪个历史版本是你的起点，**不猜基线**（猜错会让三方合并悄悄吞掉你的改动），也就不会联网找历史包；预览写明原因和 `--keep AGENTS.md` / `--append AGENTS.md` / `--accept AGENTS.md` 的出路，不再同时说“无法三方合并”又说“建议先保留”。已按决定保留的文件不再提示“建议先保留”，改为说明已保留并给出 `--accept` / `--merge` 的出路。
+- **状态词随界面语言（A6a）。** `blocked / keep / skip` 与 `[modified] / [unchanged] / [missing] / [kept-by-decision]` 等在中文界面显示为中文（如“阻塞 AGENTS.md [你改过]”）；机器可读 JSON 的字段值不变。
+- **`--diff <文件>` 只输出差异（A6b）。** `init_project.py --mode refresh`、`update --only content`、`fix update-content` 三处不再先打印整份预览；`fix update-content --diff` 以前什么都不显示，现在显示差异。
+- **建议命令统一带文件名（A6c）。** 一律写 `--keep AGENTS.md`，不再出现裸 `--keep` 或 `--keep <文件>`。
+- **隐私约定的预览说明条件（A8）。** 行为不变：`privacy-contract` 区块只在项目声明了私有路径（`privacy.forbidden_default_reads` 非空）、且 `AGENTS.md` 里还没有这条约定（模板原文或你自己写的）时才追加；未声明时只补 `agents-contract`。预览现在写出“未声明私有路径，不追加隐私约定”，JSON 条目增加 `privacy_contract`（`appended` / `undeclared-skipped` / `present-skipped`）。rc.2 小节与 6.8.1 迁移说明里的措辞已改为条件式。
+- `CLAUDE.md` 是软链接时单独标阻塞、其余文件照常更新、链接与目标字节不变：补了链到项目外文件的用例。
+
+### 输出整理（A3、A4、A10）
+
+- **`summary.scaffold_info` 与文本一致（A3）。** 以前 JSON 只数信息级发现，文本“脚手架·信息”还包含 Profile 冲突与未声明字段；现在两者同源，`summary.scaffold_info` 数值可能变大。`required` / `optional` / `findings` 不变。
+- **同一条不兼容说明只出现一次（A4）。** `check` 默认与 `--details`：其余客户端写“同上（见 claude）”；`project fix update-plugins` 预览同一版本迁移说明以前每个客户端各列一次，现在只列一次。JSON 不变。
+- **`project health` 同类建议合并（A10）。** “项目位于同步盘”与其中的“本机专属目录”合为一条（以前每个目录一条），多个插件各客户端版本不一致合为一条；`--details` 逐项展开；JSON 的 `findings`、各级条数、退出码不变。**多个插件版本不一致时 finding id 变为 `doctor-version-skew:<插件名>`**（只有一个时仍是 `doctor-version-skew`）。
+
+### 不兼容点与注意
+
+- `runtime install` 安装候选版不再自动切换 current，需要 `--use`（见上）。
+- `check --output json`：`summary.plugins_behind` 不再包含不可用的 Cursor（改读 `summary.plugins_unavailable`）；`summary.scaffold_info` 口径变化。
+- `doctor-version-skew` 的 finding id 在多个插件版本不一致时带插件名后缀。
+- 解析 `refresh` / `update --only content` 文字输出的脚本改用 `--output json`：状态词随界面语言。
+- 改了 `~/.claude/settings.json` 里的市场 ref 后，需先重启 Claude Code；预览会提示。
+
+### 测试
+
+五套测试 + 升级矩阵 + `LANG=C / en_US.UTF-8 / zh_CN.UTF-8` 语言矩阵；A1、A2、A5、A7、A11、Cursor 口径各有“修复前失败”的夹具测试。
+
+### 版本
+
+agents-init 6.8.1 → 6.8.2；agent-pack 1.11.1 → 1.11.2；project-orchestrator 1.11.2 → 1.11.3；opinion-manager 0.5.1 与内容包版本不变。套件版本仍是 6.11.0（候选 `v6.11.0-rc.3`）。
 
 ## 2026-10-31 — 6.11.0-rc.2：升级路径修复（agents-init 6.8.1、agent-pack 1.11.1、project-orchestrator 1.11.2、opinion-manager 0.5.1）
 
@@ -47,7 +96,7 @@ rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据
 ### AGENTS.md 的隐私约定（#40）
 
 - 模板生成的 `AGENTS.md` 带“隐私约定”：引用 Profile 的 `privacy.forbidden_default_reads`（缺省 `private/`），默认不读、读前先经用户确认、一次确认只对当次任务有效；字段为空时写“未声明私有路径”；中英文各一份，随项目文件语言。约定引用字段名而不复制路径，改字段不产生漂移。
-- 已有项目：没改过 `AGENTS.md` 的由 `update-content` 直接更新；改过的用 `--append AGENTS.md` 补入受管区块 `privacy-contract`（原文不变，已发布的 `agents-contract` 区块不变）。`check` 新增 `privacy-contract` 发现。
+- 已有项目：没改过 `AGENTS.md` 的由 `update-content` 直接更新；改过的用 `--append AGENTS.md` 补入受管区块（原文不变）：`agents-contract` 区块照常追加；仅当项目声明了私有路径（`privacy.forbidden_default_reads` 非空）且 `AGENTS.md` 里还没有这条隐私约定（模板原文或自己写的）时，才再追加 `privacy-contract` 区块，未声明私有路径的项目不追加，预览会写明。`check` 新增 `privacy-contract` 发现。
 - 内容包 `agents-init/project-contract` 升到 1.3.0；模板里“必须带 `--recovery-dir`”的说法改为缺省自动备份。
 
 ### 协议里的路径做 shell 引用（#42）
@@ -98,7 +147,7 @@ SOP 到期的测试断言“执行后第二天不到期”，样例是 `weekly:s
 - 替换文件的模式不再因缺少 `--recovery-dir` 报错；依赖这个报错的外部脚本会得到默认备份。
 - `check --strict` 与会话开始提示只统计“需要处理”的脚手架差异：缺文件等可选差异不再让 `--strict` 失败。CI 想看全部差异请用 `check --output json`。
 - `install` / `update` 在步骤成功但读回版本没变时退出码为 1，并显示“完成，无变化”。
-- 已有项目的 `AGENTS.md` 会多一条隐私约定（内容包 1.3.0）：没改过的随 `update-content` 更新，改过的用 `--append AGENTS.md` 补入。
+- 已有项目的 `AGENTS.md` 可能多一条隐私约定（内容包 1.3.0）：没改过的随 `update-content` 更新，改过的用 `--append AGENTS.md`；仅在声明了私有路径时才追加 `privacy-contract` 区块。
 
 ### 版本
 
