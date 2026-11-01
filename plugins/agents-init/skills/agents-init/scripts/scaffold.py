@@ -1424,7 +1424,7 @@ def render_text(result: dict) -> str:
             lines.append(f"  {item['from']} → {item['to'] or _('（需要你决定）')}"
                          + (_("；被 {0} 个文件提到").format(len(item['references'])) if item["references"] else ""))
         for item in result.get("create", []):
-            lines.append(f"  create {item['path']}")
+            lines.append(f"  {_('新建')} {item['path']}")
         for change in result.get("changes", []):
             lines.append(f"  {change}")
         if result.get("diff"):

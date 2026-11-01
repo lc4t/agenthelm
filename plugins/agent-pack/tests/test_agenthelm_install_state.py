@@ -54,6 +54,9 @@ class Base(unittest.TestCase):
     def claude_dir(self) -> None:
         (self.home / ".claude").mkdir(exist_ok=True)
 
+    def codex_dir(self) -> None:
+        (self.home / ".codex").mkdir(exist_ok=True)
+
     def claude(self, plugin: str, version: str = "2.0.0", market: str = "agenthelm", scope: str = "user",
                link_to: Path | None = None) -> Path:
         path = self.home / f".claude/plugins/cache/{market}/{plugin}/{version}"
@@ -78,8 +81,9 @@ class Base(unittest.TestCase):
         else:
             write(path / "plugin.json", {"name": plugin, "version": version})
 
-    def legacy(self, plugin: str, version: str = "1.0.0") -> None:
-        write(self.home / ".agents/plugins/plugins" / plugin / "plugin.json", {"name": plugin, "version": version})
+    def legacy(self, plugin: str, version: str = "1.0.0", where: str = ".claude/agent-pack/plugins") -> None:
+        # Default: Claude Code's old location; the per-client diagnosis only counts a legacy entry for the client its path says.
+        write(self.home / where / plugin / "plugin.json", {"name": plugin, "version": version})
 
     def working_copy(self, plugin: str, version: str = "9.9.9") -> Path:
         path = self.root / "work" / plugin
@@ -204,6 +208,31 @@ class StateClassification(Base):
         self.assertEqual(diag["state"], "mixed")
         self.assertEqual(diag["next_command"], f"{agenthelm.CLI} migrate")
         self.assertTrue(diag["modifies_existing"])
+
+    def test_legacy_entries_are_attributed_by_path_in_the_per_client_diagnosis(self) -> None:
+        self.claude_dir()
+        for plugin in NAMES:
+            self.claude(plugin)
+        self.codex_dir()
+        self.legacy("agent-pack", where=".agents/plugins/plugins")  # the Codex personal-marketplace location
+        self.assertEqual(self.state("claude")["state"], "marketplace")  # not legacy/mixed because of Codex's entry
+        self.assertEqual(self.state("claude")["installs"][0]["kind"], "marketplace")
+        self.assertEqual(self.state("codex")["state"], "legacy")
+
+    def test_a_legacy_entry_of_a_claude_path_is_not_counted_for_codex(self) -> None:
+        self.codex_dir()
+        self.legacy("agent-pack")  # ~/.claude/agent-pack/plugins
+        self.assertEqual(self.state("claude")["state"], "legacy")
+        self.assertNotIn("legacy", [item["kind"] for item in self.state("codex")["installs"]])
+
+    def test_a_legacy_entry_with_an_unknown_owner_stays_in_every_diagnosis(self) -> None:
+        self.claude_dir()
+        self.codex_dir()
+        env = agenthelm.current_env(self.home)
+        item = {"client": "legacy", "plugin": "agent-pack", "path": str(self.home / "elsewhere/agent-pack"), "version": "1.0.0"}
+        latest = {"plugins": {"agent-pack": {"version": "2.0.0"}}}
+        state = agenthelm.install_state(env, latest, [item], [], [], ["claude", "codex"])["clients"]
+        self.assertEqual({name: state[name]["state"] for name in ("claude", "codex")}, {"claude": "legacy", "codex": "legacy"})
 
     def test_two_scopes_of_the_same_marketplace_are_not_a_conflict(self) -> None:
         for plugin in NAMES:

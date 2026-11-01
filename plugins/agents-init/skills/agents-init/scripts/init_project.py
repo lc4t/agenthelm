@@ -1462,22 +1462,22 @@ def _adopt_text(result: dict) -> str:
     if result["mode"] == "scan":
         lines.append(_("Scan（只读）"))
     else:
-        lines.append(f"{'Applied' if result.get('applied') else 'Dry-run'}: {result['mode']}")
+        lines.append(_("{0}：{1}").format(_("已应用") if result.get("applied") else _("仅预览"), result["mode"]))
     for blocker in result.get("blockers", []):
-        lines.append(f"  blocked [{blocker['code']}] {blocker['message']}")
+        lines.append(_("  已阻塞 [{0}] {1}").format(blocker["code"], blocker["message"]))
     scan = result.get("scan", result)
     for item in scan.get("findings", []):
         lines.append(f"  [{item['id']}] {item['summary']}")
         for option in item["options"]:
             mark = _("（推荐）") if option["id"] == item["recommended"] else ""
             lines.append(f"      - {option['label']}{mark}" + (f"  {option['flag']}" if option["flag"] else ""))
-    for key, title in (("create", "create"), ("preserve", "preserve")):
+    for key, title in (("create", _("新建")), ("preserve", _("保留"))):
         for path in result.get(key, []):
             lines.append(f"  {title} {path}")
     for item in result.get("modify", []):
         lines.append(f"  {item['action']} {item['path']}" + (_("（区块 {0}）").format(_("、").join(item.get("regions") or [item["region"]])) if item.get("region") else ""))
     for note in result.get("notes", []):
-        lines.append(f"  note: {note}")
+        lines.append(_("  说明：{0}").format(note))
     if result.get("needs_recovery_dir") and not result.get("applied"):
         lines.append("  " + _("改动已有文件前会先备份到 ~/.agent-pack/recovery/（也可用 --recovery-dir 指定项目外的目录）"))
     if scan.get("recommended_flags"):
@@ -1600,8 +1600,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.output == "json":
                 print(json_text(result), end="")
             else:
-                print(("Applied" if result["applied"] else "Blocked" if result["blocked"] else "Dry-run")
-                      + f": entry ./{result['entry']['name']}")
+                print(_("{0}：入口 ./{1}").format(_("已应用") if result["applied"] else _("已阻塞") if result["blocked"] else _("仅预览"),
+                                                 result["entry"]["name"]))
                 for change in result["entry"]["changes"]:
                     print(f"  {change}")
                 if result.get("hint"):
@@ -1616,8 +1616,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.output == "json":
                 print(json_text(result), end="")
             else:
-                label = "Applied" if result["applied"] else ("Blocked" if result["blocked"] else "Dry-run")
-                print(f"{label}: {result['pack']} (from {result['from_version']})")
+                label = _("已应用") if result["applied"] else (_("已阻塞") if result["blocked"] else _("仅预览"))
+                print(_("{0}：{1}（来自 {2}）").format(label, result["pack"], result["from_version"]))
                 for item in result["files"]:
                     print(f"  {item['action']:8} {item['path']} [{item['state']}]")
                     for note in item.get("note", []):
@@ -1791,18 +1791,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.output == "json":
             print(json_text(result), end="")
         else:
-            label = "Applied" if applied else ("Blocked" if args.mode == "init" and args.apply and collisions else "Dry-run")
-            print(label + f": {len(create)} create, {len(replace)} replace, {len(preserved)} preserved collision(s)")
+            label = _("已应用") if applied else (_("已阻塞") if args.mode == "init" and args.apply and collisions else _("仅预览"))
+            print(_("{0}：新建 {1}，替换 {2}，保留冲突 {3}").format(label, len(create), len(replace), len(preserved)))
             for path in create:
-                print(f"  create {path}")
+                print(f"  {_('新建')} {path}")
             for path in replace:
-                print(f"  replace {path}")
+                print(f"  {_('替换')} {path}")
             for path in preserved:
-                print(f"  preserve {path}")
+                print(f"  {_('保留')} {path}")
             for path in symlinked:
-                print(f"  skip {path} (symlinked parent)")
+                print(_("  跳过 {0}（父目录是符号链接）").format(path))
             for path in retire:
-                print(f"  retire {path} (upgraded into {PROFILE_PATH})")
+                print(_("  退役 {0}（已升级进 {1}）").format(path, PROFILE_PATH))
             for line in recovery_lines(result):
                 print(line)
         return 0 if ok else 1

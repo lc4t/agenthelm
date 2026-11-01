@@ -1404,7 +1404,6 @@
  "新 SOP 的文件语言（缺省取项目 Profile 的 language，再缺省为 zh）": "language of the new SOP's file (default: the Profile's language, then zh)",
  "## {0} 下至少要有一个编号步骤": "The \"{0}\" section needs at least one numbered step",
  "更新受管区块：运行 init_project.py --mode region（改过的区块逐个 --keep / --accept）": "Update the managed regions: run init_project.py --mode region (choose --keep / --accept for each edited region)",
- "以上为预览，没有写入。确认后加 --apply；定制文件用 --keep / --accept 指定；AGENTS.md / CLAUDE.md 也可用 --append 保留原文、只追加带标记的区块；--accept 会丢弃本地内容时需再加 --confirm-discard <文件>。": "The above is a preview; nothing was written. Add --apply to confirm; use --keep / --accept for customized files; for AGENTS.md / CLAUDE.md, --append keeps your text and only appends a marked region; when --accept would drop local content, also add --confirm-discard <file>.",
  "    保留原文并追加区块：{0}": "    Kept the original text and appended a region: {0}",
  "  失败 {0}：{1}": "  Failed {0}: {1}",
  "（丢弃 {0} 行本地内容）": " (drops local content, lines: {0})",
@@ -1439,5 +1438,13 @@
  "cases [词]": "cases [word]",
  "in:片段": "in:path",
  "｜可能过期": " | possibly stale",
- "{0}；{1}": "{0}; {1}"
+ "{0}；{1}": "{0}; {1}",
+ "以上为预览，没有写入。确认后加 --apply；定制文件用 --keep / --accept 指定；AGENTS.md / CLAUDE.md 也可用 --append 保留原文、只追加带标记的区块；--accept 会丢弃本地内容时需再加 --confirm-discard <文件>；也可用 --merge <文件> 三方合并（冲突块用 --pick），--diff <文件> 先看差异。": "The above is a preview; nothing was written. Add --apply to confirm; use --keep / --accept for customized files; for AGENTS.md / CLAUDE.md, --append keeps your text and only appends a marked region; when --accept would drop local content, also add --confirm-discard <file>; you can also three-way merge with --merge <file> (resolve conflict blocks with --pick) or look at the difference first with --diff <file>.",
+ "--diff 只用于查看，不能与 --apply 同用": "--diff is view-only and cannot be combined with --apply",
+ "文件": "file",
+ "文件#块=mine|theirs|both": "file#block=mine|theirs|both",
+ "update-content：三方合并这个文件（还原升级前的基线，保留你的改动并带入新模板的变化；--apply 前先备份）": "update-content: three-way merge this file (restore the pre-upgrade baseline, keep your edits and bring in the template's changes; backed up before --apply)",
+ "update-content：为 --merge 的冲突块选择 mine（保留你的）/ theirs（取新模板）/ both（两边都留）": "update-content: resolve a --merge conflict block with mine (keep yours) / theirs (take the new template) / both (keep both)",
+ "update-content：只查看这个文件与新模板的完整差异，不写入": "update-content: only view this file's full difference from the new template; nothing is written",
+ "项目（先备份，三方合并）": "Project (backed up first, three-way merge)"
 }

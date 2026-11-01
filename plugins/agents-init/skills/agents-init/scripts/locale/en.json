@@ -272,5 +272,18 @@
  "--required-only 只用于 --mode check": "--required-only applies only to --mode check",
  "{0} 是指向 {1} 的符号链接，refresh 不跟随链接改写，不能用 --accept / --append / --merge；要保留请用 --keep {0}，要让模板接管请先把它换成普通文件": "{0} is a symbolic link to {1}; refresh does not write through links, so --accept / --append / --merge cannot be used on it. Use --keep {0} to keep it, or replace it with a regular file first to let the template take over",
  "{0} 是指向 {1} 的符号链接，refresh 不跟随链接改写，保留原样": "{0} is a symbolic link to {1}; refresh does not write through links and leaves it as it is",
- "确认后用 --keep {0} 记为保留（之后不再追问）；要让模板接管请先把它换成普通文件": "Once confirmed, record it with --keep {0} (it will not be asked about again); to let the template take over, replace it with a regular file first"
+ "确认后用 --keep {0} 记为保留（之后不再追问）；要让模板接管请先把它换成普通文件": "Once confirmed, record it with --keep {0} (it will not be asked about again); to let the template take over, replace it with a regular file first",
+ "已应用": "Applied",
+ "仅预览": "Dry-run",
+ "已阻塞": "Blocked",
+ "新建": "create",
+ "替换": "replace",
+ "保留": "preserve",
+ "  已阻塞 [{0}] {1}": "  blocked [{0}] {1}",
+ "  说明：{0}": "  note: {0}",
+ "{0}：入口 ./{1}": "{0}: entry ./{1}",
+ "{0}：{1}（来自 {2}）": "{0}: {1} (from {2})",
+ "{0}：新建 {1}，替换 {2}，保留冲突 {3}": "{0}: {1} create, {2} replace, {3} preserved collisions",
+ "  跳过 {0}（父目录是符号链接）": "  skip {0} (symlinked parent)",
+ "  退役 {0}（已升级进 {1}）": "  retire {0} (upgraded into {1})"
 }
