@@ -940,7 +940,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     local_attention = sum(1 for item in machine["findings"] if item.get("attention"))
     scaffold_active = len(scaffold["findings"]) if scaffold else 0
     # 只有“需要处理”的脚手架发现（level must）参与 up_to_date、--strict 与会话开始提示；旧版 agents-init 没有分级时按可选处理。
-    scaffold_required = sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "must")
+    scaffold_numbers = scaffold_counts(scaffold)
+    scaffold_required = scaffold_numbers["required"]
     behind = [item for item in plugins if item["status"] == "behind"]
     # With --client, a legacy entry stays listed (it is a migration risk) but counts toward up_to_date only when its
     # path says it belongs to a selected client; an entry whose owner cannot be told is listed and not counted.
@@ -977,10 +978,9 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "summary": {
             "scaffold_findings": scaffold_active,
             "scaffold_required": scaffold_required,
-            "scaffold_optional": sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level", "suggest") == "suggest"),
-            "scaffold_info": sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "info"),
-            "profile_notes": (len(scaffold.get("profile_conflicts") or [])
-                              + int((scaffold.get("profile_extras") or {}).get("total") or 0)) if scaffold else 0,
+            "scaffold_optional": scaffold_numbers["optional"],
+            "scaffold_info": scaffold_numbers["info"],
+            "profile_notes": scaffold_numbers["profile_notes"],
             "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
             "local_only_attention": local_attention,
             "plugins_behind": len(behind),
@@ -1005,6 +1005,24 @@ UPDATE_HINTS = {
     "cursor": f"{CLI} update",
     "legacy": f"{CLI} migrate --install",
 }
+
+
+def profile_note_counts(scaffold: dict) -> tuple[int, int]:
+    """(conflicting values, undeclared fields): the two kinds of Profile information shown as ``[脚手架·信息]`` lines."""
+    return (len(scaffold.get("profile_conflicts") or []), int((scaffold.get("profile_extras") or {}).get("total") or 0))
+
+
+def scaffold_counts(scaffold: dict | None) -> dict[str, int]:
+    """The one place that counts scaffold items; ``summary`` (JSON) and the text both read it.
+    ``info`` is everything the text prints as 脚手架·信息: info-level findings plus the Profile notes."""
+    if not scaffold:
+        return {"required": 0, "optional": 0, "info": 0, "profile_notes": 0}
+    findings = scaffold.get("findings") or []
+    notes = sum(profile_note_counts(scaffold))
+    return {"required": sum(1 for item in findings if item.get("level") == "must"),
+            "optional": sum(1 for item in findings if item.get("level", "suggest") == "suggest"),
+            "info": sum(1 for item in findings if item.get("level") == "info") + notes,
+            "profile_notes": notes}
 
 
 def one_line(report: dict) -> str | None:
@@ -1041,7 +1059,7 @@ def render_profile_notes(scaffold: dict, show_extras: bool) -> list[str]:
     lines = []
     for item in scaffold.get("profile_conflicts") or []:
         lines.append(_("  [脚手架·信息] {0}").format(item["message"]))
-    summary = scaffold.get("profile_extras") or {}
+    summary = dict(scaffold.get("profile_extras") or {}, total=profile_note_counts(scaffold)[1])
     if not summary.get("total"):
         return lines
     parts = [_("项目自有 {0}").format(summary["own"])]

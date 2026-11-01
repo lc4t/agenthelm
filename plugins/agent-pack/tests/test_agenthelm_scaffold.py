@@ -94,8 +94,8 @@ class ScaffoldCheckTests(unittest.TestCase):
         self.assertIn("疑似拼写错误，是不是想写 privacy.forbidden_default_reads", full)
         self.assertNotIn("check --show-extras 展开", full)
         self.assertEqual(report["scaffold"]["profile_extras"]["total"], 3)
-        self.assertEqual(report["summary"]["profile_notes"], 3)  # extras only here; scaffold_info keeps its meaning
-        self.assertEqual(report["summary"]["scaffold_info"], before["scaffold_info"])
+        self.assertEqual(report["summary"]["profile_notes"], 3)  # extras only here; scaffold_info counts info findings plus these notes
+        self.assertEqual(report["summary"]["scaffold_info"], before["scaffold_info"] + 3)  # = the 3 [脚手架·信息] items
 
     def test_check_cli_accepts_show_extras_and_strict_ignores_info(self) -> None:
         self.write_profile(lambda p: p.update(team_notes=1))

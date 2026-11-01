@@ -5,6 +5,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -60,6 +61,88 @@ class DedupeTests(Fixture):
         self.claude_plugin("1.0.0")
         _code, single = self.run_text("check", "--no-project", "--client", "claude")
         self.assertLess(len(text.splitlines()), 3 * len(single.splitlines()))
+
+
+class DedupeDetailsTests(Fixture):
+    def test_details_prints_the_notes_once_and_every_client_row_points_at_them(self) -> None:
+        self.three_clients_behind()
+        for flags in ((), ("--details",)):
+            _code, text = self.run_text("check", "--no-project", *flags)
+            self.assertEqual(text.count("BREAKING-SUMMARY-X"), 1, flags)
+            self.assertEqual(text.count("ACTION-STEP-Y"), 1, flags)
+            rows = text.split("  [")
+            for client in ("claude", "codex", "cursor"):
+                row = next(r for r in rows if r.startswith(client + "]"))
+                self.assertIn("含不兼容变更", row)
+                self.assertTrue("BREAKING-SUMMARY-X" in row or "同上（见 claude）" in row, (client, flags))
+
+    def test_update_and_install_previews_do_not_repeat_the_notes(self) -> None:
+        self.three_clients_behind()
+        for args in (("update", "--no-project", "--only", "plugins"), ("install",)):
+            _code, text = self.run_text(*args)
+            self.assertLessEqual(text.count("BREAKING-SUMMARY-X"), 1, args)
+
+
+class ScaffoldCountTests(Fixture):
+    """A3: the JSON counters and the numbers in the text come from the same place."""
+
+    def synthetic(self) -> dict:
+        scaffold = agenthelm.scaffold_module(agenthelm.Env(home=self.home, variables={}))
+
+        def finding(identifier, kind):
+            return scaffold._finding(identifier, kind, "T-" + identifier, "R", "fp", None)
+
+        findings = [finding("profile:a", "profile-invalid"), finding("skel:a", "skeleton-missing"),
+                    finding("skel:b", "skeleton-missing"), finding("skel:c", "skeleton-missing"),
+                    finding("region:x#1", "region-outdated"), finding("region:y#1", "region-outdated")]
+        return {"ok": False, "required_ok": False, "root": str(self.home), "findings": findings, "skipped": [],
+                "levels": scaffold.level_counts(findings), "categories": scaffold.summarize(findings),
+                "profile_conflicts": [{"message": "CONFLICT-ONE"}],
+                "profile_extras": {"total": 3, "own": 2, "suspected_typo": 1, "read_by_plugin": 0}, "extras": [],
+                "decisions": {"errors": [], "conflict_copies": []}}
+
+    def report(self) -> dict:
+        project = self.root / "proj"
+        project.mkdir()
+        with mock.patch.object(agenthelm, "scaffold_report", return_value=self.synthetic()):
+            return agenthelm.run_check(agenthelm.Env(home=self.home, variables={}), project,
+                                       latest_source=str(self.latest_file))
+
+    def text_numbers(self, report: dict) -> dict:
+        import re
+        text = agenthelm.render_text(report)
+        info_lines = [line for line in text.splitlines() if "[脚手架·信息]" in line]
+        info = 0
+        for line in info_lines:
+            if "Profile 中有" in line:
+                info += int(re.search(r"Profile 中有 (\d+) 个", line).group(1))
+            elif "个受管区块有差异" in line:
+                info += int(re.search(r"\] (\d+) 个受管区块", line).group(1))
+            else:
+                info += 1
+        must = sum(1 for line in text.splitlines() if line.startswith("  [脚手架] "))
+        return {"info": info, "must": must}
+
+    def test_info_counter_equals_the_info_items_in_the_text(self) -> None:
+        report = self.report()
+        numbers = self.text_numbers(report)
+        self.assertEqual(report["summary"]["scaffold_info"], numbers["info"])
+        self.assertEqual(report["summary"]["scaffold_info"], 2 + 1 + 3)
+        self.assertEqual(report["summary"]["scaffold_required"], numbers["must"])
+
+    def test_counters_come_from_one_function(self) -> None:
+        report = self.report()
+        counts = agenthelm.scaffold_counts(report["scaffold"])
+        for key, summary_key in (("required", "scaffold_required"), ("optional", "scaffold_optional"),
+                                 ("info", "scaffold_info"), ("profile_notes", "profile_notes")):
+            self.assertEqual(report["summary"][summary_key], counts[key], key)
+        self.assertEqual(report["summary"]["scaffold_findings"], 6)
+        self.assertEqual(report["summary"]["scaffold_optional"], 3)
+
+    def test_info_does_not_change_up_to_date_or_exit_semantics(self) -> None:
+        report = self.report()
+        self.assertEqual(report["summary"]["scaffold_required"], 1)
+        self.assertFalse(report["summary"]["up_to_date"])
 
 
 class DedupeEnglishTests(Fixture):
