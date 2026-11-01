@@ -979,6 +979,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
             "scaffold_required": scaffold_required,
             "scaffold_optional": sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level", "suggest") == "suggest"),
             "scaffold_info": sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "info"),
+            "profile_notes": (len(scaffold.get("profile_conflicts") or [])
+                              + int((scaffold.get("profile_extras") or {}).get("total") or 0)) if scaffold else 0,
             "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
             "local_only_attention": local_attention,
             "plugins_behind": len(behind),
@@ -1177,6 +1179,7 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
     lines += render_install_state(report.get("install_state") or {})
     if not report["plugins"]:
         lines.append(_("未发现已安装的 agenthelm 插件。"))
+    shown_breaking: dict[tuple[str, str], str] = {}  # (plugin, target version) -> client whose line carries the notes
     for item in report["plugins"]:
         label = {"behind": _("可更新"), "current": _("最新"), "ahead": _("高于云端"), "unknown": _("版本未知"),
                  "legacy": _("旧方式安装，待迁移"), "dev": _("开发版/本地安装，不会被 update / migrate 改动")}[item["status"]]
@@ -1195,6 +1198,11 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
                 line += _("（含不兼容变更）")
             for step in item["steps"]:
                 if step.get("breaking"):
+                    key = (item["plugin"], str(step["to"]))
+                    if key in shown_breaking:  # same plugin, same step: print the notes once, on the first client
+                        line += _("\n      {0} 不兼容：同上（见 {1}）").format(step['to'], shown_breaking[key])
+                        continue
+                    shown_breaking[key] = item["client"]
                     line += _("\n      {0} 不兼容：{1}").format(step['to'], step.get('summary'))
                     line += "".join(f"\n        - {action}" for action in step.get("actions") or [])
             hint = UPDATE_HINTS.get(item["client"])
@@ -1445,6 +1453,7 @@ class Step:
     skipped: str | None = None
     note: str | None = None
     untouched: bool = False  # an install the tool recognises but leaves alone (development / local)
+    pinned: str | None = None  # the ref Claude's marketplace declaration is pinned to (updates only follow it)
 
     def view(self) -> dict:
         data = {"kind": self.kind, "client": self.client, "description": self.description}
@@ -1585,13 +1594,23 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
         claude = sorted({item["plugin"] for item in behind if item["client"] == "claude"})
         if claude:
             command, blocked = _cli(env, "claude", "plugin", "marketplace", "update", MARKETPLACE)
-            steps.append(Step("update", "claude", _("刷新 Claude Code 的 agenthelm 市场"), command, blocked=blocked))
+            pin = ((report.get("install_state") or {}).get("clients", {}).get("claude") or {}).get("market_conflict")
+            pinned = str(pin["ref"]) if pin and pin.get("reason") == "pinned" and pin.get("ref") else None
+            note = None
+            if pinned:
+                newest = max((entry["latest"] for entry in behind if entry["client"] == "claude" and entry.get("latest")),
+                             key=lambda text: version_key(text) or (0,), default="?")
+                note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（最新版本 {1}）。"
+                         "要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。"
+                         ).format(pinned, newest)
+            steps.append(Step("update", "claude", _("刷新 Claude Code 的 agenthelm 市场"), command, blocked=blocked,
+                              note=note, pinned=pinned))
             for item in [entry for entry in behind if entry["client"] == "claude"]:
                 extra = ["--scope", item["scope"]] if item.get("scope") and item["scope"] != "user" else []
                 command, blocked = _cli(env, "claude", "plugin", "update", f"{item['plugin']}@{MARKETPLACE}", *extra)
                 steps.append(Step("update", "claude", _("Claude Code 更新 {0} → {1}").format(item['plugin'], item['latest']),
                                   command, blocked=blocked, verify=[item["plugin"]],
-                                  targets={item["plugin"]: item["latest"]}, scope=item.get("scope")))
+                                  targets={item["plugin"]: item["latest"]}, scope=item.get("scope"), pinned=pinned))
         codex = [item for item in behind if item["client"] == "codex"]
         if codex:
             command, blocked = _cli(env, "codex", "plugin", "marketplace", "upgrade", MARKETPLACE)
@@ -1701,6 +1720,9 @@ def verify_step(step: Step, record: dict, before: dict, after: dict) -> None:
         record["reason"] = _("命令成功，但读不到该客户端里这个插件的版本，无法确认是否生效")
     elif all(entry["target"] and entry["after"] == entry["target"] for entry in unchanged):
         record["reason"] = _("已经是目标版本")
+    elif step.pinned:
+        record["reason"] = _("Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，所以版本没变；"
+                             "把声明里的 ref 改成目标 tag，或去掉 ref 跟随 main。").format(step.pinned)
     else:
         record["reason"] = _(UNCHANGED_REASONS.get(step.client or "", N_("版本没有变化，原因未知")))
 

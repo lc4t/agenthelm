@@ -565,5 +565,8 @@
  "有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），请用 {1} fix update-content（或 update --only content --keep/--append/--accept …）逐个处理。": "Differences with no baseline: {0} (the content differs from the template and the content lock has no baseline). Handle them one by one with {1} fix update-content (or update --only content --keep/--append/--accept …).",
  "无法备份 {0} 到 {1}（{2}）；没有改动任何文件。": "Could not back up {0} to {1} ({2}); nothing was changed.",
  "版本号必须是单个目录名（不能含路径分隔符或 ..）：{0}": "The version must be a single directory name (no path separators or ..): {0}",
- "agenthelm runtime status 可以看到已安装的版本": "agenthelm runtime status lists the installed versions"
+ "agenthelm runtime status 可以看到已安装的版本": "agenthelm runtime status lists the installed versions",
+ "\n      {0} 不兼容：同上（见 {1}）": "\n      {0} is incompatible: same as above (see {1})",
+ "提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（最新版本 {1}）。要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。": "Note: Claude's settings pin the agenthelm marketplace to {0}, so an update only follows that ref and the version may not change (latest version: {1}). To follow the new version, change the ref of the agenthelm marketplace declaration in settings.json to the target tag, or remove the ref to follow main (agenthelm does not edit settings.json for you).",
+ "Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，所以版本没变；把声明里的 ref 改成目标 tag，或去掉 ref 跟随 main。": "Claude's settings pin the agenthelm marketplace to {0}, and an update only follows that ref, so the version did not change. Change the ref in the declaration to the target tag, or remove the ref to follow main."
 }
