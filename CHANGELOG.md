@@ -2,7 +2,7 @@
 
 ## 2026-10-31 — 6.11.0-rc.2：升级路径修复（agents-init 6.8.1、agent-pack 1.11.1、project-orchestrator 1.11.2、opinion-manager 0.5.1）
 
-rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据安全与升级体验问题（发布跟踪 #44，必须修的三项：#30、#35、#36，以及同一批次一并修掉的 #32、#33、#34、#37、#38、#39、#40、#41、#42、#43）。仍属于 6.11.0 发布窗口；套件版本不变，四个有改动的插件各升一个补丁版本（Claude Code 只看市场条目的 version 判断插件有没有更新）。内容包 `agents-init/project-contract` 因 AGENTS.md 新增隐私约定升到 1.3.0。
+rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据安全与升级体验问题（发布跟踪 #44，必须修的三项：#30、#35、#36，以及同一批次一并修掉的 #32、#33、#34、#37、#38、#39、#40、#41、#42、#43，以及 #24、#25、#26、#31）。仍属于 6.11.0 发布窗口；套件版本不变，四个有改动的插件各升一个补丁版本（Claude Code 只看市场条目的 version 判断插件有没有更新）。内容包 `agents-init/project-contract` 因 AGENTS.md 新增隐私约定升到 1.3.0。
 
 ### 替换文件前自动备份，并告诉你备份在哪（#30）
 
@@ -58,6 +58,31 @@ rc.1 在真实机器上走一遍“普通用户升级路径”后发现的数据
 - 接管与 refresh 的决定文件区分“保留原文件”与“保留原文件并追加区块”。
 - GitHub Release 说明带上本次发布的 CHANGELOG 小节（`scripts/release_notes.py`）。
 - `packages/cli/README.md` 的界面语言说明改为现状；`INSTALL.md` 说明 Claude Code 缓存的旧版本目录可手动清理。
+
+### 安装状态、三方合并与钩子错误（#31、#26、第三批修复）
+
+- agent-pack 1.11.1：`check` 新增“安装状态”诊断，按客户端区分未安装、部分安装、市场安装（最新 / 落后 / 高于云端）、开发版或本地安装、旧方式、多处安装、市场冲突；每种状态给结论、推荐的预览命令、是否改动已有安装与恢复位置；`--output json` 新增 `install_state`。开发版、本地目录与软链接安装默认不被 `update` / `migrate` / `install` 改动。INSTALL.md 新增“从任意状态升级”决策表。
+- agents-init 6.8.1：`refresh` 新增 `--merge <文件>` 与 `--pick <文件>#<序号>=mine|theirs|both`（#26）。旧内容包取自本机运行时缓存、本地 git tag 或 GitHub Release（核对 SHA-256），重新渲染出升级前的基线，且须与内容锁摘要一致才采用；无冲突部分自动并入并预览，冲突块保留两边与基线，逐块选择，未选完不写入；写入前备份并输出恢复位置；取不到旧包时退回 `--keep` / `--append` / `--accept`。联网只发生在显式 `--merge` 时。`agenthelm update --only content` 与 `fix update-content` 同样支持。
+- 契约文件（如 `CLAUDE.md`）是符号链接时，`refresh` / `update` 不再整体失败：该文件单独标为阻塞或按 `--keep` 保留，其余文件照常更新，软链接与目标字节不变。
+- 钩子内部出错时仍保持静默，但记录最近一次错误摘要（时间、钩子名、异常类型、一行截断消息，最多 5 条，不含用户原话）；`agenthelm nudge status` 显示并可用 `--clear-errors` 清除，`agenthelm doctor` 提示；opinion-manager 调用失败也会被记录。
+
+### 升级演练发现并修复的缺陷（第三批）
+
+- 三方合并对 rc.1 项目永远“找不到基线”（用当前必需模板块解析历史模板，缺块被吞）：已修。
+- 内容锁损坏时 `check` 报“与期望一致”、`--strict` 退出 0、`update` 说“没有需要更新的内容”：现在算未最新，`--strict` 退出 1，`update` 说明原因并退出 1。
+- `config` 与 `write_json_atomic` 写入会把软链接文件换成普通文件：改为写到链接目标。
+- `fix update-content` 预览里 `kept-by-decision` / `merge` 是内部英文标识：补可读的中英文标签。
+- `refresh` 写文件或内容锁失败残留 `.tmp`、重复 `--keep` 重写 `decided_at`（同步盘里产生无意义的冲突副本）：已修，失败以 InitError 报错（退出码 2）。
+- 无内容锁的项目：`update --only content` 提示有 N 项无基线差异并指向 `fix update-content`。
+- 旧方式安装按路径归属计入 `--client`（`install_state` 诊断同样按归属）。
+- 备份失败（`nudge install-hooks`、`config`）清楚报错并在改写前中止；`runtime use` 校验版本名；`init_project.py` 的文本标签随界面语言；`--mode check` 新增 `--required-only`。
+- `AGENT.RULES.md` 的隐私一行指向 Profile 字段，不再与 `privacy.forbidden_default_reads` 矛盾；schema 补声明 `opinion.nudge`、`work.case.schema`。
+- 英文界面下 `local-only` 的用户配置错误被误判为项目配置错误、全角标点与占位词漏翻、opinion 切片框架文字仍是中文：已修（框架文字随界面语言，规则正文与指纹不变）。
+
+### CI 与测试基础设施（#24、#25）
+
+- `tests/test_i18n_lint.py`：运行时代码里的中文字面量必须包 `_()`，否则要登记白名单并写明理由；`tests/test_i18n_commands.py`：自动枚举全部子命令的 `--help` 与写操作预览，新增子命令必须登记；CI 新增 `LANG=C` / `en_US.UTF-8` / `zh_CN.UTF-8` 的语言矩阵；检查四份 `locale/en.json` 随包。
+- 非空目录夹具矩阵（16 个场景）、写入不变量、用历史 tag（v6.5.0–v6.8.0、v6.11.0-rc.1）生成旧项目的升级矩阵、rc.1 到 rc.2 的升级演练、AI 研判的契约测试；发布声明门禁新增“`template_changes` 非空必须有 `touches`”；新增 CONTRIBUTING.md 说明如何新增夹具。`tests.yml`、`pages.yml` 的 Actions 固定到提交 SHA。
 
 ### 测试
 
