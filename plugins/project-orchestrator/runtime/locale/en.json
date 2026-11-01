@@ -1446,5 +1446,11 @@
  "update-content：三方合并这个文件（还原升级前的基线，保留你的改动并带入新模板的变化；--apply 前先备份）": "update-content: three-way merge this file (restore the pre-upgrade baseline, keep your edits and bring in the template's changes; backed up before --apply)",
  "update-content：为 --merge 的冲突块选择 mine（保留你的）/ theirs（取新模板）/ both（两边都留）": "update-content: resolve a --merge conflict block with mine (keep yours) / theirs (take the new template) / both (keep both)",
  "update-content：只查看这个文件与新模板的完整差异，不写入": "update-content: only view this file's full difference from the new template; nothing is written",
- "项目（先备份，三方合并）": "Project (backed up first, three-way merge)"
+ "项目（先备份，三方合并）": "Project (backed up first, three-way merge)",
+ "{0} 个插件在各客户端的版本不一致": "{0} plugins have different versions across clients",
+ "{0}，连同 {1} 个本机专属目录": "{0}, plus machine-local directories: {1}",
+ "同步目录里有 {0} 个本机专属目录": "The sync folder contains machine-local directories: {0}",
+ "外置本机专属目录：agenthelm local-only fix --apply（先预览；单个目录的命令见 --details）": "Externalize the machine-local directories: agenthelm local-only fix --apply (preview first; see --details for the command of a single directory)",
+ "     查看逐项：health --details（或 --output json）；这些都不需要：fix --skip <ID> --reason …（只记在这台机器上）": "     Item by item: health --details (or --output json); need none of these: fix --skip <ID> --reason … (recorded on this machine only)",
+ "     查看逐项：health --details（或 --output json）": "     Item by item: health --details (or --output json)"
 }

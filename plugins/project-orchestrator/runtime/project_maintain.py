@@ -102,6 +102,22 @@ def _local_only_finding(item: dict) -> dict:
             "decision": {"id": item["id"], "fingerprint": item["fingerprint"], "scope": "machine"}}
 
 
+def _merge_sync_findings(findings: list[dict]) -> None:
+    """“项目位于同步盘”与其中的“本机专属目录”指向同一批可重建目录：有两条以上时在文本里合并为一行。
+    findings 本身（id、level、decision）不变，只在条目上加 group，--details 与 JSON 仍逐项。"""
+    head = next((item for item in findings if item["id"] == "sync-folder"), None)
+    members = [item for item in findings if item["id"].startswith("local:real:")]
+    if len(members) + (1 if head else 0) < 2:
+        return
+    label = (_("{0}，连同 {1} 个本机专属目录").format(head["title"], len(members)) if head
+             else _("同步目录里有 {0} 个本机专属目录").format(len(members)))
+    group = {"id": "sync-local-only", "kind": "machine", "count": len(members) + (1 if head else 0), "label": label}
+    for item in ([head] if head else []) + members:
+        item["group"] = {**group, "member": "" if item is head else item["id"].split(":", 2)[-1]}
+        if item is not head:
+            item["group"]["next_label"] = _("外置本机专属目录：agenthelm local-only fix --apply（先预览；单个目录的命令见 --details）")
+
+
 def check_updates(provider: Any, findings: list[dict], ok: list[str]) -> dict:
     host = provider.host
     if host is None:
@@ -121,6 +137,7 @@ def check_updates(provider: Any, findings: list[dict], ok: list[str]) -> dict:
                              "decision": {"id": item["id"], "fingerprint": item["fingerprint"], "scope": "machine"}})
         elif item.get("fix") == "local-only" or item.get("kind") == "error":
             findings.append(_local_only_finding(item))
+    _merge_sync_findings(findings)
     try:
         report = host.run_check(env, provider.root, offline=provider.offline)
     except (host.CheckError, OSError, ValueError) as exc:
@@ -176,13 +193,22 @@ def _plugin_findings(provider: Any, env: Any, report: dict, findings: list[dict]
         findings.append({"id": "legacy", "level": "suggest", "area": _("插件"), "title": _("有旧方式安装待迁移"),
                          "reason": _("旧的复制 + 软链安装与市场安装并存会重复"), "impact": _("Agent 里可能看到重复的 Skill"),
                          "next": [{"label": _("运行 agenthelm migrate --install 预览迁移"), "action": ""}]})
-    for issue in host.doctor(env, report)["issues"]:
+    issues = host.doctor(env, report)["issues"]
+    skewed = [issue for issue in issues if issue["issue"] == "version-skew"]
+    for issue in issues:
         if issue["issue"] in ("version-skew", "duplicate", "incomplete"):
-            findings.append({"id": f"doctor-{issue['issue']}", "level": "suggest", "area": _("插件"),
-                             "title": {"version-skew": _("各客户端插件版本不一致"), "duplicate": _("插件重复安装"),
-                                       "incomplete": _("插件没有装全")}[issue["issue"]],
-                             "reason": issue["detail"], "impact": _("只影响 AI Agent 使用"),
-                             "next": [{"label": _("运行 agenthelm doctor 查看"), "action": ""}]})
+            title = {"version-skew": _("各客户端插件版本不一致"), "duplicate": _("插件重复安装"),
+                     "incomplete": _("插件没有装全")}[issue["issue"]]
+            entry = {"id": f"doctor-{issue['issue']}", "level": "suggest", "area": _("插件"), "title": title,
+                     "reason": issue["detail"], "impact": _("只影响 AI Agent 使用"),
+                     "next": [{"label": _("运行 agenthelm doctor 查看"), "action": ""}]}
+            if issue["issue"] == "version-skew" and len(skewed) > 1:
+                # 多个插件各有一条：id 带插件名保持唯一，文本默认合并为一行（--details 逐项）。
+                entry["id"] += f":{issue['plugin']}"
+                entry["title"] = _("{0}：{1}").format(title, issue["plugin"])
+                entry["group"] = {"id": "plugins:version-skew", "kind": "plain", "count": len(skewed),
+                                  "label": _("{0} 个插件在各客户端的版本不一致").format(len(skewed)), "member": issue["plugin"]}
+            findings.append(entry)
 
 
 def _content_findings(report: dict, findings: list[dict], ok: list[str]) -> None:
@@ -320,8 +346,10 @@ def _plan_step(provider: Any, fix_id: str, choices: dict[str, str]) -> dict:
     if fix_id == "update-plugins":
         steps = host.update_steps(env, report, None, None, env.home, [], [], None, "plugins")
         behind = [item for item in report["plugins"] if item["status"] == "behind"]
-        changes = [_("{0} → {1}：{2}").format(item['plugin'], step['to'], step['summary']) for item in behind for step in item["steps"]]
-        actions = [action for item in behind for step in item["steps"] for action in step["actions"]]
+        # 同一插件同一版本的迁移说明在每个客户端下都一样：只列一次（JSON 的逐客户端明细在 check 里不变）。
+        changes = list(dict.fromkeys(_("{0} → {1}：{2}").format(item['plugin'], step['to'], step['summary'])
+                                     for item in behind for step in item["steps"]))
+        actions = list(dict.fromkeys(action for item in behind for step in item["steps"] for action in step["actions"]))
         blocked = next((step.blocked for step in steps if step.blocked), "") or \
             (_("当前离线：需要联网，只能预览") if provider.offline else "")
         return _step(fix_id, _("更新客户端里的插件"), network=True, changes=changes + [_("需要的动作：{0}").format(a) for a in actions],

@@ -306,12 +306,30 @@ def render_health(health: dict, show_skipped: bool = False, details: bool = Fals
 
 def _group_lines(number: str, first: dict, members: list[dict]) -> list[str]:
     """One merged entry for several findings of one category: label with the count, a few names, how to view / handle / accept."""
-    names = _("、").join(item["decision"]["id"].split(":", 1)[-1] if item.get("decision") else item["title"] for item in members[:3])
-    lines = [f" {number}  [{first['area']}] {S.bold(first['group']['label'])}",
-             _("     包含：{0}").format(names + (_("……共 {0} 项").format(len(members)) if len(members) > 3 else ""))]
-    for step in first["next"]:
-        lines.append(_("     下一步：{0}").format(step['label']) + S.dim(command_hint(step["action"])))
-    lines.append(S.dim(_("     查看逐项：health --details（或 --output json）；这些都不需要：fix --accept-current --reason …；单项：fix --skip <ID> --reason …")))
+    group = first["group"]
+    names = [item["group"]["member"] if item["group"].get("member") is not None
+             else item["decision"]["id"].split(":", 1)[-1] if item.get("decision") else item["title"] for item in members]
+    names = _("、").join([name for name in names if name][:3])
+    shown = len([name for name in (item["group"].get("member", "x") for item in members) if name])
+    lines = [f" {number}  [{first['area']}] {S.bold(group['label'])}"]
+    if names:
+        lines.append(_("     包含：{0}").format(names + (_("……共 {0} 项").format(shown) if shown > 3 else "")))
+    seen: set[str] = set()
+    for item in members:
+        for step in item["next"]:
+            key = step["action"] or step["label"]
+            if key in seen:
+                continue
+            seen.add(key)
+            label = item["group"].get("next_label") or step["label"] if item is not first else step["label"]
+            lines.append(_("     下一步：{0}").format(label) + S.dim(command_hint(step["action"])))
+    kind = group.get("kind", "scaffold")
+    if kind == "machine":
+        lines.append(S.dim(_("     查看逐项：health --details（或 --output json）；这些都不需要：fix --skip <ID> --reason …（只记在这台机器上）")))
+    elif kind == "plain":
+        lines.append(S.dim(_("     查看逐项：health --details（或 --output json）")))
+    else:
+        lines.append(S.dim(_("     查看逐项：health --details（或 --output json）；这些都不需要：fix --accept-current --reason …；单项：fix --skip <ID> --reason …")))
     return lines
 
 
