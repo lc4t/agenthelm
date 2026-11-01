@@ -23,6 +23,7 @@ npx @sakanano-moe/agenthelm project --demo study      # 用虚构项目体验项
 ./menu find 笔记 2026-10                               # 不进菜单：直接查；--output json 给脚本用
 npx @sakanano-moe/agenthelm check                     # 只读：插件、项目模板与 Opinion 是否落后
 npx @sakanano-moe/agenthelm update --apply            # 更新（先不加 --apply 预览）
+agenthelm runtime install --apply --use             # 候选版（-rc.N）默认只装在旁边、不成为 current；加 --use 才切换
 ```
 
 退出码：0 成功；1 没有结果或有必须处理的项；2 用法错误；3 运行时缺失或不兼容；4 能力不可用；5 写入冲突；6 执行失败。

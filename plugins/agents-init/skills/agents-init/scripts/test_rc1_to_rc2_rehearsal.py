@@ -555,11 +555,13 @@ class Rehearsal(unittest.TestCase):
         code, out, err = self.run_new("runtime", "install", "--apply", script=package_script)
         self.assertEqual(code, 0, out + err)
         self.assertEqual(sorted(path.name for path in runtimes.iterdir()), ["6.11.0", "6.11.0-rc.2"])
-        self.assertEqual(os.readlink(self.data_root() / "current"), "runtimes/6.11.0-rc.2")
+        # rc.3 起：候选版默认只装在旁边，current 不切换；输出要说明如何切换
+        self.assertEqual(os.readlink(self.data_root() / "current"), "runtimes/6.11.0", "候选版默认不切换 current")
+        self.assertIn("runtime use", out)
         self.assertEqual(fx.changed(rc1, fx.tree(runtimes / "6.11.0")), [], "旧运行时目录原样保留")
-        code, out, err = self.run_new("runtime", "install", "--apply", script=package_script)
+        code, out, err = self.run_new("runtime", "install", "--apply", "--use", script=package_script)
         self.assertEqual(code, 0, out + err)
-        self.assertIn("无需", out) if False else None
+        self.assertEqual(os.readlink(self.data_root() / "current"), "runtimes/6.11.0-rc.2", "--use 显式切换")
         # 装好的 current 可以直接运行，并且是新代码
         shim = self.data_root() / "current/bin/agenthelm"
         self.assertTrue(os.access(shim, os.X_OK), "bin/agenthelm 需要可执行位")
@@ -572,6 +574,8 @@ class Rehearsal(unittest.TestCase):
         self.assert_no_cjk(out, "runtime use")
         self.assertEqual(os.readlink(self.data_root() / "current"), "runtimes/6.11.0")
         code, out, err = self.run_new("runtime", "install", "--apply", script=package_script)
+        self.assertEqual(os.readlink(self.data_root() / "current"), "runtimes/6.11.0", "不加 --use 不切回候选版")
+        code, out, err = self.run_new("runtime", "install", "--apply", "--use", script=package_script)
         self.assertEqual(os.readlink(self.data_root() / "current"), "runtimes/6.11.0-rc.2")
         # tarball 形态：顶层目录 agenthelm-v6.11.0-rc.2
         tarball_root = self.base / "tb" / "agenthelm-v6.11.0-rc.2"
