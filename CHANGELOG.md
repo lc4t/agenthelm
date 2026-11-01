@@ -1,5 +1,44 @@
 # 更新记录
 
+## 2026-11-02 — agenthelm 6.11.0（正式版）：流程（SOP）管理、同步盘本机专属目录、观点自动采集、命令行多语言、接管已有目录，以及升级路径修复
+
+相对 `6.8.0` 的合并说明。内容与 `v6.11.0-rc.3` 一致（正式版只增加本说明），三轮候选版的逐项变化见下面的 rc.2、rc.3 小节与各功能小节。
+
+### 版本
+
+agents-init 6.8.2；agent-pack 1.11.2；project-orchestrator 1.11.3；opinion-manager 0.5.1；内容包 `agents-init/project-contract` 1.3.0、`agents-init/project-skeleton` 1.1.0、`project-orchestrator/case-template` 1.1.0、`project-orchestrator/asset-synonyms` 1.1.0、`project-orchestrator/sop-samples` 1.0.0、`opinion-manager/catalog` 1.0.0。npm 包 `@sakanano-moe/agenthelm@6.11.0`（`latest` 标签）。
+
+### 相对 6.8.0 新增与变化
+
+- **流程（SOP）管理**：SOP 文件、`sop run`、到期提醒，SOP 文件语言随项目 `language`（#19、#27）。
+- **同步盘本机专属目录**：项目位于 iCloud / Dropbox / OneDrive 时，`check` / `health` 识别可重建目录并给出 `local-only` 的外置方案（#21）。
+- **观点自动采集**：随插件的 hook 在会话开始注入协议、命中偏好关键词时提醒暂存；`nudge` / `inbox`（#20）。
+- **命令行多语言**：中文 / 英文，**默认英文**；`agenthelm config language zh --apply` 或 `AGENTHELM_LANG=zh`（#23、#35）。
+- **接管已有目录**：受管区块、`adopt` / `scan`、发布声明门禁（#29）。
+- **升级路径**：替换文件前自动备份并告知恢复位置；没有基线的已定制文件可看差异、保留、追加区块；三方合并 `--merge` / `--pick`；`check` 的“安装状态”诊断；`--client` 与 `ignored_clients`；`install` / `update` 失败原因与读回验证；Claude 市场声明与已登记市场不一致时预览直接阻塞并给出下一步；候选版运行时默认不切换 current。
+
+### 从 6.8.0 升级需要知道的
+
+- 命令行输出默认改为英文；需要中文：`agenthelm config language zh --apply`。解析文字输出的脚本改用 `--output json`。
+- `--accept` 会丢弃本地内容时需再加 `--confirm-discard <文件>`。
+- `check --strict` 与会话开始提示只统计“需要处理”的脚手架差异。
+- 已有项目的 `AGENTS.md` 可能多一条隐私约定（内容包 1.3.0）：没改过的随 `update-content` 更新，改过的用 `--append AGENTS.md`；仅在声明了私有路径时才追加 `privacy-contract` 区块。
+- 完整的操作说明见 INSTALL.md 的“从任意状态升级”。
+
+### 从候选版（6.11.0-rc.N）升级到正式版
+
+插件版本与 rc.3 相同，内容也相同，**不需要重装插件**；需要把“跟随候选版”的设置改回“跟随正式版”：
+
+- Claude Code：把 `~/.claude/settings.json` 里 `extraKnownMarketplaces.agenthelm` 的 `ref` 去掉（跟随 `main`）或改为 `v6.11.0`，完全退出并重开 Claude Code，再运行 `agenthelm update --only plugins --client claude` 预览。
+- Codex：`codex plugin marketplace remove agenthelm`，再 `codex plugin marketplace add lc4t/agenthelm`（不带 `--ref`，跟随 `main`），最后 `codex plugin marketplace upgrade agenthelm`。
+- 运行时：rc.1 把候选版装在没有后缀的目录 `runtimes/6.11.0` 里，与正式版同名而内容不同时 `runtime install` 会拒绝；先确认 `agenthelm runtime status` 的 current 不指向它，再把该目录移走（例如移到 `~/.agent-pack/recovery/`），然后 `agenthelm runtime install --apply`。只装过 rc.2 及以后的机器没有这个问题。
+
+### 已知问题（后续版本处理）
+
+- #48：`update --only content` 被其他客户端上较旧的 agents-init 整体阻塞；可先加 `--client <客户端>` 或 `agenthelm config ignore-client <客户端> --apply`。
+- #49：内容步骤被阻塞时 `--apply` 的退出码为 0；`--diff` 带非差异的行；已保留的文件在 `--merge` 预览里仍被建议保留；由 6.8.0 及更早版本初始化的项目无法三方合并，请用 `--keep` / `--append` / `--accept`。
+- #50：`project health` 默认视图的标题条数、固定 ref 提示的“最新版本”措辞等小问题，以及三方合并成功路径、Codex hook、Cursor hook 尚未在真实机器验证。
+
 ## 2026-11-01 — 6.11.0-rc.3：升级主路径与输出整理（agents-init 6.8.2、agent-pack 1.11.2、project-orchestrator 1.11.3）
 
 rc.2 在真实机器上验收（rc.1 → rc.2）时，升级主路径上发现的一批缺陷（发布跟踪 #44）。仍属于 6.11.0 发布窗口；套件版本不变，三个有改动的插件各升一个补丁版本（opinion-manager 0.5.1 不变）。Cursor 直接从发布版本更新见 #47，不在 6.11.0；本版只处理“Cursor 不可用时不计入落后”的口径。
