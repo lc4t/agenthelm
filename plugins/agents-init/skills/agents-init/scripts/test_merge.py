@@ -346,6 +346,205 @@ class MergeRefreshTests(unittest.TestCase):
 
 # ---------------------------------------------------------------- baseline sources
 
+    # ---- rc.3 W2：A7 无基线文件、A6 预览口径、A8 隐私约定措辞
+    def drop_baseline(self) -> None:
+        """内容锁里没有 AGENTS.md 的基线（早期版本初始化的项目）。"""
+        lock = json.loads((self.root / init_project.CONTENT_LOCK_PATH).read_text())
+        lock["packs"][PACK_ID]["files"].pop(KEY)
+        lock["packs"][PACK_ID].pop("file_versions", None)
+        (self.root / init_project.CONTENT_LOCK_PATH).write_text(json.dumps(lock))
+
+    def text_refresh(self, new_agents: str | None, *extra: str, lang: str = "zh", providers=None) -> str:
+        templates = init_project.load_templates()
+        if new_agents is not None:
+            templates[KEY] = new_agents
+        pack = {**init_project.contract_pack(), "version": "1.4.0"}
+        output = io.StringIO()
+        with mock.patch.object(init_project, "load_templates", return_value=templates), \
+                mock.patch.object(init_project, "contract_pack", return_value=pack), \
+                mock.patch.object(init_project, "baseline_providers", return_value=providers or []), \
+                mock.patch.dict(os.environ, {"AGENTHELM_LANG": lang}), mock.patch("sys.stdout", output):
+            init_project.main(["--project", str(self.root), "--mode", "refresh", "--output", "text", *extra])
+        return output.getvalue()
+
+    def test_a7_merge_without_a_baseline_gives_one_clear_reason_and_never_guesses(self) -> None:
+        mine = self.edit_user_file(self.template_line(), "我自己改过的一行")
+        self.drop_baseline()
+        calls: list = []
+        code, blocked = self.refresh(self.new_template_with_suffix(), "--merge", KEY, "--apply", "--recovery-dir", str(self.recovery),
+                                     providers=[self.old_provider(calls)])
+        self.assertEqual(code, 1, blocked)
+        agents = self.item(blocked)
+        self.assertEqual((agents["action"], agents["reason"], agents["merge_requested"]), ("blocked", "no-baseline", True))
+        self.assertEqual(calls, [], "没有基线摘要就不猜：不去取任何历史版本包")
+        notes = agents["note"]
+        self.assertEqual(sum("基线" in note and "无法三方合并" in note for note in notes), 1, notes)
+        self.assertFalse(any("建议先保留" in note for note in notes), "同一屏里不能同时说“无法合并”又说“建议先保留”")
+        self.assertIn("--keep AGENTS.md / --append AGENTS.md / --accept AGENTS.md", "".join(notes))
+        self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), mine)
+        self.assertFalse(self.recovery.exists())
+
+    def test_a7_keep_then_merge_without_a_baseline_stays_blocked_with_a_reason_and_keeps_the_file(self) -> None:
+        mine = self.edit_user_file(self.template_line(), "我自己改过的一行")
+        self.drop_baseline()
+        code, kept = self.refresh(self.new_template_with_suffix(), "--keep", KEY, "--apply", providers=[])
+        self.assertEqual(code, 0, kept)
+        self.assertFalse(any("建议先保留" in note for note in self.item(kept)["note"]), "已经 --keep 了，不能再建议保留")
+        code, again = self.refresh(self.new_template_with_suffix(), "--merge", KEY, providers=[self.old_provider()])
+        self.assertEqual(code, 1, again)
+        agents = self.item(again)
+        self.assertEqual((agents["state"], agents["action"], agents["reason"]), ("modified", "blocked", "no-baseline"))
+        self.assertIn("无法三方合并", "".join(agents["note"]))
+        self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), mine)
+
+    def test_a7_append_then_merge_still_merges_when_the_lock_has_a_baseline(self) -> None:
+        line = self.template_line()
+        (self.root / KEY).write_text(self.original + "\n我的补充\n", encoding="utf-8")
+        new_template = init_project.load_templates()[KEY].replace(line, "THEIRS " + line)
+        code, appended = self.refresh(new_template, "--append", KEY, "--apply", "--recovery-dir", str(self.recovery), providers=[])
+        self.assertEqual(code, 0, appended)
+        after_append = (self.root / KEY).read_text(encoding="utf-8")
+        self.assertIn("我的补充", after_append)
+        code, preview = self.refresh(new_template, "--merge", KEY, providers=[self.old_provider()])
+        self.assertEqual((code, self.item(preview)["action"]), (0, "merge"), preview)
+        self.assertEqual(self.item(preview)["merge"]["conflicts"], [])
+        self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), after_append)  # 预览不写
+        code, done = self.refresh(new_template, "--merge", KEY, "--apply", "--recovery-dir", str(self.recovery / "m"),
+                                  providers=[self.old_provider()])
+        self.assertEqual(code, 0, done)
+        merged = (self.root / KEY).read_text(encoding="utf-8")
+        self.assertIn("THEIRS " + line, merged)
+        self.assertIn("我的补充", merged)
+        self.assertEqual((Path(done["recovery"]) / KEY).read_text(encoding="utf-8"), after_append)
+
+    def test_a7_merge_overrides_an_earlier_keep_decision_but_still_stops_on_unchosen_conflicts(self) -> None:
+        line, new_template = self.conflicting()
+        before = (self.root / KEY).read_text(encoding="utf-8")
+        code, kept = self.refresh(new_template, "--keep", KEY, "--apply", providers=[])
+        self.assertEqual(code, 0, kept)
+        code, plain = self.refresh(new_template, providers=[])
+        self.assertEqual(self.item(plain)["state"], "kept-by-decision")
+        code, blocked = self.refresh(new_template, "--merge", KEY, "--apply", "--recovery-dir", str(self.recovery),
+                                     providers=[self.old_provider()])
+        self.assertEqual((code, self.item(blocked)["reason"]), (1, "merge-conflict"), blocked)
+        self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), before)
+        self.assertFalse(self.recovery.exists(), "冲突没选完：不写入、不备份")
+        code, done = self.refresh(new_template, "--merge", KEY, "--pick", f"{KEY}#1=both", "--apply",
+                                  "--recovery-dir", str(self.recovery), providers=[self.old_provider()])
+        self.assertEqual(code, 0, done)
+        self.assertEqual((Path(done["recovery"]) / KEY).read_text(encoding="utf-8"), before)
+
+    def test_a6a_status_words_follow_the_interface_language_and_json_values_do_not(self) -> None:
+        self.edit_user_file(self.template_line(), "我自己改过的一行")
+        new_template = self.new_template_with_suffix()
+        zh = self.text_refresh(new_template, lang="zh")
+        for raw in ("blocked", "[modified]", "[unchanged]"):
+            self.assertNotIn(raw, zh)
+        self.assertNotRegex(zh, r"(?m)^\s+keep\s")
+        self.assertRegex(zh, r"阻塞\s+AGENTS\.md \[你改过\]")
+        self.assertIn("[与新模板相同]", zh)
+        en = self.text_refresh(new_template, lang="en")
+        self.assertRegex(en, r"blocked\s+AGENTS\.md \[edited by you\]")
+        self.assertRegex(en, r"keep\s+CLAUDE\.md \[same as template\]")
+        code, result = self.refresh(new_template)
+        self.assertEqual((self.item(result)["state"], self.item(result)["action"]), ("modified", "blocked"))
+        self.assertEqual({entry["state"] for entry in result["files"]}, {"modified", "unchanged"})
+        with mock.patch.dict(os.environ, {"AGENTHELM_LANG": "en"}):
+            self.assertEqual([init_project.state_label(s) for s in ("kept-by-decision", "local-only", "missing", "symlink", "clean")],
+                             ["kept by decision", "only your edits", "missing", "symlink", "untouched"])
+            self.assertEqual(init_project.state_label("future-state"), "future-state")
+
+    def test_a6b_diff_prints_only_the_difference(self) -> None:
+        self.edit_user_file(self.template_line(), "我自己改过的一行")
+        text = self.text_refresh(self.new_template_with_suffix(), "--diff", KEY)
+        self.assertIn("--- a/AGENTS.md", text)
+        self.assertIn("+新模板新增的内容", text)
+        for other in ("AGENT.RULES.md", "CLAUDE.md", "docs/refs/README.md", "[与新模板相同]", "先看差异"):
+            self.assertNotIn(other, text)
+        self.assertNotIn("以上为预览", text)
+        code, result = self.refresh(self.new_template_with_suffix(), "--diff", KEY)  # JSON 保持完整
+        self.assertTrue(result["files"] and KEY in result["diffs"])
+
+    def test_a6c_every_suggested_command_names_the_file(self) -> None:
+        self.edit_user_file(self.template_line(), "我自己改过的一行")
+        code, blocked = self.refresh(self.new_template_with_suffix())
+        texts = [blocked["hint"], *self.item(blocked)["note"]]
+        joined = "\n".join(texts)
+        for command in ("--keep AGENTS.md", "--append AGENTS.md", "--accept AGENTS.md", "--confirm-discard AGENTS.md", "--diff AGENTS.md", "--merge AGENTS.md"):
+            self.assertIn(command, joined)
+        self.assertNotIn("<文件>", joined)
+        self.assertNotRegex(joined, r"--(keep|append|accept|diff|merge) (?!\S*\.md)")
+        code, refused = self.refresh(self.new_template_with_suffix(), "--accept", KEY)
+        self.assertEqual(code, 1, refused)
+        self.assertIn("--confirm-discard AGENTS.md", refused["hint"])
+        self.assertNotIn("<文件>", refused["hint"])
+
+    def test_a6d_a_file_kept_by_decision_is_not_suggested_to_be_kept_again(self) -> None:
+        for baseline_dropped in (False, True):
+            with self.subTest(baseline_dropped=baseline_dropped):
+                self.setUp()
+                self.edit_user_file(self.template_line(), "我自己改过的一行")
+                if baseline_dropped:
+                    self.drop_baseline()
+                new_template = self.new_template_with_suffix()
+                code, kept = self.refresh(new_template, "--keep", KEY, "--apply", providers=[])
+                self.assertEqual(code, 0, kept)
+                code, plain = self.refresh(new_template, providers=[])
+                agents = self.item(plain)
+                self.assertEqual((code, agents["state"], agents["action"]), (0, "kept-by-decision", "keep"), plain)
+                notes = "".join(agents["note"])
+                self.assertNotIn("建议先保留", notes)
+                self.assertNotIn("需要你选择", notes)
+                self.assertIn("已按你的决定保留", notes)
+                self.assertIn("--accept AGENTS.md", notes)
+                self.assertEqual("--merge AGENTS.md" in notes, not baseline_dropped)
+                self.assertNotIn("先看差异", notes)
+                self.assertEqual(plain["blocked"], [])
+
+    # ---- A8：隐私约定只在“声明了私有路径且文件里没有这条约定”时才追加，预览用条件式措辞说明
+    def declare_private_paths(self, paths: list[str]) -> None:
+        profile_path = self.root / init_project.PROFILE_PATH
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        profile.setdefault("privacy", {})["forbidden_default_reads"] = paths
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+    def append_preview(self, user_text: str, paths: list[str]) -> dict:
+        self.declare_private_paths(paths)
+        (self.root / KEY).write_text(user_text, encoding="utf-8")
+        code, preview = self.refresh(None, "--append", KEY)
+        self.assertEqual(code, 0, preview)
+        return self.item(preview)
+
+    def test_a8_undeclared_private_paths_say_the_privacy_convention_is_not_appended(self) -> None:
+        agents = self.append_preview("# 我自己写的契约\n", [])
+        self.assertEqual((agents["action"], agents["regions"], agents["privacy_contract"]), ("append", ["agents-contract"], "undeclared-skipped"))
+        notes = "".join(agents["note"])
+        self.assertIn("未声明私有路径，不追加隐私约定", notes)
+        self.assertIn("agents-contract", notes)
+        self.assertNotIn("privacy-contract", notes.replace("隐私约定只在", ""))
+
+    def test_a8_declared_private_paths_without_the_convention_append_it_and_say_why(self) -> None:
+        agents = self.append_preview("# 我自己写的契约\n", [".env"])
+        self.assertEqual((agents["regions"], agents["privacy_contract"]), (["agents-contract", "privacy-contract"], "appended"))
+        notes = "".join(agents["note"])
+        self.assertIn("项目声明了私有路径", notes)
+        self.assertIn("追加隐私约定区块", notes)
+        self.assertNotIn("未声明私有路径", notes)
+
+    def test_a8_a_custom_privacy_convention_in_the_file_is_not_duplicated(self) -> None:
+        agents = self.append_preview("# 我自己写的契约\n私有目录见 `privacy.forbidden_default_reads`，不要读。\n", [".env"])
+        self.assertEqual((agents["regions"], agents["privacy_contract"]), (["agents-contract"], "present-skipped"))
+        notes = "".join(agents["note"])
+        self.assertIn("已有隐私约定", notes)
+        self.assertNotIn("追加隐私约定区块", notes)
+
+    def test_a8_the_blocked_suggestion_states_the_append_condition(self) -> None:
+        self.edit_user_file(self.template_line(), "我自己改过的一行")
+        code, blocked = self.refresh(self.new_template_with_suffix())
+        notes = "".join(self.item(blocked)["note"])
+        self.assertIn("隐私约定只在项目声明了私有路径、且文件里还没有这条约定时才追加", notes)
+
+
 def build_pack(directory: Path, version: str, template: str) -> dict:
     """plugins/agents-init layout (content.json + sources) under ``directory``; returns the content.json data."""
     sources = {"skills/agents-init/AGENT.template.md": template, "skills/agents-init/launcher.sh": "#!/bin/sh\necho " + version + "\n"}

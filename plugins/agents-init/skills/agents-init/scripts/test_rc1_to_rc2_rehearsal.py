@@ -275,7 +275,7 @@ class Rehearsal(unittest.TestCase):
         before = fx.tree(root)
         code, out, err = self.content(root)
         self.assertEqual(code, 0, out + err)
-        self.assertIn("blocked", out)
+        self.assertRegex(out, r"阻塞\s+AGENTS\.md", "状态词随界面语言（rc.3 起不再是英文 blocked）")
         for flag in ("--keep", "--append", "--diff"):
             self.assertIn(flag, out, f"预览要列出 {flag}")
         code, out, err = self.content(root, "--apply", "--recovery-dir", str(self.base / "rec0"))
@@ -297,7 +297,7 @@ class Rehearsal(unittest.TestCase):
         self.assertEqual((root / "AGENTS.md").read_bytes(), mine, "--keep 不动文件")
         code, out, _ = self.content(root)
         self.assertEqual(code, 0)
-        self.assertNotIn("blocked", out, "保留是一个被记住的决定")
+        self.assertNotRegex(out, r"阻塞\s+AGENTS\.md", "保留是一个被记住的决定")
         # --append
         self.setUp()
         root = self.build("edited")
@@ -342,7 +342,7 @@ class Rehearsal(unittest.TestCase):
         before = fx.tree(root)
         code, out, err = self.init_new(root, "--mode", "refresh", "--merge", "AGENTS.md", "--output", "text")
         self.assertEqual(code, 0, out + err)
-        self.assertIn("merge", out)
+        self.assertIn("三方合并  AGENTS.md", out)
         self.assertNotIn("找不到这个文件升级前的基线", out, "rc.1 的基线要能取回（本地 git tag）")
         self.assert_unchanged(before, root, "--merge 默认只预览")
         recovery = self.base / "rec-merge"
@@ -361,7 +361,7 @@ class Rehearsal(unittest.TestCase):
         for lang in ("zh", "en"):
             code, out, err = self.content(root, "--merge", "AGENTS.md", lang=lang)
             self.assertEqual(code, 0, out + err)
-            self.assertIn("merge", out)
+            self.assertRegex(out, r"(三方合并|merge)\s+AGENTS\.md")
             self.assertNotIn("找不到这个文件升级前的基线", out)
             if lang == "en":
                 self.assert_no_cjk(out, "update --merge 预览")

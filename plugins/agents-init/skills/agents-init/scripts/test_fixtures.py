@@ -603,6 +603,35 @@ class SymlinkedContractFileTests(unittest.TestCase):
             code, again = cli(root, "refresh", home=home)
             self.assertEqual((code, again["blocked"]), (0, []), again)
 
+    def test_a_link_to_a_file_outside_the_project_blocks_alone_and_neither_link_nor_target_changes(self) -> None:
+        """软链接 CLAUDE.md 单独标阻塞；其余文件照常规划与更新；软链接本身和它的目标字节全程不变。"""
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root, home = self.prepared(base)
+            outside = base / "shared" / "claude-shared.md"
+            outside.parent.mkdir()
+            outside.write_text("项目外共享的 CLAUDE 内容\n", encoding="utf-8")
+            (root / "CLAUDE.md").unlink()
+            (root / "CLAUDE.md").symlink_to(outside)
+            target_bytes = outside.read_bytes()
+            before = tree(root)
+            code, preview = cli(root, "refresh", home=home)
+            items = {item["path"]: item for item in preview["files"]}
+            self.assertEqual((code, preview["blocked"]), (1, ["CLAUDE.md"]), preview)
+            self.assertEqual((items["CLAUDE.md"]["action"], items["CLAUDE.md"]["reason"]), ("blocked", "symlink"))
+            self.assertEqual(items["AGENTS.md"]["action"], "replace", "其余文件照常规划")
+            self.assertEqual(changed(before, tree(root)), [], "预览不写任何东西")
+            code, refused = cli(root, "refresh", "--apply", "--recovery-dir", str(base / "rec0"), home=home)
+            self.assertEqual((code, refused["applied"]), (1, False), refused)
+            self.assertEqual(changed(before, tree(root)), [], "有阻塞项时 --apply 不写任何文件")
+            code, done = cli(root, "refresh", "--keep", "CLAUDE.md", "--apply", "--recovery-dir", str(base / "rec"), home=home)
+            self.assertEqual((code, done["applied"], done["blocked"]), (0, True, []), done)
+            self.assertNotEqual((root / "AGENTS.md").read_text(encoding="utf-8"), "旧版本的契约\n", "其余文件已更新")
+            self.assertTrue((root / "CLAUDE.md").is_symlink())
+            self.assertEqual(Path(os.readlink(root / "CLAUDE.md")), outside)
+            self.assertEqual(outside.read_bytes(), target_bytes, "链接目标字节不变")
+            self.assertNotIn("CLAUDE.md", done.get("recovery_files", []))
+
     def test_accept_append_and_merge_on_a_symlink_are_refused_with_an_explanation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root, home = self.prepared(Path(temporary).resolve())

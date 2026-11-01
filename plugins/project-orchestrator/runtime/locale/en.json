@@ -1452,5 +1452,13 @@
  "同步目录里有 {0} 个本机专属目录": "The sync folder contains machine-local directories: {0}",
  "外置本机专属目录：agenthelm local-only fix --apply（先预览；单个目录的命令见 --details）": "Externalize the machine-local directories: agenthelm local-only fix --apply (preview first; see --details for the command of a single directory)",
  "     查看逐项：health --details（或 --output json）；这些都不需要：fix --skip <ID> --reason …（只记在这台机器上）": "     Item by item: health --details (or --output json); need none of these: fix --skip <ID> --reason … (recorded on this machine only)",
- "     查看逐项：health --details（或 --output json）": "     Item by item: health --details (or --output json)"
+ "     查看逐项：health --details（或 --output json）": "     Item by item: health --details (or --output json)",
+ "符号链接（不跟随改写）": "symlink (never written through)",
+ "（要求了三方合并，但内容锁里没有它的基线摘要，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）": " (a three-way merge was requested, but the content lock has no baseline digest for it, so it cannot be merged; no file was changed. Choose keep / append / the new template instead)",
+ "（要求了三方合并，但找不到升级前的基线，无法合并；没有改动任何文件）": " (a three-way merge was requested, but the pre-upgrade baseline cannot be found, so it cannot be merged; no file was changed)",
+ "（三方合并有冲突块未选择：用 --pick {0}#<序号>=mine|theirs|both 逐块选择）": " (the three-way merge has unresolved conflict blocks: choose each with --pick {0}#<number>=mine|theirs|both)",
+ "暂不能给出差异：{0}": "Cannot show the difference yet: {0}",
+ "定制文件逐个处理，例如 {0}：--keep {0} 保留你的版本；--accept {0} 用新模板替换（会丢弃本地内容时再加 --confirm-discard {0}）；--merge {0} 三方合并（冲突块用 --pick {0}#<序号>=mine|theirs|both）；--diff {0} 只看差异。": "Customized files are handled one by one, for example {0}: --keep {0} keeps your version; --accept {0} replaces it with the new template (when that drops local content also add --confirm-discard {0}); --merge {0} three-way merges (resolve conflict blocks with --pick {0}#<number>=mine|theirs|both); --diff {0} shows only the difference.",
+ "（{0} 与新模板没有差异）": "({0} has no difference from the new template)",
+ "AGENTS.md / CLAUDE.md 也可用 --append {0} 保留原文、只追加带标记的区块。": " For AGENTS.md / CLAUDE.md, --append {0} also keeps your text and only appends a marked region."
 }

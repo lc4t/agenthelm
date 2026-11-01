@@ -588,5 +588,22 @@
  "  {0} 已安装。": "  {0} is already installed.",
  "  候选版：current {0}（当前 current={1}）。要启用它：{2}，或重跑本命令加 --use。": "  Candidate: current {0} (current={1}). To activate it: {2}, or rerun this command with --use.",
  "不会切换": "will not be switched",
- "未切换": "was not switched"
+ "未切换": "was not switched",
+ "与新模板相同": "same as template",
+ "没改过": "untouched",
+ "你改过": "edited by you",
+ "目前不存在": "missing",
+ "只有你的改动": "only your edits",
+ "已决定保留": "kept by decision",
+ "符号链接": "symlink",
+ "保留": "keep",
+ "替换": "replace",
+ "新建": "create",
+ "不新建": "skip",
+ "三方合并": "merge",
+ "追加区块": "append region",
+ "按当前模板处理指定的文件：{0} {1}": "Handle the named files against the current template: {0} {1}",
+ "项目没有内容锁（或内容锁里没有可刷新的内容包），--accept / --keep / --append / --diff / --merge 指定的文件没有被处理；没有改动任何文件。没有内容锁的项目用 {0} fix update-content。": "The project has no content lock (or the lock has no refreshable content pack), so the files named by --accept / --keep / --append / --diff / --merge were not handled; no file was changed. For a project without a content lock use {0} fix update-content.",
+ "有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），请用 {1} fix update-content（或 update --only content --keep {2}）逐个处理。": "Differences with no baseline: {0} (the content differs from the template and the content lock has no baseline). Handle them one by one with {1} fix update-content (or update --only content --keep {2}).",
+ "保持原样": "keep"
 }
