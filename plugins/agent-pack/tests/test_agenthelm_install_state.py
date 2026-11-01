@@ -292,7 +292,7 @@ class OutputAndPreviews(Base):
         diag = self.state()
         self.assertEqual(set(diag), {"client", "state", "base_state", "sub_status", "installed", "missing", "installs", "conflicts",
                                      "market_conflict", "untouched", "summary", "next_command", "modifies_existing",
-                                     "modifies_note", "recovery"})
+                                     "modifies_note", "recovery", "market_pin"})
         self.assertEqual(set(diag["installs"][0]), {"plugin", "version", "path", "kind", "origin", "scope", "status"})
         code, out = self.run_cli("check", "--latest", str(self.latest), "--output", "json", "--no-project", "--client", "claude")
         self.assertIn(json.loads(out)["summary"]["install_states"]["claude"], agenthelm.INSTALL_STATES)
