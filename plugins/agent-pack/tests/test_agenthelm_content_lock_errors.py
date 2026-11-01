@@ -59,6 +59,7 @@ class ContentLockErrorTests(unittest.TestCase):
     def test_naming_a_file_when_nothing_is_pending_is_said_out_loud(self) -> None:
         done = self.run_cli("update", "--only", "content", "--apply", "--recovery-dir", str(self.base / "rec"))
         self.assertEqual(done.returncode, 0, done.stdout)
+        (self.root / LOCK).unlink()  # 点名文件却没有内容锁：说清楚没处理；有内容锁时点名的文件照常交给 refresh（见 test_agenthelm_content_merge）
         for lang in ("zh", "en"):
             done = self.run_cli("update", "--only", "content", "--diff", "AGENTS.md", lang=lang)
             self.assertEqual(done.returncode, 0, done.stdout)

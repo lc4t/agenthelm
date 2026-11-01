@@ -856,13 +856,13 @@ def local_only_plan(env: Env, project: Path | None, **options: Any) -> dict:
 
 # ---------------------------------------------------------------- report
 
-def baseline_less_differences(env: Env, project: Path | None) -> int:
-    """How many project files differ from the template with no baseline in the content lock (check's content-differs findings)."""
+def baseline_less_differences(env: Env, project: Path | None) -> list[str]:
+    """Project files that differ from the template with no baseline in the content lock (check's content-differs findings)."""
     try:
         report = scaffold_report(env, project)
     except Exception:  # noqa: BLE001 - a hint only; never let it break update
-        return 0
-    return sum(1 for item in (report or {}).get("findings", []) if item.get("kind") == "content-differs")
+        return []
+    return [item["path"] for item in (report or {}).get("findings", []) if item.get("kind") == "content-differs" and item.get("path")]
 
 
 def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
@@ -1624,8 +1624,11 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
     if only in (None, "plugins"):
         steps += untouched_steps(env, set(latest.get("plugins", {})), list((report.get("install_state") or {}).get("clients", {})))
     if only in (None, "content") and project is not None:
+        # 用户点名了文件（--merge / --diff / --keep …）时，即使内容锁的版本已是最新（例如先 --keep 过，锁已升到新版）
+        # 也要把这些文件交给 refresh 处理；否则 --keep 之后再 --merge 只会得到“没有需要更新的内容”。
+        named = bool(accept or keep or content_flags)
         for item in report["content"]:
-            if item.get("status") not in {"update-available", "conflict"}:
+            if item.get("status") not in {"update-available", "conflict"} and not (named and item.get("status") in {"current", "unknown"}):
                 continue
             steps.append(content_step(env, item, report, project, accept, keep, recovery_dir, content_flags=content_flags))
     return steps
@@ -1636,7 +1639,8 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
     if item["plugin"] != "agents-init":
         return Step("content", None, _("{0}：没有可用的刷新工具").format(item['pack']), blocked="unsupported")
     stale = any(entry["plugin"] == "agents-init" and entry["status"] == "behind" for entry in report["plugins"])
-    description = _("重新渲染 {0} {1} → {2}").format(item['pack'], item['version'], item['latest'])
+    description = _("重新渲染 {0} {1} → {2}").format(item['pack'], item['version'], item['latest']) \
+        if item.get("status") in {"update-available", "conflict"} else _("按当前模板处理指定的文件：{0} {1}").format(item['pack'], item['version'])
 
     def run(apply: bool, _recovery_root: Path | None) -> dict:
         installed = installed_plugins(env, {"agents-init"})
@@ -2146,6 +2150,25 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+# 内容刷新的状态词与处置词（JSON 字段值保持英文标识；agents-init、project-orchestrator 各带同样的词表）。
+CONTENT_STATE_LABELS = {"unchanged": N_("与新模板相同"), "clean": N_("没改过"), "modified": N_("你改过"), "missing": N_("目前不存在"),
+                        "local-only": N_("只有你的改动"), "kept-by-decision": N_("已决定保留"), "symlink": N_("符号链接")}
+CONTENT_ACTION_LABELS = {"keep": N_("保持原样"), "replace": N_("替换"), "create": N_("新建"), "skip": N_("不新建"), "blocked": N_("阻塞"),
+                         "merge": N_("三方合并"), "append": N_("追加区块")}
+
+
+def content_state_label(state: str) -> str:
+    return _(CONTENT_STATE_LABELS[state]) if state in CONTENT_STATE_LABELS else state
+
+
+def content_action_label(action: str) -> str:
+    return _(CONTENT_ACTION_LABELS[action]) if action in CONTENT_ACTION_LABELS else action
+
+
+def _pad(text: str, width: int = 10) -> str:
+    return text + " " * max(width - sum(2 if ord(char) > 0x2E7F else 1 for char in text), 0)
+
+
 def _print_steps(results: list[dict], apply: bool) -> None:
     labels = {"preview": _("预览"), "applied": _("完成"), "blocked": _("阻塞"), "failed": _("失败"),
               "unchanged": _("完成，无变化"), "skipped": _("跳过"), "unavailable": _("不可用"), "not_run": _("未执行")}
@@ -2186,13 +2209,14 @@ def _print_steps(results: list[dict], apply: bool) -> None:
             line += _("\n      原因：{0}").format(record["reason"])
         result = record.get("result")
         if isinstance(result, dict) and result.get("mode") == "refresh":
-            for item in result.get("files", []):
-                line += f"\n      {item['action']:8} {item['path']} [{item['state']}]"
+            diffs = result.get("diffs") or {}
+            for item in [] if diffs else result.get("files", []):  # --diff 只输出差异，不再重复完整预览
+                line += f"\n      {_pad(content_action_label(item['action']))}{item['path']} [{content_state_label(item['state'])}]"
                 for note in item.get("note", []):
                     line += f"\n          {note}"
-            for path, diff in (result.get("diffs") or {}).items():
+            for path, diff in diffs.items():
                 line += "\n" + (diff.rstrip("\n") if diff else _("（{0} 与新模板没有差异）").format(path))
-            if result.get("hint"):
+            if result.get("hint") and not diffs:
                 line += "\n" + "\n".join(f"      {hint}" for hint in result["hint"].splitlines())
         print(line)
     if apply and results:
@@ -2421,14 +2445,14 @@ def main(argv: list[str] | None = None) -> int:
                     payload["ok"] = False
                     payload["message"] = _("项目内容没有检查：{0}。修复或移走这个文件后重试；没有改动任何文件。").format(content_errors[0]["error"])
                 elif chosen and args.only != "plugins":  # 用户点名了文件，却没有任何待更新内容：不能装作处理过
-                    payload["message"] = _("没有需要更新的内容，--accept / --keep / --append / --diff / --merge 指定的文件没有被处理（项目内容已是最新，或项目没有内容锁）；没有改动任何文件。"
+                    payload["message"] = _("项目没有内容锁（或内容锁里没有可刷新的内容包），--accept / --keep / --append / --diff / --merge 指定的文件没有被处理；没有改动任何文件。"
                                            "没有内容锁的项目用 {0} fix update-content。").format(CLI)
                 else:
                     payload["message"] = _("没有需要更新的内容。")
-                    differing = baseline_less_differences(env, project) if args.only != "plugins" else 0
+                    differing = baseline_less_differences(env, project) if args.only != "plugins" else []
                     if differing:  # check lists them (no baseline in the lock); update has nothing to render for them
                         payload["message"] += _("有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），"
-                                                "请用 {1} fix update-content（或 update --only content --keep/--append/--accept …）逐个处理。").format(differing, CLI)
+                                                "请用 {1} fix update-content（或 update --only content --keep {2}）逐个处理。").format(len(differing), CLI, differing[0])
         else:  # migrate
             names = set(latest.get("plugins", {}))
             artifacts = legacy_artifacts(env, names)

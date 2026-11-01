@@ -568,5 +568,22 @@
  "agenthelm runtime status 可以看到已安装的版本": "agenthelm runtime status lists the installed versions",
  "\n      {0} 不兼容：同上（见 {1}）": "\n      {0} is incompatible: same as above (see {1})",
  "提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（最新版本 {1}）。要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。": "Note: Claude's settings pin the agenthelm marketplace to {0}, so an update only follows that ref and the version may not change (latest version: {1}). To follow the new version, change the ref of the agenthelm marketplace declaration in settings.json to the target tag, or remove the ref to follow main (agenthelm does not edit settings.json for you).",
- "Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，所以版本没变；把声明里的 ref 改成目标 tag，或去掉 ref 跟随 main。": "Claude's settings pin the agenthelm marketplace to {0}, and an update only follows that ref, so the version did not change. Change the ref in the declaration to the target tag, or remove the ref to follow main."
+ "Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，所以版本没变；把声明里的 ref 改成目标 tag，或去掉 ref 跟随 main。": "Claude's settings pin the agenthelm marketplace to {0}, and an update only follows that ref, so the version did not change. Change the ref in the declaration to the target tag, or remove the ref to follow main.",
+ "与新模板相同": "same as template",
+ "没改过": "untouched",
+ "你改过": "edited by you",
+ "目前不存在": "missing",
+ "只有你的改动": "only your edits",
+ "已决定保留": "kept by decision",
+ "符号链接": "symlink",
+ "保留": "keep",
+ "替换": "replace",
+ "新建": "create",
+ "不新建": "skip",
+ "三方合并": "merge",
+ "追加区块": "append region",
+ "按当前模板处理指定的文件：{0} {1}": "Handle the named files against the current template: {0} {1}",
+ "项目没有内容锁（或内容锁里没有可刷新的内容包），--accept / --keep / --append / --diff / --merge 指定的文件没有被处理；没有改动任何文件。没有内容锁的项目用 {0} fix update-content。": "The project has no content lock (or the lock has no refreshable content pack), so the files named by --accept / --keep / --append / --diff / --merge were not handled; no file was changed. For a project without a content lock use {0} fix update-content.",
+ "有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），请用 {1} fix update-content（或 update --only content --keep {2}）逐个处理。": "Differences with no baseline: {0} (the content differs from the template and the content lock has no baseline). Handle them one by one with {1} fix update-content (or update --only content --keep {2}).",
+ "保持原样": "keep"
 }

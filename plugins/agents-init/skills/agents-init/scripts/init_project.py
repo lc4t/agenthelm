@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Iterable
 if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path from other plugins
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-from i18n_init import _, resolve_language  # noqa: E402
+from i18n_init import N_, _, resolve_language  # noqa: E402
 
 
 INITIALIZER_VERSION = "6.8.1"
@@ -988,6 +988,40 @@ def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], 
     return None
 
 
+# 内容刷新里的状态词与处置词：JSON 字段值保持英文标识，文本输出一律经这两个函数随界面语言显示
+# （agent-pack 的 update --only content 与 project-orchestrator 的 fix update-content 各带一份同样的词表）。
+STATE_LABELS = {"unchanged": N_("与新模板相同"), "clean": N_("没改过"), "modified": N_("你改过"), "missing": N_("目前不存在"),
+                "local-only": N_("只有你的改动"), "kept-by-decision": N_("已决定保留"), "symlink": N_("符号链接")}
+ACTION_LABELS = {"keep": N_("保持原样"), "replace": N_("替换"), "create": N_("新建"), "skip": N_("不新建"), "blocked": N_("阻塞"),
+                 "merge": N_("三方合并"), "append": N_("追加区块")}
+
+
+def state_label(state: str) -> str:
+    return _(STATE_LABELS[state]) if state in STATE_LABELS else state
+
+
+def action_label(action: str) -> str:
+    return _(ACTION_LABELS[action]) if action in ACTION_LABELS else action
+
+
+def display_width(text: str) -> int:
+    return sum(2 if ord(char) > 0x2E7F else 1 for char in text)
+
+
+def pad_label(text: str, width: int = 10) -> str:
+    return text + " " * max(width - display_width(text), 0)
+
+
+def file_choices(path: str) -> str:
+    """The per-file commands for a file the user must decide on; every suggestion names the file."""
+    options = [_("--keep {0} 保留你的版本（建议）").format(path)]
+    if Path(path) in APPEND_REGIONS:
+        options.append(_("--append {0} 保留并追加带标记的区块").format(path))
+    options.append(_("--accept {0} 用新模板替换（先备份，会丢弃本地内容，需再加 --confirm-discard {0}）").format(path))
+    options.append(_("--diff {0} 先看差异").format(path))
+    return _("；").join(options)
+
+
 def _refresh_notes(item: dict) -> list[str]:
     """Human lines for a file refresh cannot silently decide: why, what each choice costs, what to type."""
     path, reason = item["path"], item.get("reason")
@@ -1000,7 +1034,8 @@ def _refresh_notes(item: dict) -> list[str]:
         notes.append(_("有 {0} 处冲突需要你选择（第 {1} 块）：--pick {2}#<序号>=mine|theirs|both"
                        "（mine 保留你的、theirs 取新模板、both 两边都留）").format(len(item["merge"]["unresolved"]), numbers, path))
     elif reason == "no-baseline" and item.get("merge_requested"):
-        notes.append(_("内容锁里没有它的基线，无法三方合并；请改用 --keep / --append / --accept 选择"))
+        notes.append(_("内容锁里没有 {0} 的基线摘要，无法三方合并：确认不了哪个历史版本是你的起点，也不猜基线（猜错会让合并悄悄吞掉改动）；"
+                       "没有改动任何文件。请改选：--keep {0} / --append {0} / --accept {0}").format(path))
     if item["action"] == "merge":
         merge = item["merge"]
         notes.append(_("三方合并：新模板的变化已并入你的版本（自动合并 {0} 处，冲突 {1} 处均已选择；基线取自 {2}）；写入前先备份").format(
@@ -1009,7 +1044,7 @@ def _refresh_notes(item: dict) -> list[str]:
         notes.append(_("{0} 是指向 {1} 的符号链接，refresh 不跟随链接改写，保留原样").format(path, item.get("link")))
         if item["action"] == "blocked":
             notes.append(_("确认后用 --keep {0} 记为保留（之后不再追问）；要让模板接管请先把它换成普通文件").format(path))
-    elif reason == "no-baseline":
+    elif reason == "no-baseline" and item["action"] == "blocked" and not item.get("merge_requested"):
         notes.append(_("内容锁里没有它的基线（早期版本初始化的项目），无法判断是你改过还是模板变了；建议先保留你的版本：--keep {0}").format(path))
     elif reason == "edited":
         notes.append(_("你改过这个文件，新模板也变了"))
@@ -1017,17 +1052,30 @@ def _refresh_notes(item: dict) -> list[str]:
             notes.append(_("也可以三方合并（用旧版本包还原出升级前的基线，保留你的改动并带入新模板的变化）：--merge {0}").format(path))
     elif reason == "discard-unconfirmed":
         notes.append(_("--accept 会丢弃 {0} 行本地内容；确认后追加 --confirm-discard {1}").format(item["lines_lost"], path))
+    if item["state"] == "kept-by-decision":
+        notes.append(_("已按你的决定保留，不再追问。要让模板接管：--accept {0}（先备份，会丢弃本地内容，需再加 --confirm-discard {0}）；"
+                       "要带入新模板的变化：--merge {0}（显式 --merge 是一次新的决定，覆盖此前的保留）").format(path) if reason != "no-baseline" else
+                     _("已按你的决定保留，不再追问。内容锁里没有它的基线，无法三方合并；要让模板接管：--accept {0}"
+                       "（先备份，会丢弃本地内容，需再加 --confirm-discard {0}）").format(path))
     if "local_lines" in item and item["action"] in {"blocked", "replace"}:
         notes.append(_("本地 {0} 行，新模板 {1} 行；采用新模板会新增 {2} 行、丢弃 {3} 行本地内容").format(
             item["local_lines"], item["template_lines"], item["lines_added"], item["lines_lost"]))
     if item["action"] == "blocked" and Path(path) in APPEND_REGIONS:
-        notes.append(_("也可以保留你的内容并追加带标记的区块（原文不动）：--append {0}").format(path))
+        notes.append(_("也可以保留你的内容并追加带标记的区块（原文不动；隐私约定只在项目声明了私有路径、且文件里还没有这条约定时才追加）：--append {0}").format(path)
+                     if Path(path) == Path("AGENTS.md") else _("也可以保留你的内容并追加带标记的区块（原文不动）：--append {0}").format(path))
     if item["action"] == "blocked":
         notes.append(_("先看差异：--diff {0}").format(path))
     if item["action"] == "append":
-        notes.append(_("保留你的内容，末尾追加带标记的区块（{0} 行，原文不动，先备份）").format(item["append_lines"]))
+        notes.append(_("保留你的内容，末尾追加带标记的区块：{0}（{1} 行，原文不动，先备份）").format(_("、").join(item["regions"]), item["append_lines"]))
     if reason == "already-present":
         notes.append(_("已经导入或带有这个区块，无需追加"))
+    privacy = item.get("privacy_contract")
+    if privacy == "appended":
+        notes.append(_("项目声明了私有路径，且 {0} 里没有隐私约定：追加隐私约定区块（privacy-contract）").format(path))
+    elif privacy == "undeclared-skipped":
+        notes.append(_("未声明私有路径，不追加隐私约定（privacy.forbidden_default_reads 为空）"))
+    elif privacy == "present-skipped":
+        notes.append(_("{0} 里已有隐私约定（模板原文或你自己写的），不追加").format(path))
     return notes
 
 
@@ -1200,19 +1248,28 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         appended_text = None
         if item["action"] == "append":
             wanted, appended = [], current or ""
+            privacy = None
             for region_id in APPEND_REGIONS[relative]:
                 if region_id == "privacy-contract" and (
                         not inputs.privacy_declared or privacy_convention_state(appended, templates) in ("declared", "custom")):
-                    continue  # 没有声明私有路径，或文件里已有这条约定（模板原文或用户自己写的）：不追加
+                    # 没有声明私有路径，或文件里已有这条约定（模板原文或用户自己写的）：不追加
+                    privacy = "undeclared-skipped" if not inputs.privacy_declared else "present-skipped"
+                    continue
                 body = localized(templates, f"region/{region_id}", inputs.language)
                 existing = regions.get(appended, region_id)
                 if (existing is not None and existing.intact and existing.body == regions.normalize(body)) \
                         or (region_id == "claude-import" and CLAUDE_IMPORT_RE.search(appended)):
+                    if region_id == "privacy-contract":
+                        privacy = "present-skipped"
                     continue
                 appended, region_state = regions.upsert(appended, region_id, body)
                 if region_state == "modified":
                     raise InitError(_("{0} 里的受管区块 {1} 被你改过：用 --mode region 处理").format(relative, region_id))
                 wanted.append((region_id, body))
+                if region_id == "privacy-contract":
+                    privacy = "appended"
+            if privacy:
+                item["privacy_contract"] = privacy
             if not wanted:
                 item["action"], item["reason"] = "keep", "already-present"
             else:
@@ -1234,6 +1291,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     if not_modified:
         raise InitError(_("没有需要合并的本地改动（文件没改过，或已与新模板一致）：") + ", ".join(not_modified))
     blocked = [item["path"] for item in plan if item["action"] == "blocked"]
+    symlinks = {item["path"] for item in plan if item.get("reason") == "symlink"}
     replacing = [Path(item["path"]) for item in plan if item["action"] in {"replace", "append", "merge"}]
     for relative, chosen in picks.items():
         item = next(item for item in plan if item["path"] == relative.as_posix())
@@ -1256,11 +1314,15 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         result["diffs"] = {path.as_posix(): next(item["diff"] for item in plan if item["path"] == path.as_posix()) for path in sorted(show_diff)}
     if blocked:
         hints = []
-        if any(item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "symlink"} for item in plan if item["action"] == "blocked"):
-            hints.append(_("本地已改动的文件需逐个选择：--keep <文件> 保留你的版本（建议）；--append <文件> 保留并追加带标记的区块（仅 AGENTS.md / CLAUDE.md）；"
-                           "--accept <文件> 用新模板替换（先备份，会丢弃本地内容，需再加 --confirm-discard <文件>）；--diff <文件> 先看差异"))
-        if any(item.get("reason") == "discard-unconfirmed" for item in plan):
-            hints.append(_("--accept 会丢弃本地内容：确认后追加 --confirm-discard <文件>"))
+        needs_choice = [item["path"] for item in plan
+                        if item["action"] == "blocked" and item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "symlink"}]
+        if needs_choice:
+            hints.append(_("本地已改动的文件需逐个选择："))
+            hints += [_("  {0}：{1}").format(path, file_choices(path) if path not in symlinks else _("--keep {0} 保留链接原样（建议）").format(path))
+                      for path in needs_choice]
+        for item in plan:
+            if item.get("reason") == "discard-unconfirmed":
+                hints.append(_("--accept 会丢弃本地内容：确认后追加 --confirm-discard {0}").format(item["path"]))
         result["hint"] = "\n".join(hints)
     if not args.apply or blocked or show_diff:
         return (0 if not blocked else 1), result
@@ -1618,8 +1680,10 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 label = _("已应用") if result["applied"] else (_("已阻塞") if result["blocked"] else _("仅预览"))
                 print(_("{0}：{1}（来自 {2}）").format(label, result["pack"], result["from_version"]))
-                for item in result["files"]:
-                    print(f"  {item['action']:8} {item['path']} [{item['state']}]")
+                for path, text in result.get("diffs", {}).items():  # --diff：只给差异，不再重复完整预览
+                    print(text.rstrip("\n") if text else _("（{0} 与新模板没有差异）").format(path))
+                for item in [] if result.get("diffs") else result["files"]:
+                    print(f"  {pad_label(action_label(item['action']))}{item['path']} [{state_label(item['state'])}]")
                     for note in item.get("note", []):
                         print(f"      {note}")
                     for block in (item.get("merge") or {}).get("conflicts", []):
@@ -1628,9 +1692,7 @@ def main(argv: list[str] | None = None) -> int:
                             for label, key in ((_("你的版本"), "mine"), (_("基线"), "base"), (_("新模板"), "theirs")):
                                 print(f"        [{label}]")
                                 print("".join(f"          {line}\n" for line in block[key].splitlines()) or "          \n", end="")
-                for path, text in result.get("diffs", {}).items():
-                    print(text.rstrip("\n") if text else _("（{0} 与新模板没有差异）").format(path))
-                if result.get("hint"):
+                if result.get("hint") and not result.get("diffs"):
                     print(result["hint"])
                 for line in recovery_lines(result):
                     print(line)

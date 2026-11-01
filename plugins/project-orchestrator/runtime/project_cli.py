@@ -488,10 +488,24 @@ def cmd_fix(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, lis
     if args.reason:
         choices["_reason"] = args.reason
     plan = provider.fix_plan(ids, choices)
+    if args.diff:  # --diff：只输出差异，不再重复完整预览
+        diffs = {path: text for step in plan["steps"] if step["id"] == "update-content"
+                 for path, text in (step["payload"].get("diffs") or {}).items()}
+        blocked = next((step["blocked"] for step in plan["steps"] if step["id"] == "update-content" and step["blocked"]), "")
+        lines = header(provider, _("修复与更新"))
+        lines += [S.yellow(_("暂不能给出差异：{0}").format(blocked))] if blocked else \
+            ["\n".join([diffs[path].rstrip("\n")] if diffs.get(path) else [_("（{0} 与新模板没有差异）").format(path)]) for path in args.diff]
+        return EXIT_OK, {"plan": plan, "applied": False}, lines
     lines = header(provider, _("修复与更新")) + render_plan(plan, choices)
     if not args.apply:
-        lines.append(S.dim(_("以上为预览，没有写入。确认后加 --apply；定制文件用 --keep / --accept 指定；"
-                             "AGENTS.md / CLAUDE.md 也可用 --append 保留原文、只追加带标记的区块；--accept 会丢弃本地内容时需再加 --confirm-discard <文件>；也可用 --merge <文件> 三方合并（冲突块用 --pick），--diff <文件> 先看差异。")))
+        custom = [item["path"] for step in plan["steps"] for item in step["custom"] if item.get("content")]
+        lines.append(S.dim(_("以上为预览，没有写入。确认后加 --apply。")))
+        if custom:  # 建议命令一律带上文件名（以第一个定制文件为例，其余同理）
+            name = custom[0]
+            lines.append(S.dim(_("定制文件逐个处理，例如 {0}：--keep {0} 保留你的版本；--accept {0} 用新模板替换（会丢弃本地内容时再加 --confirm-discard {0}）；"
+                                 "--merge {0} 三方合并（冲突块用 --pick {0}#<序号>=mine|theirs|both）；--diff {0} 只看差异。"
+                                 ).format(name) + (_("AGENTS.md / CLAUDE.md 也可用 --append {0} 保留原文、只追加带标记的区块。").format(name)
+                                                   if name in ("AGENTS.md", "CLAUDE.md") else "")))
         if any(item.get("options") for step in plan["steps"] for item in step["custom"]):
             lines.append(S.dim(_("不想要其中某项：fix --skip <ID> --reason …（ID 见 health / check）；只处理几项：在处理项后列出路径或字段。")))
         return EXIT_OK, {"plan": plan, "applied": False}, lines

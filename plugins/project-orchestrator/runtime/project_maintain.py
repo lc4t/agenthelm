@@ -451,7 +451,7 @@ def _plan_content(provider: Any, env: Any, report: dict | None, choices: dict[st
 
 
 CONTENT_STATE = {"unchanged": N_("与新模板相同"), "clean": N_("没改过"), "modified": N_("你改过"), "missing": N_("目前不存在"),
-                 "local-only": N_("只有你的改动，新模板没变"), "kept-by-decision": N_("你已决定保留")}
+                 "local-only": N_("只有你的改动，新模板没变"), "kept-by-decision": N_("你已决定保留"), "symlink": N_("符号链接（不跟随改写）")}
 CONTENT_ACTION = {"keep": N_("保留"), "replace": N_("换成新模板（先备份）"), "create": N_("新建"), "skip": N_("不新建"),
                   "blocked": N_("需要你选择"), "merge": N_("三方合并（先备份）"), "append": N_("保留原文，末尾追加带标记的区块（先备份）")}
 
@@ -468,7 +468,12 @@ def _content_change(item: dict, effective: dict[str, str]) -> str:
     if item["state"] == "modified" and "local_lines" in item and action != "merge":
         note += _("（本地 {0} 行，新模板 {1} 行；采用新模板会丢弃 {2} 行本地内容）").format(
             item["local_lines"], item["template_lines"], item["lines_lost"])
-    if item.get("reason") == "no-baseline" and item["state"] == "modified":
+    if item.get("merge_requested") and item["action"] == "blocked":
+        reason = item.get("reason")
+        note += {"no-baseline": _("（要求了三方合并，但内容锁里没有它的基线摘要，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）"),
+                 "baseline-unavailable": _("（要求了三方合并，但找不到升级前的基线，无法合并；没有改动任何文件）"),
+                 "merge-conflict": _("（三方合并有冲突块未选择：用 --pick {0}#<序号>=mine|theirs|both 逐块选择）").format(item["path"])}.get(reason, "")
+    elif item.get("reason") == "no-baseline" and item["state"] == "modified":
         note += _("（内容锁里没有它的基线，无法判断是你改过还是模板变了）")
     return _("{0}：{1} → {2}{3}").format(item['path'], _(CONTENT_STATE.get(item['state'], item['state'])), _(CONTENT_ACTION.get(action, action)), note)
 
