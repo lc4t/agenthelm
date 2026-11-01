@@ -5,7 +5,12 @@
 """
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
 import json
+import shutil
 import subprocess
 import sys
 import unittest
@@ -168,6 +173,95 @@ class SkipTests(ScaffoldCase):
         self.assertIn("install-runtime", self.ids(payload), "另一台机器仍然提示")
 
 
+class AcceptCurrentTests(ScaffoldCase):
+    """#37：成熟项目升级后——同类建议归并、一次接受现状、之后只提示新差异、只有“必须处理”的项影响退出码。"""
+
+    def text(self, root: Path, *args: str, env: dict | None = None) -> tuple[int, str]:
+        result = subprocess.run([sys.executable, str(AGENTHELM), "project", "--project", str(root), "health", "--offline",
+                                 "--no-input", *args], input="", capture_output=True, text=True, check=False,
+                                env=env or self.env, timeout=120)
+        return result.returncode, result.stdout
+
+    def test_health_merges_a_category_into_one_entry_with_correct_counts_and_json_keeps_the_items(self) -> None:
+        root = self.old_project()
+        code, text = self.text(root)
+        self.assertEqual(code, 0)
+        self.assertEqual(text.count("4 个缺失文件"), 1, text)
+        self.assertIn("fix --accept-current", text)
+        self.assertNotIn("原因：期望骨架清单里有", text)
+        _, details = self.text(root, "--details")
+        self.assertEqual(details.count("期望骨架清单里有，项目里没有"), 4, details)
+        _, payload = self.health(root)
+        items = [f for f in payload["data"]["findings"] if f["id"].startswith("skel:")]
+        self.assertEqual(len(items), 4, "JSON 逐项明细保持")
+        self.assertTrue(all(f["group"]["count"] == 4 and f["level"] == "suggest" for f in items))
+        self.assertEqual(self.check(root)["scaffold"]["categories"][0]["count"], 4)
+
+    def test_check_text_merges_too_and_only_required_findings_count_for_exit_code_and_notice(self) -> None:
+        root = self.old_project()
+        result = subprocess.run([sys.executable, str(AGENTHELM), "check", "--project", str(root), "--offline", "--strict"],
+                                capture_output=True, text=True, check=False, env=self.env, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("4 个缺失文件", result.stdout)
+        self.assertNotIn("skel:.agents/mcp.json", result.stdout)
+        report = self.check(root)
+        self.assertEqual((report["summary"]["scaffold_findings"], report["summary"]["scaffold_required"],
+                          report["summary"]["scaffold_optional"]), (4, 0, 4))
+        self.assertTrue(report["summary"]["up_to_date"])
+
+    def test_accept_current_previews_then_applies_and_nothing_is_left_to_suggest(self) -> None:
+        root = self.old_project()
+        before = tree_digest(root)
+        code, preview = self.fix(root, "--accept-current", "--reason", "mature layout")
+        self.assertEqual((code, preview["data"]["applied"], preview["data"]["count"]), (0, False, 4))
+        self.assertEqual(tree_digest(root), before)
+        code, applied = self.fix(root, "--accept-current", "--reason", "mature layout", "--apply")
+        self.assertEqual((code, applied["data"]["applied"]), (0, True))
+        saved = json.loads((root / DECISIONS).read_text(encoding="utf-8"))["decisions"]
+        self.assertEqual(len(saved), 4)
+        self.assertTrue(all(v["decision"] == "keep" and v["reason"] == "mature layout" for v in saved.values()))
+        self.assertEqual(self.check(root)["scaffold"]["findings"], [])
+        _, payload = self.health(root)
+        self.assertFalse({i for i in self.ids(payload) if i.startswith("skel:")})
+        _, text = self.text(root)
+        self.assertNotIn("个缺失文件", text)
+        self.assertIn("4 项已跳过", text)
+        _, again = self.fix(root, "--accept-current", "--apply")
+        self.assertEqual(again["data"]["count"], 0)
+
+    def test_after_accepting_only_a_new_difference_shows_and_another_machine_stays_quiet(self) -> None:
+        root = self.old_project()
+        self.fix(root, "--accept-current", "--reason", "mature layout", "--apply")
+        second = self.other_machine()
+        self.assertEqual(self.check(root, env=second)["scaffold"]["findings"], [])
+        _, payload = self.health(root, env=second)
+        self.assertFalse({i for i in self.ids(payload) if i.startswith("skel:")})
+        (root / ".agent-doc/plan.md").unlink()
+        for env in (self.env, second):
+            report = self.check(root, env=env)
+            self.assertEqual([f["id"] for f in report["scaffold"]["findings"]], ["skel:.agent-doc/plan.md"])
+            _, text = self.text(root, env=env)
+            self.assertIn("1 个缺失文件", text)
+
+    def test_a_project_with_its_own_case_tool_gets_no_default_structure_suggestions(self) -> None:
+        root = self.make_project("own-tool", "notes", "--no-entry", "--work-mode", "case-workspace")
+        shutil.rmtree(root / "cases")
+        self.assertIn("skel:cases/.gitkeep", {f["id"] for f in self.check(root)["scaffold"]["findings"]})
+        self.edit_profile(root, lambda profile: profile["work"]["case"].update({"command": ["./tools/case"]}))
+        self.assertNotIn("skel:cases/.gitkeep", {f["id"] for f in self.check(root)["scaffold"]["findings"]})
+
+    def test_english_output(self) -> None:
+        root = self.old_project()
+        english = {**self.env, "AGENTHELM_LANG": "en"}
+        _, text = self.text(root, env=english)
+        self.assertIn("Missing files: 4", text)
+        result = subprocess.run([sys.executable, str(AGENTHELM), "fix", "--project", str(root), "--offline",
+                                 "--accept-current", "--reason", "x"], input="", capture_output=True, text=True,
+                                check=False, env=english, timeout=120)
+        self.assertIn("record the current scaffold differences (4)", result.stdout)
+        self.assertNotRegex(result.stdout, "[\u4e00-\u9fff]")
+
+
 class ContentLockTests(ScaffoldCase):
     def lock_version(self, root: Path) -> str:
         return json.loads((root / LOCK).read_text(encoding="utf-8"))["packs"]["agents-init/project-contract"]["version"]
@@ -296,6 +390,83 @@ class SyncFolderHealthTests(ScaffoldCase):
         self.assertNotIn("sync-folder", self.ids(payload))
 
 
+class LocalOnlyHealthTests(ScaffoldCase):
+    """同步盘里的 .venv：health 给出带选项的建议，fix local-only 只展示预览，真正的移动由 agenthelm local-only fix 完成。"""
+
+    def synced_project(self) -> Path:
+        base = self.base / "iCloud Drive"
+        base.mkdir()
+        root = base / "sample-notes"
+        root.mkdir()
+        done = subprocess.run([sys.executable, str(INIT), "--project", str(root), "--name", "Sample Notes",
+                               "--slug", "sample-notes", "--project-type", "notes", "--vcs", "none", "--stack", "none",
+                               "--runtime", "local", "--agent-cli", "none", "--no-entry", "--apply", "--output", "json"],
+                              capture_output=True, text=True, check=False, env=self.env)
+        self.assertEqual(done.returncode, 0, done.stdout)
+        (root / ".venv/bin").mkdir(parents=True)
+        (root / ".venv/pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+        (root / ".venv/bin/pip").write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+        return root
+
+    def local_only(self, root: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(AGENTHELM), "local-only", *args, "--project", str(root)],
+                              capture_output=True, text=True, check=False, env=env or self.env, timeout=120)
+
+    def finding(self, payload: dict, identifier: str) -> dict | None:
+        return next((f for f in payload["data"]["findings"] if f["id"] == identifier), None)
+
+    def test_health_lists_the_directory_with_choices_and_keeps_the_exit_code(self) -> None:
+        root = self.synced_project()
+        before = tree_digest(root)
+        code, payload = self.health(root)
+        self.assertEqual(code, 0)
+        found = self.finding(payload, "local:real:.venv")
+        self.assertEqual((found["area"], found["level"]), ("同步盘", "suggest"))
+        self.assertEqual(found["decision"]["scope"], "machine")
+        self.assertEqual(found["next"][0]["action"], "fix:local-only")
+        self.assertIn("local-only fix --externalize .venv", found["next"][0]["label"])
+        self.assertEqual(tree_digest(root), before)
+
+    def test_fix_local_only_only_shows_the_preview(self) -> None:
+        root = self.synced_project()
+        code, preview = self.fix(root, "local-only", "--apply")
+        step = preview["data"]["plan"]["steps"][0]
+        text = "\n".join(step["changes"])
+        for expected in (".venv", "local-only fix --apply"):
+            self.assertIn(expected, text)
+        self.assertEqual(step["writes"], [])
+        self.assertEqual(preview["data"]["results"][0]["status"], "skipped")
+        self.assertTrue((root / ".venv").is_dir() and not (root / ".venv").is_symlink())
+
+    def test_after_externalizing_health_is_clean_here_and_flags_a_machine_with_another_home(self) -> None:
+        root = self.synced_project()
+        done = self.local_only(root, "fix", "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertTrue((root / ".venv").is_symlink())
+        _, payload = self.health(root)
+        self.assertFalse([f for f in payload["data"]["findings"] if f["id"].startswith("local:real")])
+        self.assertIsNone(self.finding(payload, "local:link:.venv"))
+        _, other = self.health(root, env=self.other_machine())
+        mismatch = self.finding(other, "local:home-mismatch")
+        self.assertIsNotNone(mismatch)
+        self.assertIn("HOME", mismatch["title"])
+
+    def test_it_can_be_dismissed_on_this_machine_only(self) -> None:
+        root = self.synced_project()
+        self.fix(root, "--skip", "local:real:.venv", "--reason", "managed by hand", "--apply")
+        _, payload = self.health(root)
+        self.assertIsNone(self.finding(payload, "local:real:.venv"))
+        _, other = self.health(root, env=self.other_machine())
+        self.assertIsNotNone(self.finding(other, "local:real:.venv"))
+
+    def test_a_project_outside_sync_folders_gets_no_local_only_findings(self) -> None:
+        root = self.old_project("plain-notes")
+        (root / ".venv").mkdir()
+        (root / ".venv/pyvenv.cfg").write_text("x\n", encoding="utf-8")
+        _, payload = self.health(root)
+        self.assertFalse([f for f in payload["data"]["findings"] if f["id"].startswith("local:")])
+
+
 class CaseNamingFixTests(ScaffoldCase):
     def test_naming_mismatch_is_found_and_the_fix_only_plans(self) -> None:
         root = self.make_project("sample-notes", "notes", "--no-entry")
@@ -323,6 +494,72 @@ class CaseNamingFixTests(ScaffoldCase):
         self.assertNotIn("case-naming", self.ids(payload))
         code, listed = self.run_json(root, "progress")
         self.assertEqual(code, 0, "wf / 进展照常列出这些目录，命名只是声明与检查")
+
+
+class NoBaselineContentTests(ScaffoldCase):
+    """#36 经 fix update-content：没有基线的已定制文件。"""
+
+    MINE = "# 我的规则\n\n- 不要读 ~/secret\n- 回答简短\n"
+
+    def project(self) -> Path:
+        root = self.old_project()
+        (root / "AGENTS.md").write_text(self.MINE, encoding="utf-8")
+        (root / "CLAUDE.md").write_text("先读 AGENTS.md\n隐私：不要记录令牌\n", encoding="utf-8")
+        return root
+
+    def test_the_preview_shows_how_much_differs_and_why(self) -> None:
+        root = self.project()
+        code, preview = self.fix(root, "update-content")
+        self.assertEqual(code, 0, preview)
+        step = preview["data"]["plan"]["steps"][0]
+        text = "\n".join(step["changes"])
+        self.assertIn("本地 4 行", text)
+        self.assertIn("丢弃 3 行本地内容", text)
+        self.assertIn("没有它的基线", text)
+        agents = next(item for item in step["custom"] if item["path"] == "AGENTS.md")
+        self.assertEqual((agents["default"], agents["lost"], agents["append"]), ("keep", 3, True))
+        self.assertIn("-# 我的规则", step["payload"]["diffs"]["AGENTS.md"])
+        self.assertEqual((root / "AGENTS.md").read_text(encoding="utf-8"), self.MINE)
+
+    def test_accept_without_confirmation_writes_nothing_and_says_what_to_add(self) -> None:
+        root = self.project()
+        before = (root / "CLAUDE.md").read_text(encoding="utf-8")
+        code, refused = self.fix(root, "update-content", "--accept", "CLAUDE.md", "--apply")
+        result = refused["data"]["results"][0]
+        self.assertEqual((code, result["status"]), (1, "failed"), refused)  # not "done", and not exit 0
+        self.assertIn("--confirm-discard", result["detail"])
+        self.assertEqual((root / "CLAUDE.md").read_text(encoding="utf-8"), before)
+        code, done = self.fix(root, "update-content", "--accept", "CLAUDE.md", "--confirm-discard", "CLAUDE.md", "--apply")
+        result = done["data"]["results"][0]
+        self.assertEqual(result["status"], "applied", done)
+        self.assertTrue((root / "CLAUDE.md").read_text(encoding="utf-8").startswith("@AGENTS.md"))
+        self.assertEqual((Path(result["recovery"]) / "CLAUDE.md").read_text(encoding="utf-8"), before)
+
+    def test_append_keeps_the_text_and_leaves_nothing_to_ask(self) -> None:
+        root = self.project()
+        code, done = self.fix(root, "update-content", "--append", "AGENTS.md", "--append", "CLAUDE.md", "--apply")
+        result = done["data"]["results"][0]
+        self.assertEqual((code, result["status"], sorted(result["appended"])), (0, "applied", ["AGENTS.md", "CLAUDE.md"]), done)
+        self.assertTrue((root / "AGENTS.md").read_text(encoding="utf-8").startswith(self.MINE))
+        self.assertEqual((Path(result["recovery"]) / "AGENTS.md").read_text(encoding="utf-8"), self.MINE)
+        _, payload = self.health(root)
+        self.assertFalse({"content:AGENTS.md", "content:CLAUDE.md"} & self.ids(payload), payload)
+
+    def test_the_menu_asks_with_the_discard_count_and_can_show_the_diff(self) -> None:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
+        import project_menu
+        item = {"path": "AGENTS.md", "state": "你改过", "content": True, "lost": 3, "append": True}
+        with mock.patch.object(project_menu, "choose", side_effect=["d", "x", "p"]) as asked, \
+                mock.patch("builtins.print") as printed:
+            self.assertEqual(project_menu._decide_content(item, "-旧\n+新"), "append")
+        self.assertIn("丢弃 3 行", asked.call_args_list[0].args[0].replace("会丢弃", "丢弃"))
+        self.assertTrue(any("+新" in str(call) for call in printed.call_args_list))
+        plain = {**item, "path": "docs/x.md", "append": False}
+        for answer, expected in (("k", "keep"), ("a", "accept"), ("", "keep")):
+            with mock.patch.object(project_menu, "choose", return_value=answer or "k"):
+                self.assertEqual(project_menu._decide_content(plain, ""), expected)
+        with mock.patch.object(project_menu, "choose", side_effect=["p", "k"]), mock.patch("builtins.print"):
+            self.assertEqual(project_menu._decide_content(plain, ""), "keep")  # p is only offered where it can work
 
 
 class MenuChoiceTests(unittest.TestCase):

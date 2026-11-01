@@ -3,7 +3,7 @@
   "packs": [
     {
       "id": "agents-init/project-contract",
-      "version": "1.1.0",
+      "version": "1.3.0",
       "kind": "template",
       "title": "项目契约模板",
       "description": "初始化时渲染为项目入口文件的中文模板与根目录启动器；更新后由用户逐文件选择是否重新渲染。",
@@ -20,7 +20,7 @@
       ],
       "project_lock": "agenthelm",
       "files": {
-        "skills/agents-init/AGENT.template.md": "cb35f9a20b845686f24823c03bc71c5b93683dc750b61bd4eae733da2085b056",
+        "skills/agents-init/AGENT.template.md": "c0e807c2f5b979a1b08370ad01c4c5e6e974e65ae54f714ea34b3817fa45f831",
         "skills/agents-init/launcher.sh": "cf27d6cca786905a192446ea4eefe5635942914c3358c78d12117af912107cad"
       },
       "materializes_from_profile": [
@@ -29,7 +29,7 @@
     },
     {
       "id": "agents-init/project-skeleton",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "manifest",
       "title": "期望骨架清单",
       "description": "项目脚手架应有的文件、Profile 受检字段与不参与比较的字段（审计字段、Opinion 设置）；agenthelm check 据此对比项目，不写入项目。",
@@ -39,7 +39,7 @@
       "materializes": [],
       "project_lock": "none",
       "files": {
-        "skills/agents-init/skeleton.json": "70ea5e360f018c0d840d5d7aa022f811d665642a2d127f254f7a76335b4e77da"
+        "skills/agents-init/skeleton.json": "4a7c2ccaed293bc63ae2f3b3e6c8fa5e906292462f81c41a0fc88fcb22a3eeeb"
       }
     }
   ]

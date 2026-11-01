@@ -24,6 +24,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path from other plugins
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from i18n_init import _  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 MANIFEST_PATH = HERE.parent / "skeleton.json"
@@ -36,6 +39,15 @@ LOCAL_PREFIX = "local:"
 SF_DATALESS = 0x40000000
 
 init: Any = None  # init_project 模块；由 bind() 或首次使用时加载
+
+
+def _regions() -> Any:
+    here = str(HERE)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import regions  # noqa: PLC0415
+
+    return regions
 
 
 def _load_default() -> Any:
@@ -82,9 +94,9 @@ def load_manifest() -> dict:
     try:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise _fail(f"无法读取期望骨架清单：{MANIFEST_PATH}", "template-invalid") from exc
+        raise _fail(_("无法读取期望骨架清单：{0}").format(MANIFEST_PATH), "template-invalid") from exc
     if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
-        raise _fail("期望骨架清单格式不对", "template-invalid")
+        raise _fail(_("期望骨架清单格式不对"), "template-invalid")
     return manifest
 
 
@@ -143,7 +155,15 @@ class Context:
         case = work.get("case") if isinstance(work.get("case"), dict) else {}
         memory = self.profile.get("memory") if isinstance(self.profile.get("memory"), dict) else {}
         self.case_root = case.get("root") if _relative_ok(case.get("root")) else "cases"
+        # 项目声明了自己的 Case 工具：Case 目录结构由它负责，不再按默认结构要求。
+        self.own_case_tool = bool(case.get("command"))
         self.memory_root = memory.get("root") if _relative_ok(memory.get("root")) else "memory"
+        sop = self.profile.get("sop") if isinstance(self.profile.get("sop"), dict) else None
+        privacy = self.profile.get("privacy") if isinstance(self.profile.get("privacy"), dict) else {}
+        reads = privacy.get("forbidden_default_reads") if isinstance(privacy.get("forbidden_default_reads"), list) else []
+        self.private_declared = any(isinstance(item, str) and item.strip().strip("/") == "private" for item in reads)
+        self.sop_declared = sop is not None
+        self.sop_root = sop.get("root") if sop is not None and _relative_ok(sop.get("root")) else "sops"
         self.rendered = self._rendered()
         self.fresh = json.loads(self.rendered[module.PROFILE_PATH])
         self.pack = module.contract_pack()
@@ -164,12 +184,18 @@ class Context:
                 tuple(details.get("stack") or ()), str(details.get("runtime") or ""),
                 tuple(details.get("agent_cli") or ()), str(work.get("mode") or "legacy"),
                 module._profile_launcher(self.profile),
+                module.project_language(self.profile), module.privacy_declared_in(self.profile),
             )
 
     def _rendered(self) -> dict[Path, str]:
         files = _init().files_for(self.inputs)
         files.pop(Path("cases/.gitkeep"), None)
         files.pop(Path("memory/.gitkeep"), None)
+        files.pop(Path("sops/.gitkeep"), None)
+        if not self.private_declared:
+            files.pop(Path("private/.gitignore"), None)  # 老项目没有声明私有目录：不要求，也不产生新差异
+        if self.sop_declared:
+            files[Path(self.sop_root) / ".gitkeep"] = ""
         if self.inputs.work_mode == "case-workspace":
             files[Path(self.case_root) / ".gitkeep"] = ""
         files[Path(self.memory_root) / ".gitkeep"] = ""
@@ -180,11 +206,16 @@ class Context:
         resolved = []
         for entry in self.manifest["files"]:
             when = entry.get("when")
-            if when == "case-workspace" and self.inputs.work_mode != "case-workspace":
+            if when == "case-workspace" and (self.inputs.work_mode != "case-workspace" or self.own_case_tool):
                 continue
             if when == "entry" and not self.inputs.entry_launcher:
                 continue
+            if when == "private" and not self.private_declared:
+                continue
+            if when == "sop" and not self.sop_declared:
+                continue  # 旧项目没有声明 sop 段：不要求 sops/，也不产生新的差异
             path = (entry["path"].replace("{case_root}", self.case_root).replace("{memory_root}", self.memory_root)
+                    .replace("{sop_root}", self.sop_root)
                     .replace("{launcher}", self.inputs.entry_launcher or ""))
             text = self.rendered.get(Path(path))
             resolved.append({**entry, "path": path, "fingerprint": sha(text if text is not None else path)})
@@ -199,7 +230,7 @@ class Context:
 def _lstat(path: Path) -> os.stat_result | None:
     try:
         return path.lstat()
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):  # a user file standing where a parent directory should be
         return None
 
 
@@ -243,14 +274,77 @@ def _skeleton_state(ctx: Context, entry: dict, baseline: dict[str, str]) -> str:
     return "ok"
 
 
+def _text_of(path: Path) -> str | None:
+    if _lstat(path) is None or path.is_symlink() or not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def region_rows(root: Path, pack_entry: dict | None, language: str = "zh") -> list[dict]:
+    """State of every managed region the lock says this tool put into a file the user owns."""
+    module, regions = _init(), _regions()
+    templates = module.load_templates()
+    rows = []
+    for path, ids in sorted(((pack_entry or {}).get("regions") or {}).items()):
+        text = _text_of(root / path)
+        for region_id, recorded in sorted(ids.items()):
+            if f"region/{region_id}" not in templates:
+                continue
+            template = module.localized(templates, f"region/{region_id}", language)
+            expected = regions.digest(template)
+            region = regions.get(text, region_id) if text is not None else None
+            if region is None:
+                state = "missing"
+            elif not region.intact or region.digest != recorded:
+                state = "modified"
+            elif region.digest != expected:
+                state = "outdated"
+            else:
+                state = "ok"
+            rows.append({"path": path, "id": region_id, "state": state, "expected": expected,
+                         "fingerprint": sha(f"{path}#{region_id}:{expected}")})
+    return rows
+
+
+def _check_privacy(ctx: Context, root: Path) -> list[dict]:
+    """AGENTS.md's privacy convention against the Profile's ``privacy.forbidden_default_reads``.
+
+    The convention names the field instead of copying the paths, so only the field going empty or non-empty makes
+    the text wrong. Anything the user wrote themselves about the field counts as their own convention.
+    """
+    module = _init()
+    text = _text_of(root / "AGENTS.md")
+    privacy = ctx.profile.get("privacy") if isinstance(ctx.profile.get("privacy"), dict) else {}
+    if text is None or not isinstance(privacy.get("forbidden_default_reads"), list):
+        return []  # 字段缺失由 profile-missing 报告，不重复
+    declared = ctx.inputs.privacy_declared
+    state = module.privacy_convention_state(text, module.load_templates())
+    if declared and state == "absent":
+        kind, title = "privacy-contract-missing", _("AGENTS.md 没有隐私约定，Profile 已声明私有路径")
+        reason = _("Profile 的 privacy.forbidden_default_reads 非空，但 AGENTS.md 没有写默认不读、先经用户确认的约定；update-content --append AGENTS.md 可以保留原文并补上")
+    elif declared and state == "undeclared":
+        kind, title = "privacy-contract-stale", _("AGENTS.md 写着未声明私有路径，Profile 已声明")
+        reason = _("Profile 的 privacy.forbidden_default_reads 已非空；update-content 刷新 AGENTS.md 的隐私约定（改过的文件用 --append）")
+    elif not declared and state == "declared":
+        kind, title = "privacy-contract-stale", _("AGENTS.md 写着私有路径约定，Profile 的 privacy.forbidden_default_reads 为空")
+        reason = _("字段为空表示没有私有路径；update-content 刷新 AGENTS.md，或把路径写回该字段")
+    else:
+        return []
+    return [_finding("privacy-contract", kind, title, reason, sha(f"privacy-contract:{kind}:{declared}"), "update-content",
+                     path="AGENTS.md")]
+
+
 def _check_profile(ctx: Context) -> list[dict]:
     work_mode = ctx.inputs.work_mode
     rows = []
     for rule in ctx.manifest.get("profile", []):
-        if rule.get("when") == "case-workspace" and work_mode != "case-workspace":
+        if rule.get("when") == "case-workspace" and (work_mode != "case-workspace" or ctx.own_case_tool):
             continue
         present, value = _get(ctx.profile, rule["path"])
-        _, default = _get(ctx.fresh, rule["path"])
+        _found, default = _get(ctx.fresh, rule["path"])
         mode = rule["mode"]
         if mode == "default" and default is None:
             mode = "manual"
@@ -273,15 +367,49 @@ def _check_profile(ctx: Context) -> list[dict]:
     return rows
 
 
-def _project_fields(ctx: Context) -> list[str]:
-    """Profile fields the scaffold does not know: the project's own, never compared."""
+# Profile fields other plugins read although the schema does not declare them (path or prefix -> plugin).
+# Declare them in project.schema.json; this list only keeps a project whose schema copy is older from calling them "own".
+READ_BY_OTHER_PLUGINS = {"opinion.nudge": "agent-pack"}
+
+
+def _edit_distance(a: str, b: str) -> int:
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        current = [i]
+        for j, cb in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
+        previous = current
+    return previous[-1]
+
+
+def _likely_typo(key: str, declared: list[str]) -> str | None:
+    """The declared sibling this key is probably a misspelling of (edit distance 1, or 2 for long names)."""
+    if key in declared or len(key) < 4:
+        return None
+    limit = 1 if len(key) <= 6 else 2
+    best = min(((_edit_distance(key.lower(), name.lower()), name) for name in declared), default=(limit + 1, ""))
+    return best[1] if best[0] <= limit else None
+
+
+def _profile_extras(ctx: Context) -> list[dict]:
+    """Profile fields the schema does not declare, sorted into: the project's own, suspected typos, read by another plugin."""
     try:
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
     known = set(ctx.manifest.get("audit_fields", [])) | set(ctx.manifest.get("opinion_fields", [])) \
         | {rule["path"] for rule in ctx.manifest.get("profile", [])}
-    extras: list[str] = []
+    extras: list[dict] = []
+
+    def classify(dotted: str, key: str, props: dict, prefix: str) -> dict:
+        for declared_path, plugin in READ_BY_OTHER_PLUGINS.items():
+            if dotted == declared_path or dotted.startswith(declared_path + "."):
+                return {"path": dotted, "kind": "project-field", "category": "read-by-plugin", "plugin": plugin, "similar_to": None}
+        similar = _likely_typo(key, sorted(props))
+        if similar:
+            return {"path": dotted, "kind": "project-field", "category": "suspected-typo", "plugin": None,
+                    "similar_to": f"{prefix}{similar}"}
+        return {"path": dotted, "kind": "project-field", "category": "own", "plugin": None, "similar_to": None}
 
     def walk(value: dict, props: dict, prefix: str) -> None:
         for key, child in value.items():
@@ -289,12 +417,135 @@ def _project_fields(ctx: Context) -> list[str]:
             declared = props.get(key)
             if declared is None:
                 if not any(item == dotted or item.startswith(dotted + ".") for item in known):
-                    extras.append(dotted)
+                    extras.append(classify(dotted, key, props, prefix))
             elif isinstance(child, dict) and isinstance(declared.get("properties"), dict):
                 walk(child, declared["properties"], dotted + ".")
 
     walk(ctx.profile, schema.get("properties") or {}, "")
-    return sorted(extras)
+    return sorted(extras, key=lambda item: item["path"])
+
+
+def _project_fields(ctx: Context) -> list[str]:
+    """Profile fields the scaffold does not know: the project's own, never compared."""
+    return [item["path"] for item in _profile_extras(ctx)]
+
+
+def _extras_summary(extras: list[dict]) -> dict:
+    fields = [item for item in extras if item["kind"] == "project-field"]
+    return {"total": len(fields),
+            "own": sum(item["category"] == "own" for item in fields),
+            "suspected_typo": sum(item["category"] == "suspected-typo" for item in fields),
+            "read_by_plugin": sum(item["category"] == "read-by-plugin" for item in fields)}
+
+
+# A Profile value whose shape differs from what the schema now declares. The tool never rewrites it.
+SHAPE_SKIP_DESCENT = {"work.case.directory_naming"}  # has its own check (case_naming_spec)
+
+
+def _resolve(node: Any, defs: dict) -> Any:
+    ref = node.get("$ref") if isinstance(node, dict) else None
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        return defs.get(ref.rsplit("/", 1)[-1], node)
+    return node
+
+
+def _json_kind(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    return {str: "string", list: "array", dict: "object", float: "number"}.get(type(value), "object")
+
+
+def _matches_type(value: Any, name: str) -> bool:
+    kind = _json_kind(value)
+    return kind == name or (name == "number" and kind in ("integer", "number"))
+
+
+def _shape_problem(value: Any, node: Any, defs: dict) -> str | None:
+    """Why ``value`` does not fit the declared type or enum; None when it fits or the schema says nothing simple."""
+    node = _resolve(node, defs)
+    if not isinstance(node, dict):
+        return None
+    if "anyOf" in node:
+        branches = [_resolve(branch, defs) for branch in node["anyOf"]]
+        if any(_shape_problem(value, branch, defs) is None for branch in branches):
+            return None
+        return " | ".join(filter(None, (_describe(branch) for branch in branches)))
+    types = node.get("type")
+    types = [types] if isinstance(types, str) else list(types or [])
+    if types and not any(_matches_type(value, name) for name in types):
+        return _describe(node)
+    if "enum" in node and value not in node["enum"]:
+        return _describe(node)
+    return None
+
+
+def _describe(node: Any) -> str:
+    if not isinstance(node, dict):
+        return ""
+    if "enum" in node:
+        return " / ".join(json.dumps(item, ensure_ascii=False) for item in node["enum"])
+    types = node.get("type")
+    return "/".join([types] if isinstance(types, str) else list(types or []))
+
+
+def _example_for(node: Any, defs: dict) -> Any:
+    node = _resolve(node, defs)
+    if not isinstance(node, dict):
+        return None
+    if "enum" in node:
+        return node["enum"][0]
+    types = node.get("type")
+    first = (types if isinstance(types, str) else (types or ["string"])[0])
+    return {"object": {}, "array": [], "string": "...", "boolean": True, "integer": 1, "number": 1}.get(first)
+
+
+def _naming_example() -> dict:
+    return {"style": "date-topic"}
+
+
+def _naming_hint() -> str:
+    return _("可用写法：{0} 或 {1}；要保留原文字不改动：把它移到你自己的字段名下（如 work.case.project_directory_naming），再删掉这一项").format(
+        json.dumps(_naming_example(), ensure_ascii=False),
+        json.dumps({"style": "custom", "pattern": r"^CASE-[0-9]{8}-.+$"}, ensure_ascii=False))
+
+
+def _profile_conflicts(ctx: Context) -> list[dict]:
+    """Values the project wrote before the schema declared the field, whose shape no longer fits: information only."""
+    try:
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    defs = schema.get("$defs") or {}
+    skip = {rule["path"] for rule in ctx.manifest.get("profile", [])} | set(ctx.manifest.get("audit_fields", []))
+    found: list[dict] = []
+
+    def walk(value: dict, props: dict, prefix: str) -> None:
+        for key, child in value.items():
+            node = _resolve(props.get(key), defs)
+            dotted = f"{prefix}{key}"
+            if not isinstance(node, dict) or dotted in skip or child is None:
+                continue
+            problem = _shape_problem(child, node, defs)
+            if problem:
+                found.append(_conflict(dotted, key, prefix, problem, child, node, defs))
+            elif isinstance(child, dict) and isinstance(node.get("properties"), dict) and dotted not in SHAPE_SKIP_DESCENT:
+                walk(child, node["properties"], dotted + ".")
+
+    walk(ctx.profile, schema.get("properties") or {}, "")
+    return sorted(found, key=lambda item: item["path"])
+
+
+def _conflict(dotted: str, key: str, prefix: str, expected: str, value: Any, node: dict, defs: dict) -> dict:
+    example = _naming_example() if dotted == "work.case.directory_naming" else _example_for(node, defs)
+    rename_to = f"{prefix}project_{key}"
+    return {"id": f"conflict:{dotted}", "kind": "profile-conflict", "level": "info", "path": dotted,
+            "expected": expected, "found": _json_kind(value), "example": example, "rename_to": rename_to,
+            "options": ["convert", "keep-as-own-field", "ignore"],
+            "message": _("Profile 的 {0} 是{1}，schema 现在把它声明为 {2}：它按项目自定义处理，工具不读取、不检查，也不会改写你的值。"
+                         "三个选项：转换成 {2} 的写法（例如 {3}）；保留为项目自有字段（改名，如 {4}）；忽略（什么都不用做，不影响退出码）").format(
+                dotted, _json_kind(value), expected, json.dumps(example, ensure_ascii=False), rename_to)}
 
 
 # ---------------------------------------------------------------- decisions
@@ -311,21 +562,21 @@ def default_state_dir() -> Path:
 def read_decisions(path: Path) -> tuple[dict[str, dict], str | None, str | None]:
     """(decisions, sha256 of the file text or None, error)."""
     if path.is_symlink():
-        return {}, None, f"拒绝符号链接：{path.name}"
+        return {}, None, _("拒绝符号链接：{0}").format(path.name)
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return {}, None, None
     except (OSError, UnicodeDecodeError) as exc:
-        return {}, None, f"决定文件无法读取：{exc}"
+        return {}, None, _("决定文件无法读取：{0}").format(exc)
     try:
         data = json.loads(text)
     except ValueError as exc:
-        return {}, sha(text), f"决定文件不是合法 JSON：{exc}"
+        return {}, sha(text), _("决定文件不是合法 JSON：{0}").format(exc)
     table = data.get("decisions") if isinstance(data, dict) else None
     if not isinstance(table, dict) or not all(isinstance(item, dict) and item.get("decision") in DECISION_VALUES
                                               for item in table.values()):
-        return {}, sha(text), "决定文件格式不对（需要 decisions 对象，decision 为 skip / keep / later）"
+        return {}, sha(text), _("决定文件格式不对（需要 decisions 对象，decision 为 skip / keep / later）")
     return table, sha(text), None
 
 
@@ -371,7 +622,7 @@ def partition(findings: list[dict], decisions: dict, *, reprompt: bool = False) 
 
 def keep_fingerprints(root: Path) -> dict[str, str]:
     """Files the user chose to keep, with the expected-content fingerprint of that moment (refresh honours them)."""
-    table, _, error = read_decisions(root / DECISIONS_PATH)
+    table, _decisions, error = read_decisions(root / DECISIONS_PATH)
     if error:
         return {}
     return {key[len("content:"):]: item["fingerprint"] for key, item in table.items()
@@ -396,21 +647,22 @@ def case_naming_spec(profile: dict) -> dict:
     if declared is None:
         return {"style": "case-id", "pattern": CASE_STYLES["case-id"], "declared": False, "error": None}
     if not isinstance(declared, dict):
-        return {"style": None, "pattern": None, "declared": True, "error": "directory_naming 必须是对象"}
+        # Written before the schema declared it: the project's own text. Not an error; the tool does not check names.
+        return {"style": None, "pattern": None, "declared": True, "free_text": True, "error": None}
     pattern = declared.get("pattern")
     style = declared.get("style") or ("custom" if pattern else "case-id")
     if style not in (*CASE_STYLES, "custom"):
         return {"style": style, "pattern": None, "declared": True,
-                "error": "style 只能是 case-id / date-topic / custom"}
+                "error": _("style 只能是 case-id / date-topic / custom")}
     if pattern is not None and not isinstance(pattern, str):
-        return {"style": style, "pattern": None, "declared": True, "error": "pattern 必须是字符串（正则，匹配整个目录名）"}
+        return {"style": style, "pattern": None, "declared": True, "error": _("pattern 必须是字符串（正则，匹配整个目录名）")}
     if style == "custom" and not pattern:
-        return {"style": style, "pattern": None, "declared": True, "error": "style 为 custom 时需要 pattern"}
+        return {"style": style, "pattern": None, "declared": True, "error": _("style 为 custom 时需要 pattern")}
     pattern = pattern or CASE_STYLES[style]
     try:
         re.compile(pattern)
     except re.error as exc:
-        return {"style": style, "pattern": pattern, "declared": True, "error": f"pattern 不是合法正则：{exc}"}
+        return {"style": style, "pattern": pattern, "declared": True, "error": _("pattern 不是合法正则：{0}").format(exc)}
     return {"style": style, "pattern": pattern, "declared": True, "error": None}
 
 
@@ -426,7 +678,9 @@ def check_case_naming(ctx: Context) -> dict:
     spec = case_naming_spec(ctx.profile)
     names = _case_directories(ctx)
     mismatched = []
-    if spec["error"] is None and ctx.inputs.work_mode == "case-workspace":
+    # 项目自带 Case 工具又没有声明命名规则：命名归它管，不拿默认的 CASE-日期-序号-主题去比。
+    own_naming = ctx.own_case_tool and not spec["declared"]
+    if spec["error"] is None and spec["pattern"] and ctx.inputs.work_mode == "case-workspace" and not own_naming:
         compiled = re.compile(spec["pattern"])
         mismatched = [name for name in names if not compiled.fullmatch(name)]
     return {**spec, "root": ctx.case_root, "directories": len(names), "mismatched": mismatched[:200],
@@ -484,6 +738,9 @@ def case_naming_plan(root: Path) -> dict:
               "error": naming["error"], "renames": [], "declaration_hint": None, "moves_directories": False}
     if naming["error"]:
         return result
+    if naming.get("free_text"):
+        result["note"] = _("work.case.directory_naming 是项目自己的文字，工具不检查目录命名，也没有改名计划")
+        return result
     names = _case_directories(ctx)
     taken = set(names)
     mismatched = naming["mismatched"]
@@ -494,14 +751,14 @@ def case_naming_plan(root: Path) -> dict:
             taken.add(suggestion)
         result["renames"].append({"from": f"{ctx.case_root}/{name}", "to": f"{ctx.case_root}/{suggestion}" if suggestion else None,
                                   "references": refs.get(name, []),
-                                  "note": "" if suggestion else "名称里没有日期或主题，需要你自己决定新名字",
+                                  "note": "" if suggestion else _("名称里没有日期或主题，需要你自己决定新名字"),
                                   })
     if not naming["declared"] and mismatched:
         names_style = "date-topic" if all(re.fullmatch(CASE_STYLES["date-topic"], n) for n in mismatched) else "custom"
         result["declaration_hint"] = {
             "if_this_is_your_convention": {"work": {"case": {"directory_naming": (
-                {"style": "date-topic"} if names_style == "date-topic" else {"style": "custom", "pattern": "<匹配全部目录名的正则>"})}}},
-            "note": "目录名是你的约定的话，在 Profile 里声明它（fix profile 不会替你写这一项），之后 check 按声明检查"}
+                {"style": "date-topic"} if names_style == "date-topic" else {"style": "custom", "pattern": _("<匹配全部目录名的正则>")})}}},
+            "note": _("目录名是你的约定的话，在 Profile 里声明它（fix profile 不会替你写这一项），之后 check 按声明检查")}
     return result
 
 
@@ -524,6 +781,9 @@ def fingerprint(report: dict) -> dict:
     for row in report["profile"]:
         if f"profile:{row['field']}" not in skipped:
             detail[f"profile:{row['field']}"] = row["state"]
+    for row in report.get("regions", []):
+        if f"region:{row['path']}#{row['id']}" not in skipped:
+            detail[f"region:{row['path']}#{row['id']}"] = row["state"]
     lock = report["lock"]
     if lock["pack"] and f"lock:{lock['pack']}" not in skipped:
         detail["lock:version"] = f"{lock['status']}@{lock['version']}"
@@ -542,22 +802,80 @@ def explain(mine: dict[str, str], theirs: dict[str, str]) -> list[str]:
         if mine.get(key) == theirs.get(key):
             continue
         if key not in theirs:
-            lines.append(f"{key}：只有这台有（{mine[key]}）")
+            lines.append(_("{0}：只有这台有（{1}）").format(key, mine[key]))
         elif key not in mine:
-            lines.append(f"{key}：只有对方有（{theirs[key]}）")
+            lines.append(_("{0}：只有对方有（{1}）").format(key, theirs[key]))
         elif key.startswith("expected:"):
-            lines.append(f"{key}：期望清单版本不同——这台 {mine[key]}，对方 {theirs[key]}（先把两边的 agents-init 更新到同一版本）")
+            lines.append(_("{0}：期望清单版本不同——这台 {1}，对方 {2}（先把两边的 agents-init 更新到同一版本）").format(key, mine[key], theirs[key]))
         else:
-            lines.append(f"{key}：这台 {mine[key]}，对方 {theirs[key]}")
+            lines.append(_("{0}：这台 {1}，对方 {2}").format(key, mine[key], theirs[key]))
     return lines
 
 
 # ---------------------------------------------------------------- check
 
+# 发现分三级（沿用 health 的 level 词汇）：must 会影响使用，参与退出码、--strict 与会话开始提示；
+# suggest 是脚手架风格上的可选项；info 只是提示。其余类型一律按可选处理。
+LEVEL_BY_KIND = {"profile-invalid": "must", "region-outdated": "info"}
+CATEGORY_BY_KIND = {"skeleton-missing": "skeleton", "content-differs": "content", "region-missing": "region",
+                    "region-modified": "region", "region-outdated": "region", "profile-missing": "profile",
+                    "profile-invalid": "profile", "case-naming": "case-naming", "lock-version": "lock",
+                    "privacy-contract-missing": "content", "privacy-contract-stale": "content"}
+LEVEL_ORDER = ("must", "suggest", "info")
+
+
+def level_of(kind: str) -> str:
+    return LEVEL_BY_KIND.get(kind, "suggest")
+
+
+def category_of(kind: str) -> str:
+    if kind.startswith("profile-"):
+        return "profile"
+    return CATEGORY_BY_KIND.get(kind, kind)
+
+
 def _finding(identifier: str, kind: str, title: str, reason: str, fingerprint: str, fix: str | None,
              **extra: Any) -> dict:
-    return {"id": identifier, "kind": kind, "level": "suggest", "scope": "project", "title": title,
-            "reason": reason, "fingerprint": fingerprint, "fix": fix, **extra}
+    return {"id": identifier, "kind": kind, "level": level_of(kind), "category": category_of(kind), "scope": "project",
+            "title": title, "reason": reason, "fingerprint": fingerprint, "fix": fix, **extra}
+
+
+def category_label(category: str, count: int) -> str:
+    """The one-line summary of ``count`` findings of one category (用于归并显示)."""
+    labels = {
+        "skeleton": _("{0} 个缺失文件"),
+        "content": _("{0} 个文件与当前模板不同"),
+        "region": _("{0} 个受管区块有差异"),
+        "profile": _("{0} 个 Profile 字段缺失或不符"),
+        "case-naming": _("{0} 项 Case 目录命名差异"),
+        "lock": _("{0} 项内容锁问题"),
+    }
+    return labels.get(category, _("{0} 项其他差异")).format(count)
+
+
+def summarize(findings: list[dict]) -> list[dict]:
+    """Group findings by (level, category): one row each with the count and the ids (明细仍在 findings 里)."""
+    rows: dict[tuple[str, str], dict] = {}
+    for finding in findings:
+        level = finding.get("level") or level_of(finding.get("kind", ""))
+        category = finding.get("category") or category_of(finding.get("kind", ""))
+        row = rows.setdefault((level, category), {"level": level, "category": category, "count": 0, "ids": [],
+                                                  "fixes": []})
+        row["count"] += 1
+        row["ids"].append(finding["id"])
+        if finding.get("fix") and finding["fix"] not in row["fixes"]:
+            row["fixes"].append(finding["fix"])
+    ordered = sorted(rows.values(), key=lambda r: (LEVEL_ORDER.index(r["level"]) if r["level"] in LEVEL_ORDER else 9,
+                                                   r["category"]))
+    return [{**row, "label": category_label(row["category"], row["count"])} for row in ordered]
+
+
+def level_counts(findings: list[dict]) -> dict[str, int]:
+    counts = {level: 0 for level in LEVEL_ORDER}
+    for finding in findings:
+        level = finding.get("level") or level_of(finding.get("kind", ""))
+        counts[level if level in counts else "suggest"] += 1
+    return counts
 
 
 def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) -> dict:
@@ -576,33 +894,49 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
         skeleton.append({"path": entry["path"], "compare": entry["compare"], "required": entry["required"],
                          "state": state, "fingerprint": entry["fingerprint"]})
         if state == "missing" and entry["required"]:
-            findings.append(_finding(f"skel:{entry['path']}", "skeleton-missing", f"缺少脚手架文件 {entry['path']}",
-                                     "期望骨架清单里有，项目里没有", entry["fingerprint"], "add-skeleton",
+            findings.append(_finding(f"skel:{entry['path']}", "skeleton-missing", _("缺少脚手架文件 {0}").format(entry['path']),
+                                     _("期望骨架清单里有，项目里没有"), entry["fingerprint"], "add-skeleton",
                                      path=entry["path"]))
         elif state == "differs":
-            findings.append(_finding(f"content:{entry['path']}", "content-differs", f"{entry['path']} 与当前模板不同",
-                                     "内容锁里没有它的基线，无法判断是你改过还是模板变了",
+            findings.append(_finding(f"content:{entry['path']}", "content-differs", _("{0} 与当前模板不同").format(entry['path']),
+                                     _("内容锁里没有它的基线，无法判断是你改过还是模板变了"),
                                      entry["fingerprint"], "update-content", path=entry["path"]))
+
+    region_state = region_rows(root, pack_entry, ctx.inputs.language)
+    for row in region_state:
+        identifier = f"region:{row['path']}#{row['id']}"
+        if row["state"] == "missing":
+            findings.append(_finding(identifier, "region-missing", _("{0} 里的受管区块 {1} 不见了").format(row['path'], row['id']),
+                                     _("区块被移除；若是有意移除，可永久跳过"), row["fingerprint"], None, path=row["path"]))
+        elif row["state"] == "modified":
+            findings.append(_finding(identifier, "region-modified", _("{0} 里的受管区块 {1} 被改过").format(row['path'], row['id']),
+                                     _("区块内部有你的改动，升级不会覆盖；--mode region 里选择保留或采用模板"),
+                                     row["fingerprint"], "update-region", path=row["path"]))
+        elif row["state"] == "outdated":
+            findings.append(_finding(identifier, "region-outdated", _("{0} 里的受管区块 {1} 有新版本").format(row['path'], row['id']),
+                                     _("区块完好，可以更新（先备份）"), row["fingerprint"], "update-region", path=row["path"]))
+
+    findings.extend(_check_privacy(ctx, root))
 
     profile_rows = _check_profile(ctx)
     for row in profile_rows:
         if row["state"] == "ok":
             continue
         fixable = row["mode"] in ("default", "equal")
-        what = "缺少" if row["state"] == "missing" else "不符合期望"
+        what = _("缺少") if row["state"] == "missing" else _("不符合期望")
         findings.append(_finding(f"profile:{row['field']}", f"profile-{row['state']}",
-                                 f"Profile {what}：{row['field']}",
-                                 f"期望 {json.dumps(row['expected'], ensure_ascii=False)}" if fixable else "需要你自己填写",
+                                 _("Profile {0}：{1}").format(what, row['field']),
+                                 _("期望 {0}").format(json.dumps(row['expected'], ensure_ascii=False)) if fixable else _("需要你自己填写"),
                                  row["fingerprint"], "profile" if fixable else None, field=row["field"]))
 
     lock_state = {"pack": ctx.pack["id"] if ctx.pack else None, "version": (pack_entry or {}).get("version"),
                   "latest": ctx.pack["version"] if ctx.pack else None, "error": lock_error, "status": "ok"}
     if pack_entry is not None and pack_entry.get("version") == module.UNKNOWN_PACK_VERSION:
-        repairable, _ = _lock_repair_plan(ctx, lock)
+        repairable, _plan = _lock_repair_plan(ctx, lock)
         lock_state["status"] = "unknown-version"
         findings.append(_finding(
-            f"lock:{ctx.pack['id']}", "lock-version", "内容锁的模板版本未知（0.0.0）",
-            "旧版本写入的占位版本" + ("；基线与当前模板一致，可自动修复" if repairable else "；基线与当前模板不同，需要逐文件选择"),
+            f"lock:{ctx.pack['id']}", "lock-version", _("内容锁的模板版本未知（0.0.0）"),
+            _("旧版本写入的占位版本") + (_("；基线与当前模板一致，可自动修复") if repairable else _("；基线与当前模板不同，需要逐文件选择")),
             sha(f"{ctx.pack['id']}@{module.UNKNOWN_PACK_VERSION}"), "repair-lock" if repairable else "update-content"))
     if lock_error:
         lock_state["status"] = "error"
@@ -610,40 +944,75 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     naming = check_case_naming(ctx)
     if naming["error"]:
         findings.append(_finding("profile:work.case.directory_naming", "profile-invalid",
-                                 "Profile 的 work.case.directory_naming 无法使用", naming["error"],
+                                 _("Profile 的 work.case.directory_naming 无法使用"), _("{0}。{1}").format(naming['error'], _naming_hint()),
                                  sha(json.dumps({"field": "work.case.directory_naming", "error": naming["error"]})), None,
                                  field="work.case.directory_naming"))
     elif naming["mismatched_count"]:
-        shown = "、".join(naming["mismatched"][:3]) + ("……" if naming["mismatched_count"] > 3 else "")
-        source = "Profile 声明的" if naming["declared"] else "默认的 CASE-日期-序号-主题"
+        shown = _("、").join(naming["mismatched"][:3]) + ("……" if naming["mismatched_count"] > 3 else "")
+        source = _("Profile 声明的") if naming["declared"] else _("默认的 CASE-日期-序号-主题")
         findings.append(_finding("case-naming", "case-naming",
-                                 f"{naming['mismatched_count']} 个 Case 目录的命名与{source}规则不符",
-                                 f"例如 {shown}；规则 {naming['pattern']}",
+                                 _("{0} 个 Case 目录的命名与{1}规则不符").format(naming['mismatched_count'], source),
+                                 _("例如 {0}；规则 {1}").format(shown, naming['pattern']),
                                  sha(json.dumps({"style": naming["style"], "pattern": naming["pattern"]})), "case-naming"))
     extras = [{"path": p, "kind": "legacy"} for p in ctx.manifest.get("legacy_paths", []) if _lstat(root / p)]
-    extras += [{"path": f, "kind": "project-field"} for f in _project_fields(ctx)]
+    extras += _profile_extras(ctx)
+    conflicts = _profile_conflicts(ctx)
 
     decisions = load_decisions(root, state_dir)
     active, skipped = partition(findings, decisions, reprompt=reprompt)
-    return {"ok": not active, "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
-            "lock": lock_state, "case_naming": naming, "extras": extras, "findings": active, "skipped": skipped,
+    declared = ctx.profile.get("language") if ctx.profile.get("language") in ("zh", "en") else None
+    return {"ok": not active, "required_ok": not any(f["level"] == "must" for f in active), "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
+            "project_language": {"declared": declared, "effective": declared or "zh"},
+            "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras,
+            "profile_extras": _extras_summary(extras), "profile_conflicts": conflicts, "findings": active, "skipped": skipped,
+            "levels": level_counts(active), "categories": summarize(active),
             "decisions": {"path": DECISIONS_PATH.as_posix(), "errors": decisions["errors"],
                           "conflict_copies": decisions["conflict_copies"], "local_path": decisions["local_path"]}}
 
 
+# ---------------------------------------------------------------- project file language
+
+def set_project_language(root: Path, language: str, *, apply: bool = False, recovery_dir: Path | None = None) -> dict:
+    """Write the Profile's top-level ``language`` (the language of files the tool writes into the project).
+
+    Nothing else in the Profile changes and no existing project file is rewritten; the Profile itself is copied to the
+    recovery folder first. It is separate from the interface language, which only affects what commands print.
+    """
+    module = _init()
+    if language not in ("zh", "en"):
+        raise _fail(_("项目文件语言只能是 zh 或 en（用 --language 指定）"))
+    profile = module._read_project_json(root, module.PROFILE_PATH, "Project Profile")
+    if "language" in profile:
+        updated = {**profile, "language": language}  # keeps its place
+    else:
+        updated = {}
+        for key, value in profile.items():  # a new key goes right after "name", where init puts it
+            updated[key] = value
+            if key == "name":
+                updated["language"] = language
+        updated["language"] = language
+    changed = updated != profile
+    result = {"ok": True, "mode": "language", "applied": False, "language": language,
+              "from": profile.get("language") if profile.get("language") in ("zh", "en") else None, "changed": changed,
+              "diff": module._unified_diff(module.PROFILE_PATH.as_posix(), module.json_text(profile),
+                                           module.json_text(updated)) if changed else ""}
+    if not apply or not changed:
+        return result
+    if module._read_project_json(root, module.PROFILE_PATH, "Project Profile") != profile:
+        raise _fail(_("Profile 刚被改过，请重新预览"), "conflict")
+    recovery, defaulted = module.prepare_recovery_dir(root, recovery_dir, "language")
+    result.update(recovery=_backup(root, recovery, module.PROFILE_PATH), recovery_default=defaulted,
+                  recovery_files=[module.PROFILE_PATH.as_posix()])
+    module._atomic_write(root / module.PROFILE_PATH, module.json_text(updated))
+    result["applied"] = True
+    return result
+
+
 # ---------------------------------------------------------------- shared write helpers
 
-def _backup(root: Path, recovery_dir: Path | None, relative: Path) -> str:
-    if recovery_dir is None:
-        raise _fail("替换文件前需要 --recovery-dir")
-    recovery = recovery_dir.expanduser().resolve()
-    if recovery == root or root in recovery.parents:
-        raise _fail("--recovery-dir must be outside the project root")
-    archived = recovery / relative
-    if archived.exists():
-        raise _fail(f"recovery collision: {relative}")
-    archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    archived.write_bytes((root / relative).read_bytes())
+def _backup(root: Path, recovery: Path, relative: Path) -> str:
+    """Copy one file into the (already prepared) recovery folder."""
+    _init().backup_into(root, recovery, relative)
     return str(recovery)
 
 
@@ -678,7 +1047,7 @@ def add_skeleton(root: Path, targets: list[str] | None, *, apply: bool = False, 
     if targets:
         unknown = [t for t in targets if t not in known]
         if unknown:
-            raise _fail("不在期望骨架清单里：" + "、".join(unknown))
+            raise _fail(_("不在期望骨架清单里：") + _("、").join(unknown))
         wanted = list(dict.fromkeys(targets))
     else:
         wanted = [path for path, item in known.items() if item["state"] == "missing" and item["required"]]
@@ -687,7 +1056,7 @@ def add_skeleton(root: Path, targets: list[str] | None, *, apply: bool = False, 
     files = {Path(p): ctx.rendered.get(Path(p), "") for p in missing}
     create: list[Path] = []
     if files:
-        create, collisions, _ = module.plan_writes(root, files)
+        create, collisions, _extra = module.plan_writes(root, files)
         unchanged += [str(p) for p in collisions]
     result = {"ok": True, "mode": "add-skeleton", "applied": False,
               "create": [{"path": str(p), "bytes": len(files[p].encode("utf-8"))} for p in create],
@@ -715,7 +1084,7 @@ def fix_profile(root: Path, fields: list[str] | None, *, apply: bool = False, re
     if fields:
         unknown = [f for f in fields if f not in rows]
         if unknown:
-            raise _fail("这些字段不需要或不能自动修复：" + "、".join(unknown))
+            raise _fail(_("这些字段不需要或不能自动修复：") + _("、").join(unknown))
         selected = list(dict.fromkeys(fields))
     else:
         selected = list(rows)
@@ -730,8 +1099,10 @@ def fix_profile(root: Path, fields: list[str] | None, *, apply: bool = False, re
     if not apply or not changed:
         return result
     if module._read_project_json(root, module.PROFILE_PATH, "Project Profile") != profile:
-        raise _fail("Profile 刚被改过，请重新预览", "conflict")
-    result["recovery"] = _backup(root, recovery_dir, module.PROFILE_PATH)
+        raise _fail(_("Profile 刚被改过，请重新预览"), "conflict")
+    recovery, defaulted = module.prepare_recovery_dir(root, recovery_dir, "profile")
+    result.update(recovery=_backup(root, recovery, module.PROFILE_PATH), recovery_default=defaulted,
+                  recovery_files=[module.PROFILE_PATH.as_posix()])
     module._atomic_write(root / module.PROFILE_PATH, module.json_text(updated))
     result["applied"] = True
     return result
@@ -767,18 +1138,18 @@ def repair_lock(root: Path, *, apply: bool = False) -> dict:
     lock, error = read_lock(root)
     result = {"ok": True, "mode": "repair-lock", "applied": False, "changes": [], "blocked": "", "diff": ""}
     if ctx.pack is None or lock is None:
-        result["blocked"] = error or "项目没有内容锁"
+        result["blocked"] = error or _("项目没有内容锁")
         return result
     entry = (lock.get("packs") or {}).get(ctx.pack["id"])
     if entry is None:
-        result["blocked"] = "内容锁里没有项目契约模板包"
+        result["blocked"] = _("内容锁里没有项目契约模板包")
         return result
     comparable, new_entry = _lock_repair_plan(ctx, lock)
     if entry.get("version") == module.UNKNOWN_PACK_VERSION and not comparable:
-        result["blocked"] = "记录的基线与当前模板不同，无法确定真实版本：用 update-content 逐文件选择保留或采用"
+        result["blocked"] = _("记录的基线与当前模板不同，无法确定真实版本：用 update-content 逐文件选择保留或采用")
         return result
     if new_entry["version"] != entry.get("version"):
-        result["changes"].append(f"模板版本 {entry.get('version')} → {new_entry['version']}")
+        result["changes"].append(_("模板版本 {0} → {1}").format(entry.get('version'), new_entry['version']))
     if new_entry.get("version") == ctx.pack["version"]:
         files = dict(new_entry.get("files") or {})
         for path in sorted(ctx.tracked):
@@ -786,7 +1157,7 @@ def repair_lock(root: Path, *, apply: bool = False) -> dict:
             current = _file_digest(root / path)
             if path not in files and text is not None and current == sha(text):
                 files[path] = current
-                result["changes"].append(f"记录基线：{path}")
+                result["changes"].append(_("记录基线：{0}").format(path))
         new_entry["files"] = dict(sorted(files.items()))
     if not result["changes"]:
         return result
@@ -796,12 +1167,82 @@ def repair_lock(root: Path, *, apply: bool = False) -> dict:
                                           module.json_text(new_lock))
     if not apply:
         return result
-    fresh, _ = read_lock(root)
+    fresh, _lock = read_lock(root)
     if fresh != lock:
-        raise _fail("内容锁刚被改过，请重新预览", "conflict")
+        raise _fail(_("内容锁刚被改过，请重新预览"), "conflict")
     module._atomic_write(root / module.CONTENT_LOCK_PATH, module.json_text(new_lock))
     result["applied"] = True
     return result
+
+
+# ---------------------------------------------------------------- managed regions
+
+def update_regions(root: Path, *, accept: list[str], keep: list[str], apply: bool = False,
+                   recovery_dir: Path | None = None, state_dir: Path | None = None) -> tuple[int, dict]:
+    """Bring managed regions to the current template body.
+
+    A region nobody touched is replaced (after a backup); one the user edited is only replaced with ``--accept
+    <file>#<id>`` and kept with ``--keep <file>#<id>`` (recorded as a decision). Text outside regions is never read
+    for writing.
+    """
+    module, regions = _init(), _regions()
+    lock, _lock_error = read_lock(root)
+    ctx = Context(root)
+    entry = ((lock or {}).get("packs") or {}).get(ctx.pack["id"]) if ctx.pack else None
+    rows = [row for row in region_rows(root, entry, ctx.inputs.language) if row["state"] != "ok"]
+    known = {f"{row['path']}#{row['id']}" for row in rows}
+    unknown = (set(accept) | set(keep)) - known
+    if unknown:
+        raise _fail(_("不是需要处理的受管区块：") + ", ".join(sorted(unknown)))
+    if set(accept) & set(keep):
+        raise _fail(_("同一区块不能同时 --accept 与 --keep：") + ", ".join(sorted(set(accept) & set(keep))))
+    templates = module.load_templates()
+    plan = []
+    for row in rows:
+        key = f"{row['path']}#{row['id']}"
+        if row["state"] == "outdated":
+            action = "keep" if key in keep else "replace"
+        elif row["state"] == "modified":
+            action = "replace" if key in accept else "keep" if key in keep else "blocked"
+        else:
+            action = "skip"
+        plan.append({"path": row["path"], "id": row["id"], "state": row["state"], "action": action,
+                     "fingerprint": row["fingerprint"]})
+    blocked = [f"{i['path']}#{i['id']}" for i in plan if i["action"] == "blocked"]
+    replacing = [i for i in plan if i["action"] == "replace"]
+    result = {"ok": not blocked, "mode": "region", "applied": False, "regions": plan, "blocked": "",
+              "changes": [f"{i['action']:8} {i['path']}#{i['id']} [{i['state']}]" for i in plan]}
+    if blocked:
+        result["blocked"] = _("区块内部有你的改动，需逐个选择：--accept <文件>#<ID> 用模板替换（先备份），或 --keep <文件>#<ID> 保留")
+    if not apply or blocked:
+        return (0 if not blocked else 1), result
+    backed_up: list[str] = []
+    if replacing:
+        recovery, defaulted = module.prepare_recovery_dir(root, recovery_dir, "region")
+        for item in replacing:
+            if item["path"] not in backed_up:
+                _backup(root, recovery, Path(item["path"]))
+                backed_up.append(item["path"])
+        result.update(recovery=str(recovery), recovery_default=defaulted, recovery_files=backed_up)
+    new_digests: dict[str, dict[str, str]] = {}
+    for item in replacing:
+        path = root / item["path"]
+        mode = os.stat(path).st_mode & 0o7777
+        body = module.localized(templates, f"region/{item['id']}", ctx.inputs.language)
+        text, _state = regions.upsert(path.read_text(encoding="utf-8"), item["id"], body, force=True)
+        module._atomic_write(path, text, mode)
+        new_digests.setdefault(item["path"], {})[item["id"]] = regions.digest(body)
+    if new_digests:
+        fresh = copy.deepcopy(lock)
+        for path_, ids in new_digests.items():
+            fresh["packs"][ctx.pack["id"]]["regions"][path_].update(ids)
+        module._atomic_write(root / module.CONTENT_LOCK_PATH, module.json_text(fresh))
+    for item in plan:
+        if item["action"] == "keep":
+            decide(root, f"region:{item['path']}#{item['id']}", "keep", reason="region --keep",
+                   fingerprint=item["fingerprint"], scope="project", apply=True, state_dir=state_dir)
+    result["applied"] = True
+    return 0, result
 
 
 # ---------------------------------------------------------------- recording decisions
@@ -817,7 +1258,7 @@ def _store(path: Path, table: dict, expect_sha: str | None, root: Path, scope: s
             if parent == root:
                 break
             if parent.is_symlink():
-                raise _fail(f"拒绝符号链接：{parent.relative_to(root)}")
+                raise _fail(_("拒绝符号链接：{0}").format(parent.relative_to(root)))
     current_sha = None
     try:
         current_sha = sha(path.read_text(encoding="utf-8"))
@@ -826,23 +1267,28 @@ def _store(path: Path, table: dict, expect_sha: str | None, root: Path, scope: s
     except (OSError, UnicodeDecodeError):
         pass
     if current_sha != expect_sha:
-        raise _fail("决定文件刚被别处改过（可能是另一台机器同步过来），请重新预览", "conflict")
+        raise _fail(_("决定文件刚被别处改过（可能是另一台机器同步过来），请重新预览"), "conflict")
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700 if scope == "machine" else 0o755)
     text = module.json_text({"schema_version": 1, "decisions": dict(sorted(table.items()))})
     module._atomic_write(path, text)
+
+
+def _same_decision(old: object, new: dict) -> bool:
+    """Whether a recorded decision already says what ``new`` says (``decided_at`` is not part of the content)."""
+    return isinstance(old, dict) and all(old.get(key) == new.get(key) for key in ("decision", "fingerprint", "reason"))
 
 
 def decide(root: Path, finding_id: str, decision: str, *, reason: str = "", fingerprint: str | None = None,
            scope: str | None = None, apply: bool = False, state_dir: Path | None = None) -> dict:
     """Record skip / keep / later for a finding. ``fingerprint`` defaults to the finding's current expectation."""
     if decision not in DECISION_VALUES:
-        raise _fail("决定只能是 skip / keep / later")
+        raise _fail(_("决定只能是 skip / keep / later"))
     scope = scope or ("machine" if finding_id.startswith(LOCAL_PREFIX) else "project")
     if fingerprint is None:
         report = check(root, state_dir=state_dir, reprompt=True)
         match = next((f for f in [*report["findings"], *report["skipped"]] if f["id"] == finding_id), None)
         if match is None:
-            raise _fail(f"现在没有这个发现：{finding_id}（用 check 查看当前的发现 ID）", "not-found")
+            raise _fail(_("现在没有这个发现：{0}（用 check 查看当前的发现 ID）").format(finding_id), "not-found")
         fingerprint = match["fingerprint"]
     path = _decision_file(root, state_dir, scope)
     table, current_sha, error = read_decisions(path)
@@ -851,11 +1297,48 @@ def decide(root: Path, finding_id: str, decision: str, *, reason: str = "", fing
     entry = {"decision": decision, "fingerprint": fingerprint, "decided_at": now_iso()}
     if reason:
         entry["reason"] = reason
+    unchanged = _same_decision(table.get(finding_id), entry)
+    if unchanged:
+        entry = table[finding_id]  # 内容没变：保留原 decided_at，不重写文件（同步盘里不产生无意义的冲突副本）
     table = {**table, finding_id: entry}
     result = {"ok": True, "mode": "decide", "applied": False, "id": finding_id, "scope": scope, "entry": entry,
               "file": DECISIONS_PATH.as_posix() if scope == "project" else str(path)}
     if apply:
-        _store(path, table, current_sha, root, scope)
+        if not unchanged:
+            _store(path, table, current_sha, root, scope)
+        result["applied"] = True
+    return result
+
+
+ACCEPT_REASON = "accept-current"
+
+
+def accept_current(root: Path, *, reason: str = "", apply: bool = False, state_dir: Path | None = None) -> dict:
+    """Record every current scaffold difference as decided / keep-as-is, in the project decisions file.
+
+    Same table and entry format as ``decide``: ``{decision: keep, fingerprint, decided_at, reason}``, so a later
+    change of the expected content (new fingerprint) prompts again. Findings that must be handled (level ``must``)
+    are left alone and listed in ``excluded``; findings that are already decided with the same expectation are untouched.
+    """
+    report = check(root, state_dir=state_dir)
+    path = root / DECISIONS_PATH
+    table, current_sha, error = read_decisions(path)
+    if error:
+        raise _fail(error, "profile-invalid")
+    accepted = [f for f in report["findings"] if f["level"] != "must"]
+    excluded = [{"id": f["id"], "title": f["title"]} for f in report["findings"] if f["level"] == "must"]
+    stamp = now_iso()
+    entries = {}
+    for finding in accepted:
+        entry = {"decision": "keep", "fingerprint": finding["fingerprint"], "decided_at": stamp,
+                 "reason": reason or ACCEPT_REASON}
+        entries[finding["id"]] = table[finding["id"]] if _same_decision(table.get(finding["id"]), entry) else entry
+    result = {"ok": True, "mode": "accept-current", "applied": False, "count": len(entries),
+              "entries": entries, "categories": summarize(accepted), "excluded": excluded,
+              "already_decided": len(report["skipped"]), "file": DECISIONS_PATH.as_posix(), "reason": reason or ACCEPT_REASON}
+    if apply and entries:
+        if any(table.get(key) != entry for key, entry in entries.items()):
+            _store(path, {**table, **entries}, current_sha, root, "project")
         result["applied"] = True
     return result
 
@@ -876,21 +1359,26 @@ def undecide(root: Path, finding_id: str, *, apply: bool = False, state_dir: Pat
                 _store(path, remaining, current_sha, root, scope)
                 result["applied"] = True
             return result
-    raise _fail(f"没有关于 {finding_id} 的决定", "not-found")
+    raise _fail(_("没有关于 {0} 的决定").format(finding_id), "not-found")
 
 
 # ---------------------------------------------------------------- command line (called by init_project)
 
 def run_mode(args: Any, root: Path) -> tuple[int, dict]:
-    """Handle ``--mode check | add-skeleton | profile | repair-lock | decide | case-naming`` of init_project.py."""
+    """Handle ``--mode check | add-skeleton | profile | repair-lock | decide | case-naming | language`` of init_project.py."""
     state_dir = args.state_dir
     targets = list(args.target) or None
     if args.mode == "check":
         report = check(root, state_dir=state_dir, reprompt=args.reprompt)
         report["fingerprint"] = fingerprint(report)
-        return (0 if report["ok"] else 1), report
+        passed = report["required_ok"] if getattr(args, "required_only", False) else report["ok"]
+        return (0 if passed else 1), report
     if args.mode == "case-naming":
         return 0, case_naming_plan(root)
+    if args.mode == "accept-current":
+        return 0, accept_current(root, reason=args.reason or "", apply=args.apply, state_dir=state_dir)
+    if args.mode == "language":
+        return 0, set_project_language(root, args.language, apply=args.apply, recovery_dir=args.recovery_dir)
     if args.mode == "add-skeleton":
         return 0, add_skeleton(root, targets, apply=args.apply, state_dir=state_dir)
     if args.mode == "profile":
@@ -899,7 +1387,7 @@ def run_mode(args: Any, root: Path) -> tuple[int, dict]:
         result = repair_lock(root, apply=args.apply)
         return (1 if result["blocked"] else 0), result
     if not args.target or len(args.target) != 1:
-        raise _fail("--mode decide 需要且只需要一个 --target <发现 ID>")
+        raise _fail(_("--mode decide 需要且只需要一个 --target <发现 ID>"))
     if args.decision == "unskip":
         return 0, undecide(root, args.target[0], apply=args.apply, state_dir=state_dir)
     return 0, decide(root, args.target[0], args.decision or "skip", reason=args.reason or "",
@@ -911,23 +1399,39 @@ def render_text(result: dict) -> str:
     mode = result.get("mode")
     if mode == "check":
         for item in result["findings"]:
-            lines.append(f"  [{item['id']}] {item['title']}：{item['reason']}" + (f"（修复：{item['fix']}）" if item["fix"] else ""))
+            lines.append(_("  [{0}] {1}：{2}").format(item['id'], item['title'], item['reason']) + (_("（修复：{0}）").format(item['fix']) if item["fix"] else ""))
         for item in result["skipped"]:
-            reason = item["decision"].get("reason") or "（未写理由）"
-            lines.append(f"  [已跳过 {item['id']}] {reason}")
-        lines.append("脚手架与期望一致。" if result["ok"] else f"{len(result['findings'])} 项差异。")
+            reason = item["decision"].get("reason") or _("（未写理由）")
+            lines.append(_("  [已跳过 {0}] {1}").format(item['id'], reason))
+        for item in result.get("profile_conflicts", []):
+            lines.append(_("  [信息] {0}").format(item["message"]))
+        summary = result.get("profile_extras") or {}
+        if summary.get("total"):
+            lines.append(_("  [信息] Profile 中有 {0} 个 schema 未声明的字段（项目自有 {1}、疑似拼写错误 {2}、已被其他插件读取 {3}；工具不读取、不比较）：路径在 JSON 输出的 extras 里").format(
+                summary["total"], summary["own"], summary["suspected_typo"], summary["read_by_plugin"]))
+        lines.append(_("脚手架与期望一致。") if result["ok"] else _("{0} 项差异。").format(len(result['findings'])))
+    elif mode == "accept-current":
+        lines.append(_("{0}：把当前 {1} 项脚手架差异记为已决定、保留现状").format(_("已执行") if result["applied"] else _("预览"), result["count"]))
+        for row in result["categories"]:
+            lines.append(f"  {row['label']}")
+        for item in result["excluded"]:
+            lines.append(_("  未包含（需要处理）：[{0}] {1}").format(item["id"], item["title"]))
+        lines.append(_("写入 {0}（随项目同步，理由：{1}）").format(result["file"], result["reason"]))
     else:
-        label = "已执行" if result.get("applied") else "预览"
-        lines.append(f"{label}：{mode}")
+        label = _("已执行") if result.get("applied") else _("预览")
+        lines.append(_("{0}：{1}").format(label, mode))
         for item in result.get("renames", []):
-            lines.append(f"  {item['from']} → {item['to'] or '（需要你决定）'}"
-                         + (f"；被 {len(item['references'])} 个文件提到" if item["references"] else ""))
+            lines.append(f"  {item['from']} → {item['to'] or _('（需要你决定）')}"
+                         + (_("；被 {0} 个文件提到").format(len(item['references'])) if item["references"] else ""))
         for item in result.get("create", []):
-            lines.append(f"  create {item['path']}")
+            lines.append(f"  {_('新建')} {item['path']}")
         for change in result.get("changes", []):
             lines.append(f"  {change}")
         if result.get("diff"):
             lines.append(result["diff"].rstrip())
         if result.get("blocked"):
             lines.append(result["blocked"])
+        if mode == "language" and not result.get("changed"):
+            lines.append(_("项目文件语言已经是 {0}，没有需要改的。").format(result["language"]))
+        lines.extend(_init().recovery_lines(result))
     return "\n".join(lines) + "\n"

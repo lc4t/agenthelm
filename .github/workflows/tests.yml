@@ -20,14 +20,46 @@ jobs:
           - os: macos-latest
             python: '3.12'
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
       - name: Derived metadata and version gate against the last release
         run: python scripts/release_meta.py --since "$(git describe --tags --abbrev=0)"
+      - run: python -m unittest discover -s tests -v
+      - run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
+      - run: python -m unittest discover -s plugins/agent-pack/tests -v
+      - run: python -m unittest discover -s plugins/opinion-manager/tests -v
+      - run: python -m unittest discover -s plugins/project-orchestrator/tests -v
+      - name: Upgrade matrix (fails instead of skipping when release tags are missing)
+        env:
+          AGENTHELM_REQUIRE_TAGS: '1'
+        run: python -m unittest test_upgrade_matrix -v
+        working-directory: plugins/agents-init/skills/agents-init/scripts
+
+  # The runtime picks its language from AGENTHELM_LANG, then the user config, then LANG / LC_*. This job runs the same
+  # suites under three host locales so that neither the tests nor the features depend on the machine's locale (#24).
+  # It is one extra axis on a single Python / OS (ubuntu, 3.12), not a multiplication of the matrix above: the locale
+  # handling is plain Python with no OS-specific code path, and the interpreter versions and macOS are already covered.
+  # zh_CN.UTF-8 need not be generated on the runner: the variable alone drives the language choice, and Python
+  # falls back to the C locale when setlocale fails.
+  locale:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: ['C', 'en_US.UTF-8', 'zh_CN.UTF-8']
+    env:
+      LANG: ${{ matrix.lang }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
       - run: python -m unittest discover -s tests -v
       - run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
       - run: python -m unittest discover -s plugins/agent-pack/tests -v

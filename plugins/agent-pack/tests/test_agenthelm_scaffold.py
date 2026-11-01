@@ -1,6 +1,10 @@
 """``agenthelm check`` 的脚手架部分：只读、决定文件生效、旧 agents-init 时降级。"""
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
 import json
 import subprocess
 import sys
@@ -39,17 +43,78 @@ class ScaffoldCheckTests(unittest.TestCase):
     def report(self, **kwargs) -> dict:
         return agenthelm.run_check(self.env, self.project, latest_source=str(self.latest), **kwargs)
 
-    def test_missing_file_counts_against_up_to_date_and_one_line(self) -> None:
+    def test_missing_file_is_optional_and_does_not_count_against_up_to_date_or_one_line(self) -> None:
         report = self.report()
         self.assertEqual([item["id"] for item in report["scaffold"]["findings"]], ["skel:.agents/mcp.json"])
-        self.assertFalse(report["summary"]["up_to_date"])
-        self.assertIn("脚手架", agenthelm.one_line(report))
-        self.assertIn("skel:.agents/mcp.json", agenthelm.render_text(report))
+        self.assertEqual(report["scaffold"]["findings"][0]["level"], "suggest")
+        self.assertEqual(report["summary"]["scaffold_findings"], 1)
+        self.assertEqual(report["summary"]["scaffold_optional"], 1)
+        self.assertEqual(report["summary"]["scaffold_required"], 0)
+        self.assertTrue(report["summary"]["up_to_date"])
+        self.assertIsNone(agenthelm.one_line(report))
+        text = agenthelm.render_text(report)
+        self.assertIn("1 个缺失文件", text)
+        self.assertNotIn("skel:.agents/mcp.json", text)
+        self.assertIn("skel:.agents/mcp.json", agenthelm.render_text(report, details=True))
+
+    def test_a_required_finding_counts_against_up_to_date_and_one_line(self) -> None:
+        report = self.report()
+        report["scaffold"]["findings"][0]["level"] = "must"
+        report["summary"]["scaffold_required"] = 1
+        report["summary"]["up_to_date"] = False
+        self.assertIn("1 项需要处理的差异", agenthelm.one_line(report))
 
     def test_a_subdirectory_of_the_project_finds_the_profile(self) -> None:
         inner = self.project / "docs"
         report = agenthelm.run_check(self.env, inner, latest_source=str(self.latest))
         self.assertEqual(Path(report["scaffold"]["root"]), self.project)
+
+    def write_profile(self, mutate) -> None:
+        path = self.project / ".agents/moe.sakanano.agent-pack/project.json"
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        mutate(profile)
+        path.write_text(json.dumps(profile, ensure_ascii=False), encoding="utf-8")
+
+    def test_undeclared_fields_are_one_info_line_by_default_and_listed_with_show_extras(self) -> None:
+        before = self.report()["summary"]
+        self.write_profile(lambda p: (p["privacy"].update(context_requires_confirmation=True, forbidden_default_read=["x/"]),
+                                      p.update(team_notes={"a": 1})))
+        report = self.report()
+        self.assertEqual({key: report["summary"][key] for key in ("scaffold_findings", "up_to_date")},
+                         {key: before[key] for key in ("scaffold_findings", "up_to_date")}, "info never counts")
+        plain = agenthelm.render_text(report)
+        self.assertIn("Profile 中有 3 个 schema 未声明的字段", plain)
+        self.assertIn("项目自有 2，疑似拼写错误 1", plain)
+        self.assertIn("check --show-extras 展开", plain)
+        self.assertNotIn("privacy.context_requires_confirmation", plain)
+        self.assertEqual(sum("schema 未声明" in line for line in plain.splitlines()), 1)
+        full = agenthelm.render_text(report, show_extras=True)
+        for path in ("privacy.context_requires_confirmation", "privacy.forbidden_default_read", "team_notes"):
+            self.assertIn(path, full)
+        self.assertIn("疑似拼写错误，是不是想写 privacy.forbidden_default_reads", full)
+        self.assertNotIn("check --show-extras 展开", full)
+        self.assertEqual(report["scaffold"]["profile_extras"]["total"], 3)
+        self.assertEqual(report["summary"]["profile_notes"], 3)  # extras only here; scaffold_info counts info findings plus these notes
+        self.assertEqual(report["summary"]["scaffold_info"], before["scaffold_info"] + 3)  # = the 3 [脚手架·信息] items
+
+    def test_check_cli_accepts_show_extras_and_strict_ignores_info(self) -> None:
+        self.write_profile(lambda p: p.update(team_notes=1))
+        parsed = agenthelm.parser().parse_args(["check", "--show-extras"])
+        self.assertTrue(parsed.show_extras)
+        text = agenthelm.render_text(self.report(), show_extras=True)
+        self.assertIn("team_notes（项目自有）", text)
+
+    def test_conflicting_value_is_info_with_options_and_no_finding(self) -> None:
+        self.write_profile(lambda p: p["work"]["case"].update(directory_naming="自己的命名规则"))
+        report = self.report()
+        self.assertEqual([item["id"] for item in report["scaffold"]["findings"]], ["skel:.agents/mcp.json"])
+        text = agenthelm.render_text(report)
+        self.assertEqual(report["summary"]["profile_notes"],
+                         len(report["scaffold"]["profile_conflicts"]) + report["scaffold"]["profile_extras"]["total"])
+        self.assertGreaterEqual(report["summary"]["profile_notes"], 1)
+        self.assertIn("[脚手架·信息] Profile 的 work.case.directory_naming", text)
+        self.assertIn("保留为项目自有字段", text)
+        self.assertNotIn("无法使用", text)
 
     def test_outside_a_project_there_is_no_scaffold_section(self) -> None:
         report = agenthelm.run_check(self.env, self.project.parent, latest_source=str(self.latest))

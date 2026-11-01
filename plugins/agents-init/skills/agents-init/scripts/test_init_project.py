@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
+# The default recovery folder lives under the user's home: give these tests a throw-away one.
+import atexit as _atexit  # noqa: E402
+import shutil as _shutil  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+
+TEST_HOME = _tempfile.mkdtemp(prefix="agenthelm-test-home-")
+os.environ["HOME"] = TEST_HOME
+_atexit.register(_shutil.rmtree, TEST_HOME, ignore_errors=True)
+
 import hashlib
 import io
 import json
@@ -93,7 +106,7 @@ class InitProjectTests(unittest.TestCase):
             profile = json.loads((root / ".agents/moe.sakanano.agent-pack/project.json").read_text())
             self.assertFalse((root / ".agents/moe.sakanano.project-runtime").exists())
             self.assertEqual(profile["schema_version"], "1.0")
-            self.assertEqual(profile["initializer_version"], "6.6.0")
+            self.assertEqual(profile["initializer_version"], init_project.INITIALIZER_VERSION)
             self.assertEqual(profile["$schema"], "https://skill.sakanano.moe/skills/agents-init/project.schema.json")
             self.assertEqual(profile["runtime"]["skill"], "project-orchestrator")
             self.assertEqual(profile["runtime"]["plugin"], "project-orchestrator")
@@ -233,7 +246,7 @@ class InitProjectTests(unittest.TestCase):
             root = Path(temporary)
             self.assertEqual(self.run_script(root, "--apply").returncode, 0)
             (root / "AGENTS.md").write_text("my own rules\n", encoding="utf-8")
-            code, applied = self.refresh(root, "--apply", "--accept", "AGENTS.md",
+            code, applied = self.refresh(root, "--apply", "--accept", "AGENTS.md", "--confirm-discard", "AGENTS.md",
                                          "--recovery-dir", str(Path(backup) / "r"))
             self.assertEqual(code, 0, applied)
             self.assertEqual((Path(backup) / "r/AGENTS.md").read_text(), "my own rules\n")
@@ -287,6 +300,7 @@ class InitProjectTests(unittest.TestCase):
                 "RUNTIME": "本地",
                 "AGENT_CLI": "codex",
                 "ENTRY_COMMAND": "agenthelm project",
+                "PRIVACY_SECTION": init_project.privacy_section(templates, "zh", True),
             },
         ))
         self.assertEqual(files[Path("docs/refs/README.md")], templates["docs/refs/README.md"])
@@ -462,7 +476,7 @@ class InitProjectTests(unittest.TestCase):
             self.assertFalse(legacy.parent.exists())
             self.assertEqual((recovery / ".agents/moe.sakanano.project-runtime/project.json").read_text(), original)
             profile = json.loads((root / ".agents/moe.sakanano.agent-pack/project.json").read_text())
-            self.assertEqual(profile["initializer_version"], "6.6.0")
+            self.assertEqual(profile["initializer_version"], init_project.INITIALIZER_VERSION)
             self.assertEqual(profile["runtime"]["skill"], "project-orchestrator")
             self.assertEqual(profile["runtime"]["capability_manager"], "agent-pack")
             self.assertEqual(profile["runtime"]["session_bootstrap"], "make brief")
@@ -471,15 +485,6 @@ class InitProjectTests(unittest.TestCase):
             self.assertEqual(profile["capabilities"]["mcp_client_policy"], {"tapd": {"exclude": ["claude"]}})
             self.assertEqual(profile["work"], {"task": {"root": "tasks"}})
             self.assertEqual(profile["opinion"]["provider"], "opinion-workflow")
-
-    def test_migrate_v5_profile_requires_recovery_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            legacy = self.write_v5_profile(root)
-            result = self.run_script(root, "--mode", "migrate", "--apply")
-            self.assertEqual(result.returncode, 2)
-            self.assertTrue(legacy.exists())
-            self.assertFalse((root / ".agents/moe.sakanano.agent-pack").exists())
 
     def test_migrate_skips_symlinked_skill_dir_but_still_upgrades_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as backup, \
@@ -545,15 +550,280 @@ class InitProjectTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)["code"], "migrate-required")
             self.assertFalse((root / "AGENTS.md").exists())
 
-    def test_migrate_replacement_requires_recovery(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
-            result = self.run_script(
-                root, "--mode", "migrate", "--replace", "AGENTS.md", "--apply"
-            )
-            self.assertEqual(result.returncode, 2)
-            self.assertEqual((root / "AGENTS.md").read_text(), "legacy\n")
+
+class DefaultRecoveryTests(unittest.TestCase):
+    """没有 --recovery-dir 时，替换文件的模式默认备份到 ~/.agent-pack/recovery/<时间>-agenthelm-<模式>/。"""
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.base = Path(self._temporary.name).resolve()
+        self.home = self.base / "home"
+        self.home.mkdir()
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.root = self.base / "project"
+        self.root.mkdir()
+
+    def script(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "--project", str(self.root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--output", "json", *extra],
+                              capture_output=True, text=True, check=False)
+
+    def recovery_dirs(self) -> list[Path]:
+        base = self.home / ".agent-pack" / "recovery"
+        return sorted(base.iterdir()) if base.is_dir() else []
+
+    def test_migrate_replacement_backs_up_to_the_default_folder_and_says_where(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        (self.root / "README.md").write_text("# mine\n", encoding="utf-8")
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        payload = json.loads(result.stdout)
+        (folder,) = self.recovery_dirs()  # one operation, one folder
+        self.assertEqual(Path(payload["recovery"]), folder)
+        self.assertTrue(folder.name.endswith("-agenthelm-migrate"), folder.name)
+        self.assertTrue(payload["recovery_default"])
+        self.assertEqual(payload["recovery_files"], ["AGENTS.md"])
+        self.assertEqual((folder / "AGENTS.md").read_text(), "legacy\n")
+        self.assertNotEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+
+    def test_the_text_output_names_the_folder_and_how_to_restore(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        text = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply", "--output", "text")
+        self.assertEqual(text.returncode, 0, text.stderr)
+        (folder,) = self.recovery_dirs()
+        self.assertIn(f"被替换文件的原件已备份到：{folder}", text.stdout)
+        self.assertIn("还原：", text.stdout)
+
+    def test_migrate_v5_profile_retires_the_old_one_into_the_default_folder(self) -> None:
+        legacy = self.root / ".agents/moe.sakanano.project-runtime/project.json"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(json.dumps({"schema_version": "1.0", "name": "Legacy"}), encoding="utf-8")
+        original = legacy.read_text(encoding="utf-8")
+        result = self.script("--mode", "migrate", "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        (folder,) = self.recovery_dirs()
+        self.assertEqual((folder / ".agents/moe.sakanano.project-runtime/project.json").read_text(), original)
+        self.assertEqual(json.loads(result.stdout)["recovery"], str(folder))
+
+    def test_an_explicit_recovery_dir_still_wins(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        explicit = self.base / "mine"
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--recovery-dir", str(explicit), "--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual((explicit / "AGENTS.md").read_text(), "legacy\n")
+        payload = json.loads(result.stdout)
+        self.assertEqual((payload["recovery"], payload["recovery_default"]), (str(explicit), False))
+        self.assertEqual(self.recovery_dirs(), [])
+
+    def test_a_recovery_dir_inside_the_project_is_still_refused(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--recovery-dir", str(self.root / "backup"), "--apply")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+        self.assertFalse((self.root / "backup").exists())
+
+    def test_an_unusable_default_folder_stops_the_command_and_leaves_the_project_alone(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        (self.home / ".agent-pack").write_text("a file where the folder should be\n", encoding="utf-8")
+        before = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*"))
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply")
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["code"], "recovery-unavailable")
+        self.assertIn("项目文件没有改动", payload["error"])
+        self.assertEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+        self.assertEqual(sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*")), before)
+
+    def test_a_default_folder_inside_the_project_is_refused_with_a_hint(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"HOME": str(self.root)}):  # the project is the home folder
+            result = self.script("--mode", "migrate", "--replace", "AGENTS.md", "--apply")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--recovery-dir", json.loads(result.stdout)["error"])
+        self.assertEqual((self.root / "AGENTS.md").read_text(), "legacy\n")
+
+    def test_a_preview_creates_no_backup_folder(self) -> None:
+        (self.root / "AGENTS.md").write_text("legacy\n", encoding="utf-8")
+        result = self.script("--mode", "migrate", "--replace", "AGENTS.md")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIsNone(json.loads(result.stdout)["recovery"])
+        self.assertEqual(self.recovery_dirs(), [])
+
+    def test_refresh_accept_and_entry_replace_use_the_default_folder(self) -> None:
+        self.assertEqual(self.script("--no-entry", "--apply").returncode, 0)
+        (self.root / "AGENTS.md").write_text("my own rules\n", encoding="utf-8")
+        (self.root / init_project.CONTENT_LOCK_PATH).unlink()  # no baseline: the file counts as locally modified
+        refreshed = self.script("--mode", "refresh", "--accept", "AGENTS.md", "--confirm-discard", "AGENTS.md", "--apply")
+        self.assertEqual(refreshed.returncode, 0, refreshed.stdout)
+        payload = json.loads(refreshed.stdout)
+        folder = Path(payload["recovery"])
+        self.assertTrue(folder.name.endswith("-agenthelm-refresh"), folder.name)
+        self.assertEqual((folder / "AGENTS.md").read_text(), "my own rules\n")
+        self.assertEqual(payload["recovery_files"], ["AGENTS.md"])
+        (self.root / "work").write_text("mine\n", encoding="utf-8")
+        entry = self.script("--mode", "entry", "--entry-name", "work", "--accept", "work", "--apply")
+        self.assertEqual(entry.returncode, 0, entry.stdout)
+        payload = json.loads(entry.stdout)
+        self.assertTrue(Path(payload["recovery"]).name.endswith("-agenthelm-entry"))
+        self.assertEqual((Path(payload["recovery"]) / "work").read_text(), "mine\n")
+
+    def test_refresh_without_replacing_anything_makes_no_folder(self) -> None:
+        self.assertEqual(self.script("--apply").returncode, 0)
+        done = self.script("--mode", "refresh", "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertNotIn("recovery", json.loads(done.stdout))
+        self.assertEqual(self.recovery_dirs(), [])
+
+
+class RefreshWithoutBaselineTests(unittest.TestCase):
+    """#36：没有基线的已定制文件——看得见差异、知道为什么 blocked、有第三条路径、丢弃要确认。"""
+
+    MINE = "# 我的规则\n\n- 不要读 ~/secret\n- 回答简短\n"
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        base = Path(self._temporary.name).resolve()
+        self.root = base / "project"
+        self.root.mkdir()
+        self.home = base / "home"
+        self.home.mkdir()
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.run_init("--no-entry", "--apply")
+        # 早期版本初始化的项目：内容锁里没有基线（版本 0.0.0、文件为空），入口文件是用户自己写的。
+        lock = self.root / init_project.CONTENT_LOCK_PATH
+        data = json.loads(lock.read_text())
+        data["packs"]["agents-init/project-contract"].update(version="0.0.0", files={})
+        lock.write_text(json.dumps(data))
+        (self.root / "AGENTS.md").write_text(self.MINE, encoding="utf-8")
+        (self.root / "CLAUDE.md").write_text("先读 AGENTS.md\n隐私：不要记录令牌\n", encoding="utf-8")
+
+    def run_init(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "--project", str(self.root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--output", "json", *extra],
+                              capture_output=True, text=True, check=False)
+
+    def refresh(self, *extra: str) -> tuple[int, dict]:
+        done = self.run_init("--mode", "refresh", *extra)
+        return done.returncode, json.loads(done.stdout)
+
+    def item(self, result: dict, path: str) -> dict:
+        return next(entry for entry in result["files"] if entry["path"] == path)
+
+    def test_a_blocked_file_shows_a_diff_summary_and_says_why(self) -> None:
+        code, preview = self.refresh()
+        self.assertEqual(code, 1)
+        agents = self.item(preview, "AGENTS.md")
+        self.assertEqual((agents["state"], agents["action"], agents["reason"]), ("modified", "blocked", "no-baseline"))
+        self.assertEqual(agents["local_lines"], 4)
+        self.assertEqual((agents["lines_lost"], agents["lines_added"] > 0), (3, True))  # the blank line is shared
+        text = "\n".join(agents["note"])
+        self.assertIn("没有它的基线", text)
+        self.assertIn("--keep AGENTS.md", text)  # the default advice: keep what is yours
+        self.assertIn("--append AGENTS.md", text)
+        self.assertIn("--diff AGENTS.md", text)
+        self.assertIn("--accept", preview["hint"])
+        done = self.run_init("--mode", "refresh", "--output", "text")
+        self.assertIn("本地 4 行", done.stdout)
+
+    def test_diff_shows_the_whole_difference_and_never_writes(self) -> None:
+        before = (self.root / "AGENTS.md").read_text()
+        code, shown = self.refresh("--diff", "AGENTS.md")
+        self.assertEqual(code, 1)  # still blocked: nothing was chosen
+        self.assertIn("-# 我的规则", shown["diffs"]["AGENTS.md"])
+        self.assertIn("+## Project Profile", shown["diffs"]["AGENTS.md"])
+        self.assertNotIn("more diff lines", shown["diffs"]["AGENTS.md"])
+        self.assertEqual((self.root / "AGENTS.md").read_text(), before)
+        refused = self.run_init("--mode", "refresh", "--diff", "AGENTS.md", "--apply")
+        self.assertEqual(refused.returncode, 2)
+        text = self.run_init("--mode", "refresh", "--diff", "AGENTS.md", "--output", "text")
+        self.assertIn("-# 我的规则", text.stdout)
+
+    def test_accept_names_the_lines_it_would_drop_and_needs_an_explicit_confirmation(self) -> None:
+        before = (self.root / "CLAUDE.md").read_text()
+        code, preview = self.refresh("--accept", "CLAUDE.md", "--keep", "AGENTS.md")
+        claude = self.item(preview, "CLAUDE.md")
+        self.assertEqual((code, claude["action"], claude["reason"], claude["lines_lost"]), (1, "blocked", "discard-unconfirmed", 2))
+        self.assertIn("--confirm-discard CLAUDE.md", "".join(claude["note"]))
+        code, refused = self.refresh("--accept", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        self.assertEqual((code, refused["applied"]), (1, False))
+        self.assertEqual((self.root / "CLAUDE.md").read_text(), before)
+        self.assertEqual(list((self.home / ".agent-pack").glob("**/*")) if (self.home / ".agent-pack").exists() else [], [])
+        code, done = self.refresh("--accept", "CLAUDE.md", "--confirm-discard", "CLAUDE.md", "--keep", "AGENTS.md", "--apply")
+        self.assertEqual(code, 0, done)
+        self.assertTrue((self.root / "CLAUDE.md").read_text().startswith("@AGENTS.md"))
+        self.assertEqual((Path(done["recovery"]) / "CLAUDE.md").read_text(), before)  # the original can be taken back
+        self.assertEqual(self.item(done, "CLAUDE.md")["lines_lost"], 2)
+
+    def test_append_keeps_the_original_text_and_check_is_consistent_afterwards(self) -> None:
+        mine = (self.root / "AGENTS.md").read_text()
+        code, preview = self.refresh("--append", "AGENTS.md", "--append", "CLAUDE.md")
+        self.assertEqual(code, 0, preview)
+        self.assertEqual((self.item(preview, "AGENTS.md")["action"], self.item(preview, "CLAUDE.md")["action"]), ("append", "append"))
+        self.assertEqual((self.root / "AGENTS.md").read_text(), mine)  # a preview writes nothing
+        code, done = self.refresh("--append", "AGENTS.md", "--append", "CLAUDE.md", "--apply")
+        self.assertEqual(code, 0, done)
+        agents = (self.root / "AGENTS.md").read_text()
+        self.assertTrue(agents.startswith(mine))
+        self.assertIn("<!-- agenthelm:region agents-contract", agents)
+        claude = (self.root / "CLAUDE.md").read_text()
+        self.assertTrue(claude.startswith("先读 AGENTS.md\n隐私：不要记录令牌\n"))
+        self.assertIn("@AGENTS.md", claude)
+        self.assertEqual(sorted(done["recovery_files"]), ["AGENTS.md", "CLAUDE.md"])
+        self.assertEqual((Path(done["recovery"]) / "AGENTS.md").read_text(), mine)
+        scaffold = init_project._scaffold()
+        report = scaffold.check(self.root, state_dir=self.home / "state")
+        # the user's own text stays; the tool only owns the marked regions, and nothing is left to ask about
+        self.assertEqual([f["id"] for f in report["findings"] if f["kind"] != "skel-missing"], [], report["findings"])
+        decisions = scaffold.load_decisions(self.root, self.home / "state")["project"]
+        self.assertEqual(decisions["content:AGENTS.md"]["reason"],
+                         "refresh --append: kept the local file and appended a managed region")
+        again_code, again = self.refresh("--append", "AGENTS.md", "--apply")
+        self.assertEqual(again_code, 0, again)
+        self.assertEqual((self.root / "AGENTS.md").read_text(), agents)  # a second run changes nothing
+
+    def test_append_refuses_files_that_cannot_take_a_region_and_files_with_nothing_to_append(self) -> None:
+        refused = self.run_init("--mode", "refresh", "--append", "AGENT.RULES.md")
+        self.assertEqual(refused.returncode, 2)
+        both = self.run_init("--mode", "refresh", "--append", "AGENTS.md", "--keep", "AGENTS.md")
+        self.assertEqual(both.returncode, 2)
+        nothing = self.run_init("--mode", "refresh", "--append", "AGENT.md")  # unchanged file
+        self.assertEqual(nothing.returncode, 2)
+
+    def test_claude_md_that_already_imports_agents_md_needs_no_region(self) -> None:
+        (self.root / "CLAUDE.md").write_text("@AGENTS.md\n我的补充\n", encoding="utf-8")
+        code, preview = self.refresh("--append", "CLAUDE.md", "--keep", "AGENTS.md")
+        self.assertEqual(code, 0, preview)
+        claude = self.item(preview, "CLAUDE.md")
+        self.assertEqual((claude["action"], claude["reason"]), ("keep", "already-present"))
+
+    def test_after_keep_the_files_are_not_blocked_again(self) -> None:
+        code, kept = self.refresh("--keep", "AGENTS.md", "--keep", "CLAUDE.md", "--apply")
+        self.assertEqual(code, 0, kept)
+        code, again = self.refresh()
+        self.assertEqual(code, 0, again)
+        self.assertEqual(again["blocked"], [])
+        self.assertEqual({self.item(again, "AGENTS.md")["state"], self.item(again, "CLAUDE.md")["state"]}, {"kept-by-decision"})
+        self.assertEqual(self.item(again, "AGENTS.md")["action"], "keep")
+        reasons = init_project._scaffold().load_decisions(self.root, self.home / "state")["project"]
+        self.assertEqual(reasons["content:AGENTS.md"]["reason"], "refresh --keep: kept the local file")
+
+    def test_a_file_edited_after_a_baseline_exists_is_explained_differently(self) -> None:
+        lock = self.root / init_project.CONTENT_LOCK_PATH
+        data = json.loads(lock.read_text())
+        data["packs"]["agents-init/project-contract"]["files"] = {"AGENTS.md": "0" * 64}
+        lock.write_text(json.dumps(data))
+        code, preview = self.refresh()
+        self.assertEqual(self.item(preview, "AGENTS.md")["reason"], "edited")
+        self.assertNotIn("没有它的基线", "".join(self.item(preview, "AGENTS.md")["note"]))
+
 
 
 class EntryTests(unittest.TestCase):
@@ -583,6 +853,46 @@ class EntryTests(unittest.TestCase):
             self.assertEqual(self.profile(root)["entry"], {"api": 1, "launcher": "menu"})
             self.assertIn("`./menu`", (root / "README.md").read_text(encoding="utf-8"))
             self.assertIn("## 人用入口", (root / "AGENTS.md").read_text(encoding="utf-8"))
+
+    def test_the_project_file_language_is_set_at_init_and_follows_the_ui_language_only_then(self) -> None:
+        for argument, ui, expected in ((("--language", "en"), "zh", "en"), (("--language", "zh"), "en", "zh"),
+                                       ((), "en", "en"), ((), "zh", "zh"), (("--language", "auto"), "en", "en")):
+            with self.subTest(argument=argument, ui=ui), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                with mock.patch.dict(os.environ, {"AGENTHELM_LANG": ui}):
+                    self.assertEqual(self.init(root, "--apply", *argument).returncode, 0)
+                self.assertEqual(self.profile(root)["language"], expected)
+                readme = (root / "README.md").read_text(encoding="utf-8")
+                self.assertIn("## How to use" if expected == "en" else "## 怎样使用", readme)
+                self.assertNotIn("## 怎样使用" if expected == "en" else "## How to use", readme)
+
+    def test_a_project_without_the_field_stays_chinese_and_entry_follows_the_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.init(root, "--apply", "--no-entry", "--language", "zh").returncode, 0)
+            profile = self.profile(root)
+            del profile["language"]  # a project that predates the field
+            (root / init_project.PROFILE_PATH).write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+            (root / "README.md").unlink()
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": "en"}):
+                code, result = self.entry(root, "--entry-name", "menu", "--readme-entry", "--apply")
+            self.assertEqual(code, 0, result)
+            self.assertIn("## 怎样使用", (root / "README.md").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertEqual(self.init(root, "--apply", "--no-entry", "--language", "en").returncode, 0)
+            (root / "README.md").unlink()
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": "zh"}):
+                code, result = self.entry(root, "--entry-name", "menu", "--readme-entry", "--apply")
+            self.assertEqual(code, 0, result)
+            self.assertIn("## How to use", (root / "README.md").read_text(encoding="utf-8"))
+
+    def test_readme_block_marker_is_the_same_in_both_languages(self) -> None:
+        for language in ("zh", "en"):
+            block = init_project.readme_block("menu", language)
+            self.assertTrue(block.startswith(init_project.README_START + "\n"))
+            self.assertTrue(block.endswith(init_project.README_END + "\n"))
+            self.assertIn("`./menu`", block)
 
     def test_init_keeps_an_existing_readme_and_can_skip_the_entry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -674,5 +984,238 @@ class EntryTests(unittest.TestCase):
             self.assertTrue(launcher.stat().st_mode & 0o111)
 
 
+class PrivacyConventionTests(unittest.TestCase):
+    """#40：AGENTS.md 写出私有区域约定，引用 Profile 的 privacy.forbidden_default_reads，不复制路径。"""
+
+    USER = "# 我的规则\n\n- 回答简短\n"
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        base = Path(self._temporary.name).resolve()
+        self.root = base / "project"
+        self.root.mkdir()
+        self.home = base / "home"
+        self.home.mkdir()
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.state = base / "state"
+
+    def run_init(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "--project", str(self.root), "--name", "Notes",
+                               "--project-type", "study", "--vcs", "none", "--stack", "none", "--runtime", "local",
+                               "--agent-cli", "none", "--output", "json", "--no-entry", *extra],
+                              capture_output=True, text=True, check=False)
+
+    def create(self, language: str) -> None:
+        done = self.run_init("--language", language, "--apply")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def refresh(self, *extra: str) -> tuple[int, dict]:
+        done = self.run_init("--mode", "refresh", *extra)
+        return done.returncode, json.loads(done.stdout)
+
+    def set_reads(self, reads: list[str]) -> None:
+        path = self.root / init_project.PROFILE_PATH
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        profile["privacy"]["forbidden_default_reads"] = reads
+        path.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def check(self) -> dict:
+        return init_project._scaffold().check(self.root, state_dir=self.state)
+
+    def privacy_ids(self, report: dict) -> list[str]:
+        return [f["kind"] for f in report["findings"] if f["id"] == "privacy-contract"]
+
+    def customize(self) -> None:
+        """The user rewrote AGENTS.md: refresh no longer replaces it on its own."""
+        (self.root / "AGENTS.md").write_text(self.USER, encoding="utf-8")
+
+    def test_new_project_agents_md_names_the_profile_field_in_both_languages(self) -> None:
+        for language, heading, once, field_note in (
+                ("zh", "## 隐私约定", "一次确认只对当次任务", "本文件不重复列出路径"),
+                ("en", "## Privacy convention", "One confirmation covers only the current task", "does not repeat the paths")):
+            with self.subTest(language=language):
+                self.setUp()
+                self.create(language)
+                agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+                self.assertIn(heading, agents)
+                self.assertIn("`privacy.forbidden_default_reads`", agents)
+                self.assertIn("`private/`", agents)  # 字段缺省值
+                self.assertIn("sop.py confirm-read", agents)
+                self.assertIn(once, agents)
+                self.assertIn(field_note, agents)
+                self.assertNotIn("隐私或禁止路径：未声明", agents)  # 旧的静态一行已被约定取代
+                claude = (self.root / "CLAUDE.md").read_text(encoding="utf-8")
+                self.assertNotIn("forbidden_default_reads", claude)  # CLAUDE.md 只做跳转
+                self.assertEqual(self.privacy_ids(self.check()), [])
+                profile = json.loads((self.root / init_project.PROFILE_PATH).read_text(encoding="utf-8"))
+                self.assertEqual(profile["privacy"]["forbidden_default_reads"], ["private/"])
+
+    def test_empty_field_writes_no_rule_only_that_no_private_path_is_declared(self) -> None:
+        for language, wording in (("zh", "未声明私有路径"), ("en", "No private paths declared")):
+            with self.subTest(language=language):
+                self.setUp()
+                self.create(language)
+                self.set_reads([])
+                self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-stale"])
+                code, done = self.refresh("--apply")
+                self.assertEqual(code, 0, done)
+                agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+                self.assertIn(wording, agents)
+                self.assertNotIn("sop.py confirm-read", agents)  # 没有路径时不生成无意义的规则
+                self.assertEqual(self.privacy_ids(self.check()), [])
+                self.assertEqual(
+                    init_project.files_for(init_project.inputs_from_profile(self.root))[Path("AGENTS.md")], agents)
+
+    def test_rules_md_privacy_line_names_the_field_and_never_contradicts_the_profile(self) -> None:
+        for language, expected in (("zh", "默认禁止读取：以 Project Profile 的 `privacy.forbidden_default_reads` 为准"),
+                                   ("en", "Do not read by default: the Project Profile field `privacy.forbidden_default_reads`")):
+            for reads in (["private/"], []):  # 缺省的非空字段，与被清空的字段
+                with self.subTest(language=language, reads=reads):
+                    self.setUp()
+                    self.create(language)
+                    if not reads:
+                        self.set_reads(reads)
+                        code, done = self.refresh("--apply")
+                        self.assertEqual(code, 0, done)
+                    rules = (self.root / "AGENT.RULES.md").read_text(encoding="utf-8")
+                    self.assertIn(expected, rules)
+                    self.assertNotIn("默认禁止读取：未声明", rules)  # 旧的静态一行
+                    self.assertNotIn("PRIVACY_RULES_LINE", rules)
+                    self.assertNotIn("private/", rules)  # 引用字段名，不复制路径
+                    self.assertIn("privacy.forbidden_default_reads", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+                    self.assertEqual(
+                        init_project.files_for(init_project.inputs_from_profile(self.root))[Path("AGENT.RULES.md")], rules)
+
+    def test_changing_the_field_is_reflected_by_check_and_paths_never_need_copying(self) -> None:
+        self.create("zh")
+        before = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        self.set_reads(["private/", "secrets/"])  # 改路径：AGENTS.md 引用字段，不需要同步
+        self.assertEqual(self.privacy_ids(self.check()), [])
+        self.assertNotIn("secrets/", before)
+        self.set_reads([])
+        self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-stale"])  # 空 ↔ 非空 才不一致
+        self.refresh("--apply")
+        self.set_reads(["private/"])
+        self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-stale"])
+        code, done = self.refresh("--apply")
+        self.assertEqual(code, 0, done)
+        self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), before)
+        self.assertEqual(self.privacy_ids(self.check()), [])
+
+    def test_a_missing_field_is_left_to_the_profile_check(self) -> None:
+        self.create("zh")
+        path = self.root / init_project.PROFILE_PATH
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        profile.pop("privacy")
+        path.write_text(json.dumps(profile), encoding="utf-8")
+        self.assertEqual(self.privacy_ids(self.check()), [])
+
+    def test_customized_agents_md_gets_the_convention_as_a_region_and_the_text_stays(self) -> None:
+        for language, heading in (("zh", "## 隐私约定"), ("en", "## Privacy convention")):
+            with self.subTest(language=language):
+                self.setUp()
+                self.create(language)
+                self.customize()
+                self.assertEqual(self.privacy_ids(self.check()), ["privacy-contract-missing"])
+                code, preview = self.refresh("--append", "AGENTS.md")
+                item = next(entry for entry in preview["files"] if entry["path"] == "AGENTS.md")
+                self.assertEqual((code, item["action"], item["regions"]), (0, "append", ["agents-contract", "privacy-contract"]))
+                self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), self.USER)  # 预览不写
+                code, done = self.refresh("--append", "AGENTS.md", "--apply")
+                self.assertEqual(code, 0, done)
+                agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+                self.assertTrue(agents.startswith(self.USER))
+                self.assertIn("<!-- agenthelm:region privacy-contract", agents)
+                self.assertIn(heading, agents)
+                self.assertEqual((Path(done["recovery"]) / "AGENTS.md").read_text(encoding="utf-8"), self.USER)
+                self.assertEqual(self.privacy_ids(self.check()), [])
+                self.assertEqual([row["state"] for row in self.check()["regions"]], ["ok", "ok"])
+                code, again = self.refresh("--append", "AGENTS.md", "--apply")
+                self.assertEqual(code, 0, again)
+                self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), agents)  # 再来一次不变
+
+    def test_rc1_project_with_the_published_contract_region_only_gains_the_new_region(self) -> None:
+        self.create("zh")
+        templates = init_project.load_templates()
+        regions = init_project._regions()
+        contract, _state = regions.upsert(self.USER, "agents-contract", templates["region/agents-contract"])
+        (self.root / "AGENTS.md").write_text(contract, encoding="utf-8")
+        lock_path = self.root / init_project.CONTENT_LOCK_PATH
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        lock["packs"]["agents-init/project-contract"]["regions"] = {
+            "AGENTS.md": {"agents-contract": regions.digest(templates["region/agents-contract"])}}
+        lock_path.write_text(json.dumps(lock), encoding="utf-8")
+        code, done = self.refresh("--append", "AGENTS.md", "--apply")
+        self.assertEqual(code, 0, done)
+        item = next(entry for entry in done["files"] if entry["path"] == "AGENTS.md")
+        self.assertEqual(item["regions"], ["privacy-contract"])
+        agents = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertTrue(agents.startswith(contract))  # 已发布区块与用户原文一字不动
+        self.assertEqual(regions.get(agents, "agents-contract").body, templates["region/agents-contract"])
+        self.assertEqual([row["state"] for row in self.check()["regions"]], ["ok", "ok"])
+        self.assertEqual(self.privacy_ids(self.check()), [])
+
+    def test_nothing_is_appended_when_the_user_has_their_own_rule_or_no_path_is_declared(self) -> None:
+        self.create("zh")
+        mine = self.USER + "- 读取 `privacy.forbidden_default_reads` 里的路径前先问我\n"
+        (self.root / "AGENTS.md").write_text(mine, encoding="utf-8")
+        self.assertEqual(self.privacy_ids(self.check()), [])  # 用户自己写的约定算数
+        self.assertEqual(self.refresh("--append", "AGENTS.md", "--apply")[0], 0)
+        self.assertNotIn("privacy-contract", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+        self.customize()
+        self.set_reads([])
+        self.assertEqual(self.privacy_ids(self.check()), [])  # 字段为空：不需要规则
+        self.refresh("--append", "AGENTS.md", "--apply")
+        self.assertNotIn("privacy-contract", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+
+    def test_region_templates_exist_in_both_languages_and_match_the_section(self) -> None:
+        templates = init_project.load_templates()
+        for language in ("zh", "en"):
+            self.assertEqual(init_project.localized(templates, "region/privacy-contract", language),
+                             init_project.privacy_section(templates, language, True) + "\n")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenderInputsPrivacyTests(unittest.TestCase):
+    """内容锁的 render_inputs 记录当时是否声明了隐私约定；旧锁没有这个字段时仍按双取值兜底。"""
+
+    def inputs(self, declared: bool) -> init_project.Inputs:
+        return init_project.Inputs(Path("/p"), "N", "n", ("notes",), "none", ("none",), "local", ("none",), "case-workspace",
+                                   None, "zh", declared)
+
+    def test_the_field_is_recorded_for_both_values(self) -> None:
+        for declared in (True, False):
+            self.assertEqual(init_project.render_inputs(self.inputs(declared))["privacy_declared"], declared)
+
+    def test_recorded_value_wins_over_the_current_profile_and_an_old_lock_falls_back(self) -> None:
+        recorded = init_project.render_inputs(self.inputs(False))
+        current = self.inputs(True)
+        self.assertFalse(init_project._inputs_from_lock(Path("/p"), recorded, current).privacy_declared)
+        old = {key: value for key, value in recorded.items() if key != "privacy_declared"}
+        self.assertTrue(init_project._inputs_from_lock(Path("/p"), old, current).privacy_declared)
+        junk = {**recorded, "privacy_declared": "yes"}
+        self.assertTrue(init_project._inputs_from_lock(Path("/p"), junk, current).privacy_declared)
+
+    def test_baseline_is_found_for_a_lock_with_and_without_the_field_whatever_the_profile_says_now(self) -> None:
+        templates = init_project.load_templates()
+        for rendered_with in (True, False):
+            inputs = self.inputs(rendered_with)
+            text = init_project.files_for(inputs, templates)[Path("AGENTS.md")]
+            digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            source = mock.Mock(kind="pack", label="t", version="1.0.0", launcher=None,
+                               template=init_project.TEMPLATE_PATH.read_text(encoding="utf-8"))
+            for with_field in (True, False):
+                recorded = init_project.render_inputs(inputs)
+                if not with_field:
+                    recorded.pop("privacy_declared")
+                for now in (True, False):
+                    found = init_project.find_baseline(Path("/p"), Path("AGENTS.md"), digest, ["1.0.0"], recorded,
+                                                       self.inputs(now), [lambda *_a, **_k: [source]], "x")
+                    self.assertIsNotNone(found, (rendered_with, with_field, now))
+                    self.assertEqual(found["text"], text)

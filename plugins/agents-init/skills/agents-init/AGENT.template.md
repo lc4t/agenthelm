@@ -159,13 +159,75 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 
 不需要 Agent 也能运行 `ENTRY_COMMAND` 打开项目菜单：找资料、看进展、项目指南、检查与维护。Agent 需要同样的信息时调用它的子命令并加 `--output json`（例如 `ENTRY_COMMAND find <词> --output json`），不另写一套查找逻辑；写入类子命令默认只预览。
 
+PRIVACY_SECTION
+
 ## 项目专属入口
 
 - 命令：TODO
 - 测试：TODO
 - 构建：TODO
 - 架构/文档：TODO
-- 隐私或禁止路径：未声明
+- 用户规则：若存在 `AGENT.USER.md`（接管项目时从原 `AGENTS.md` 移出的用户内容），与本文件一并遵循。
+```
+<!-- /agents-init:template -->
+
+### 隐私约定
+
+`AGENTS.md` 模板里的 `PRIVACY_SECTION` 按 Project Profile 的 `privacy.forbidden_default_reads` 是否为空，取下面四个区块之一（随项目文件语言 `language` 选择中文或英文）。约定**引用字段名而不复制路径**：Agent 以 Profile 字段为准，修改字段里的路径不需要同步改 `AGENTS.md`；字段在“空”与“非空”之间变化时，`check` 报告 `AGENTS.md` 与 Profile 不一致。约定只写在 `AGENTS.md`，`CLAUDE.md` 只做跳转。英文区块只为这一条约定提供，其余英文模板另行推进。
+
+<!-- agents-init:template privacy/declared -->
+```markdown
+## 隐私约定
+
+本项目的私有路径由 Project Profile 的 `privacy.forbidden_default_reads` 声明（新项目缺省为 `private/`），以该字段为准，本文件不重复列出路径。
+
+- 默认不读：不读取、不列目录、不搜索这些路径下的内容。
+- 需要读取时，先向用户列出要读的路径和用途，得到用户确认后再读。
+- 一次确认只对当次任务和当次列出的路径有效，不延续到后续任务；后续任务需要再读，重新确认。
+- 确认后用 `sop.py confirm-read <Case> <路径…> --apply` 记入该 Case 的决策记录（同时把 Case 标为 private）；项目有自己的确认记录机制时，按项目的机制记录。
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template privacy/undeclared -->
+```markdown
+## 隐私约定
+
+未声明私有路径：Project Profile 的 `privacy.forbidden_default_reads` 为空，没有需要先经用户确认才能读取的路径。
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template privacy/declared.en -->
+```markdown
+## Privacy convention
+
+This project's private paths are declared in the Project Profile field `privacy.forbidden_default_reads` (new projects default to `private/`). The field is the source of truth; this file does not repeat the paths.
+
+- Do not read by default: do not read, list or search the content under these paths.
+- When a read is needed, first list the paths and the purpose to the user and read only after the user confirms.
+- One confirmation covers only the current task and the paths listed then; it does not carry over to later tasks. Ask again when a later task needs them.
+- After confirmation, record it with `sop.py confirm-read <Case> <path…> --apply` (it goes into the Case's decision record and marks the Case private); if the project has its own confirmation record, use that.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template privacy/undeclared.en -->
+```markdown
+## Privacy convention
+
+No private paths declared: the Project Profile field `privacy.forbidden_default_reads` is empty, so no path needs user confirmation before it is read.
+```
+<!-- /agents-init:template -->
+
+`AGENT.RULES.md` 的「隐私与外部系统」里“默认禁止读取”一行由 `PRIVACY_RULES_LINE` 渲染，同样**引用字段名而不复制路径**，与 `AGENTS.md` 的隐私约定保持一致（字段为空与非空文字相同，不再写死“未声明”）。英文版本只为这一行提供。已有项目的升级沿用 `update-content` 的既有流程：`AGENT.RULES.md` 未改过则直接更新，改过的走 `--keep` / `--append` / `--accept` / `--merge`。
+
+<!-- agents-init:template privacy/rules-line -->
+```markdown
+默认禁止读取：以 Project Profile 的 `privacy.forbidden_default_reads` 为准（见 `AGENTS.md` 的“隐私约定”），本文件不重复列出路径；字段为空表示未声明
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template privacy/rules-line.en -->
+```markdown
+Do not read by default: the Project Profile field `privacy.forbidden_default_reads` is the source of truth (see "Privacy convention" in `AGENTS.md`); this file does not repeat the paths. An empty field means none declared
 ```
 <!-- /agents-init:template -->
 
@@ -194,7 +256,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 
 ## 隐私与外部系统
 
-- 默认禁止读取：未声明
+- PRIVACY_RULES_LINE
 - 需要授权的外部写入：全部，除非另有明确配置
 
 ## 记忆
@@ -222,11 +284,73 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 
 ### CLAUDE.md 与 AGENT.md
 
+Claude Code 在工作目录及其上级目录没有任何 `CLAUDE.md` 时才直接读取 `AGENTS.md`（v2.1.277 起），两者并存时只读 `CLAUDE.md`；旧版本、禁用内置插件以及部分会话也读不到 `AGENTS.md`。因此 `CLAUDE.md` 保留为一行 `@AGENTS.md` 的导入桩，`AGENTS.md` 是唯一内容来源，Claude 专属指令写在导入行下面。`AGENT.md` 给其他客户端，用文字路由。
+
+<!-- agents-init:template CLAUDE.md -->
+```markdown
+@AGENTS.md
+
+## Claude Code
+
+Claude Code 专属指令写在这里；项目通用规则放在 `AGENTS.md` 与 `AGENT.RULES.md`。
+```
+<!-- /agents-init:template -->
+
 <!-- agents-init:template ROUTE.md -->
 ```markdown
 # Agent 路由
 
 读取 `AGENTS.md` 并遵循其中的 Project Profile。加载 `project-orchestrator` 管理项目生命周期；Plugin/Skill/MCP 能力管理交给 `agent-pack`；Opinion 的生成、读取与审查交给 `opinion-manager`。
+```
+<!-- /agents-init:template -->
+
+### 受管区块模板
+
+接管已有文件时，工具只向用户的文件追加带标记的区块（见 `scripts/regions.py`），区块之外的内容保持原样。区块正文来自下面的模板，随内容包更新；区块内部被改过时不会被覆盖，由用户选择。
+
+<!-- agents-init:template region/claude-import -->
+```markdown
+@AGENTS.md
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template region/agents-contract -->
+```markdown
+## agenthelm 项目契约
+
+本项目由 agenthelm 管理项目生命周期。开始实质工作前：
+
+1. 加载 `project-orchestrator`，读取 `.agents/moe.sakanano.agent-pack/project.json`（Project Profile）。
+2. 项目专属约束见 `AGENT.RULES.md`；Plugin/Skill/MCP 管理交给 `agent-pack`；Opinion 交给 `opinion-manager`。
+3. 本文件其余部分是接管项目前就有的用户规则，与上述契约一并遵循。
+```
+<!-- /agents-init:template -->
+
+`privacy-contract` 是独立于 `agents-contract` 的区块：用户改过 `AGENTS.md` 的项目升级时，由 `update-content --append AGENTS.md` 补入；已发布的 `agents-contract` 区块正文不变。区块正文只有“已声明”一种（字段为空时不追加），英文版本为 `region/privacy-contract.en`。
+
+<!-- agents-init:template region/privacy-contract -->
+```markdown
+## 隐私约定
+
+本项目的私有路径由 Project Profile 的 `privacy.forbidden_default_reads` 声明（新项目缺省为 `private/`），以该字段为准，本文件不重复列出路径。
+
+- 默认不读：不读取、不列目录、不搜索这些路径下的内容。
+- 需要读取时，先向用户列出要读的路径和用途，得到用户确认后再读。
+- 一次确认只对当次任务和当次列出的路径有效，不延续到后续任务；后续任务需要再读，重新确认。
+- 确认后用 `sop.py confirm-read <Case> <路径…> --apply` 记入该 Case 的决策记录（同时把 Case 标为 private）；项目有自己的确认记录机制时，按项目的机制记录。
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template region/privacy-contract.en -->
+```markdown
+## Privacy convention
+
+This project's private paths are declared in the Project Profile field `privacy.forbidden_default_reads` (new projects default to `private/`). The field is the source of truth; this file does not repeat the paths.
+
+- Do not read by default: do not read, list or search the content under these paths.
+- When a read is needed, first list the paths and the purpose to the user and read only after the user confirms.
+- One confirmation covers only the current task and the paths listed then; it does not carry over to later tasks. Ask again when a later task needs them.
+- After confirmation, record it with `sop.py confirm-read <Case> <path…> --apply` (it goes into the Case's decision record and marks the Case private); if the project has its own confirmation record, use that.
 ```
 <!-- /agents-init:template -->
 
@@ -330,10 +454,22 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 5. 保持历史 Task/Case 与能力源完整，随后使用 `agent-pack` 盘点。
 6. 只有得到明确授权，才能把个人 Opinion 内容移入私有权威源。
 
+### 接管已有内容的目录
+
+目录里已经有自己的文件时，原则是**控制新增，不追溯历史**：与骨架冲突的旧文件可以长期并存，不是阻塞项；只有用户显式选择，才改动已有文件，且先备份到项目外。
+
+1. `--mode scan`（只读）：列出路径碰撞、目录含义是否相同、`AGENTS.md` / `CLAUDE.md` 的状况，每项给出选项和推荐。
+2. `--mode adopt`（默认预览，`--apply` 才写入）：已有文件原样保留，只补缺失的骨架；保留下来且与模板不同的文件记入决定文件，`check` 不再追问。
+3. 改动已有文件才需要显式选择（原件缺省自动备份到 `~/.agent-pack/recovery/`，`--recovery-dir` 可改到项目外的其他位置）：`--agents-policy append|split|side-by-side`、`--claude-policy add-import`。`split` 用 `--route <章节序号>=<agents|rules|user|opinion|sop>` 指定每个章节的去向（建议来自关键词启发式，最终由用户决定；`opinion` / `sop` 先放进 `AGENT.USER.md` 并标注待交接）。
+4. 目录含义冲突的用 `--case-root` / `--memory-root` 另设位置，已有的工作容器目录用 `--register-root` 只读登记。
+5. 追加到用户文件里的内容是带标记的受管区块（见 `scripts/regions.py`），区块之外不动；区块内部被改过时升级不覆盖，用 `--mode region` 逐个 `--keep` / `--accept`。
+
+历史内容什么时候迁移由用户决定：之后可以用 `--mode adopt` 以外的迁移工具逐步把旧内容整理进标准结构，不影响日常使用。
+
 ### 将既有项目整理为 Case 工作目录
 
 1. 阅读同包 `project-orchestrator/references/case-workspaces.md`，明确 Case 的目标、子工作项与专属材料范围。
-2. 使用 `--mode migrate --work-mode case-workspace --replace .agents/moe.sakanano.agent-pack/project.json --recovery-dir <项目外恢复目录>` 预演；旧 task 配置保存为 `legacy_task`，原业务文件保持在原位，等待独立的已授权数据迁移。
+2. 使用 `--mode migrate --work-mode case-workspace --replace .agents/moe.sakanano.agent-pack/project.json` 预演（原件缺省备份到 `~/.agent-pack/recovery/`，`--recovery-dir` 可改位置）；旧 task 配置保存为 `legacy_task`，原业务文件保持在原位，等待独立的已授权数据迁移。
 3. Profile 替换保留项目自定义的 runtime、opinion、memory、capabilities 和 privacy。未显式选择模式时保留现有 `work` 段。
 4. 展示全部 Task、Case 专属输入和交付物的目标映射，Demo 通过后用 `case_workspace.py migrate` 实施；保留旧 TASK.md、progress、旧 ID 与真实完成或放弃证据。
 5. 用项目 Tool 校验 Case、链接和索引，验证旧名称检索与全量统计；迁移完成后关闭生产态 Task 创建入口。其他项目单独授权并迁移。
@@ -341,7 +477,7 @@ Agent Plugins 1.0 可移植文件直接位于 `.agents/`：`plugin.json`、`skil
 ### 为已初始化的项目补上人用入口
 
 1. `--mode entry --entry-name <名称>` 预览：只涉及 Profile 的 `entry` 段、根目录启动器与内容锁；加 `--readme-entry` 时在 README 末尾追加带标记的「怎样使用」。
-2. 根目录已有同名文件时视为用户自己的文件：`--keep <名称>` 保留（不跟踪更新），`--accept <名称>` 用模板替换并先备份到 `--recovery-dir`；不选则不写入。
+2. 根目录已有同名文件时视为用户自己的文件：`--keep <名称>` 保留（不跟踪更新），`--accept <名称>` 用模板替换并先备份（缺省 `~/.agent-pack/recovery/`，`--recovery-dir` 可改位置）；不选则不写入。
 3. 确认后加 `--apply`，再运行 `./<名称> health` 验证。也可以在菜单「检查项目与环境」里处理“项目根目录还没有人用入口”。
 
 ### 为既有 v6 项目补充记忆与分层加载
@@ -360,7 +496,7 @@ v5 把生命周期与扩展管理合并在 `project-runtime` 中，Profile 位�
 
 1. 保留 `profile`、`capabilities`、`work`、`privacy`、`opinion` 与 `runtime` 中的项目自定义字段；
 2. 把 `runtime.skill` / `runtime.plugin` 改为 `project-orchestrator`，写入 `runtime.capability_manager = "agent-pack"`；
-3. 写入新路径 `.agents/moe.sakanano.agent-pack/project.json`，并把旧文件移动到 `--recovery-dir`（必须位于项目外）；
+3. 写入新路径 `.agents/moe.sakanano.agent-pack/project.json`，并把旧文件移动到恢复目录（缺省 `~/.agent-pack/recovery/`，`--recovery-dir` 可改位置，必须位于项目外）；
 4. 入口文件中的 `project-runtime` 引用不自动改写，由用户逐项选择 `--replace` 或手动精简。
 
 迁移后在各客户端用 `agent-pack reconcile --retire-plugin project-runtime` 归档旧 Plugin。

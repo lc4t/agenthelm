@@ -51,16 +51,20 @@ python3 scripts/init_project.py --project /path/to/project \
   --stack python --runtime local --agent-cli codex --apply
 ```
 
-新项目默认在根目录生成启动器 `menu`（人不经过 Agent 打开项目菜单），并在 Profile 写入 `entry` 段；用户想用别的名字时传 `--entry-name <名称>`，不要启动器时传 `--no-entry`。README.md 不存在时新建并写入「怎样使用」，已存在的不改动。
+**项目文件语言**：初始化前先问用户项目里的文件用中文还是英文（用户没有特别要求时取当前对话的语言），用 `--language zh|en` 传入；不传时取当前界面语言（`AGENTHELM_LANG`、系统 locale，最后英文）。它写进 Profile 的 `language`，决定新建 Case 的小节名与默认文字、README 追加的使用说明用哪种语言，随项目同步，与各人的命令行界面语言无关；缺省的旧项目保持中文。`--mode migrate` 缺省保持中文，要改传 `--language en`。
 
-为已初始化的项目补上入口只用 `--mode entry`，它只涉及 Profile 的 `entry` 段、启动器与内容锁；根目录已有同名文件时视为用户的文件，必须由用户选择 `--keep` 或 `--accept`（替换前备份到 `--recovery-dir`）：
+已有项目没有 `language` 时按中文生成。要改，用 `--mode language --language zh|en`（或 `agenthelm config project-language zh|en`）：默认只预览，`--apply` 只把 Profile 的 `language` 写成所选值（Profile 先备份），不改写任何已有文件；`check` 的 `project_language` 字段给出项目是否声明了它。
+
+新项目默认在根目录生成启动器 `menu`（人不经过 Agent 打开项目菜单），并在 Profile 写入 `entry` 段；用户想用别的名字时传 `--entry-name <名称>`，不要启动器时传 `--no-entry`。README.md 不存在时新建并写入使用说明小节（中文项目叫「怎样使用」，英文项目叫 How to use），已存在的不改动。
+
+为已初始化的项目补上入口只用 `--mode entry`，它只涉及 Profile 的 `entry` 段、启动器与内容锁；根目录已有同名文件时视为用户的文件，必须由用户选择 `--keep` 或 `--accept`（替换前自动备份，见下文“备份与还原”）：
 
 ```bash
 python3 scripts/init_project.py --project /path/to/project --mode entry --entry-name menu
 python3 scripts/init_project.py --project /path/to/project --mode entry --entry-name menu --readme-entry --apply
 ```
 
-迁移既有项目时，保留所有碰撞文件，只显式替换已审阅的路径。替换或退役旧 Profile 必须指定项目外恢复目录：
+迁移既有项目时，保留所有碰撞文件，只显式替换已审阅的路径。替换或退役旧 Profile 前，原件会先备份（缺省 `~/.agent-pack/recovery/`，也可用 `--recovery-dir` 指定项目外的目录）：
 
 ```bash
 python3 scripts/init_project.py --mode migrate --project /path/to/project \
@@ -69,16 +73,37 @@ python3 scripts/init_project.py --mode migrate --project /path/to/project \
   --replace AGENTS.md --recovery-dir /safe/recovery/example-v6 --apply
 ```
 
-已初始化的项目对照最新脚手架用 `--mode check`（只读）；其余模式默认只预览，`--apply` 才写入，已有文件不被覆盖，替换前备份到 `--recovery-dir`：
+目录里已有自己的文件时（没有 Project Profile）先扫描，再接管。原则是控制新增、不追溯历史：与骨架冲突的旧文件可以长期并存，不是阻塞项；只有用户显式选择，才改动已有文件，且先自动备份到项目外：
 
 ```bash
-python3 scripts/init_project.py --project /path/to/project --mode check
+python3 scripts/init_project.py --project /path/to/project --mode scan            # 只读：冲突、选项与推荐
+python3 scripts/init_project.py --project /path/to/project --mode adopt \
+  --name example --project-type code --vcs github --stack python --runtime local --agent-cli codex   # 预览
+python3 scripts/init_project.py ... --mode adopt --agents-policy append --claude-policy add-import \
+  --apply                                                                          # 改动已有文件须显式选择；原件自动备份
+```
+
+- `AGENTS.md` 已有用户内容：`keep`（缺省，不动）、`append`（推荐：原文不动，追加带标记的项目契约区块）、`split`（`--route <章节序号>=<agents|rules|user|opinion|sop>`，未指定的章节留下）、`side-by-side`（原文整体移到 `AGENT.USER.md`）。章节去向建议只来自关键词启发式，逐段判断放在 session 里与用户确认，再把结果交给 `--route`；写入始终经由本命令。
+- `CLAUDE.md` 已有内容但没有导入 `AGENTS.md`：Claude Code 两者并存时只读 `CLAUDE.md`，项目契约不会加载，推荐 `--claude-policy add-import`。
+- `cases/`、`memory/` 被别的内容占用：并存，或 `--case-root` / `--memory-root` 另设位置；已有工作容器用 `--register-root` 只读登记。
+- 追加进用户文件的是受管区块（`scripts/regions.py`）：区块之外不动，区块内部被改过时升级不覆盖，用 `--mode region` 逐个 `--keep <文件>#<ID>` / `--accept <文件>#<ID>`。
+
+已初始化的项目对照最新脚手架用 `--mode check`（只读）；其余模式默认只预览，`--apply` 才写入，已有文件不被覆盖，替换前自动备份：
+
+```bash
+python3 scripts/init_project.py --project /path/to/project --mode check   # 退出码：有任何差异为 1；加 --required-only 则只有「需要处理」的发现为 1（与 agenthelm check 一致）
 python3 scripts/init_project.py --project /path/to/project --mode add-skeleton [--target docs/refs/README.md]
-python3 scripts/init_project.py --project /path/to/project --mode profile [--target runtime.commit_policy] --recovery-dir /safe/recovery/example
+python3 scripts/init_project.py --project /path/to/project --mode profile [--target runtime.commit_policy]
 python3 scripts/init_project.py --project /path/to/project --mode repair-lock
 python3 scripts/init_project.py --project /path/to/project --mode decide --target skel:docs/drafts/.gitkeep --decision skip --reason "…" --apply
 python3 scripts/init_project.py --project /path/to/project --mode case-naming   # 只给改名计划，不移动目录
 ```
+
+**内容刷新（`--mode refresh`）遇到你改过的文件**：模板更新后，未改动的文件先备份再替换；你改过的文件必须逐个选择，不会被静默覆盖。没有内容锁基线的项目（早期版本初始化）里，所有与新模板不同的文件都算“你改过”，预览会写明这个原因和每个文件的差异摘要（`local_lines`、`template_lines`、`lines_added`、`lines_lost`）。选择：`--keep <文件>` 保留（建议；会被记住，之后不再追问）；`--append <文件>`（只限 `AGENTS.md`、`CLAUDE.md`）保留原文、只在末尾追加带标记的受管区块；`--accept <文件>` 换成新模板，会丢弃 `lines_lost` 行本地内容，所以须再加 `--confirm-discard <文件>` 才会执行；`--diff <文件>` 只看完整差异，不写入。
+
+**三方合并（`--merge <文件>`）**：你改过、新模板也变了的文件，用内容锁记录的版本找回旧内容包（本机运行时缓存 → 本地 git tag → GitHub Release，发布包核对 SHA-256），重新渲染出升级前的基线（渲染结果必须与内容锁里的文件摘要一致才采用），再按行做基线 / 你的版本 / 新模板的三方合并。无冲突的部分自动并入并给差异预览；有冲突的块保留两边与基线并标记，用 `--pick <文件>#<块序号>=mine|theirs|both` 逐块选择，没选完不写入。默认只预览，`--apply` 前先备份并输出恢复位置。取不到旧包（离线、没有 tag）或内容锁没有基线时整个文件退回 `--keep` / `--append` / `--accept`，不改任何文件；`AGENTHELM_NO_UPDATE_CHECK=1` 关闭联网。
+
+**备份与还原**：`refresh`、`adopt`、`region`、`profile`、`entry`、`migrate` 这些会替换用户文件的模式，不必先想一个备份目录——`--apply` 时原件自动复制到 `~/.agent-pack/recovery/<UTC 时间>-agenthelm-<模式>/`（与 `agenthelm update`、`migrate` 的位置和命名一致），一次操作的所有被替换文件放在同一个目录。命令输出（文本和 `--output json` 的 `recovery`、`recovery_files`、`recovery_default` 字段）会说明备份位置；还原就是把备份里的文件按相同的相对路径复制回项目。显式传入的 `--recovery-dir` 仍然优先，但必须在项目外，项目内的目录会被拒绝。备份目录无法创建或写入时，命令在改动任何项目文件之前就失败并说明原因，不会跳过备份。预览（不带 `--apply`）不创建任何目录。
 
 期望骨架清单是 [skeleton.json](skeleton.json)（内容包 `agents-init/project-skeleton`）；Opinion、Profile 里的项目自有字段与审计字段不参与比较。用户的跳过 / 保留决定写入 `.agents/moe.sakanano.agent-pack/check-decisions.json`，随项目同步。日常入口是 `agenthelm check` 与 `agenthelm fix`。
 
@@ -107,6 +132,10 @@ cases/
 └── .gitkeep
 memory/
 └── .gitkeep
+sops/
+└── .gitkeep
+private/
+└── .gitignore
 docs/
 ├── refs/README.md
 └── drafts/.gitkeep
@@ -114,13 +143,17 @@ docs/
 
 `AGENTS.md` 是项目执行入口；`CLAUDE.md` 与 `AGENT.md` 是短路由文件；初始化产生的 `OPINION.md` 保持为空白配置入口。用户确认后由 `opinion-manager` 写入当前项目；用户内容禁止复制到公开模板、示例、测试或文档。
 
+新项目的 Profile 声明 `privacy.forbidden_default_reads: ["private/"]` 并建立 `private/`（里面的 `.gitignore` 让内容默认不进入 git）：私有信息放在这里，Agent 默认不读，读之前须经用户确认；用到它的 Case 标为 `sensitivity: private`。已有项目没有声明时 `check` 不要求 `private/`，不会多出差异。
+
+新项目的 Profile 带 `sop: {"root": "sops"}`，并建立 `sops/`：用户自己的流程（SOP）放在这里，由 `project-orchestrator` 的 `runtime/sop.py` 管理。已有项目没有 `sop` 段时 `check` 不要求 `sops/`，想启用就在 Profile 加这一段并运行 `fix add-skeleton`。
+
 新项目默认 `work.mode=case-workspace`。`--work-mode legacy` 可保留旧分类；既有项目迁移时未显式选择模式就保持现有模式。Case 数据迁移由 `project-orchestrator` 的已审阅映射工具执行，初始化器只更新骨架与 Profile。
 
 ## 迁移规则
 
 - 只根据明确版本标记识别旧版本；禁止把陌生结构推断为 v4 或 v5。
-- 使用 `--mode migrate`；未选择的碰撞文件保持原样。写入新骨架文件前，每个 `--replace` 路径都必须备份到项目外。
-- 检测到 v5 Profile（`.agents/moe.sakanano.project-runtime/project.json`）时，初始化模式以 `migrate-required` 停止；迁移模式保留其项目自定义字段并升级到 `.agents/moe.sakanano.agent-pack/project.json`，旧文件移入 `--recovery-dir`。
+- 使用 `--mode migrate`；未选择的碰撞文件保持原样。写入新骨架文件前，每个 `--replace` 路径都会先备份到项目外。
+- 检测到 v5 Profile（`.agents/moe.sakanano.project-runtime/project.json`）时，初始化模式以 `migrate-required` 停止；迁移模式保留其项目自定义字段并升级到 `.agents/moe.sakanano.agent-pack/project.json`，旧文件移入备份目录。
 - 保留项目事实与本地约束。入口文件中的 `project-runtime` 引用由用户逐项选择 `--replace` 或手动精简。
 - 只有在 `project-orchestrator`、`agent-pack` 与 `opinion-manager` 可用后，才从 Agent 入口文件移除重复的职责说明。
 - 只有得到明确授权，才能把个人/全局规则移入用户的私有权威源；禁止提交到本公开模板。

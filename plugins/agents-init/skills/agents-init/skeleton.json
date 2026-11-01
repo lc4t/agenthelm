@@ -14,6 +14,8 @@
     {"path": ".agent-doc/progress.md", "required": true, "compare": "exists"},
     {"path": ".agent-doc/chat-summary.md", "required": true, "compare": "exists"},
     {"path": "{memory_root}/.gitkeep", "required": true, "compare": "dir"},
+    {"path": "{sop_root}/.gitkeep", "required": true, "compare": "dir", "when": "sop"},
+    {"path": "private/.gitignore", "required": true, "compare": "exists", "when": "private"},
     {"path": "docs/refs/README.md", "required": true, "compare": "lock"},
     {"path": "docs/drafts/.gitkeep", "required": true, "compare": "dir"},
     {"path": "{case_root}/.gitkeep", "required": true, "compare": "dir", "when": "case-workspace"},

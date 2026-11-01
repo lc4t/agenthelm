@@ -4,13 +4,28 @@
 """
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
+# The default recovery folder lives under the user's home: give these tests a throw-away one.
+import atexit as _atexit  # noqa: E402
+import shutil as _shutil  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+
+TEST_HOME = _tempfile.mkdtemp(prefix="agenthelm-test-home-")
+os.environ["HOME"] = TEST_HOME
+_atexit.register(_shutil.rmtree, TEST_HOME, ignore_errors=True)
+
 import hashlib
 import json
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("init_project.py")
 sys.path.insert(0, str(SCRIPT.parent))
@@ -71,6 +86,153 @@ class ScaffoldCase(unittest.TestCase):
         lock = self.root / LOCK
         if lock.exists():
             lock.unlink()
+
+
+class ProfileOwnFieldTests(ScaffoldCase):
+    """#38 / #41: the Profile is the project's; the tool describes what it finds and never rewrites a value."""
+
+    def write_profile(self, mutate) -> None:
+        profile = json.loads((self.root / PROFILE).read_text())
+        mutate(profile)
+        (self.root / PROFILE).write_text(json.dumps(profile, ensure_ascii=False))
+
+    # ---- #38
+    def test_free_text_directory_naming_is_not_an_error_and_is_explained_once(self) -> None:
+        self.init("--no-entry")
+        text = "项目自己的命名：<日期>_<客户>_<编号>"
+        self.write_profile(lambda p: p["work"]["case"].update(directory_naming=text))
+        before = (self.root / PROFILE).read_bytes()
+        (self.root / "cases/whatever-name").mkdir(parents=True)
+        (self.root / "cases/whatever-name/CASE.md").write_text("# c\n")
+        report = self.check()
+        self.assertEqual(report["findings"], [])
+        self.assertTrue(report["ok"])
+        self.assertIsNone(report["case_naming"]["error"])
+        self.assertEqual(report["case_naming"]["mismatched_count"], 0)
+        conflicts = [item for item in report["profile_conflicts"] if item["path"] == "work.case.directory_naming"]
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["level"], "info")
+        self.assertEqual(conflicts[0]["options"], ["convert", "keep-as-own-field", "ignore"])
+        self.assertEqual(conflicts[0]["rename_to"], "work.case.project_directory_naming")
+        self.assertEqual(conflicts[0]["example"], {"style": "date-topic"})
+        self.assertEqual((self.root / PROFILE).read_bytes(), before, "the tool must not rewrite the Profile")
+        self.assertIn("directory_naming", scaffold.render_text(report))
+        code, plan = self.run_mode("case-naming")
+        self.assertEqual((code, plan["renames"]), (0, []))
+        self.assertIn("note", plan)
+
+    def test_invalid_object_naming_message_carries_a_legal_example_and_the_keep_option(self) -> None:
+        self.init("--no-entry")
+        self.write_profile(lambda p: p["work"]["case"].update(directory_naming={"style": "weekly"}))
+        found = {item["id"]: item for item in self.check()["findings"]}
+        reason = found["profile:work.case.directory_naming"]["reason"]
+        self.assertIn('{"style": "date-topic"}', reason)
+        self.assertIn('"style": "custom"', reason)
+        self.assertIn("保留原文字不改动", reason)
+        self.assertIn("work.case.project_directory_naming", reason)
+
+    def test_same_principle_for_other_schema_fields(self) -> None:
+        self.init("--no-entry")
+        mine = {"work": {"assets": "我们自己的交付物目录说明"}, "sop": {"root": ["a", "b"]},
+                "memory": {"index_command": ["python", "idx.py"]}, "opinion": {"loading_mode": "lazy", "nudge": "off"},
+                "capabilities": {"mcp_client_policy": "all"}}
+
+        def apply(profile: dict) -> None:
+            for section, values in mine.items():
+                profile.setdefault(section, {})
+                if not isinstance(profile[section], dict):
+                    profile[section] = {}
+                profile[section].update(values)
+        self.write_profile(apply)
+        before = (self.root / PROFILE).read_bytes()
+        report = self.check()
+        self.assertEqual(report["findings"], [])
+        found = {item["path"]: item for item in report["profile_conflicts"]}
+        self.assertTrue({"work.assets", "sop.root", "memory.index_command", "opinion.loading_mode", "opinion.nudge",
+                         "capabilities.mcp_client_policy"} <= set(found), set(found))
+        for item in found.values():
+            self.assertEqual(item["options"], ["convert", "keep-as-own-field", "ignore"])
+            self.assertTrue(item["rename_to"].rsplit(".", 1)[-1].startswith("project_"))
+            self.assertEqual(item["id"], f"conflict:{item['path']}")
+        self.assertEqual(found["sop.root"]["found"], "array")
+        self.assertEqual(found["opinion.loading_mode"]["expected"], '"tiered" / "full"')
+        self.assertEqual((self.root / PROFILE).read_bytes(), before)
+        # fix profile only touches the checked fields; it must leave these values alone
+        self.run_mode("profile", "--recovery-dir", str(self.recovery), "--apply")
+        after = json.loads((self.root / PROFILE).read_text())
+        self.assertEqual(after["sop"]["root"], ["a", "b"])
+        self.assertEqual(after["work"]["assets"], mine["work"]["assets"])
+
+    def test_a_fresh_profile_has_no_conflicts_and_no_extras(self) -> None:
+        for extra in ((), ("--no-entry",), ("--work-mode", "legacy", "--no-entry")):
+            with self.subTest(extra=extra):
+                self.setUp()
+                self.init(*extra)
+                report = self.check()
+                self.assertEqual((report["profile_conflicts"], report["profile_extras"]["total"]), ([], 0))
+
+    # ---- #41
+    def test_extras_are_sorted_into_own_typo_and_read_by_plugin(self) -> None:
+        self.init("--no-entry")
+
+        def apply(profile: dict) -> None:
+            profile["privacy"]["context_requires_confirmation"] = True
+            profile["privacy"]["case_artifacts_require_scope_authorization"] = True
+            profile["privacy"]["forbidden_default_read"] = ["secrets/"]
+            profile["team_notes"] = {"a": 1}
+            profile["work"]["case"]["comand"] = "tool"
+        self.write_profile(apply)
+        schema = json.loads(scaffold.SCHEMA_PATH.read_text())
+        del schema["properties"]["opinion"]["properties"]["nudge"]
+        older = Path(self._temporary.name) / "older.schema.json"
+        older.write_text(json.dumps(schema))
+        self.write_profile(lambda p: p["opinion"].update(nudge={"enabled": False}))
+        with mock.patch.object(scaffold, "SCHEMA_PATH", older):
+            report = self.check()
+        by_path = {item["path"]: item for item in report["extras"] if item["kind"] == "project-field"}
+        self.assertEqual(by_path["privacy.forbidden_default_read"]["category"], "suspected-typo")
+        self.assertEqual(by_path["privacy.forbidden_default_read"]["similar_to"], "privacy.forbidden_default_reads")
+        self.assertEqual(by_path["work.case.comand"]["similar_to"], "work.case.command")
+        self.assertEqual(by_path["opinion.nudge"]["category"], "read-by-plugin")
+        self.assertEqual(by_path["opinion.nudge"]["plugin"], "agent-pack")
+        for path in ("privacy.context_requires_confirmation", "privacy.case_artifacts_require_scope_authorization", "team_notes"):
+            self.assertEqual(by_path[path]["category"], "own", path)
+            self.assertIsNone(by_path[path]["similar_to"])
+        self.assertEqual(report["profile_extras"], {"total": 6, "own": 3, "suspected_typo": 2, "read_by_plugin": 1})
+        self.assertEqual(report["findings"], [])
+        self.assertTrue(report["ok"])
+
+    def test_nudge_is_declared_in_the_schema_so_it_is_no_longer_an_extra(self) -> None:
+        self.init("--no-entry")
+        self.write_profile(lambda p: p["opinion"].update(nudge={"enabled": False, "pending_threshold": 9}))
+        report = self.check()
+        self.assertNotIn("opinion.nudge", {item["path"] for item in report["extras"]})
+        self.assertEqual(report["profile_conflicts"], [])
+
+    def test_extras_never_change_the_exit_code_or_the_fingerprint(self) -> None:
+        self.init("--no-entry")
+        code, plain = self.run_mode("check")
+        self.write_profile(lambda p: p.update(team_notes=1, languge="en"))
+        code_with, report = self.run_mode("check")
+        self.assertEqual((code, code_with), (0, 0))
+        self.assertEqual(report["profile_extras"]["total"], 2)
+        self.assertEqual(report["fingerprint"], plain["fingerprint"])
+
+    def test_json_fields_are_stable(self) -> None:
+        self.init("--no-entry")
+        self.write_profile(lambda p: p.update(team_notes=1))
+        _code, report = self.run_mode("check")
+        self.assertEqual(set(report["profile_extras"]), {"total", "own", "suspected_typo", "read_by_plugin"})
+        self.assertEqual(set(report["extras"][-1]), {"path", "kind", "category", "plugin", "similar_to"})
+        self.assertIsInstance(report["profile_conflicts"], list)
+
+    def test_edit_distance_typo_detection_is_conservative(self) -> None:
+        declared = ["artifact_mode", "root", "command"]
+        self.assertEqual(scaffold._likely_typo("artifact_mod", declared), "artifact_mode")
+        self.assertEqual(scaffold._likely_typo("comand", declared), "command")
+        self.assertIsNone(scaffold._likely_typo("team_notes", declared))
+        self.assertIsNone(scaffold._likely_typo("root", declared))
+        self.assertIsNone(scaffold._likely_typo("ab", ["abc"]))
 
 
 class ManifestTests(ScaffoldCase):
@@ -271,6 +433,126 @@ class DecisionTests(ScaffoldCase):
         self.assertIn("skel:.agents/mcp.json", self.ids(self.check()))
 
 
+class AcceptCurrentTests(ScaffoldCase):
+    """#37：成熟项目一次性接受现状；之后只提示新出现的差异。"""
+
+    def mature(self) -> None:
+        self.old_project()  # 缺 4 个骨架文件（旧版项目）
+        self.init_findings = self.check()["findings"]
+        self.assertGreaterEqual(len(self.init_findings), 4)
+
+    def test_findings_carry_a_level_and_a_category_and_the_summary_counts_them(self) -> None:
+        self.mature()
+        report = self.check()
+        self.assertTrue(all(f["level"] == "suggest" and f["category"] == "skeleton" for f in report["findings"]
+                            if f["kind"] == "skeleton-missing"))
+        row = next(r for r in report["categories"] if r["category"] == "skeleton")
+        self.assertEqual(row["count"], len([f for f in report["findings"] if f["kind"] == "skeleton-missing"]))
+        self.assertEqual(sorted(row["ids"]), sorted(f["id"] for f in report["findings"] if f["kind"] == "skeleton-missing"))
+        self.assertIn(f"{row['count']} 个缺失文件", row["label"])
+        self.assertEqual(report["levels"]["suggest"], len(report["findings"]))
+        self.assertEqual(report["levels"]["must"], 0)
+
+    def test_preview_writes_nothing_then_apply_records_keep_for_every_difference(self) -> None:
+        self.mature()
+        preview = scaffold.accept_current(self.root, reason="mature layout", state_dir=self.state)
+        self.assertFalse(preview["applied"])
+        self.assertEqual(preview["count"], len(self.init_findings))
+        self.assertFalse((self.root / DECISIONS).exists())
+        applied = scaffold.accept_current(self.root, reason="mature layout", apply=True, state_dir=self.state)
+        self.assertTrue(applied["applied"])
+        saved = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))
+        self.assertEqual(saved["schema_version"], 1)
+        self.assertEqual(set(saved["decisions"]), {f["id"] for f in self.init_findings})
+        for finding in self.init_findings:
+            entry = saved["decisions"][finding["id"]]
+            self.assertEqual(set(entry), {"decision", "fingerprint", "decided_at", "reason"})
+            self.assertEqual((entry["decision"], entry["reason"], entry["fingerprint"]),
+                             ("keep", "mature layout", finding["fingerprint"]))
+        after = self.check()
+        self.assertEqual(after["findings"], [])
+        self.assertEqual(len(after["skipped"]), len(self.init_findings))
+
+    def test_only_a_new_difference_prompts_afterwards_and_another_machine_sees_the_same(self) -> None:
+        self.mature()
+        scaffold.accept_current(self.root, reason="mature layout", apply=True, state_dir=self.state)
+        (self.root / ".agent-doc/plan.md").unlink()
+        other_machine = Path(self._temporary.name) / "other-state"
+        for state in (self.state, other_machine):
+            self.assertEqual(self.ids(scaffold.check(self.root, state_dir=state)), {"skel:.agent-doc/plan.md"})
+        self.assertFalse(other_machine.exists())
+
+    def test_a_changed_expectation_prompts_again(self) -> None:
+        self.mature()
+        scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        saved = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))
+        saved["decisions"]["skel:.agents/mcp.json"]["fingerprint"] = "template-as-it-was"
+        (self.root / DECISIONS).write_text(json.dumps(saved), encoding="utf-8")
+        again = {f["id"]: f for f in self.check()["findings"]}
+        self.assertEqual(set(again), {"skel:.agents/mcp.json"})
+        self.assertIn("changed_since_decision", again["skel:.agents/mcp.json"])
+
+    def test_existing_decisions_are_left_alone_and_a_missing_reason_gets_a_marker(self) -> None:
+        self.mature()
+        scaffold.decide(self.root, "skel:docs/drafts/.gitkeep", "skip", reason="drafts live elsewhere", apply=True,
+                        state_dir=self.state)
+        before = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))["decisions"]["skel:docs/drafts/.gitkeep"]
+        result = scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        self.assertEqual(result["count"], len(self.init_findings) - 1)
+        table = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))["decisions"]
+        self.assertEqual(table["skel:docs/drafts/.gitkeep"], before)
+        self.assertEqual(table["skel:.agents/mcp.json"]["reason"], scaffold.ACCEPT_REASON)
+
+    def test_refresh_keep_decisions_stay_compatible(self) -> None:
+        self.mature()
+        path = "AGENTS.md"
+        fingerprint = scaffold.sha("expected")
+        scaffold.decide(self.root, f"content:{path}", "keep", reason="refresh --keep", fingerprint=fingerprint,
+                        apply=True, state_dir=self.state)
+        scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        self.assertEqual(scaffold.keep_fingerprints(self.root).get(path), fingerprint)
+        table = json.loads((self.root / DECISIONS).read_text(encoding="utf-8"))["decisions"]
+        self.assertEqual(table[f"content:{path}"]["reason"], "refresh --keep")
+
+    def test_a_required_finding_is_never_accepted_in_bulk(self) -> None:
+        self.mature()
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile["work"]["case"]["directory_naming"] = {"style": "custom"}  # 缺 pattern：声明本身无法使用
+        (self.root / PROFILE).write_text(json.dumps(profile))
+        report = self.check()
+        broken = next(f for f in report["findings"] if f["id"] == "profile:work.case.directory_naming")
+        self.assertEqual(broken["level"], "must")
+        self.assertEqual(report["levels"]["must"], 1)
+        result = scaffold.accept_current(self.root, apply=True, state_dir=self.state)
+        self.assertEqual([item["id"] for item in result["excluded"]], ["profile:work.case.directory_naming"])
+        self.assertEqual(self.ids(self.check()), {"profile:work.case.directory_naming"})
+
+    def test_cli_mode_previews_then_applies(self) -> None:
+        self.mature()
+        code, preview = self.run_mode("accept-current", "--reason", "mature layout")
+        self.assertEqual((code, preview["applied"]), (0, False))
+        code, applied = self.run_mode("accept-current", "--reason", "mature layout", "--apply")
+        self.assertEqual((code, applied["applied"]), (0, True))
+        self.assertEqual(self.check()["findings"], [])
+
+    def test_a_project_with_its_own_case_tool_is_not_asked_for_the_default_case_structure(self) -> None:
+        self.init("--no-entry", "--work-mode", "case-workspace")
+        (self.root / "cases/.gitkeep").unlink()
+        (self.root / "cases").rmdir()
+        self.assertIn("skel:cases/.gitkeep", self.ids(self.check()))
+        case_dir = self.root / "cases/20260902-grammar"
+        case_dir.mkdir(parents=True)
+        (case_dir / "CASE.md").write_text("# case\n", encoding="utf-8")
+        self.assertIn("case-naming", self.ids(self.check()))
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile["work"]["case"]["command"] = ["./tools/case"]
+        (self.root / PROFILE).write_text(json.dumps(profile))
+        self.assertEqual(self.ids(self.check()), set(), self.check()["findings"])
+        profile["work"]["case"]["directory_naming"] = {"style": "case-id"}  # 自己声明了命名规则时照常检查
+        (self.root / PROFILE).write_text(json.dumps(profile))
+        self.assertEqual(self.ids(self.check()), {"case-naming"})
+
+
 class ProfileTests(ScaffoldCase):
     def drop(self, *paths: str) -> None:
         profile = json.loads((self.root / PROFILE).read_text())
@@ -295,8 +577,6 @@ class ProfileTests(ScaffoldCase):
         preview = scaffold.fix_profile(self.root, ["runtime.commit_policy"], state_dir=self.state)
         self.assertIn('+    "commit_policy": "explicit"', preview["diff"])
         self.assertEqual(preview["fields"], ["runtime.commit_policy"])
-        with self.assertRaises(init_project.InitError):  # replacing the Profile needs a backup location
-            scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, state_dir=self.state)
         applied = scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, recovery_dir=self.recovery,
                                        state_dir=self.state)
         self.assertTrue(applied["applied"])
@@ -306,6 +586,78 @@ class ProfileTests(ScaffoldCase):
         self.assertEqual(updated["custom"], {"anything": 1})
         self.assertEqual(updated["work"]["case"]["directory_naming"], {"style": "date-topic"})
         self.assertTrue((self.recovery / PROFILE).is_file())
+        self.assertEqual(applied["recovery"], str(self.recovery))
+        self.assertFalse(applied["recovery_default"])
+
+    def test_profile_fix_without_a_recovery_dir_backs_up_to_the_default_folder(self) -> None:
+        self.init("--no-entry")
+        self.drop("runtime.commit_policy")
+        original = (self.root / PROFILE).read_text()
+        home = self.recovery.parent / "home"
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            applied = scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, state_dir=self.state)
+        folder = Path(applied["recovery"])
+        self.assertEqual(folder.parent, home / ".agent-pack" / "recovery")
+        self.assertTrue(folder.name.endswith("-agenthelm-profile"), folder.name)
+        self.assertTrue(applied["recovery_default"])
+        self.assertEqual(applied["recovery_files"], [PROFILE.as_posix()])
+        self.assertEqual((folder / PROFILE).read_text(), original)
+        self.assertIn("被替换文件的原件已备份到：" + str(folder), scaffold.render_text(applied))
+
+    def test_profile_fix_stops_untouched_when_the_default_folder_is_unusable(self) -> None:
+        self.init("--no-entry")
+        self.drop("runtime.commit_policy")
+        before = (self.root / PROFILE).read_bytes()
+        home = self.recovery.parent / "home"
+        home.mkdir()
+        (home / ".agent-pack").write_text("not a folder\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"HOME": str(home)}), self.assertRaises(init_project.InitError) as caught:
+            scaffold.fix_profile(self.root, ["runtime.commit_policy"], apply=True, state_dir=self.state)
+        self.assertEqual(caught.exception.code, "recovery-unavailable")
+        self.assertEqual((self.root / PROFILE).read_bytes(), before)
+
+    def test_check_reports_whether_the_project_declares_its_file_language(self) -> None:
+        self.init("--no-entry", "--language", "en")
+        self.assertEqual(self.check()["project_language"], {"declared": "en", "effective": "en"})
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile.pop("language")
+        (self.root / PROFILE).write_text(json.dumps(profile, indent=2))
+        self.assertEqual(self.check()["project_language"], {"declared": None, "effective": "zh"})
+
+    def test_language_mode_sets_only_the_language_after_a_backup(self) -> None:
+        self.init("--no-entry")
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile.pop("language")
+        profile["custom"] = {"anything": 1}
+        (self.root / PROFILE).write_text(json.dumps(profile, indent=2))
+        before = (self.root / PROFILE).read_text()
+        files_before = snapshot(self.root)
+        preview = scaffold.set_project_language(self.root, "en")
+        self.assertEqual((preview["applied"], preview["changed"], preview["from"]), (False, True, None))
+        self.assertIn('+  "language": "en"', preview["diff"])
+        self.assertEqual(snapshot(self.root), files_before)  # a preview writes nothing
+        applied = scaffold.set_project_language(self.root, "en", apply=True, recovery_dir=self.recovery)
+        self.assertTrue(applied["applied"])
+        updated = json.loads((self.root / PROFILE).read_text())
+        self.assertEqual(updated["language"], "en")
+        self.assertEqual(list(updated)[:5], ["$schema", "schema_version", "initializer_version", "name", "language"])
+        self.assertEqual({key: value for key, value in updated.items() if key != "language"},
+                         {key: value for key, value in json.loads(before).items()})
+        after = snapshot(self.root)
+        self.assertEqual({path for path in after if after[path] != files_before.get(path)}, {PROFILE.as_posix()})  # no other file moved
+        self.assertEqual((self.recovery / PROFILE).read_text(), before)
+        again = scaffold.set_project_language(self.root, "en", apply=True, recovery_dir=self.recovery / "unused")
+        self.assertEqual((again["changed"], again["applied"]), (False, False))
+        with self.assertRaises(init_project.InitError):
+            scaffold.set_project_language(self.root, "fr")
+
+    def test_language_mode_through_the_command_line(self) -> None:
+        self.init("--no-entry", "--language", "zh")
+        code, preview = self.run_mode("language", "--language", "en")
+        self.assertEqual((code, preview["changed"], preview["applied"]), (0, True, False))
+        code, applied = self.run_mode("language", "--language", "en", "--recovery-dir", str(self.recovery), "--apply")
+        self.assertEqual((code, applied["applied"]), (0, True), applied)
+        self.assertEqual(json.loads((self.root / PROFILE).read_text())["language"], "en")
 
     def test_project_own_fields_are_listed_but_never_flagged(self) -> None:
         self.init("--no-entry")
@@ -417,6 +769,81 @@ class LockTests(ScaffoldCase):
         self.assertEqual(refresh()[0], 1)
 
 
+class DecisionIdempotenceTests(ScaffoldCase):
+    """重复执行 refresh --keep / decide / accept-current：决定内容不变就不重写文件（decided_at 不动）。"""
+
+    def decisions_bytes(self) -> bytes:
+        return (self.root / DECISIONS).read_bytes()
+
+    def test_decide_with_the_same_content_does_not_rewrite_the_file(self) -> None:
+        self.old_project()
+        finding = self.check()["findings"][0]["id"]
+        args = ("decide", "--target", finding, "--decision", "skip", "--reason", "不需要", "--apply")
+        self.assertEqual(self.run_mode(*args)[0], 0)
+        first = self.decisions_bytes()
+        with mock.patch.object(scaffold, "now_iso", return_value="2999-01-01T00:00:00Z"):
+            result = scaffold.decide(self.root, finding, "skip", reason="不需要", apply=True, state_dir=self.state)
+            self.assertTrue(result["applied"])
+            self.assertNotEqual(result["entry"]["decided_at"], "2999-01-01T00:00:00Z")
+        self.assertEqual(self.decisions_bytes(), first)
+        with mock.patch.object(scaffold, "now_iso", return_value="2999-01-01T00:00:00Z"):
+            scaffold.decide(self.root, finding, "skip", reason="换个理由", apply=True, state_dir=self.state)
+        self.assertNotEqual(self.decisions_bytes(), first, "理由变了就是新决定")
+
+    def test_accept_current_twice_is_byte_identical(self) -> None:
+        self.old_project()
+        scaffold.accept_current(self.root, reason="成熟布局", apply=True, state_dir=self.state)
+        first = self.decisions_bytes()
+        with mock.patch.object(scaffold, "now_iso", return_value="2999-01-01T00:00:00Z"):
+            result = scaffold.accept_current(self.root, reason="成熟布局", apply=True, state_dir=self.state)
+        self.assertEqual(result["count"], 0)  # 已决定的发现不再出现
+        self.assertEqual(self.decisions_bytes(), first)
+
+    def test_repeated_refresh_keep_and_append_are_byte_identical(self) -> None:
+        self.init("--no-entry")
+        (self.root / LOCK).unlink()
+        (self.root / "AGENTS.md").write_text("my contract\n")
+        (self.root / "CLAUDE.md").write_text("my claude\n")
+
+        def refresh(*extra: str) -> int:
+            return subprocess.run(
+                [sys.executable, str(SCRIPT), "--project", str(self.root), "--mode", "refresh", "--output", "json",
+                 "--recovery-dir", str(self.recovery), *extra], capture_output=True, text=True, check=False).returncode
+
+        self.assertEqual(refresh("--keep", "AGENTS.md", "--keep", "CLAUDE.md", "--apply"), 0)
+        first = self.decisions_bytes()
+        # decided_at 有秒级精度：隔一秒再跑，字节仍然一致（靠“内容没变就不写”，不靠运气同一秒）
+        time.sleep(1.1)
+        self.assertEqual(refresh("--keep", "AGENTS.md", "--keep", "CLAUDE.md", "--apply"), 0)
+        self.assertEqual(self.decisions_bytes(), first)
+
+
+class RequiredOnlyExitCodeTests(ScaffoldCase):
+    def test_default_counts_optional_differences_and_required_only_does_not(self) -> None:
+        self.old_project()
+        code, report = self.run_mode("check")
+        self.assertEqual((code, report["required_ok"], report["ok"]), (1, True, False))
+        code, report = self.run_mode("check", "--required-only")
+        self.assertEqual(code, 0)
+        self.assertFalse(report["ok"], "报告内容不变，只有退出码口径变")
+
+    def test_required_only_still_fails_on_a_required_finding(self) -> None:
+        self.init("--no-entry")
+        profile = json.loads((self.root / PROFILE).read_text())
+        profile["work"]["case"]["directory_naming"] = {"style": "nonsense-style"}
+        (self.root / PROFILE).write_text(json.dumps(profile, indent=2))
+        code, report = self.run_mode("check", "--required-only")
+        self.assertFalse(report["required_ok"], report["findings"])
+        self.assertEqual(code, 1)
+
+    def test_required_only_outside_check_is_refused(self) -> None:
+        self.init("--no-entry")
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT), "--project", str(self.root), "--mode", "case-naming", "--required-only"],
+            capture_output=True, text=True, check=False)
+        self.assertEqual(completed.returncode, 2)
+
+
 class CaseNamingTests(ScaffoldCase):
     def make_cases(self, *names: str) -> None:
         for name in names:
@@ -448,7 +875,7 @@ class CaseNamingTests(ScaffoldCase):
 
     def test_a_broken_declaration_is_reported_without_a_fix(self) -> None:
         self.init("--no-entry")
-        for naming in ({"style": "weekly"}, {"style": "custom"}, {"pattern": "("}, "date-topic"):
+        for naming in ({"style": "weekly"}, {"style": "custom"}, {"pattern": "("}):
             with self.subTest(naming=naming):
                 self.declare(naming)
                 found = {item["id"]: item for item in self.check()["findings"]}
@@ -545,6 +972,18 @@ class FingerprintTests(ScaffoldCase):
         code, report = self.run_mode("check")
         self.assertEqual(code, 0)
         self.assertTrue(report["fingerprint"]["fingerprint"].startswith("sha256:"))
+
+
+class CategoryTableTests(unittest.TestCase):
+    def test_every_finding_kind_the_checker_emits_has_a_category_that_is_not_itself(self) -> None:
+        """A kind missing from CATEGORY_BY_KIND would show up as "other" with no command to run."""
+        import re as _re
+        source = (SCRIPT.parent / "scaffold.py").read_text(encoding="utf-8")
+        kinds = set(_re.findall(r'_finding\([^,]+,\s*"([a-z-]+)"', source)) | set(_re.findall(r'kind, title = "([a-z-]+)"', source))
+        kinds = {kind for kind in kinds if not kind.startswith("profile-")}  # covered by the profile- prefix rule
+        unmapped = sorted(kind for kind in kinds if kind not in scaffold.CATEGORY_BY_KIND)
+        self.assertEqual(unmapped, [], "add these to CATEGORY_BY_KIND")
+        self.assertEqual(scaffold.category_of("privacy-contract-stale"), "content")
 
 
 if __name__ == "__main__":

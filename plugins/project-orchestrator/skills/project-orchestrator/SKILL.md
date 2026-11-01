@@ -116,6 +116,28 @@ Case 自有输入放 `refs/`，交付物放 `docs/`（草稿 `docs/drafts/`）�
 
 Project Profile 声明了 `memory` 时，恢复状态后读取记忆索引：`provider` 为 `project-orchestrator` 时运行随包的 `runtime/memory.py index --project <项目>`，为 `project` 时运行其 `index_command`。索引每条一行，说明何时应当想起该条记忆；只在当前任务命中时读取条目正文。依据某条记忆行动前，核对其中提到的文件、命令与外部对象仍然存在；标注为可能过期的条目先核实再使用。
 
+### 3.1 流程（SOP）
+
+用户可以把常用流程固化成 SOP（Standard Operating Procedure，标准作业流程）。契约与命令见 [SOP 契约](../../references/sop.md)，与用户一起建立见 [建立 SOP](../../references/sop-interview.md)。
+
+- **读索引**：存在 `sops/` 目录或用户级 SOP 时，恢复状态后运行随包的 `runtime/sop.py index --project <项目>`（一行一个已启用的 SOP，写明触发与不触发条件）。没有 SOP 时静默跳过。
+- **判断触发**：用户明确指定、事件（新建或关闭 Case 时，`case.py` 与项目入口的结果带 `sop_events`；自有 Case 工具用 `sop.py events <事件> --case <Case>` 查询）、周期到期（`sop.py due`）、意图对照触发与不触发条件，按这个优先级。命中后默认先问用户一次是否按它执行；多个命中合并成一次编号提问；到期只是提醒。只读被命中的那一个 SOP 的正文。
+- **执行**：`sop.py preflight` 检查所需程序与环境，缺失项一次性列给用户并等待处理，**不自行安装软件**；`sop.py run`（预览 → 用户确认 → `--apply`）建立执行 Case；逐步执行并用 `sop.py step --apply` 记录结果与中间产物；出错、缺工具、花钱或耗时步骤按 Case 里固化的“执行约定”处理；收尾用 `sop.py status` 与完成标准核对。
+- **范围与私有目录**：会读取多个事项的流程（复盘、汇总）先让用户指定范围，不默认纳入全部事项；SOP 里用到私有目录（见 3.2）时，`sop.py run` 自动把执行 Case 标为 `private`，读取前按 3.2 取得用户确认。
+- **授权不变**：SOP 不放宽任何授权，写入、外发、删除、push、安装、花钱类步骤仍须用户当次同意；与用户当次请求冲突时以请求为准并说明偏离。
+- **创建与修改**：SOP 里的工具、出错处理、中间产物位置等是用户的习惯，只提问、整理、校验，不替用户决定；`decided` 只在用户确认后用 `sop.py decide` 写入；修改后用 `sop.py revise` 登记版本。
+- 一次执行的状态只写在 Case 里，不在 SOP 目录里另记；SOP 不是 Opinion（表达偏好）也不是记忆（事实），不要写错位置。
+
+### 3.2 私有目录
+
+Profile 的 `privacy.forbidden_default_reads` 声明私有路径（没有声明但项目根有 `private/` 时，按约定它就是私有目录）。三条约定，其余照常：
+
+- **读取前须经用户确认**：默认不读、不列目录、不搜索其中的内容。需要读时，先向用户列出要读的路径和用途，得到确认再读；确认后用 `sop.py confirm-read <Case> <路径…> --apply` 记入该 Case 的决策记录（同时把 Case 标为 `private`）。确认只覆盖当次列出的路径。
+- **内容默认不进入 git**：私有目录里有 `.gitignore`（`*` 加 `!.gitignore`）。`sop.py private` 查看状态，`--apply` 补上缺失的 `.gitignore`；`health` 会提示未被忽略的私有目录和已被跟踪的文件。不要替用户 `git add`、提交或推送私有目录里的内容。
+- **用到私有目录的 Case 标为 `sensitivity: private`**：`case.py update --add-deliverable/--add-evidence` 登记私有路径时自动改，也可 `--sensitivity private`；SOP 里引用了私有路径时 `sop.py run` 自动标。云同步盘同步它没有问题。
+
+这是协议级约束：工具层挡不住 Agent 直接读文件，所以要靠这里的规则；`find` 照常索引 `private` 的 Case（索引只是本机缓存里的索引，不做过滤）。
+
 ## 4. 路由能力
 
 根据三项输入构建执行路由：

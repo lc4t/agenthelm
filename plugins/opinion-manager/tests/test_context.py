@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
+
 import json
 import subprocess
 import sys
@@ -151,6 +155,44 @@ class TieredContextTests(unittest.TestCase):
             result = self.context(*action)
             self.assertEqual(result.returncode, 2, action)
             self.assertEqual(json.loads(result.stdout)["fallback"], FALLBACK)
+
+    def test_slice_frame_follows_the_language_but_body_and_fingerprint_do_not(self) -> None:
+        """切片的框架文字随界面语言；规则正文、指纹与 OPINION.md 在两种语言下一致。"""
+        import re
+        self.adopt(self.loading)
+        body = (self.project / "OPINION.md").read_bytes()
+        lock = (self.project / "opinion.lock.json").read_bytes()
+        cjk = re.compile("[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]")
+        outputs: dict[str, dict[str, str]] = {}
+        for language in ("zh", "en"):
+            env = {**os.environ, "AGENTHELM_LANG": language}
+            outputs[language] = {}
+            for action in (("core",), ("bundle", "scene")):
+                result = subprocess.run([sys.executable, str(SCRIPT), "context", *action, "--project", str(self.project)],
+                                        capture_output=True, text=True, check=False, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                outputs[language][action[0]] = result.stdout
+        # Chinese output is unchanged
+        self.assertIn("# Agent Opinion 核心规则", outputs["zh"]["core"])
+        self.assertIn("## 规则束索引", outputs["zh"]["core"])
+        self.assertIn("# 规则束 `scene/default@1.0.0`", outputs["zh"]["bundle"])
+        # English output: the frame has no Chinese; rule text is verbatim (rule titles/scopes are the rendered body)
+        english = outputs["en"]["core"]
+        self.assertIn("# Agent Opinion core rules", english)
+        self.assertIn("## Rule bundle index", english)
+        self.assertIn("# Rule bundle `scene/default@1.0.0`", outputs["en"]["bundle"])
+        for text in outputs["en"].values():
+            for line in text.splitlines():
+                if line.startswith("## ") and not line.startswith("## TITLE_") and not line.startswith("## Rule bundle index"):
+                    continue
+                if line.startswith(("# ", "- `", "Profile:", "This output", "When a task", "Body fingerprint")) or line == "":
+                    self.assertFalse(cjk.search(line), line)
+        # rule text and fingerprint identical
+        for rule in ("RULE_ALPHA", "RULE_BETA"):
+            self.assertIn(rule, english)
+        self.assertEqual(re.findall(r"[0-9a-f]{64}", english), re.findall(r"[0-9a-f]{64}", outputs["zh"]["core"]))
+        self.assertEqual(body, (self.project / "OPINION.md").read_bytes())
+        self.assertEqual(lock, (self.project / "opinion.lock.json").read_bytes())
 
     def test_candidate_profile_can_be_previewed_before_it_is_saved(self) -> None:
         args = ("profile", "--catalog", self.catalog, "--project", self.project, "--id", "private.fixture",

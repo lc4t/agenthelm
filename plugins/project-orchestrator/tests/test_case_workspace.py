@@ -1,10 +1,12 @@
 from pathlib import Path
 import json
+import os
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
+os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; tests/test_i18n*.py cover English
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'runtime'))
 import case_workspace as cw
 

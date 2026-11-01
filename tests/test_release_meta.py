@@ -104,6 +104,70 @@ class AttachReleaseTests(unittest.TestCase):
         self.assertNotIn("release", self.attach(None))
 
 
+NOTES_SPEC = importlib.util.spec_from_file_location("release_notes", ROOT / "scripts/release_notes.py")
+release_notes = importlib.util.module_from_spec(NOTES_SPEC)
+NOTES_SPEC.loader.exec_module(release_notes)
+
+CHANGELOG = """# 更新记录
+
+## 2026-10-31 — 6.11.0-rc.2：升级路径修复
+
+rc.2 正文。
+
+### 小节
+
+- 一条
+
+## 2026-10-29 — agenthelm 6.11.0 / Agent Pack 1.11.0：观点自动采集
+
+6.11.0 正文。
+
+## 2026-10-27 — agenthelm 6.8.0 / Agents Init 6.7.0：脚手架一致性
+
+6.8.0 正文。
+"""
+
+
+class ReleaseNotesTests(unittest.TestCase):
+    def test_a_candidate_gets_its_own_section_with_subsections(self) -> None:
+        text = release_notes.release_notes(CHANGELOG, "v6.11.0-rc.2")
+        self.assertTrue(text.startswith("## 2026-10-31 — 6.11.0-rc.2"))
+        self.assertIn("### 小节", text)
+        self.assertIn("- 一条", text)
+        self.assertNotIn("6.11.0 正文", text)
+        self.assertTrue(text.rstrip().endswith(release_notes.FALLBACK))
+
+    def test_a_candidate_without_its_own_section_uses_the_release_it_leads_to(self) -> None:
+        text = release_notes.release_notes(CHANGELOG, "v6.11.0-rc.1")
+        self.assertIn("6.11.0 正文", text)
+        self.assertNotIn("rc.2 正文", text)
+
+    def test_a_release_does_not_pick_up_its_candidate_section(self) -> None:
+        text = release_notes.release_notes(CHANGELOG, "v6.11.0")
+        self.assertIn("6.11.0 正文", text)
+        self.assertNotIn("rc.2 正文", text)
+        self.assertNotIn("6.8.0 正文", text)
+
+    def test_other_versions_are_not_matched_by_prefix(self) -> None:
+        self.assertEqual(release_notes.release_notes(CHANGELOG, "v6.11"), release_notes.FALLBACK + "\n")
+        self.assertEqual(release_notes.release_notes(CHANGELOG, "v6.1.0"), release_notes.FALLBACK + "\n")
+
+    def test_without_a_section_or_a_changelog_the_fixed_sentence_remains(self) -> None:
+        self.assertEqual(release_notes.release_notes(CHANGELOG, "v9.9.9"), release_notes.FALLBACK + "\n")
+        self.assertEqual(release_notes.release_notes(None, "v6.11.0"), release_notes.FALLBACK + "\n")
+
+    def test_a_very_long_section_is_cut_below_the_github_limit(self) -> None:
+        long = "## 2026-01-01 — 7.0.0：x\n\n" + "\n".join("行" * 50 for _ in range(5000))
+        text = release_notes.release_notes(long, "v7.0.0")
+        self.assertLess(len(text), 125000)
+        self.assertIn("已截断", text)
+
+    def test_the_real_changelog_has_a_section_for_the_current_candidate(self) -> None:
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        index = json.loads((ROOT / "index.json").read_text(encoding="utf-8"))["plugin"]["version"]
+        self.assertIsNotNone(release_notes.notes_for(changelog, f"v{index}"))
+
+
 class SinceGateTests(unittest.TestCase):
     """--since compares a work tree with a release tag in a throwaway repository."""
 
@@ -144,11 +208,40 @@ class SinceGateTests(unittest.TestCase):
         self.write("plugins/demo/tests/test_demo.py", "# more\n")
         self.assertEqual(self.problems(), [])
 
+    def test_test_files_beside_scripts_need_no_bump_and_are_not_digested(self) -> None:
+        # agents-init keeps scripts/test_*.py outside any tests/ directory.
+        self.write("plugins/demo/scripts/test_thing.py", "# new test\n")
+        self.write("plugins/demo/scripts/tool.py", "# shipped\n")
+        self.assertEqual(release_meta.shipped_changes("v1", self.root / "plugins/demo"), ["plugins/demo/scripts/tool.py"])
+        files = release_meta.pack_files(self.root / "plugins/demo", ["scripts"])
+        self.assertEqual(sorted(files), ["scripts/tool.py"])
+
+    def test_test_files_beside_scripts_only_change_needs_no_bump(self) -> None:
+        self.write("plugins/demo/scripts/test_thing.py", "# new test\n")
+        self.assertEqual(self.problems(), [])
+
     def test_shipped_change_without_bump_fails(self) -> None:
         self.write("plugins/demo/templates/a.md", "two\n")
         problems = self.problems()
         self.assertTrue(any("without a version bump" in problem for problem in problems))
         self.assertTrue(any("demo/templates" in problem for problem in problems))
+
+    def bump(self, **entry_changes) -> None:
+        """A template change shipped as demo 1.0.1 with a complete declaration; tests then break one part."""
+        self.write("plugins/demo/templates/a.md", "two\n")
+        self.write("plugins/demo/plugin.json", {"name": "demo", "version": "1.0.1"})
+        content = json.loads((self.root / "plugins/demo/content.json").read_text())
+        content["packs"][0]["version"] = "1.0.1"
+        content["packs"][0]["files"] = release_meta.pack_files(self.root / "plugins/demo", ["templates"])
+        self.write("plugins/demo/content.json", content)
+        entry = {"plugin": "demo", "from": "1.0.0", "to": "1.0.1", "change_kind": "content", "breaking": False,
+                 "date": "2026-10-29", "summary": "template wording", "declaration": 2, "actions": [],
+                 "user_action_required": [{"what": "update-content 逐个选择保留或采用", "session": "current"}],
+                 "touches": ["a.md"], "default_for_existing": "advisory",
+                 "template_changes": [{"path": "a.md", "class": "semantic"}]}
+        entry.update(entry_changes)
+        self.write("release/migrations.json", [{k: v for k, v in entry.items() if v is not None}])
+        self.write("CHANGELOG.md", "# 更新记录\n\n### demo 1.0.1\n\n- 模板措辞\n")
 
     def test_bump_requires_a_migration_entry(self) -> None:
         self.write("plugins/demo/templates/a.md", "two\n")
@@ -157,10 +250,100 @@ class SinceGateTests(unittest.TestCase):
         content["packs"][0]["version"] = "1.0.1"
         self.write("plugins/demo/content.json", content)
         self.assertTrue(any("has no release/migrations.json entry" in p for p in self.problems()))
-        self.write("release/migrations.json", [{"plugin": "demo", "from": "1.0.0", "to": "1.0.1",
-                                                "change_kind": "content", "breaking": False,
-                                                "date": "2026-10-21", "summary": "template wording"}])
+
+    def test_complete_declaration_passes(self) -> None:
+        self.bump()
         self.assertEqual(self.problems(), [])
+        self.assertEqual(release_meta.migration_problems(release_meta.load_plugins()), [])
+
+    def test_entry_without_declaration_fails(self) -> None:
+        self.bump(declaration=None)
+        self.assertTrue(any('"declaration": 2' in p for p in self.problems()))
+
+    def test_changelog_must_mention_the_new_version(self) -> None:
+        self.bump()
+        self.write("CHANGELOG.md", "# 更新记录\n\n### demo 1.0.0\n")
+        self.assertTrue(any("CHANGELOG.md does not mention demo 1.0.1" in p for p in self.problems()))
+        (self.root / "CHANGELOG.md").unlink()
+        self.assertTrue(any("CHANGELOG.md does not mention" in p for p in self.problems()))
+
+    def test_changelog_matches_hyphenated_names_written_with_spaces(self) -> None:
+        self.bump()
+        self.write("plugins/demo-pack/plugin.json", {"name": "demo-pack", "version": "2.0.0"})
+        self.assertTrue(release_meta.changelog_mentions("demo", "1.0.1"))
+        self.write("CHANGELOG.md", "## Demo Pack 2.0.0\n")
+        self.assertTrue(release_meta.changelog_mentions("demo-pack", "2.0.0"))
+        self.assertFalse(release_meta.changelog_mentions("demo-pack", "2.0.1"))
+
+    def test_breaking_release_must_say_what_to_do(self) -> None:
+        self.bump(breaking=True, actions=[])
+        self.assertTrue(any("breaking release must list what to do" in p
+                            for p in release_meta.migration_problems(release_meta.load_plugins())))
+
+    def test_semantic_template_change_needs_a_user_action_unless_off_by_default(self) -> None:
+        self.bump(user_action_required=[])
+        self.assertTrue(any("semantic template change" in p for p in release_meta.migration_problems(release_meta.load_plugins())))
+        self.bump(user_action_required=[], default_for_existing="off")
+        self.assertEqual(release_meta.migration_problems(release_meta.load_plugins()), [])
+
+    def test_changed_content_pack_must_list_template_changes(self) -> None:
+        self.bump(template_changes=[])
+        self.assertTrue(any("list the files in template_changes" in p for p in self.problems()))
+
+    def test_declaration_fields_are_validated(self) -> None:
+        for change, expected in ((dict(default_for_existing="maybe"), "default_for_existing"),
+                                 (dict(touches="a.md"), "touches"),
+                                 (dict(user_action_required=[{"what": ""}]), "user_action_required[0]"),
+                                 (dict(user_action_required=[{"what": "x", "session": "later"}]), "session"),
+                                 (dict(template_changes=[{"path": "a.md", "class": "big"}]), "template_changes[0]")):
+            with self.subTest(change=change):
+                self.bump(**change)
+                self.assertTrue(any(expected in p for p in release_meta.migration_problems(release_meta.load_plugins())),
+                                release_meta.migration_problems(release_meta.load_plugins()))
+
+    def test_changing_what_projects_are_expected_to_contain_must_be_declared(self) -> None:
+        self.write("plugins/demo/skills/agents-init/skeleton.json", '{"files": []}\n')
+        self.git("add", "-A")
+        self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "v1b")
+        self.git("tag", "-f", "v1")
+        self.bump(touches=[])
+        self.write("plugins/demo/skills/agents-init/skeleton.json", '{"files": ["new"]}\n')
+        problems = self.problems()
+        self.assertTrue(any("skeleton.json changed" in p for p in problems), problems)
+        self.bump(touches=["new"])
+        self.assertFalse(any("skeleton.json changed" in p for p in self.problems()))
+
+    def test_every_declaration_field_is_required_when_it_is_missing(self) -> None:
+        # 反例：逐个删掉声明字段，门禁必须失败并点名该字段。
+        for field in ("actions", "user_action_required", "touches", "default_for_existing", "template_changes"):
+            with self.subTest(missing=field):
+                self.bump(**{field: None})
+                found = release_meta.migration_problems(release_meta.load_plugins()) + self.problems()
+                self.assertTrue(any(field in p for p in found), found)
+
+    def test_a_breaking_release_with_a_complete_declaration_passes(self) -> None:
+        self.bump(breaking=True, actions=["运行 migrate"])
+        self.assertEqual(self.problems(), [])
+
+    def test_template_changes_need_touches(self) -> None:
+        self.bump(touches=[])
+        self.assertTrue(any("touches must name" in p for p in release_meta.migration_problems(release_meta.load_plugins())))
+
+    def test_schema_change_must_be_declared_like_the_skeleton(self) -> None:
+        self.write("plugins/demo/skills/agents-init/project.schema.json", '{"type": "object"}\n')
+        self.git("add", "-A")
+        self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "v1c")
+        self.git("tag", "-f", "v1")
+        self.bump(touches=[])
+        self.write("plugins/demo/skills/agents-init/project.schema.json", '{"type": "object", "required": ["x"]}\n')
+        self.assertTrue(any("project.schema.json changed" in p for p in self.problems()))
+
+    def test_changelog_without_the_new_version_fails_even_for_a_complete_entry(self) -> None:
+        self.bump()
+        self.write("CHANGELOG.md", "# 更新记录\n\n### demo 1.0.0\n")
+        self.assertTrue(any("does not mention demo 1.0.1" in p for p in self.problems()))
+        (self.root / "CHANGELOG.md").unlink()
+        self.assertTrue(any("does not mention demo 1.0.1" in p for p in self.problems()))
 
 
 if __name__ == "__main__":

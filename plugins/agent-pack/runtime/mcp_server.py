@@ -116,6 +116,22 @@ TOOLS = [
         },
     },
     {
+        "name": "agent_pack_cloud_sync_safety_check",
+        "title": "Check Cloud-Sync Safety of a Project",
+        "description": "Read-only. Inspect a project that lives (or may live) inside an iCloud Drive, Dropbox, OneDrive or Google Drive folder and report anything that should stay on this machine but would be synced: .venv and other virtualenvs, node_modules, tool caches, SQLite -wal/-shm files, plus conflict copies, directories close to or over the configured size limits, npm/pnpm use (their node_modules cannot be moved out of the synced folder; yarn classic and bun can), whether externalized links point at this machine's local store and still exist (a missing target means dependencies are not installed on this device), and whether HOME matches the project's recorded HOME (a hard requirement for the links). Returns structured findings with ids, severity (attention=true means act now), the evidence, and the exact CLI command to run for each fix. It never changes files; to fix, run the returned `agenthelm local-only fix` command (preview by default, --apply to write) or ask the user. Findings the user already dismissed on this machine are left out and listed under `skipped`. Projects that are not in a synced folder and have no local-only configuration return no findings.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Project directory (any folder inside an agenthelm project works)."},
+                "mode": {"type": "string", "enum": ["quick", "standard", "full"], "default": "standard",
+                         "description": "quick: shallow scan without sizes (about 1.5 s); standard: complete scan within a 6 s budget; full: complete scan, up to 2 minutes."},
+                "home": {"type": "string", "description": "Treat this directory as HOME (testing or isolation)."},
+            },
+            "required": ["project"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "agent_pack_transfer",
         "title": "Transfer Skills and MCP Servers",
         "description": "Dry-run or copy explicitly selected portable Skills and MCP definitions into another initialized project. apply defaults to false.",
@@ -233,6 +249,15 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             reset_overrides=bool(arguments.get("resetOverrides", False)),
             recovery_root=Path(recovery_value) if isinstance(recovery_value, str) else None,
         )
+    if name == "agent_pack_cloud_sync_safety_check":
+        import agenthelm  # noqa: PLC0415 - shipped next to this file
+
+        mode = arguments.get("mode", "standard")
+        if mode not in ("quick", "standard", "full"):
+            raise AgentPackError("mode must be quick, standard or full")
+        report = agenthelm.local_only_report(agenthelm.current_env(home), Path(arguments["project"]), mode=mode)
+        report["ok"] = True
+        return report
     raise AgentPackError(f"unknown tool: {name}")
 
 
