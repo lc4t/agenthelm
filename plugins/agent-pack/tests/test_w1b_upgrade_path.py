@@ -321,7 +321,7 @@ class RuntimeInstallUseTests(unittest.TestCase):
                     self.home / ".claude/plugins/cache/agenthelm/agent-pack/1.0.0")}]}})
             result = subprocess.run([str(self.data / "current/bin/agenthelm"), "check", "--hook", "--no-project",
                                      "--home", str(self.home), "--latest", str(latest)],
-                                    capture_output=True, text=True, check=False, env={**self.env, "PATH": "/usr/bin:/bin"},
+                                    capture_output=True, text=True, check=False, env={**self.env, "PATH": "/usr/bin:/bin", "AGENTHELM_PYTHON": sys.executable},
                                     timeout=60)
             self.assertIn(expect, result.stdout, result.stdout + result.stderr)
             shutil.rmtree(self.home / ".cache", ignore_errors=True)
