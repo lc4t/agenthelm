@@ -94,6 +94,8 @@ class ScaffoldCheckTests(unittest.TestCase):
         self.assertIn("疑似拼写错误，是不是想写 privacy.forbidden_default_reads", full)
         self.assertNotIn("check --show-extras 展开", full)
         self.assertEqual(report["scaffold"]["profile_extras"]["total"], 3)
+        self.assertEqual(report["summary"]["profile_notes"], 3)  # extras only here; scaffold_info keeps its meaning
+        self.assertEqual(report["summary"]["scaffold_info"], before["scaffold_info"])
 
     def test_check_cli_accepts_show_extras_and_strict_ignores_info(self) -> None:
         self.write_profile(lambda p: p.update(team_notes=1))
@@ -107,6 +109,9 @@ class ScaffoldCheckTests(unittest.TestCase):
         report = self.report()
         self.assertEqual([item["id"] for item in report["scaffold"]["findings"]], ["skel:.agents/mcp.json"])
         text = agenthelm.render_text(report)
+        self.assertEqual(report["summary"]["profile_notes"],
+                         len(report["scaffold"]["profile_conflicts"]) + report["scaffold"]["profile_extras"]["total"])
+        self.assertGreaterEqual(report["summary"]["profile_notes"], 1)
         self.assertIn("[脚手架·信息] Profile 的 work.case.directory_naming", text)
         self.assertIn("保留为项目自有字段", text)
         self.assertNotIn("无法使用", text)

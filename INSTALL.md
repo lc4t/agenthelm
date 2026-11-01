@@ -70,6 +70,8 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 
 `agenthelm check` 开头的“安装状态”按客户端给出结论、下一条命令（预览形式）、是否改动已有安装与原件恢复位置；`--output json` 的 `install_state.clients.<客户端>` 提供同样的稳定字段（`state`、`base_state`、`sub_status`、`installed`、`missing`、`installs`、`conflicts`、`market_conflict`、`untouched`、`summary`、`next_command`、`modifies_existing`、`modifies_note`、`recovery`）。
 
+`check --output json` 的 `summary.scaffold_info` 只统计 info 级脚手架发现；文本里“脚手架·信息”行还包含 Profile 形态冲突与 schema 未声明字段，这两项合计为 `summary.profile_notes`（整数，不改变 `scaffold_info` 的含义）。文本输出中，同一插件同一版本的不兼容说明只在第一个出现的客户端下完整打印，其余客户端写“同上”；JSON 的逐客户端明细不变。
+
 | 状态（`state`） | 含义 | 下一条命令（先预览） | 会改动已有安装？ | 原件恢复位置 |
 |---|---|---|---|---|
 | `none` | 客户端存在，没有任何 agenthelm 插件 | `agenthelm install --client <客户端>` | 否 | 无 |
