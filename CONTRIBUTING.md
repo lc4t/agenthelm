@@ -33,6 +33,14 @@
 - 不运行真实的 claude / codex / cursor。
 - 与平台相关的断言（可执行位、符号链接、路径大小写）要写明；macOS 上的行为由 CI 的 `macos-latest` 矩阵验证。
 
+## 提交与 issue 的关联
+
+- 每个提交的标题带范围：`feat(#30): …`、`fix(#43): …`；一个提交对应多个 issue 时写 `(#33 #39)`。提交正文里，部分完成写 `Refs #N`，完全解决写 `Closes #N`。
+- GitHub 只在**合并到默认分支（`main`）**时才按关键词关闭 issue。`dev` 是集成分支，提交里的 `Closes #N` 到不了默认分支就不会生效，所以把关闭关键词写进 `dev` → `main` 的 PR 描述，逐个列出：`Closes #30, Closes #31 …`。
+- 发布后核对：CHANGELOG 新版本小节里提到的每个 issue 都要么已关闭，要么在 issue 里留评论写明剩余部分（只部分解决的保持打开）。关闭时的评论列出对应提交的短哈希和 CHANGELOG 小节名，以便追溯。
+- 不为补关联而改写已经打过 tag、发布过的历史：tag、npm 溯源、Release 包的校验值都指向这些提交。缺的关联用 issue 评论补。
+- 把工作拆给子会话或其他贡献者时，提示词里写明负责的 issue 编号，并要求提交带 `Refs #N`。
+
 ## 发布声明门禁
 
 `python3 scripts/release_meta.py --since <上一个发布 tag>` 检查：版本是否随发布内容升级、`release/migrations.json` 是否有对应条目并带 `"declaration": 2`（`actions`、`user_action_required`、`touches`、`default_for_existing`、`template_changes`）、`CHANGELOG.md` 是否提到新版本、模板/骨架/schema 变更是否在 `template_changes` / `touches` 里声明。反例测试在 `tests/test_release_meta.py`。
