@@ -568,5 +568,13 @@
  "agenthelm runtime status 可以看到已安装的版本": "agenthelm runtime status lists the installed versions",
  "\n      {0} 不兼容：同上（见 {1}）": "\n      {0} is incompatible: same as above (see {1})",
  "提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（最新版本 {1}）。要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。": "Note: Claude's settings pin the agenthelm marketplace to {0}, so an update only follows that ref and the version may not change (latest version: {1}). To follow the new version, change the ref of the agenthelm marketplace declaration in settings.json to the target tag, or remove the ref to follow main (agenthelm does not edit settings.json for you).",
- "Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，所以版本没变；把声明里的 ref 改成目标 tag，或去掉 ref 跟随 main。": "Claude's settings pin the agenthelm marketplace to {0}, and an update only follows that ref, so the version did not change. Change the ref in the declaration to the target tag, or remove the ref to follow main."
+ "Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，所以版本没变；把声明里的 ref 改成目标 tag，或去掉 ref 跟随 main。": "Claude's settings pin the agenthelm marketplace to {0}, and an update only follows that ref, so the version did not change. Change the ref in the declaration to the target tag, or remove the ref to follow main.",
+ "Claude Code 还没有登记 agenthelm 市场（{0} 里没有它），而 settings.json 已声明 {1}": "Claude Code has not registered the agenthelm marketplace yet ({0} does not list it), but settings.json declares {1}",
+ "读不到 Claude Code 的已登记市场（{0} 无法解析），而 settings.json 已声明 {1}": "Cannot read the marketplaces Claude Code has registered ({0} cannot be parsed), but settings.json declares {1}",
+ "settings.json 声明的市场是 {0}，Claude Code 已登记的是 {1}": "settings.json declares the marketplace {0}, but Claude Code has registered {1}",
+ "重启 Claude Code 让它按 settings.json 登记市场；或手动执行：claude plugin marketplace add {0}": "restart Claude Code so it registers the marketplace from settings.json; or run: claude plugin marketplace add {0}",
+ "目标 tag：{0}。": " Target tag: {0}.",
+ "settings 把 agenthelm 市场固定在目标版本 {0}，无需改动。": " The settings pin the agenthelm marketplace to the target release {0}; nothing to change.",
+ "固定 Codex 市场的方法见 INSTALL.md 第 4 节": "See INSTALL.md, section 4, for how to pin the Codex marketplace",
+ "codex plugin marketplace add {0} --ref {1}（若提示该市场已存在，先 codex plugin marketplace remove {2}；移除对已装插件的影响未确认）；详见 INSTALL.md 第 4 节": "codex plugin marketplace add {0} --ref {1} (if it says the marketplace already exists, run codex plugin marketplace remove {2} first; the effect of removal on installed plugins is unconfirmed); see INSTALL.md, section 4"
 }

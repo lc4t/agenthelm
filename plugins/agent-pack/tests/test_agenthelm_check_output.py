@@ -77,6 +77,8 @@ class PinnedTests(Fixture):
     def pin(self) -> None:
         base.write(self.home / ".claude/settings.json", {"extraKnownMarketplaces": {"agenthelm": {
             "source": {"source": "github", "repo": "example/agenthelm", "ref": "v1.0.0"}}}})
+        base.write(self.home / ".claude/plugins/known_marketplaces.json", {"agenthelm": {"source": {
+            "source": "github", "repo": "example/agenthelm", "ref": "v1.0.0"}}})  # Claude Code has registered it (else A1 blocks)
         self.claude_plugin("1.0.0")
         self.stub("claude")
 

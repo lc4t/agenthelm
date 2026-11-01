@@ -382,6 +382,38 @@ def declared_marketplaces(env: Env, project: Path | None) -> list[dict]:
     return found
 
 
+def market_sync_problem(env: Env, declared: list[dict]) -> dict | None:
+    """Why Claude Code cannot update right now: ``settings.json`` declares the agenthelm market, but the market Claude
+    Code has registered (``plugins/known_marketplaces.json``) is missing or came from another source / ref. Claude Code
+    only registers a declared market at start-up, so the update fails with "Marketplace 'agenthelm' not found" until it
+    restarts. None: no declaration, or both agree. Unverified against a real client: the record layout is assumed."""
+    if not declared:
+        return None
+    path = env.claude_dir / "plugins" / "known_marketplaces.json"
+    wanted = declared_source_text(declared[0]["source"])
+    registered = None
+    try:
+        record = read_json(path).get(MARKETPLACE)
+        registered = declared_source_text(record["source"]) if isinstance(record, dict) and "source" in record else None
+        code = None if registered is not None and all(
+            registered == declared_source_text(item["source"]) for item in declared) else (
+            "not-registered" if registered is None else "source-differs")
+    except FileNotFoundError:
+        code = "not-registered"
+    except (OSError, ValueError, AttributeError):
+        code = "unreadable"
+    if code is None:
+        return None
+    if code == "source-differs":
+        wanted = next(declared_source_text(item["source"]) for item in declared
+                      if declared_source_text(item["source"]) != registered)
+    reason = {"not-registered": _("Claude Code 还没有登记 agenthelm 市场（{0} 里没有它），而 settings.json 已声明 {1}").format(path, wanted),
+              "unreadable": _("读不到 Claude Code 的已登记市场（{0} 无法解析），而 settings.json 已声明 {1}").format(path, wanted),
+              "source-differs": _("settings.json 声明的市场是 {0}，Claude Code 已登记的是 {1}").format(wanted, registered)}[code]
+    return {"status": "blocked", "reason_code": code, "reason": reason, "declared": wanted, "registered": registered,
+            "next": _("重启 Claude Code 让它按 settings.json 登记市场；或手动执行：claude plugin marketplace add {0}").format(wanted)}
+
+
 def migrations_between(latest: dict, plugin: str, current: str, target: str) -> list[dict]:
     """The steps from ``current`` to ``target``; when two entries end at the same version (a span kept for the
     release gate and the single steps inside it) the narrower one, with the newer ``from``, is shown."""
@@ -457,6 +489,24 @@ def declared_source_text(source: Any) -> str:
     return f"{target}#{ref}" if ref and kind in {"github", "git", "url"} else str(target)
 
 
+def release_tag(latest: dict) -> str | None:
+    """The tag of the release ``latest`` describes (None: latest.json carries no release block)."""
+    release = latest.get("release")
+    tag = release.get("tag") if isinstance(release, dict) else None
+    return str(tag) if tag else None
+
+
+def market_pin(latest: dict, declared: list[dict]) -> dict | None:
+    """A declaration of the agenthelm repository pinned to a ref, with whether that ref is the release ``latest`` describes."""
+    tag = release_tag(latest)
+    for item in declared:
+        source = item["source"]
+        if isinstance(source, dict) and source.get("ref") and not market_conflict(latest, [{**item, "source": {k: v for k, v in source.items() if k != "ref"}}]):
+            return {"scope": item["scope"], "file": item["file"], "ref": source["ref"], "target": tag,
+                    "at_target": bool(tag) and source["ref"] == tag}
+    return None
+
+
 def market_conflict(latest: dict, declared: list[dict]) -> dict | None:
     """Claude Code refuses ``marketplace add`` for a name whose declared source differs (issue #31 comment, measured on
     macOS): flag a declaration that points elsewhere, or that pins a ref (a later `marketplace add` without it is refused)."""
@@ -474,6 +524,8 @@ def market_conflict(latest: dict, declared: list[dict]) -> dict | None:
         if not same:
             return {**item, "reason": "points-elsewhere", "declared": declared_source_text(source), "ref": source.get("ref")}
         if source.get("ref"):
+            if release_tag(latest) == source.get("ref"):
+                continue  # pinned to the very release being checked: nothing to resolve
             return {**item, "reason": "pinned", "declared": declared_source_text(source), "ref": source.get("ref")}
     return None
 
@@ -492,7 +544,8 @@ def _origin_text(record: dict) -> str:
     return f"{text} {extra}" if extra else text
 
 
-def diagnose_client(client: str, latest: dict, findings: list[dict], others: list[dict], conflict: dict | None) -> dict:
+def diagnose_client(client: str, latest: dict, findings: list[dict], others: list[dict], conflict: dict | None,
+                    pin: dict | None = None) -> dict:
     names = sorted(latest.get("plugins", {}))
     legacy = [item for item in findings if item["client"] == "legacy"] if client in {"claude", "codex"} else []
     records = [_install_record(item) for item in findings if item["client"] == client]
@@ -533,8 +586,11 @@ def diagnose_client(client: str, latest: dict, findings: list[dict], others: lis
             "conflicts": [{"plugin": c["plugin"], "versions_differ": c["versions_differ"],
                            "effective": None} for c in clashes],
             "market_conflict": {k: conflict[k] for k in ("scope", "file", "reason", "declared", "ref")} if conflict else None,
-            "untouched": [{"plugin": item["plugin"], "path": item["path"], "origin": item["origin"]} for item in dev]}
+            "untouched": [{"plugin": item["plugin"], "path": item["path"], "origin": item["origin"]} for item in dev],
+            "market_pin": pin}
     diag.update(_advice(diag, client))
+    if pin and pin["at_target"]:
+        diag["summary"] += _("settings 把 agenthelm 市场固定在目标版本 {0}，无需改动。").format(pin["ref"])
     return diag
 
 
@@ -612,6 +668,7 @@ def install_state(env: Env, latest: dict, findings: list[dict], others: list[dic
     """Per selected client: none / partial / marketplace(current|behind|ahead) / dev / legacy / mixed / market-conflict."""
     detected = set(detect_clients(env))
     conflict = market_conflict(latest, declared)
+    pin = market_pin(latest, declared)
     result: dict = {"clients": {}, "unconfirmed": [
         "claude marketplace add on a same-named marketplace beyond the measured declared-source mismatch",
         "claude --plugin-dir leaves no record in installed_plugins.json",
@@ -624,7 +681,8 @@ def install_state(env: Env, latest: dict, findings: list[dict], others: list[dic
         scoped = [item for item in findings
                   if item["client"] != "legacy" or legacy_owner(env, item) in {client, None}]
         result["clients"][client] = diagnose_client(client, latest, scoped, others,
-                                                    conflict if client == "claude" else None)
+                                                    conflict if client == "claude" else None,
+                                                    pin if client == "claude" else None)
     return result
 
 
@@ -1454,6 +1512,8 @@ class Step:
     note: str | None = None
     untouched: bool = False  # an install the tool recognises but leaves alone (development / local)
     pinned: str | None = None  # the ref Claude's marketplace declaration is pinned to (updates only follow it)
+    blocker: str | None = None  # machine-readable cause of ``blocked`` that the user has to resolve (not a missing CLI)
+    next: str | None = None
 
     def view(self) -> dict:
         data = {"kind": self.kind, "client": self.client, "description": self.description}
@@ -1461,6 +1521,9 @@ class Step:
             data["command"] = " ".join(self.command)
         if self.blocked:
             data["blocked"] = self.blocked
+        if self.blocker:
+            data["blocker"] = self.blocker
+            data["next"] = self.next
         if self.skipped:
             data["skipped"] = self.skipped
         if self.note:
@@ -1584,6 +1647,26 @@ def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Pat
                 targets={plugin: latest.get("plugins", {}).get(plugin, {}).get("version") for plugin in plugins}, note=note)
 
 
+def claude_market_sync(env: Env, report: dict, project: Path | None, only: str | None) -> dict | None:
+    """A1: the market problem that would make Claude's update steps fail, found before anything runs."""
+    if only not in (None, "plugins") or not any(item["status"] == "behind" and item["client"] == "claude"
+                                                 for item in report["plugins"]):
+        return None
+    return market_sync_problem(env, declared_marketplaces(env, project))
+
+
+def codex_pin_advice(latest: dict) -> str:
+    """A9: pin Codex's agenthelm marketplace to the release. ``--ref`` and ``owner/repo@ref`` are in the Codex plugin docs
+    (developers.openai.com/codex/plugins/build); whether ``add`` replaces an existing same-named market is unconfirmed."""
+    try:
+        slug = github_slug(latest)
+    except CheckError:
+        return _("固定 Codex 市场的方法见 INSTALL.md 第 4 节")
+    tag = release_tag(latest) or "<tag>"
+    return _("codex plugin marketplace add {0} --ref {1}（若提示该市场已存在，先 codex plugin marketplace remove {2}；"
+             "移除对已装插件的影响未确认）；详见 INSTALL.md 第 4 节").format(slug, tag, MARKETPLACE)
+
+
 def update_steps(env: Env, report: dict, project: Path | None, source: Path | None, home: Path,
                  accept: list[str], keep: list[str], recovery_dir: Path | None,
                  only: str | None, *, content_flags: list[str] | None = None) -> list[Step]:
@@ -1603,13 +1686,17 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
                 note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（最新版本 {1}）。"
                          "要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。"
                          ).format(pinned, newest)
-            steps.append(Step("update", "claude", _("刷新 Claude Code 的 agenthelm 市场"), command, blocked=blocked,
+                if release_tag(latest):
+                    note += _("目标 tag：{0}。").format(release_tag(latest))
+            sync = report.get("market_sync")
+            block = dict(blocked=sync["reason"], blocker="market-not-synced", next=sync["next"]) if sync else {}
+            steps.append(Step("update", "claude", _("刷新 Claude Code 的 agenthelm 市场"), command, **{"blocked": blocked, **block},
                               note=note, pinned=pinned))
             for item in [entry for entry in behind if entry["client"] == "claude"]:
                 extra = ["--scope", item["scope"]] if item.get("scope") and item["scope"] != "user" else []
                 command, blocked = _cli(env, "claude", "plugin", "update", f"{item['plugin']}@{MARKETPLACE}", *extra)
                 steps.append(Step("update", "claude", _("Claude Code 更新 {0} → {1}").format(item['plugin'], item['latest']),
-                                  command, blocked=blocked, verify=[item["plugin"]],
+                                  command, verify=[item["plugin"]], **{"blocked": blocked, **block},
                                   targets={item["plugin"]: item["latest"]}, scope=item.get("scope"), pinned=pinned))
         codex = [item for item in behind if item["client"] == "codex"]
         if codex:
@@ -1795,9 +1882,11 @@ def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
 CLIENT_ORDER = {name: index for index, name in enumerate(CLIENT_KEYS)}
 
 
-def step_outcome_ok(results: list[dict]) -> bool:
-    """False when a step failed, ran without effect, or still waits for a choice."""
-    return not any(r["status"] in {"failed", "unchanged"} or r.get("needs_choice") for r in results)
+def step_outcome_ok(results: list[dict], *, blockers: bool = False) -> bool:
+    """False when a step failed, ran without effect, or still waits for a choice (``blockers``: or is held back by
+    a cause the user has to resolve, e.g. Claude Code has not registered the declared market yet)."""
+    return not any(r["status"] in {"failed", "unchanged"} or r.get("needs_choice")
+                   or (blockers and r["status"] == "blocked" and r.get("blocker")) for r in results)
 
 
 def outcome_summary(results: list[dict]) -> dict:
@@ -1819,7 +1908,10 @@ def outcome_summary(results: list[dict]) -> dict:
             entry["status"] = status
         if status in {"unavailable"} and record.get("error"):
             entry["reason"] = record["error"]
-    return {"ok": step_outcome_ok(results), "clients": clients}
+        if status == "blocked" and record.get("blocker"):
+            entry["blocker"] = record["blocker"]
+            entry["reason"] = record["blocked"]
+    return {"ok": step_outcome_ok(results, blockers=True), "clients": clients}
 
 
 def render_outcome(results: list[dict]) -> list[str]:
@@ -1837,7 +1929,7 @@ def render_outcome(results: list[dict]) -> list[str]:
         if entry["not_run"]:
             text += _("；其后 {0} 步没有执行").format(entry["not_run"])
         lines.append(text)
-    bad = [names.get(n, n) for n, e in ordered if e["status"] in {"failed", "unchanged"}]
+    bad = [names.get(n, n) for n, e in ordered if e["status"] in {"failed", "unchanged"} or e.get("blocker")]
     good = [names.get(n, n) for n, e in ordered if e["status"] == "ok"]
     if bad:
         lines.append(_("整体：没有全部成功——{0} 需要处理；{1}").format(
@@ -2157,6 +2249,8 @@ def _print_steps(results: list[dict], apply: bool) -> None:
             line += f"\n      {record['note']}"
         if record.get("blocked"):
             line += f"\n      {record['blocked']}"
+        if record.get("blocker") and record.get("next"):
+            line += _("\n      下一步：{0}").format(record["next"])
         if record.get("skipped"):
             line += f"\n      {record['skipped']}"
         if record["status"] in {"failed", "unavailable"}:
@@ -2184,6 +2278,8 @@ def _print_steps(results: list[dict], apply: bool) -> None:
                 line += _("\n      {0}仍是 {1}（目标 {2}）").format(prefix, change["after"] or _("（读不到）"), change.get("target") or "?")
         if record["status"] == "unchanged":
             line += _("\n      原因：{0}").format(record["reason"])
+            if record.get("next"):
+                line += _("\n      下一步：{0}").format(record["next"])
         result = record.get("result")
         if isinstance(result, dict) and result.get("mode") == "refresh":
             for item in result.get("files", []):
@@ -2403,12 +2499,16 @@ def main(argv: list[str] | None = None) -> int:
             flags = [value for flag, paths in (("--append", args.append), ("--confirm-discard", args.confirm_discard),
                                                ("--diff", args.diff), ("--merge", args.merge), ("--pick", args.pick))
                      for path in paths for value in (flag, path)]
+            report["market_sync"] = claude_market_sync(env, report, project, args.only)
             steps = update_steps(env, report, project, args.source, home, args.accept, args.keep,
                                  recovery, args.only, content_flags=flags)
             results = execute_steps(steps, apply=args.apply, recovery_root=None,
                                     child_env=env.child_environment(), env=env)
-            payload = {"ok": step_outcome_ok(results), "applied": args.apply, "latest": origin,
-                       "steps": results, "summary": report["summary"]}
+            for record in results:  # Codex "no change": say how to pin its marketplace
+                if record["status"] == "unchanged" and record.get("client") == "codex":
+                    record["next"] = codex_pin_advice(latest)
+            payload = {"ok": step_outcome_ok(results, blockers=args.apply), "applied": args.apply, "latest": origin,
+                       "steps": results, "summary": report["summary"], "market_sync": report["market_sync"]}
             backups = [record["result"] for record in results
                        if isinstance(record.get("result"), dict) and record["result"].get("recovery")]
             if args.apply and backups:

@@ -68,7 +68,7 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 
 ### 从任意状态升级
 
-`agenthelm check` 开头的“安装状态”按客户端给出结论、下一条命令（预览形式）、是否改动已有安装与原件恢复位置；`--output json` 的 `install_state.clients.<客户端>` 提供同样的稳定字段（`state`、`base_state`、`sub_status`、`installed`、`missing`、`installs`、`conflicts`、`market_conflict`、`untouched`、`summary`、`next_command`、`modifies_existing`、`modifies_note`、`recovery`）。
+`agenthelm check` 开头的“安装状态”按客户端给出结论、下一条命令（预览形式）、是否改动已有安装与原件恢复位置；`--output json` 的 `install_state.clients.<客户端>` 提供同样的稳定字段（`state`、`base_state`、`sub_status`、`installed`、`missing`、`installs`、`conflicts`、`market_conflict`、`untouched`、`summary`、`next_command`、`modifies_existing`、`modifies_note`、`recovery`，另有 `market_pin`：settings 把市场固定在某个 ref 时的 `{scope, file, ref, target, at_target}`，否则 `null`）。
 
 `check --output json` 的 `summary.scaffold_info` 只统计 info 级脚手架发现；文本里“脚手架·信息”行还包含 Profile 形态冲突与 schema 未声明字段，这两项合计为 `summary.profile_notes`（整数，不改变 `scaffold_info` 的含义）。文本输出中，同一插件同一版本的不兼容说明只在第一个出现的客户端下完整打印，其余客户端写“同上”；JSON 的逐客户端明细不变。
 
@@ -81,7 +81,15 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 | `dev` | 来自其他市场名、本地目录市场、指向别处的软链：显示路径与版本 | `agenthelm update --client <客户端>`（预览里标“不会改动”）；缺的插件用 `install` 补装 | 开发版/本地安装**不会**被 `update` / `migrate` 改动 | 无（不动它们）；想纳入市场管理，自行卸载这处安装后运行 `install` |
 | `legacy` | 只有旧方式安装（复制 + 软链） | `agenthelm migrate --install` | 是，旧安装移走 | `~/.agent-pack/recovery/<时间>-agenthelm-migrate/`（含 `migration.json`） |
 | `mixed` | 同一插件有多处不同来源的安装（市场 + 开发版 / 市场 + 旧方式） | 含旧方式：`agenthelm migrate`；否则 `agenthelm doctor` 查看后自行保留一处 | `migrate` 会移走旧安装；`doctor` 只读 | 同 `legacy` |
-| `market-conflict` | `settings.json` 的 `extraKnownMarketplaces.agenthelm` 指向别处，或固定在某个 ref | `agenthelm install --client claude --marketplace-source "<与声明一致的来源，含 #ref>"` | 否 | 无；agenthelm 从不修改 `settings.json`，要么自己改那处声明，要么让 `--marketplace-source` 与它一致 |
+| `market-conflict` | `settings.json` 的 `extraKnownMarketplaces.agenthelm` 指向别处，或固定在**旧于目标版本**的 ref（`update` 只会跟随该 ref，版本可能不变；固定的 ref 等于目标 tag 时不再算冲突，`market_conflict` 为 `null`，`market_pin.at_target` 为 `true`） | `agenthelm install --client claude --marketplace-source "<与声明一致的来源，含 #ref>"` | 否 | 无；agenthelm 从不修改 `settings.json`，要么自己改那处声明，要么让 `--marketplace-source` 与它一致 |
+
+`update` 预览与 `--apply` 在升级前还会核对 Claude Code 自己登记的市场（`~/.claude/plugins/known_marketplaces.json`）与 `settings.json` 的声明：
+
+| 现象 | 含义 | 处理 |
+|---|---|---|
+| `update` 把 Claude 的步骤标 **[阻塞]**，原因为「已登记的是 … / 还没有登记 / 无法解析」 | 你改了 `extraKnownMarketplaces.agenthelm`（例如把 ref 换成新 tag）但没重启 Claude Code，它还没按新声明登记市场；直接升级会在第一步报 `Marketplace 'agenthelm' not found` | 重启 Claude Code；或 `claude plugin marketplace add <owner/repo>#<ref>`（来源取自 settings.json 声明）。带 `--apply` 时 Claude 的步骤不执行，命令退出码 1；其他客户端照常执行，汇总里分开列出。JSON：`market_sync`（无问题为 `null`）与步骤里的 `blocker`、`next` |
+| settings 固定在旧 tag | 更新只会跟随该 ref | 把声明里的 ref 改成目标 tag（agenthelm 不改 `settings.json`），再重启 Claude Code |
+| Codex 步骤「完成，无变化」，原因为市场没固定到此版本 | Codex 市场在跟随默认分支 | `codex plugin marketplace add <owner/repo> --ref <tag>`（`--ref` 与 `owner/repo@ref` 见 [Codex 插件文档](https://developers.openai.com/codex/plugins/build)；若提示市场已存在，先 `codex plugin marketplace remove agenthelm`，移除对已装插件的影响**未确认**）。步骤的 JSON 里有 `next` |
 
 要点：识别不等于处理，开发版与本地安装只告知；同一插件有多处安装时，哪一处生效由客户端决定，目前**未确认**，建议只保留一处。指定版本来源测试升级路径：`check --latest <latest.json 的 URL 或路径>`、`update --latest …`；固定到某个 tag 安装：`install --client claude --marketplace-source "owner/repo#<tag>"`（若 `settings.json` 已声明该市场，来源须与声明一致，Claude Code 否则拒绝）。
 
