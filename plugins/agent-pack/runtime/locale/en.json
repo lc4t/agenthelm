@@ -576,5 +576,17 @@
  "目标 tag：{0}。": " Target tag: {0}.",
  "settings 把 agenthelm 市场固定在目标版本 {0}，无需改动。": " The settings pin the agenthelm marketplace to the target release {0}; nothing to change.",
  "固定 Codex 市场的方法见 INSTALL.md 第 4 节": "See INSTALL.md, section 4, for how to pin the Codex marketplace",
- "codex plugin marketplace add {0} --ref {1}（若提示该市场已存在，先 codex plugin marketplace remove {2}；移除对已装插件的影响未确认）；详见 INSTALL.md 第 4 节": "codex plugin marketplace add {0} --ref {1} (if it says the marketplace already exists, run codex plugin marketplace remove {2} first; the effect of removal on installed plugins is unconfirmed); see INSTALL.md, section 4"
+ "codex plugin marketplace add {0} --ref {1}（若提示该市场已存在，先 codex plugin marketplace remove {2}；移除对已装插件的影响未确认）；详见 INSTALL.md 第 4 节": "codex plugin marketplace add {0} --ref {1} (if it says the marketplace already exists, run codex plugin marketplace remove {2} first; the effect of removal on installed plugins is unconfirmed); see INSTALL.md, section 4",
+ "不可用（需 --source 本地源，不计入“可更新”）": "Unavailable (needs a local source via --source; not counted as updatable)",
+ "Cursor 更新用的本地仓库：给出后 Cursor 按可更新计（与 update --source 一致）": "Local repository for Cursor updates: with it, Cursor counts as updatable (same as update --source)",
+ "，另有 {0} 个不可用（需 --source 本地源）": ", plus {0} unavailable (needs a local source via --source)",
+ "{0}：{1} 个不可用，需 --source 本地源": "{0}: {1} unavailable, needs a local source via --source",
+ "\n      {0}\n      有本地仓库时：{1} update --source <本地仓库>；不使用 Cursor 时：{1} config ignore-client cursor --apply": "\n      {0}\n      With a local repository: {1} update --source <local repository>; if you do not use Cursor: {1} config ignore-client cursor --apply",
+ "安装候选版（-rc.N）时同时切换 current；默认只装在旁边，current 不变。正式版总是切换": "When installing a candidate (-rc.N), also switch current; by default it is installed beside it and current stays. A stable release always switches",
+ "重新读取：{0} 已装好（{1}），current 仍是 {2}": "Read back: {0} is installed ({1}); current is still {2}",
+ "已安装但未启用：{0}（current 仍是 {1}）；启用：agenthelm runtime use {0} --apply": "Installed but not active: {0} (current is still {1}); activate it: agenthelm runtime use {0} --apply",
+ "  {0} 已安装。": "  {0} is already installed.",
+ "  候选版：current {0}（当前 current={1}）。要启用它：{2}，或重跑本命令加 --use。": "  Candidate: current {0} (current={1}). To activate it: {2}, or rerun this command with --use.",
+ "不会切换": "will not be switched",
+ "未切换": "was not switched"
 }

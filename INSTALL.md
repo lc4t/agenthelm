@@ -55,6 +55,7 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - 已初始化但没有启动器的项目：`init_project.py --project <项目> --mode entry --entry-name <名称>` 预览，经同意后 `--apply`。根目录已有同名文件时让用户选择 `--keep`（保留）或 `--accept`（替换，先自动备份到 `~/.agent-pack/recovery/`，输出会写出位置）。
 - 让项目脱离 AI 客户端也能打开菜单：预览 `npx @sakanano-moe/agenthelm runtime install`，经同意后 `--apply`；运行时写入用户数据目录 `~/.local/share/agenthelm/`。
 - 离线安装：解压发布包 `agenthelm-v<版本>.tar.gz`，运行 `python3 <解压目录>/plugins/agent-pack/runtime/agenthelm.py runtime install --apply`。
+- 试用候选版（版本号带 `-rc.N`，npm 标签 `next`）：用 `npx @sakanano-moe/agenthelm@<版本> …` 运行（不带版本的 `npx` 解析到 npm `latest`，即稳定版）；候选版运行时给出的提示命令会自带 `@<版本>`。`runtime install` 装候选版时**默认不切换 `current`**（项目启动器、hook、终端里的 `agenthelm` 继续用原来的运行时），要启用加 `--use`，或之后运行 `agenthelm runtime use <版本> --apply`；第一次安装（没有 `current`）仍会设为当前。稳定版的行为不变（装完即切换）。
 - Agent 自己需要查资料或看进展时，调用 `./<启动器> find <词> --output json`、`progress --output json` 等子命令，不另写查找逻辑；写入类子命令默认只预览。
 
 ## 4. 检查与更新
