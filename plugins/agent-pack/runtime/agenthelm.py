@@ -31,7 +31,23 @@ from typing import Any
 from i18n_agent_pack import _, N_  # noqa: E402
 
 MARKETPLACE = "agenthelm"
-CLI = "npx @sakanano-moe/agenthelm"
+NPX = "npx @sakanano-moe/agenthelm"
+
+
+def cli_command(root: Path | None = None) -> str:
+    """The command printed in hints. A stable runtime keeps the plain ``npx`` form, which resolves to npm's
+    ``latest``. A pre-release runtime (``6.11.0-rc.2``) pins ``@<that version>``: an untagged npx would fetch the
+    older stable release, and ``@next`` may already point at a newer candidate. The npm package version equals the
+    suite version (release.yml sets it from the tag), so the pinned command runs exactly this runtime's code."""
+    try:
+        import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
+        label = agenthelm_runtime.running_label(root if root is not None else Path(__file__).resolve().parents[3])
+    except Exception:  # noqa: BLE001 - a hint must never break the command
+        return NPX
+    return f"{NPX}@{label}" if label and "-" in label else NPX
+
+
+CLI = cli_command()
 DEFAULT_LATEST_URLS = (
     "https://agenthelm.sakanano.moe/latest.json",
     "https://raw.githubusercontent.com/lc4t/agenthelm/main/latest.json",
@@ -919,7 +935,7 @@ def unused_client_hints(env: Env, plugins: list[dict], ignored: list[str]) -> li
 
 def run_check(env: Env, project: Path | None, *, latest_source: str | None = None, offline: bool = False,
               max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False,
-              clients: list[str] | None = None) -> dict:
+              clients: list[str] | None = None, source: Path | None = None) -> dict:
     latest, origin = load_latest(
         env, latest_source, offline=offline, max_age=max_age,
         timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS, backoff=hook_mode,
@@ -942,6 +958,18 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     # 只有“需要处理”的脚手架发现（level must）参与 up_to_date、--strict 与会话开始提示；旧版 agents-init 没有分级时按可选处理。
     scaffold_required = sum(1 for item in (scaffold["findings"] if scaffold else []) if item.get("level") == "must")
     behind = [item for item in plugins if item["status"] == "behind"]
+    # Cursor is installed from a release tarball: when update would find none (no tag / digest, no --source) the user
+    # cannot clear the finding, so it is listed as unavailable instead of counted as behind. Same decision as update.
+    unavailable: list[dict] = []
+    for item in plugins:
+        item["unavailable"] = None
+    if any(item["client"] == "cursor" for item in behind):
+        reason = cursor_unavailable(latest, source, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
+        for item in behind:
+            if reason and item["client"] == "cursor":
+                item["unavailable"] = reason
+        unavailable = [item for item in behind if item.get("unavailable")]
+        behind = [item for item in behind if not item.get("unavailable")]
     # With --client, a legacy entry stays listed (it is a migration risk) but counts toward up_to_date only when its
     # path says it belongs to a selected client; an entry whose owner cannot be told is listed and not counted.
     for item in plugins:
@@ -950,7 +978,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     legacy = [item for item in plugins if item["client"] == "legacy"
               and (not selection["explicit"] or item["owner"] in selection["active"])]
     legacy_unattributed = sum(1 for item in plugins if item["client"] == "legacy") - len(legacy)
-    by_client = {name: {"behind": sum(1 for item in plugins if item["client"] == name and item["status"] == "behind"),
+    by_client = {name: {"behind": sum(1 for item in behind if item["client"] == name),
+                        "unavailable": sum(1 for item in unavailable if item["client"] == name),
                         "total": sum(1 for item in plugins if item["client"] == name)}
                  for name in selection["active"] if any(item["client"] == name for item in plugins)}
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
@@ -984,6 +1013,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
             "scaffold_skipped": len(scaffold["skipped"]) if scaffold else 0,
             "local_only_attention": local_attention,
             "plugins_behind": len(behind),
+            "plugins_unavailable": len(unavailable),
             "by_client": by_client,
             "breaking": any(item["breaking"] for item in behind),
             "content_updates": len(content_updates),
@@ -999,12 +1029,26 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     }
 
 
-UPDATE_HINTS = {
-    "claude": "claude plugin marketplace update agenthelm && claude plugin update {plugin}@agenthelm",
-    "codex": "codex plugin marketplace upgrade agenthelm",
-    "cursor": f"{CLI} update",
-    "legacy": f"{CLI} migrate --install",
-}
+def update_hint(client: str | None) -> str | None:
+    """The command that updates a client's plugins; built when asked so it follows the current ``CLI``."""
+    return {
+        "claude": "claude plugin marketplace update agenthelm && claude plugin update {plugin}@agenthelm",
+        "codex": "codex plugin marketplace upgrade agenthelm",
+        "cursor": f"{CLI} update",
+        "legacy": f"{CLI} migrate --install",
+    }.get(client or "")
+
+
+def _client_state(name: str, item: dict) -> str:
+    if item["behind"]:
+        text = _("{0}：{1} 个可更新").format(CLIENT_NAMES[name], item["behind"])
+    elif item.get("unavailable"):
+        return _("{0}：{1} 个不可用，需 --source 本地源").format(CLIENT_NAMES[name], item["unavailable"])
+    else:
+        return _("{0}：已是最新").format(CLIENT_NAMES[name])
+    if item.get("unavailable"):
+        text += _("，另有 {0} 个不可用（需 --source 本地源）").format(item["unavailable"])
+    return text
 
 
 def one_line(report: dict) -> str | None:
@@ -1016,9 +1060,7 @@ def one_line(report: dict) -> str | None:
         text = _("{0} 个插件可更新").format(summary['plugins_behind']) + (_("（含不兼容变更）") if summary["breaking"] else "")
         per_client = summary.get("by_client") or {}
         if per_client:
-            text += _("（") + _("；").join(
-                (_("{0}：{1} 个可更新").format(CLIENT_NAMES[name], item["behind"]) if item["behind"]
-                 else _("{0}：已是最新").format(CLIENT_NAMES[name])) for name, item in per_client.items()) + _("）")
+            text += _("（") + _("；").join(_client_state(name, item) for name, item in per_client.items()) + _("）")
         parts.append(text)
     if summary["content_updates"]:
         parts.append(_("{0} 个模板/样例包可更新").format(summary['content_updates'])
@@ -1189,6 +1231,8 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         if item["status"] == "dev":
             lines.append(_("  [{0}] {1} {2}  {3}（{4}）").format(item['client'], item['plugin'], item.get('version'), label, item['path']))
             continue
+        if item.get("unavailable"):
+            label = _("不可用（需 --source 本地源，不计入“可更新”）")
         line = f"  [{item['client']}] {item['plugin']} {item.get('version')} → {item.get('latest')}  {label}"
         if item["status"] == "behind":
             kinds = {"code": _("代码"), "content": _("仅模板/样例"), "both": _("代码与模板")}
@@ -1205,8 +1249,11 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
                     shown_breaking[key] = item["client"]
                     line += _("\n      {0} 不兼容：{1}").format(step['to'], step.get('summary'))
                     line += "".join(f"\n        - {action}" for action in step.get("actions") or [])
-            hint = UPDATE_HINTS.get(item["client"])
-            if hint:
+            hint = update_hint(item["client"])
+            if item.get("unavailable"):
+                line += _("\n      {0}\n      有本地仓库时：{1} update --source <本地仓库>；不使用 Cursor 时：{1} config ignore-client cursor --apply").format(
+                    item["unavailable"], CLI)
+            elif hint:
                 line += _("\n      更新：{0}").format(hint.format(plugin=item['plugin']))
         lines.append(line)
     for item in report["content"]:
@@ -1232,7 +1279,7 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         lines.append(_("运行 `{0} install` 预览安装。").format(CLI))
     else:
         if any(item["status"] == "legacy" for item in report["plugins"]):
-            lines.append(_("旧方式安装可用 `{0}` 预览迁移。").format(UPDATE_HINTS['legacy']))
+            lines.append(_("旧方式安装可用 `{0}` 预览迁移。").format(update_hint('legacy')))
         if report["summary"].get("legacy_other_clients"):
             lines.append(_("其中 {0} 个旧方式安装不属于所选客户端（或无法判断归属），已列出但未计入“是否最新”。").format(
                 report["summary"]["legacy_other_clients"]))
@@ -1384,7 +1431,7 @@ def _plugin_versions(latest: dict) -> dict:
     return {name: item.get("version") for name, item in latest.get("plugins", {}).items()}
 
 
-def github_release(latest: dict) -> dict:
+def github_release(latest: dict, timeout: float = FETCH_TIMEOUT_SECONDS) -> dict:
     """Release details straight from GitHub, used when latest.json came from the raw fallback.
 
     Accepted only when that tag ships exactly the plugin versions ``latest`` lists,
@@ -1392,11 +1439,29 @@ def github_release(latest: dict) -> dict:
     """
     try:
         slug = github_slug(latest)
-        release = _fetch_json(f"https://github.com/{slug}/releases/latest/download/release.json")
-        tagged = _fetch_json(f"https://raw.githubusercontent.com/{slug}/{release['tag']}/latest.json")
+        release = _fetch_json(f"https://github.com/{slug}/releases/latest/download/release.json", timeout)
+        tagged = _fetch_json(f"https://raw.githubusercontent.com/{slug}/{release['tag']}/latest.json", timeout)
     except (OSError, ValueError, KeyError, TypeError, CheckError, urllib.error.URLError):
         return {}
     return release if _plugin_versions(tagged) == _plugin_versions(latest) else {}
+
+
+def release_problem(release: dict) -> str | None:
+    """Why the release cannot be downloaded (None when it can). The one rule behind Cursor's “unavailable”:
+    ``update`` / ``install`` raise it as :class:`Unavailable`, ``check`` uses it to keep Cursor out of the “behind” count."""
+    if release.get("tag") and release.get("tarball_sha256"):
+        return None
+    return _("云端 latest.json 没有发布 tag 与摘要；请用 --source 指定本地仓库")
+
+
+def cursor_unavailable(latest: dict, source: Path | None = None, *, timeout: float = FETCH_TIMEOUT_SECONDS) -> str | None:
+    """Why Cursor cannot be updated on this run (None when it can): the same decision :func:`release_source` makes.
+
+    A local ``--source`` is always usable (it is validated when the update runs); otherwise the release needs a tag
+    and a digest, from latest.json or, failing that, from GitHub."""
+    if source is not None:
+        return None
+    return release_problem(latest.get("release") or github_release(latest, timeout))
 
 
 def release_source(latest: dict, workdir: Path, source: Path | None = None) -> Path:
@@ -1408,8 +1473,9 @@ def release_source(latest: dict, workdir: Path, source: Path | None = None) -> P
         return root
     release = latest.get("release") or github_release(latest)
     tag, digest = release.get("tag"), release.get("tarball_sha256")
-    if not tag or not digest:
-        raise Unavailable(_("云端 latest.json 没有发布 tag 与摘要；请用 --source 指定本地仓库"))
+    problem = release_problem(release)
+    if problem:
+        raise Unavailable(problem)
     url = release.get("tarball_url") or f"https://github.com/{github_slug(latest)}/releases/download/{tag}/agenthelm-{tag}.tar.gz"
     archive = workdir / "release.tar.gz"
     request = urllib.request.Request(url, headers={"User-Agent": "agenthelm"})
@@ -2072,6 +2138,7 @@ def parser() -> argparse.ArgumentParser:
     check.add_argument("--offline", action="store_true", help=_("只用缓存，不联网"))
     refresh(check)
     client_filter(check)
+    check.add_argument("--source", type=Path, help=_("Cursor 更新用的本地仓库：给出后 Cursor 按可更新计（与 update --source 一致）"))
     check.add_argument("--hook", action="store_true", help=_("会话开始时静默调用：有更新才输出一行"))
     check.add_argument("--hook-format", choices=("text", "claude-hook"), default="text")
     check.add_argument("--strict", action="store_true", help=_("有可更新项或必须处理的脚手架差异时退出码为 1（CI 用；可选与信息性的差异不算）"))
@@ -2361,7 +2428,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "check":
             report = run_check(env, project, latest_source=args.latest, offline=args.offline,
                                max_age=0 if args.refresh else CACHE_TTL_SECONDS, reprompt=args.reprompt,
-                               clients=args.client)
+                               clients=args.client, source=args.source)
             report.pop("_latest")
             if args.fingerprint or args.explain:
                 return print_fingerprint(env, report, args, project)

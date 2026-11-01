@@ -363,13 +363,14 @@ class ClientSelectionTests(Base):
         env = agenthelm.Env(home=self.home, variables={})
         report = agenthelm.run_check(env, None, latest_source=str(self.latest_file))
         notice = agenthelm.one_line(report)
-        self.assertIn("2 个插件可更新", notice)
+        self.assertIn("1 个插件可更新", notice)  # Cursor has no release info: unavailable, not counted (W1-B)
         self.assertIn("Claude Code：已是最新", notice)
         self.assertIn("Codex：1 个可更新", notice)
+        self.assertIn("Cursor：1 个不可用", notice)
         self.config({"ignored_clients": ["codex", "cursor"]})
         report = agenthelm.run_check(env, None, latest_source=str(self.latest_file))
         self.assertIsNone(agenthelm.one_line(report))
-        self.assertEqual(report["summary"]["by_client"], {"claude": {"behind": 0, "total": 1}})
+        self.assertEqual(report["summary"]["by_client"], {"claude": {"behind": 0, "unavailable": 0, "total": 1}})
 
     def test_cursor_without_release_info_is_unavailable_not_failed_and_does_not_block_others(self) -> None:
         self.claude_plugin("1.0.0")

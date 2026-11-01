@@ -123,10 +123,14 @@ def release_label(root: Path, version: str) -> str:
 
     index.json carries the release version without the pre-release suffix, so the suffix comes from where the
     content was delivered: the npm package version (root is <package>/runtime), or the tag in the release
-    tarball's top directory ``agenthelm-v<version>-rc.N`` (also what a local .tar.gz of it unpacks to). A
-    plain checkout carries no such name and keeps the release version.
+    tarball's top directory ``agenthelm-v<version>-rc.N`` (also what a local .tar.gz of it unpacks to), or the
+    ``runtime.json`` of an installed user-level runtime. A plain checkout carries no such name and keeps the
+    release version.
     """
     candidates = []
+    manifest = _read_manifest(root)
+    if manifest and isinstance(manifest.get("version"), str):
+        candidates.append(manifest["version"])
     package = root.parent / "package.json"
     if root.name == "runtime" and package.is_file():
         try:
@@ -142,6 +146,25 @@ def release_label(root: Path, version: str) -> str:
         if candidate.startswith(version + "-") and re.fullmatch(_PRERELEASE, candidate):
             return candidate
     return version
+
+
+def is_prerelease(version: str | None) -> bool:
+    return bool(version) and re.fullmatch(_PRERELEASE, version) is not None
+
+
+def running_label(root: Path | None = None) -> str | None:
+    """The label (``6.11.0-rc.2``) of the release content this runtime runs from; None when it cannot be told.
+
+    Only content that names itself is trusted (see :func:`release_label`); a plugin cache, a checkout or anything
+    without ``index.json`` gives None.
+    """
+    root = root if root is not None else Path(__file__).resolve().parents[3]
+    try:
+        index = json.loads((root / "index.json").read_text(encoding="utf-8"))
+        version = str(index.get("plugin", {}).get("version") or "")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return release_label(root, version) if version else None
 
 
 def describe(root: Path) -> dict:
@@ -216,7 +239,12 @@ def missing_text(data: dict, commands: dict) -> dict:
 def report(env: Any, latest: dict | None = None) -> dict:
     active = current(env)
     newest = release_version(latest)
-    return {"current": active, "installed": installed(env), "data_root": str(data_root(env)),
+    everything = installed(env)
+    # Installed beside current but never made current (a candidate installed without --use): easy to forget.
+    inactive = [item["version"] for item in everything
+                if active and item["version"] != active["version"] and _newer(item["version"], active["version"])]
+    return {"current": active, "installed": everything, "data_root": str(data_root(env)),
+            "inactive_newer": inactive,
             "running_from": running_from(env), "latest_release": newest,
             "update_available": bool(active and newest and _newer(newest, active["version"]))}
 
@@ -233,7 +261,7 @@ def _newer(candidate: str, existing: str) -> bool:
 
 # ---------------------------------------------------------------- plan and apply
 
-def plan(env: Any, root: Path, origin: str, *, link_bin: Path | None = None) -> dict:
+def plan(env: Any, root: Path, origin: str, *, link_bin: Path | None = None, use: bool = False) -> dict:
     info = describe(root)
     target = runtimes_dir(env) / info["version"]
     existing = _read_manifest(target)
@@ -246,7 +274,13 @@ def plan(env: Any, root: Path, origin: str, *, link_bin: Path | None = None) -> 
     writes = []
     if not existing:
         writes.append({"path": str(target), "scope": _("用户数据目录（新版本，旧版本保留）")})
-    switch = not active or active.get("version") != info["version"]
+    prerelease = is_prerelease(info["version"])
+    wants = not active or active.get("version") != info["version"]
+    # A candidate (-rc.N) installed beside a working runtime does not take over ``current``: the project launchers, hooks and
+    # the terminal command keep using what they used until the user asks (--use / runtime use). With no current runtime
+    # there is nothing to displace, so the first install is still made current.
+    withheld = bool(wants and prerelease and active and not use)
+    switch = wants and not withheld
     if switch:
         writes.append({"path": str(current_link(env)), "scope": _("切换当前版本 → {0}").format(info['version'])})
     link = None
@@ -261,6 +295,8 @@ def plan(env: Any, root: Path, origin: str, *, link_bin: Path | None = None) -> 
             writes.append({"path": str(link), "scope": _("命令链接（指向当前运行时）")})
     return {"version": info["version"], "plugins": info["plugins"], "digest": info["digest"], "source": origin,
             "target": str(target), "install": not existing, "switch": switch,
+            "prerelease": prerelease, "switch_withheld": withheld,
+            "use_command": f"agenthelm runtime use {info['version']} --apply" if withheld else None,
             "previous": active.get("version") if active else None, "link": str(link) if link else None,
             "writes": writes, "action": "install" if not existing else ("switch" if switch else "none")}
 
@@ -298,9 +334,18 @@ def apply(env: Any, planned: dict, root: Path) -> dict:
         link.parent.mkdir(parents=True, exist_ok=True)
         link.symlink_to(current_link(env) / "bin" / "agenthelm")
     active = current(env)
+    if planned.get("switch_withheld"):
+        # current stays where it was; what must hold is that the new version is complete and current did not move.
+        installed_shim = target / "bin" / "agenthelm"
+        verified = bool(_read_manifest(target) and os.access(installed_shim, os.X_OK)
+                        and (active.get("version") if active else None) == planned["previous"])
+        return {"ok": verified, "version": planned["version"], "current": active, "switched": False,
+                "verify": (_("重新读取：{0} 已装好（{1}），current 仍是 {2}").format(planned['version'], installed_shim, planned['previous'])
+                           if verified else _("回读不一致：请运行 agenthelm runtime status 查看")),
+                "rollback": None}
     shim = current_link(env) / "bin" / "agenthelm"
     verified = bool(active and active["version"] == planned["version"] and os.access(shim, os.X_OK))
-    return {"ok": verified, "version": planned["version"], "current": active,
+    return {"ok": verified, "version": planned["version"], "current": active, "switched": bool(planned["switch"]),
             "verify": (_("重新读取：当前运行时 {0}，命令 {1}").format(planned['version'], shim) if verified
                        else _("回读不一致：请运行 agenthelm runtime status 查看")),
             "rollback": f"agenthelm runtime use {planned['previous']} --apply" if planned["previous"]
@@ -378,6 +423,9 @@ def parser() -> argparse.ArgumentParser:
         if name in ("install", "update"):
             command.add_argument("--source", type=Path, help=_("本地目录或 .tar.gz 发布包（离线安装）"))
             command.add_argument("--link-bin", type=Path, help=_("在这个目录建 agenthelm 命令链接（例如 ~/.local/bin）"))
+        if name in ("install", "update"):
+            command.add_argument("--use", action="store_true",
+                                 help=_("安装候选版（-rc.N）时同时切换 current；默认只装在旁边，current 不变。正式版总是切换"))
         if name == "install":
             command.add_argument("--from-release", action="store_true", help=_("联网下载发布包，而不用随附内容"))
         if name != "status":
@@ -413,6 +461,9 @@ def main(argv: list[str], host: Any) -> int:
                      _("本次命令来自：{0}").format(data['running_from'])]
             if latest_origin is not None:
                 lines.append(host.origin_line(latest_origin))
+            for version in data["inactive_newer"]:
+                lines.append(_("已安装但未启用：{0}（current 仍是 {1}）；启用：agenthelm runtime use {0} --apply").format(
+                    version, active["version"]))
             if data["update_available"]:
                 lines.append(_("有新版本 {0}：agenthelm runtime update 预览").format(data['latest_release']))
             if not active:
@@ -428,11 +479,17 @@ def main(argv: list[str], host: Any) -> int:
             return 0
         with tempfile.TemporaryDirectory(prefix="agenthelm-runtime-") as temporary:
             root, origin, source_line = resolve_source(host, env, args, Path(temporary), prefer_release=args.action == "update")
-            planned = plan(env, root, origin, link_bin=args.link_bin)
+            planned = plan(env, root, origin, link_bin=args.link_bin, use=args.use)
             lines = [_("运行时 {0}（来源：{1}）").format(planned['version'], origin)]
             if source_line:
                 lines.append(source_line)
-            lines += [_("  将写入：{0}（{1}）").format(item['path'], item['scope']) for item in planned["writes"]] or [_("  已是当前版本，无需改动。")]
+            lines += [_("  将写入：{0}（{1}）").format(item['path'], item['scope']) for item in planned["writes"]] or (
+                [] if planned["switch_withheld"] else [_("  已是当前版本，无需改动。")])
+            if planned["switch_withheld"] and not planned["install"]:
+                lines.append(_("  {0} 已安装。").format(planned['version']))
+            if planned["switch_withheld"]:
+                lines.append(_("  候选版：current {0}（当前 current={1}）。要启用它：{2}，或重跑本命令加 --use。").format(
+                    _("不会切换") if not args.apply else _("未切换"), planned["previous"], planned["use_command"]))
             if not args.apply or planned["action"] == "none" and not planned["link"]:
                 if args.apply is False and planned["writes"]:
                     lines.append(_("以上为预览；加 --apply 执行。"))

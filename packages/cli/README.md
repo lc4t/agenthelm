@@ -57,6 +57,7 @@ npx @sakanano-moe/agenthelm update         # preview
 npx @sakanano-moe/agenthelm update --apply
 agenthelm runtime update --apply           # new runtime beside the old one
 agenthelm runtime use <version> --apply    # switch back
+agenthelm runtime install --apply --use    # a candidate (-rc.N) is installed beside the current one and does NOT become current unless you pass --use
 ```
 
 ## Links
