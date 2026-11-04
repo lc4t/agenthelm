@@ -2,7 +2,7 @@ name: Test install unit
 
 on:
   push:
-    branches: [dev, main]
+    branches: [dev, main, 'release/**']
   pull_request:
 
 permissions:
@@ -28,18 +28,18 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - name: Derived metadata and version gate against the last release
-        run: python scripts/release_meta.py --since "$(git describe --tags --abbrev=0)"
-      - run: python -m unittest discover -s tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/agent-pack/tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/opinion-manager/tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/project-orchestrator/tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+      - name: Feature fragments or generated release gate
+        run: python scripts/ci_gate.py
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s tests -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/agent-pack/tests -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/opinion-manager/tests -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/project-orchestrator/tests -v
       - name: Upgrade matrix (fails instead of skipping when release tags are missing)
         if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
         env:
@@ -70,13 +70,13 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - run: python -m unittest discover -s tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/agent-pack/tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/opinion-manager/tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
-      - run: python -m unittest discover -s plugins/project-orchestrator/tests -v
-        if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s tests -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/agent-pack/tests -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/opinion-manager/tests -v
+      - if: ${{ !cancelled() && steps.setup_python.outcome == 'success' }}
+        run: python -m unittest discover -s plugins/project-orchestrator/tests -v

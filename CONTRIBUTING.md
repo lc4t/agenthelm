@@ -33,10 +33,11 @@
 - 不运行真实的 claude / codex / cursor。
 - 与平台相关的断言（可执行位、符号链接、路径大小写）要写明；macOS 上的行为由 CI 的 `macos-latest` 矩阵验证。
 
-## 发布声明门禁
+## 变更片段与发布门禁
 
-`python3 scripts/release_meta.py --since <上一个发布 tag>` 检查：版本是否随发布内容升级、`release/migrations.json` 是否有对应条目并带 `"declaration": 2`（`actions`、`user_action_required`、`touches`、`default_for_existing`、`template_changes`）、`CHANGELOG.md` 是否提到新版本、模板/骨架/schema 变更是否在 `template_changes` / `touches` 里声明。反例测试在 `tests/test_release_meta.py`。
+普通功能和修复从 `dev` 建分支，PR 目标为 `dev`。不要改最终版本、内容摘要、`latest.json`、市场清单、迁移汇总或 CHANGELOG 的发布段；新增一个唯一的 `release/changes/<issue>-<slug>.json`，说明受影响插件、等级与迁移声明。CI 使用 `python3 scripts/release_meta.py check-changes --base origin/dev` 校验片段、变更覆盖及版本载体未被手改。已合并片段不可编辑，修正应另添片段。
 
+格式、版本规则、完整发布步骤、手工恢复方式见 [release/VERSIONING.md](release/VERSIONING.md)。发布者使用 `release plan --explain` 审查，`release --apply` 才会生成一个本地发布提交；不自动打 tag、推送、发布或合并。`check-release --since <上一个正式 tag>` 验证发布声明与所有派生文件。原 `--since`/`--write` 仍作为兼容检查和生成工具，不作为功能 PR 的门禁。
 
 ## CI 中的版本来源
 
