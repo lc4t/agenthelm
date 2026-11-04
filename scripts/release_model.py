@@ -174,4 +174,5 @@ def plan(base: dict, fragments: list[tuple[str, dict]], current: dict, date: str
         lines.extend(f'- {summary_text(c["summary"])}' for c in collected['suite'])
     return {'schema': 1, 'baseline': base.get('tag'), 'suite': suite, 'plugins': plugins,
             'migrations': migrations, 'changelog': '\n'.join(lines).rstrip() + '\n',
-            'explain': reasons, 'removed': sorted(removed), 'overrides': overrides, 'date': date}
+            'explain': reasons, 'removed': sorted(removed), 'overrides': overrides, 'date': date,
+            'source_files': copy.deepcopy(current.get('source_files', {}))}

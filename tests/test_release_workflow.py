@@ -246,6 +246,35 @@ class RepositoryTests(unittest.TestCase):
         self.commit('later feature')
         self.assertTrue(any('source fragments' in p for p in workflow.check_release(self.adapter(), 'v1.0.0')))
 
+    def test_prepared_candidate_and_formal_reject_unlogged_source_changes(self):
+        for candidate in (True, False):
+            with self.subTest(candidate=candidate):
+                self.add_change()
+                self.write('plugins/demo/runtime.py', 'print("prepared")\n')
+                self.commit('fix')
+                workflow.apply_release(self.adapter(), self.plan(), candidate=candidate)
+                self.write('plugins/demo/runtime.py', 'print("unlogged")\n')
+                self.commit('source changed without fragment')
+                found = workflow.check_release(self.adapter(), 'v1.0.0')
+                self.assertTrue(any('source changed' in p and 'runtime.py' in p for p in found), found)
+                # Reset only the disposable fixture before the next independent case.
+                self.git('reset', '--hard', 'v1.0.0')
+                self.git('clean', '-fd')
+
+    def test_recomputing_versions_does_not_rebind_prepared_source(self):
+        self.add_change()
+        self.write('plugins/demo/icon.png', 'initial asset')
+        self.commit('fix')
+        workflow.apply_release(self.adapter(), self.plan(), candidate=True)
+        (self.root / 'plugins/demo/icon.png').write_bytes(b'\x89PNG\x00\xff')
+        saved = meta.read_json(self.root / workflow.CANDIDATE)
+        recomputed = self.plan()
+        saved['plugins'] = recomputed['plugins']
+        saved['suite'] = recomputed['suite']
+        self.write(workflow.CANDIDATE, saved)
+        found = workflow.check_release(self.adapter(), 'v1.0.0')
+        self.assertTrue(any('source changed' in p and 'icon.png' in p for p in found), found)
+
     def test_failed_commit_restores_files_and_index(self):
         self.add_change()
         self.commit('fix')

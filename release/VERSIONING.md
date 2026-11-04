@@ -35,13 +35,17 @@
 - 功能 PR：`python3 scripts/release_meta.py check-changes --base origin/dev`。发布内容须有本次新增且合法的对应 scope 片段；既有版本、摘要与派生文件保持基线值。历史记录、已有片段不可改。测试与 CI 配置本身不要求插件升版。
 - 发布提交：`python3 scripts/release_meta.py check-release --since vX.Y.Z [--tag vA.B.C]`。检查派生文件、摘要、迁移声明、CHANGELOG、生成计划及 tag 一致。正式与候选共用门禁。
 
+CI 由 `scripts/ci_gate.py` 读取 GitHub 原始事件：普通 PR 取 `merge-base(base.sha, head.sha)`，在临时 worktree 检查真实 PR head，避免将上游新增内容或合成 merge 的内容算给该 PR；`release/v<套件版本>` 向 `dev` 的 PR 使用发布门禁，普通功能分支不能向 `main` 提 PR。`dev` 的普通 push 检查事件里的完整 `before → after`，不以 `HEAD` 自比；包含候选计划或正式归档计划变化的发布准备 push 使用发布门禁。普通 `dev` / 功能 push 的缺失或全零基线明确失败，需要提供可审查的初始集成基线。首次创建 `release/*` 分支可接受全零 `before`，因其校验完整发布状态；缺失/未知的提交 SHA 仍拒绝。`release/*` 与 `main` push 也运行严格发布门禁。
+
+CI 的各套件和升级矩阵在 Python 设置成功且任务未取消时分别运行；前一个门禁或测试失败仍收集后续结果，任务最终仍为失败，不使用 `continue-on-error`。
+
 功能 PR 的模板内容可与冻结的旧摘要不同；应在临时副本里运行发布生成后验证发布门禁。不要把该验证产生的发布载体提交进功能 PR。普通测试仍检查清单版本与文件内容的一致性；修改模板的分支应使用发布预演副本运行完整测试。
 
 ## 唯一基线与载体
 
-基线是最后一个正式 tag 的 BOM（历史 `latest.json` 的插件/内容包版本加 `index.json` 的套件版本）；RC 不移动基线。工具默认选最高正式 SemVer tag，并确认它已进入当前历史。兼容过去 `dev → main` 的同树合并 tag：tag 的同树父提交在当前历史中也可使用；其他未集成的正式 tag 会提示先把 `main` 合回 `dev`。可用 `--base` 显式选择已审查的正式基线。
+基线是最后一个正式 tag 的 BOM（历史 `latest.json` 的插件/内容包版本加 `index.json` 的套件版本）；RC 不移动基线。工具默认选最高正式 SemVer tag，并确认它已进入当前历史。兼容过去 `dev → main` 的同树合并 tag：tag 的同树父提交在当前历史中也可使用；其他未集成的正式 tag 会提示先把 `main` 合回 `dev`。当前只支持一个发布队列：正式 tag 在发布分支上出现后，到完成 npm 批准、推进 `main` 并合回 `dev` 之前，新的 `dev` 发布计划会被未集成基线阻止。此时应完成当前发布；不要并行开启下一次发布或创建占用正式版本号的试验 tag。可用 `--base` 显式选择已审查的正式基线。
 
-纯函数 `release_model.plan` 的输入只有基线、全部片段、当前组件清单、日期和可选调高记录；排序、最高等级合并及输出均确定。重复预演或 RC 重新生成不会累加版本。日期可用 `--date YYYY-MM-DD` 固定。发布者可传 `--overrides file.json`（如 `{"agent-pack":{"level":"minor","reason":"影响面扩大"}}`），只可调高，原因保存在发布计划里。
+纯函数 `release_model.plan` 的输入只有基线、全部片段、当前组件清单、日期和可选调高记录；排序、最高等级合并及输出均确定。重复预演或 RC 重新生成不会累加版本。计划的 `source_files` 绑定当前 Git 跟踪及非忽略文件的 SHA-256、执行位和软链目标，覆盖实际源码和二进制资产。版本清单中仅规范化由发布器写入的版本、日期、内容摘要字段；站点仅规范化 Release 版本和更新日期；派生市场/版本清单、迁移汇总、CHANGELOG、候选计划、变更片段与发布历史排除，避免自引用。发布门禁会拒绝生成计划之后的源码变化；只重算版本不能更新这份绑定。修改发布源码后必须重新审查并生成发布计划。日期可用 `--date YYYY-MM-DD` 固定。发布者可传 `--overrides file.json`（如 `{"agent-pack":{"level":"minor","reason":"影响面扩大"}}`），只可调高，原因保存在发布计划里。
 
 载体注册表由 `release_workflow.version_fields` 与 `release_files` 实现：
 

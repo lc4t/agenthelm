@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import stat
 import re
 import subprocess
 import sys
@@ -42,6 +44,46 @@ def official_base(meta, exclude=None):
     raise ValueError(f'latest official release {tag} is not integrated; merge main into dev first')
 
 
+def source_files(meta):
+    """Bind non-generated distribution bytes; normalize only fields the release writer owns."""
+    paths = (meta.git('ls-files', '--cached', '--others', '--exclude-standard', '-z') or '').split('\0')
+    result = {}
+    excluded = {meta.MARKETPLACE_FILE, meta.LATEST_FILE, meta.MIGRATIONS_FILE, CANDIDATE, 'CHANGELOG.md'}
+    for relative in sorted(set(paths) - {''}):
+        if relative in excluded or relative.startswith((HISTORY + '/', FRAGMENTS + '/')):
+            continue
+        path = meta.ROOT / relative
+        if not path.exists() and not path.is_symlink():
+            continue
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            data, kind = path.readlink().as_posix().encode('utf-8'), 'symlink'
+        elif stat.S_ISREG(mode):
+            data, kind = path.read_bytes(), 'executable' if mode & 0o111 else 'file'
+            if frozen_json(relative):
+                value = json.loads(data)
+                if relative == 'index.json':
+                    value['plugin'].pop('version', None)
+                    value['site'].pop('updated_at', None)
+                    for plugin in value['skills']:
+                        plugin.pop('version', None)
+                elif relative.endswith('/content.json'):
+                    for pack in value['packs']:
+                        pack.pop('version', None)
+                        pack.pop('files', None)
+                else:
+                    value.pop('version', None)
+                data = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            elif relative == 'index.html':
+                text = re.sub(r'Release [0-9]+\.[0-9]+\.[0-9]+', 'Release @VERSION@', data.decode('utf-8'))
+                text = re.sub(r'(更新日期 )[0-9]{4}-[0-9]{2}-[0-9]{2}', r'\g<1>@DATE@', text)
+                data = text.encode('utf-8')
+        else:
+            raise ValueError(f'{relative}: unsupported distribution file type')
+        result[relative] = {'sha256': hashlib.sha256(data).hexdigest(), 'kind': kind}
+    return result
+
+
 def current_bom(meta):
     plugins = {}
     for item in meta.load_plugins():
@@ -49,7 +91,8 @@ def current_bom(meta):
             'version': item['manifest']['version'], 'source': item['source'],
             'content': {pack['id']: {**pack, 'paths': pack.get('sources', []) + pack.get('materializes', [])}
                         for pack in (item['content'] or {}).get('packs', [])}}
-    return {'plugins': plugins, 'suite': meta.read_json(meta.ROOT / 'index.json')['plugin']['version']}
+    return {'plugins': plugins, 'suite': meta.read_json(meta.ROOT / 'index.json')['plugin']['version'],
+            'source_files': source_files(meta)}
 
 
 def fragments(meta):
@@ -309,6 +352,10 @@ def check_release(meta, since, tag=None):
     if release['suite'] != suite or release['baseline'] != since:
         problems.append('release plan differs from the suite version or official baseline')
     current = current_bom(meta)
+    if current['source_files'] != release.get('source_files'):
+        changed = sorted(name for name in set(current['source_files']) | set(release.get('source_files', {}))
+                         if current['source_files'].get(name) != release.get('source_files', {}).get(name))
+        problems.append('release source changed since preparation: ' + ', '.join(changed[:8]))
     source = meta.ROOT / FRAGMENTS if path.name == 'candidate.json' else path.parent / 'changes'
     items = [(p.name, meta.read_json(p)) for p in sorted(source.glob('*.json'))]
     problems += validate_fragments(meta, items, set(current['plugins']) | set(bom_at(meta, since)['plugins']))
@@ -336,7 +383,7 @@ def main(meta, argv):
     check.add_argument('--tag')
     release = commands.add_parser('release', help='plan, or create one local release commit')
     release.add_argument('mode', nargs='?', choices=['plan'])
-    release.add_argument('--base', help='official baseline tag; defaults to nearest non-RC tag')
+    release.add_argument('--base', help='official baseline tag; defaults to the highest official tag, requiring integration')
     release.add_argument('--date', default=datetime.now(timezone.utc).date().isoformat())
     release.add_argument('--explain', action='store_true')
     release.add_argument('--apply', action='store_true')
