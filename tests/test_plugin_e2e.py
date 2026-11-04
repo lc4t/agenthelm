@@ -34,7 +34,9 @@ class PluginEndToEndTests(unittest.TestCase):
     def test_manifests_distribute_four_chinese_skills(self) -> None:
         manifest = json.loads((PLUGIN_ROOT / "plugins/agents-init/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "agents-init")
-        self.assertEqual(manifest["version"], "6.8.2")
+        index = json.loads((PLUGIN_ROOT / "index.json").read_text(encoding="utf-8"))
+        versions = {skill["id"]: skill["version"] for skill in index["skills"]}
+        self.assertEqual(manifest["version"], versions["agents-init"])
         for name, root in UNITS:
             skill_file = root / "skills" / name / "SKILL.md"
             self.assertTrue(skill_file.is_file(), name)

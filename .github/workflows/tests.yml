@@ -2,7 +2,7 @@ name: Test install unit
 
 on:
   push:
-    branches: [dev, main]
+    branches: [dev, main, 'release/**']
   pull_request:
 
 permissions:
@@ -26,8 +26,19 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - name: Derived metadata and version gate against the last release
-        run: python scripts/release_meta.py --since "$(git describe --tags --abbrev=0)"
+      - name: Feature fragments or generated release gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$BASE_REF" = "dev" ]; then
+            python scripts/release_meta.py check-changes --base "$BASE_SHA"
+          elif [ "$BASE_REF" = "main" ] || [[ "$GITHUB_REF" == refs/heads/release/* ]] || [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            python scripts/release_meta.py check-release
+          else
+            python scripts/release_meta.py check-changes --base HEAD
+          fi
       - run: python -m unittest discover -s tests -v
       - run: python -m unittest discover -s plugins/agents-init/skills/agents-init/scripts -v
       - run: python -m unittest discover -s plugins/agent-pack/tests -v
