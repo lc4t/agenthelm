@@ -43,7 +43,7 @@
       "id": "project-orchestrator",
       "name": "project-orchestrator / project lifecycle orchestration",
       "description": "Organizes Case workspaces or keeps existing Task/Case layouts; search, lossless migration, verification, scoped Git delivery, and a project menu that works without any AI agent.",
-      "version": "1.11.3",
+      "version": "1.11.4",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",

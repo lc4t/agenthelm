@@ -9,6 +9,7 @@ Case 根目录与 CASE.md 拒绝符号链接。
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -523,6 +524,7 @@ def parser() -> argparse.ArgumentParser:
         return sub.add_parser(name, parents=[shared], help=help_text)
 
     new = command("new", _("新建 Case 目录与 CASE.md"))
+    new.add_argument("--dry-run", action="store_true", help=_("只预览，不写入（省略时保持直接写入）"))
     new.add_argument("--title", required=True)
     new.add_argument("--slug", required=True, help=_("目录名后缀：小写字母、数字与连字符"))
     new.add_argument("--goal", required=True)
@@ -541,6 +543,7 @@ def parser() -> argparse.ArgumentParser:
     show = command("show", _("查看一个 Case 的字段与正文"))
     show.add_argument("case")
     change = command("update", _("更新状态、下一动作，追加工作记录、决策、交付物与证据"))
+    change.add_argument("--dry-run", action="store_true", help=_("只预览，不写入（省略时保持直接写入）"))
     change.add_argument("case")
     change.add_argument("--status", choices=tuple(STATUS_ORDER))
     change.add_argument("--title")
@@ -588,7 +591,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project = Project(args.project)
         if args.command == "new":
-            result = create(project, args)
+            if args.dry_run:
+                case_id, content = plan_create(project, args)
+                path = project.relative(project.case_root / case_id / "CASE.md")
+                result = {"ok": True, "applied": False, "status": "preview", "id": case_id, "path": path,
+                          "diff": "".join(difflib.unified_diff([], content.splitlines(keepends=True),
+                                                              fromfile="/dev/null", tofile=path))}
+            else:
+                result = create(project, args)
         elif args.command == "list":
             result = list_cases(project, args)
         elif args.command == "show":
@@ -597,7 +607,15 @@ def main(argv: list[str] | None = None) -> int:
             result = {"ok": True, "case": data, "path": project.relative(directory / "CASE.md"),
                       "content": (directory / "CASE.md").read_text(encoding="utf-8")}
         elif args.command == "update":
-            result = update(project, args)
+            if args.dry_run:
+                path, current, content, result = plan_update(project, args)
+                result.update({"applied": False, "status": "preview",
+                               "diff": "".join(difflib.unified_diff(current.splitlines(keepends=True),
+                                                                   content.splitlines(keepends=True),
+                                                                   fromfile=project.relative(path),
+                                                                   tofile=project.relative(path)))})
+            else:
+                result = update(project, args)
         else:
             result = validate(project, args)
     except CaseError as exc:

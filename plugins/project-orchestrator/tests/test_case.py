@@ -54,6 +54,34 @@ class CaseToolTests(unittest.TestCase):
         self.assertEqual(code, 0, checked)
         self.assertTrue(all(item["valid"] for item in checked["results"]))
 
+    def snapshot(self) -> dict:
+        return {str(p.relative_to(self.root)): p.read_bytes() if p.is_file() else None
+                for p in self.root.rglob("*")}
+
+    def test_new_dry_run_does_not_allocate_a_directory_or_sequence(self) -> None:
+        before = self.snapshot()
+        result = self.new("preview", "--dry-run")
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(result["status"], "preview")
+        self.assertIn("--- /dev/null", result["diff"])
+        created = self.new("preview")
+        self.assertEqual(created["id"], result["id"])
+
+    def test_update_dry_run_validates_and_preserves_every_file(self) -> None:
+        created = self.new()
+        before = self.snapshot()
+        code, result = self.run_case("update", created["id"], "--log", "Preview entry", "--dry-run")
+        self.assertEqual(code, 0)
+        self.assertFalse(result["applied"])
+        self.assertIn("Preview entry", result["diff"])
+        self.assertEqual(self.snapshot(), before)
+        code, error = self.run_case("update", created["id"], "--status", "waiting", "--dry-run")
+        self.assertEqual(code, 2)
+        self.assertFalse(error["ok"])
+        self.assertEqual(self.snapshot(), before)
+        self.run_case("update", created["id"], "--log", "Committed entry")
+        self.assertIn("Committed entry", (self.root / created["path"]).read_text())
+
     def test_list_orders_by_status_and_hides_closed_cases(self) -> None:
         active = self.new("active-one")
         captured = self.new("captured-one", "--status", "captured")

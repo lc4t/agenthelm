@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.11.3",
+      "version": "1.11.4",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -767,6 +767,23 @@
         "fix update-content 的 --diff 现在会显示差异（以前不显示）；--merge 取不到基线时预览在该文件行写明原因"
       ],
       "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": []
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.11.3",
+      "to": "1.11.4",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-04",
+      "summary": "Case new/update 增加 --dry-run 预览；保留直接写入的兼容行为，登记所有写命令与例外。",
+      "declaration": 2,
+      "actions": [
+        "审阅 Case 写入前使用 case.py new/update --dry-run；省略 --dry-run 仍直接写入，既有脚本无需迁移。"
+      ],
       "user_action_required": [],
       "touches": [],
       "default_for_existing": "on",

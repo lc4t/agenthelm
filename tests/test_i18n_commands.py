@@ -28,6 +28,7 @@ SUBCOMMANDS = re.compile(r"\{([A-Za-z0-9_,-]+)\}\s+\.\.\.")  # the sub-command g
 # name -> (argv prefix, sub-command path before the walk starts). {project} is the temporary project.
 ROOTS: dict[str, tuple[list[str], list[str]]] = {
     "agenthelm": ([str(AGENTHELM)], []),
+    "agent-pack": ([str(PLUGINS / "agent-pack/runtime/agent_pack_config.py")], []),
     "nudge": ([str(AGENTHELM)], ["nudge"]),  # dispatched before the main parser, so it is not in `agenthelm --help`
     "sop": ([str(ORCHESTRATOR / "sop.py"), "--project", "{project}"], []),  # `agenthelm project sop` passes everything on to it
     "case": ([str(ORCHESTRATOR / "case.py")], []),
@@ -41,6 +42,8 @@ ROOTS: dict[str, tuple[list[str], list[str]]] = {
 
 P = ["--project", "{project}"]
 READ_ONLY: dict[str, list[str]] = {
+    "agent-pack inventory": ["--source", "project:{project}"],
+    "agent-pack doctor": P,
     "agenthelm check": ["--offline", "--no-project"],
     "agenthelm doctor": ["--no-project"],
     "agenthelm locate": ["agents-init"],
@@ -61,6 +64,7 @@ READ_ONLY: dict[str, list[str]] = {
     "agenthelm project sop": [*P, "--no-input", "list"],
     "nudge status": [],
     "sop list": [], "sop index": [], "sop show": ["demo"], "sop validate": ["demo"], "sop interview": ["demo"], "sop defaults": [],
+    "sop events": ["case.created", "--case", "quarterly"],
     "sop preflight": ["demo"], "sop match": ["hello"], "sop due": [], "sop status": [],
     "case list": P, "case show": [*P, "quarterly"], "case validate": P,
     "assets find": [*P, "report"], "assets recent": P, "assets cases": P, "assets refs": [*P, "nothing/here.md"], "assets check": P,
@@ -68,6 +72,10 @@ READ_ONLY: dict[str, list[str]] = {
     "opinion verify": P,
 }
 PREVIEW: dict[str, list[str]] = {
+    "agent-pack transfer": ["--from", "project:{project}", "--to-project", "{project}", "--skill", "missing"],
+    "agent-pack sync": [*P, "--client", "codex"],
+    "agent-pack bootstrap": ["--plugin", str(PLUGINS / "agent-pack"), "--client", "cursor"],
+    "agent-pack reconcile": [*P, "--client", "claude"],
     "agenthelm install": ["--latest", "{latest}"],
     "agenthelm update": ["--no-project", "--latest", "{latest}"],
     "agenthelm migrate": ["--latest", "{latest}"],
@@ -88,14 +96,13 @@ PREVIEW: dict[str, list[str]] = {
     "sop activate": ["demo"], "sop retire": ["demo"], "sop restore": ["demo"], "sop decide": ["demo", "--set", "max_retries=2"],
     "sop revise": ["demo", "--bump", "patch", "--note", "why"], "sop run": ["demo"], "sop init": [], "sop private": ["--create"],
     "assets rebuild": P,
+    "case new": [*P, "--title", "Preview", "--slug", "preview", "--goal", "Goal", "--next-action", "Review", "--dry-run"],
+    "case update": [*P, "quarterly", "--log", "Preview log", "--dry-run"],
+    "sop step": ["missing", "1", "--done"],
+    "sop confirm-read": ["missing", "private/input.txt"],
 }
 HELP_ONLY: dict[str, str] = {
-    "case new": "has no preview, it writes at once; its English run is in test_a_real_project_speaks_english",
-    "case update": "has no preview, it writes at once; its English run is in test_a_real_project_speaks_english",
     "nudge hook": "reads a client's hook JSON on stdin and writes the nudge state; covered by the nudge tests in plugins/agent-pack/tests",
-    "sop events": "fires an event into the Cases; needs an existing event case, covered by the SOP tests of project-orchestrator",
-    "sop step": "edits a step of an executed Case; needs a Case from `sop run --apply`",
-    "sop confirm-read": "records a file read confirmation inside a Case",
     "memory": "a single command with flags only; its English output is in the project-orchestrator tests",
     "wf": "interactive file finder; its English menu is covered by test_i18n.EnglishOutputTests",
     "case_workspace": "a single command with flags only",

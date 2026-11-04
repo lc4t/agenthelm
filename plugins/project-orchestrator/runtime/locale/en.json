@@ -1460,5 +1460,6 @@
  "暂不能给出差异：{0}": "Cannot show the difference yet: {0}",
  "定制文件逐个处理，例如 {0}：--keep {0} 保留你的版本；--accept {0} 用新模板替换（会丢弃本地内容时再加 --confirm-discard {0}）；--merge {0} 三方合并（冲突块用 --pick {0}#<序号>=mine|theirs|both）；--diff {0} 只看差异。": "Customized files are handled one by one, for example {0}: --keep {0} keeps your version; --accept {0} replaces it with the new template (when that drops local content also add --confirm-discard {0}); --merge {0} three-way merges (resolve conflict blocks with --pick {0}#<number>=mine|theirs|both); --diff {0} shows only the difference.",
  "（{0} 与新模板没有差异）": "({0} has no difference from the new template)",
- "AGENTS.md / CLAUDE.md 也可用 --append {0} 保留原文、只追加带标记的区块。": " For AGENTS.md / CLAUDE.md, --append {0} also keeps your text and only appends a marked region."
+ "AGENTS.md / CLAUDE.md 也可用 --append {0} 保留原文、只追加带标记的区块。": " For AGENTS.md / CLAUDE.md, --append {0} also keeps your text and only appends a marked region.",
+ "只预览，不写入（省略时保持直接写入）": "Preview without writing (omitting this keeps the existing immediate-write behavior)"
 }
