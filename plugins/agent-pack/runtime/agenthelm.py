@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from i18n_agent_pack import _, N_  # noqa: E402
+from i18n_agent_pack import _, N_, resolve_language  # noqa: E402
 
 MARKETPLACE = "agenthelm"
 NPX = "npx @sakanano-moe/agenthelm"
@@ -664,6 +664,8 @@ def _advice(diag: dict, client: str) -> dict:
         if conflict["reason"] == "pinned":
             summary = _("{0} 的 settings 把 agenthelm 市场固定在 {1}（{2}）：不带它的 marketplace add 会被拒绝，update 也只会跟随这个 ref。").format(
                 name, conflict["ref"], conflict["file"])
+            if not (diag.get("market_pin") or {}).get("target"):
+                summary += _("目标版本未知：latest.json 没有 release.tag，无法判断这个 ref 是否已经是目标版本。")
         else:
             summary = _("{0} 的 settings 声明 agenthelm 市场指向 {1}（{2}），与 agenthelm 默认来源不同：用默认来源 marketplace add 会被拒绝。").format(
                 name, conflict["declared"], conflict["file"])
@@ -1250,11 +1252,25 @@ def render_scaffold(report: dict, show_skipped: bool, details: bool = False, sho
     return lines
 
 
-def render_machine(report: dict) -> list[str]:
+def render_machine(report: dict, *, details: bool = False) -> list[str]:
     lines = []
-    for item in report.get("machine", {}).get("findings", []):
+    findings = report.get("machine", {}).get("findings", [])
+    head = next((item for item in findings if item["id"] == "local:sync-folder"), None)
+    local = [item for item in findings if item["id"].startswith("local:real:")]
+    if head and local and not details:
+        lines.append(_("  [本机] {0}，连同 {1} 个本机专属目录：{2}\n      处理：agenthelm local-only check（逐项信息：check --details）").format(
+            head["title"], len(local), _("、").join(f"{item['id'].split(':', 2)[-1]} (ID {item['id']})" for item in local)))
+        findings = [item for item in findings if item is not head and item not in local]
+    for item in findings:
         lines.append(_("  [本机] {0}：{1}\n      影响：{2}\n      处理：{3}\n      ID {4}（只记在这台机器上；fix --skip {5} --reason …）").format(item['title'], item['reason'], item['impact'], item['next'], item['id'], item['id']))
     return lines
+
+
+def migration_language_note(entries: list[dict]) -> str | None:
+    """Historical release declarations are source data; warn when English notes are unavailable."""
+    if resolve_language() == "en" and any(re.search(r"[\u4e00-\u9fff]", str(item.get("summary", ""))) for item in entries):
+        return _("迁移说明目前仅有中文；界面语言不改变历史发布声明。")
+    return None
 
 
 def render_install_state(state: dict) -> list[str]:
@@ -1285,6 +1301,9 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
     lines = []
     origin = report["latest"]["source"]
     lines.append(origin_line(origin))
+    note = migration_language_note([step for item in report["plugins"] for step in item.get("steps", []) if step.get("breaking")])
+    if note:
+        lines.append(note)
     clients = report.get("clients") or {}
     if clients.get("selected"):
         lines.append(_("只处理所选客户端：{0}").format(_("、").join(CLIENT_NAMES[name] for name in clients["selected"])))
@@ -1349,7 +1368,7 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         elif item["status"] in {"error", "unknown"}:
             lines.append(f"  [Opinion] {item.get('error')}")
     lines += render_scaffold(report, show_skipped, details, show_extras)
-    lines += render_machine(report)
+    lines += render_machine(report, details=details)
     lines += [_("  [语言] {0}").format(hint) for hint in (report.get("language") or {}).get("hints", [])]
     if not report["plugins"]:
         lines.append(_("运行 `{0} install` 预览安装。").format(CLI))
@@ -1446,12 +1465,13 @@ def clear_hook_errors(env: Env) -> bool:
         return False
 
 
-def hook(env: Env, project: Path | None, output: str) -> int:
+def hook(env: Env, project: Path | None, output: str, *, latest_source: str | None = None,
+         offline: bool = False, clients: list[str] | None = None) -> int:
     """Session-start entry: silent unless something is behind; never fails the session."""
     if not update_check_enabled(env):
         return 0
     try:
-        report = run_check(env, project, hook_mode=True)
+        report = run_check(env, project, hook_mode=True, latest_source=latest_source, offline=offline, clients=clients)
     except Exception as exc:  # noqa: BLE001 - an update notice must never break a session
         record_hook_error(env, "update-check", exc)
         return 0
@@ -1767,11 +1787,13 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
             if pinned:
                 newest = max((entry["latest"] for entry in behind if entry["client"] == "claude" and entry.get("latest")),
                              key=lambda text: version_key(text) or (0,), default="?")
-                note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（最新版本 {1}）。"
+                note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（插件最新版本 {1}）。"
                          "要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。"
                          ).format(pinned, newest)
                 if release_tag(latest):
                     note += _("目标 tag：{0}。").format(release_tag(latest))
+                else:
+                    note += _("目标版本未知：latest.json 没有 release.tag，无法判断这个 ref 是否已经是目标版本。")
             sync = report.get("market_sync")
             block = dict(blocked=sync["reason"], blocker="market-not-synced", next=sync["next"]) if sync else {}
             steps.append(Step("update", "claude", _("刷新 Claude Code 的 agenthelm 市场"), command, **{"blocked": blocked, **block},
@@ -2017,6 +2039,8 @@ def render_outcome(results: list[dict]) -> list[str]:
         if entry["not_run"]:
             text += _("；其后 {0} 步没有执行").format(entry["not_run"])
         lines.append(text)
+        if name == "claude" and entry["applied"]:
+            lines.append(_(RECOVERY_HINTS["claude"]))
     bad = [names.get(n, n) for n, e in ordered if e["status"] in {"failed", "unchanged"} or e.get("blocker")]
     good = [names.get(n, n) for n, e in ordered if e["status"] == "ok"]
     if bad:
@@ -2554,7 +2578,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(args, "no_project") and not args.no_project:
         project = (args.project or Path.cwd()).resolve()
     if args.command == "check" and args.hook:
-        return hook(env, project, args.hook_format)
+        return hook(env, project, args.hook_format, latest_source=args.latest, offline=args.offline, clients=args.client)
     if args.command == "locate":
         found = locate(env, args.plugin, args.version, include_legacy=args.include_legacy)
         if args.output == "json":
@@ -2663,6 +2687,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(origin_line(payload["latest"]))
+        if args.command == "migrate":
+            note = migration_language_note(latest.get("migrations", []))
+            if note:
+                print(note)
         if payload.get("message"):
             print(payload["message"])
         _print_steps(payload["steps"], args.apply)

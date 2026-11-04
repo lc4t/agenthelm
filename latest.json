@@ -5,7 +5,7 @@
   "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
-      "version": "1.11.2",
+      "version": "1.11.3",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.11.3",
+      "version": "1.11.4",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -766,6 +766,36 @@
         "project health 默认把“项目位于同步盘 + 本机专属目录”“各客户端插件版本不一致”各合并为一行，--details 展开逐项",
         "fix update-content 的 --diff 现在会显示差异（以前不显示）；--merge 取不到基线时预览在该文件行写明原因"
       ],
+      "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.11.2",
+      "to": "1.11.3",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-04",
+      "summary": "修正 rc.3 验收输出：hook 使用显式版本源，固定 ref 区分插件版本与未知目标，Claude 汇总给出旧目录位置，合并同步盘提示，英文迁移说明标注中文来源，runtime 旁置目录不声称内容更新。",
+      "actions": [],
+      "declaration": 2,
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": []
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.11.3",
+      "to": "1.11.4",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-04",
+      "summary": "health 合并视图标题同时显示可见项数和展开项数，与编号行数一致；明细、JSON 与退出码保持原有粒度。",
+      "actions": [],
       "declaration": 2,
       "user_action_required": [],
       "touches": [],
