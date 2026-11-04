@@ -718,5 +718,22 @@
     "touches": [],
     "default_for_existing": "on",
     "template_changes": []
+  },
+  {
+    "plugin": "agents-init",
+    "from": "6.8.2",
+    "to": "6.8.3",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-04",
+    "summary": "接管或追加过受管区块的文件只比较已登记区块，整文件模板变化不再追问用户原文；刷新时清理旧整文件基线，保留历史决定。",
+    "actions": [],
+    "declaration": 2,
+    "user_action_required": [],
+    "touches": [
+      ".agents/moe.sakanano.agent-pack/content.lock.json"
+    ],
+    "default_for_existing": "advisory",
+    "template_changes": []
   }
 ]

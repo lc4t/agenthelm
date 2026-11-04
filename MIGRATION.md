@@ -114,3 +114,11 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 4. 新的发现 `region:<文件>#<ID>` 只在你用 `adopt` 追加过受管区块后出现，处理方式见 `init_project.py --mode region`。
 
 对下游的说明：发布条目（`release/migrations.json`）现在带 `user_action_required`、`touches`、`default_for_existing`、`template_changes`，可据此判断一次升级对你的项目意味着什么；`CHANGELOG.md` 的“不兼容点与注意”仍是完整清单。
+
+## 接管项目的区块所有权（agents-init 6.8.3）
+
+内容锁 `packs["agents-init/project-contract"].regions` 中登记了区块的文件，区块外文字始终归用户所有。`check` 与内容刷新不会再将整文件与当前模板比较；模板新增的区块外章节也不会自动追加或触发整文件差异。工具不会判断用户原文是否与新模板冲突，规则的最终解释由项目维护者决定。
+
+- 区块原文、修改、丢失与过期继续由 `region:<文件>#<ID>` 报告。运行初始化器的 `--mode region` 预览；确认后加 `--apply`，仅更新完整区块并先备份。区块被用户修改后仍须逐个 `--keep` / `--accept <文件>#<ID>`。
+- `--mode refresh --diff AGENTS.md` 只显示已登记区块的差异。整文件 `--accept` / `--merge` 会拒绝并指向 `--mode region`，避免覆盖区块外原文。需要显式补充新受管区块（例如旧项目的隐私约定）时仍可使用 `--append AGENTS.md`。
+- 内容锁的 `regions` 保留各区块的摘要；这类文件不再记录整文件 `files` / `file_versions` 基线。旧锁兼容读取，只有用户执行刷新 `--apply` 时才清除旧整文件基线，预览与检查均不写盘。历史 `content:<文件>` 保留决定原样保留为审计记录，不因整文件模板变化而重新追问；区块决定使用独立的区块指纹。

@@ -827,6 +827,11 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str], *, inpu
         for path_, ids in regions.items():
             merged[path_] = {**merged.get(path_, {}), **ids}
         updated["regions"] = dict(sorted(merged.items()))
+    # Whole-file baselines cannot describe a file owned only through regions. Older locks may contain both.
+    for region_path, ids in updated.get("regions", {}).items():
+        if ids:
+            updated["files"].pop(region_path, None)
+            updated.get("file_versions", {}).pop(region_path, None)
     lock["packs"][pack["id"]] = updated
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, json_text(lock))
@@ -1026,6 +1031,8 @@ def _refresh_notes(item: dict) -> list[str]:
     """Human lines for a file refresh cannot silently decide: why, what each choice costs, what to type."""
     path, reason = item["path"], item.get("reason")
     notes: list[str] = []
+    if item.get("comparison") == "regions":
+        return [_("只比较已登记的受管区块，区块外内容属于你；用 --mode region 查看并更新区块，整文件模板变化不再追问")]
     if reason == "baseline-unavailable":
         notes.append(_("找不到这个文件升级前的基线（旧版本包不在本机运行时缓存和本地 git tag 里，也没能从 GitHub Release 取得），无法三方合并；"
                        "没有改动任何文件，请改用 --keep / --append / --accept 选择"))
@@ -1135,6 +1142,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     # every file that differs from the new render counts as locally modified.
     entry = (lock.get("packs") or {}).get(pack["id"]) or {}
     baseline: dict[str, str] = dict(entry.get("files") or {})
+    region_paths = {path for path, ids in (entry.get("regions") or {}).items() if ids}
     file_versions: dict[str, str] = dict(entry.get("file_versions") or {})  # 文件基线是哪个内容包版本渲染的（未更新的文件仍是旧版本）
     inputs = inputs_from_profile(root)
     rendered = files_for(inputs)
@@ -1157,6 +1165,9 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         raise InitError(_("只有 AGENTS.md 和 CLAUDE.md 可以追加受管区块：") + ", ".join(sorted(map(str, not_appendable))))
     if show_diff and args.apply:
         raise InitError(_("--diff 只用于查看，不能与 --apply 同用"))
+    whole_file_picks = {path.as_posix() for path in (accept | merge)} & region_paths
+    if whole_file_picks:
+        raise InitError(_("这些文件只管理已登记的区块，请用 --mode region 处理，不能替换或合并整文件：{0}").format(", ".join(sorted(whole_file_picks))))
     templates = load_templates()
     regions = _regions()
     merge3 = _merge3() if merge else None
@@ -1181,6 +1192,24 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             continue
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
+        if relative.as_posix() in region_paths and relative not in append:
+            # Keep existing whole-file decisions without renewing their template fingerprints. The region table
+            # owns future comparisons; even a changed full template must never prompt about the user's text.
+            item = {"path": relative.as_posix(), "state": "kept-by-decision" if relative.as_posix() in kept_before else "local-only",
+                    "action": "keep", "comparison": "regions"}
+            if relative in show_diff:
+                diffs = []
+                for region_id in sorted(entry["regions"][relative.as_posix()]):
+                    key = f"region/{region_id}"
+                    if key not in templates:
+                        continue
+                    existing = regions.get(current, region_id) if current is not None else None
+                    diffs.append(_unified_diff(f"{relative.as_posix()}#{region_id}", existing.body if existing else "",
+                                               regions.normalize(localized(templates, key, inputs.language))))
+                item["diff"] = "".join(diffs)
+            item["note"] = _refresh_notes(item)
+            plan.append(item)
+            continue
         added, lost = line_delta(current or "", new)
         reason = None
         merge_info = None
@@ -1352,6 +1381,10 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             _atomic_write(target, text, os.stat(target).st_mode & 0o7777)
     files = dict(baseline)
     for item in plan:
+        if item.get("comparison") == "regions":
+            files.pop(item["path"], None)
+            file_versions.pop(item["path"], None)
+            continue
         if item["action"] in {"replace", "create", "merge"} or item["state"] == "unchanged":
             files[item["path"]] = item["new_sha256"]
             file_versions[item["path"]] = pack["version"]
@@ -1369,12 +1402,18 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         for path, ids in new_regions.items():
             merged.setdefault(path, {}).update(ids)
         new_entry["regions"] = dict(sorted(merged.items()))
+    for region_path, ids in new_entry.get("regions", {}).items():
+        if ids:
+            new_entry["files"].pop(region_path, None)
+            new_entry.get("file_versions", {}).pop(region_path, None)
     lock.setdefault("packs", {})[pack["id"]] = new_entry
     lock_path = root / CONTENT_LOCK_PATH
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(lock_path, json_text(lock))
     # 显式 --keep / --append 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
     for item in plan:
+        if item.get("comparison") == "regions":
+            continue
         chosen_keep = Path(item["path"]) in (keep | append) or item["action"] in {"append", "merge"}
         if chosen_keep and item["state"] in {"modified", "local-only", "kept-by-decision", "symlink"}:
             _scaffold().decide(root, f"content:{item['path']}", "keep",

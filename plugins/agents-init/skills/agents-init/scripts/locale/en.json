@@ -313,5 +313,7 @@
  "--keep {0} 保留链接原样（建议）": "--keep {0} leaves the link as it is (recommended)",
  "  {0}：{1}": "  {0}: {1}",
  "；": "; ",
- "未声明私有路径，不追加隐私约定（privacy.forbidden_default_reads 为空）": "No private paths declared, so the privacy convention is not appended (privacy.forbidden_default_reads is empty)"
+ "未声明私有路径，不追加隐私约定（privacy.forbidden_default_reads 为空）": "No private paths declared, so the privacy convention is not appended (privacy.forbidden_default_reads is empty)",
+ "只比较已登记的受管区块，区块外内容属于你；用 --mode region 查看并更新区块，整文件模板变化不再追问": "Only recorded managed regions are compared; text outside them belongs to you. Use --mode region to inspect and update the regions; whole-file template changes will not prompt again.",
+ "这些文件只管理已登记的区块，请用 --mode region 处理，不能替换或合并整文件：{0}": "Only recorded regions are managed in these files. Use --mode region; whole-file replacement or merge is unavailable: {0}"
 }
