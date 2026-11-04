@@ -117,6 +117,19 @@ class EventGateTests(unittest.TestCase):
         self.assertEqual(code, 1, output)
         self.assertIn('source changed', output)
 
+    def test_main_promotion_rejects_a_release_head_that_omits_new_main_commits(self):
+        baseline = self.git('rev-parse', 'HEAD')
+        self.add_change()
+        self.commit('feature')
+        workflow.apply_release(self.adapter(), self.plan(), candidate=False)
+        head = self.git('rev-parse', 'HEAD')
+        self.git('checkout', '-qb', 'main', baseline)
+        self.write('README.md', 'Main advanced independently\n')
+        self.commit('main advanced')
+        base = self.git('rev-parse', 'HEAD')
+        with self.assertRaisesRegex(ValueError, 'fast-forward'):
+            self.invoke('pull_request', self.pull(base, head, source='release/v1.0.1', target='main'))
+
     def test_new_release_branch_accepts_zero_before_and_runs_strict_release_gate(self):
         self.add_change()
         self.commit('feature')

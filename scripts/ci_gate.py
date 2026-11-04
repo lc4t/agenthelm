@@ -38,6 +38,8 @@ def select_gate(root: Path, event_name: str, event: dict):
         head = revision(root, pull['head']['sha'], 'pull_request.head.sha')
         common = git(root, 'merge-base', base, head)
         target, source = pull['base']['ref'], pull['head']['ref']
+        if target == 'main' and common != base:
+            raise ValueError('main promotion requires a fast-forward; integrate the current main base first')
         if target == 'main' or target.startswith('release/') or source.startswith('release/') and target == 'dev':
             return {'kind': 'release', 'head': head, 'base': common, 'target': target, 'source': source}
         return {'kind': 'feature', 'head': head, 'base': common, 'target': target, 'source': source}

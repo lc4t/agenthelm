@@ -35,7 +35,7 @@
 - 功能 PR：`python3 scripts/release_meta.py check-changes --base origin/dev`。发布内容须有本次新增且合法的对应 scope 片段；既有版本、摘要与派生文件保持基线值。历史记录、已有片段不可改。测试与 CI 配置本身不要求插件升版。
 - 发布提交：`python3 scripts/release_meta.py check-release --since vX.Y.Z [--tag vA.B.C]`。检查派生文件、摘要、迁移声明、CHANGELOG、生成计划及 tag 一致。正式与候选共用门禁。
 
-CI 由 `scripts/ci_gate.py` 读取 GitHub 原始事件：普通 PR 取 `merge-base(base.sha, head.sha)`，在临时 worktree 检查真实 PR head，避免将上游新增内容或合成 merge 的内容算给该 PR；`release/v<套件版本>` 向 `dev` 的 PR 使用发布门禁，普通功能分支不能向 `main` 提 PR。`dev` 的普通 push 检查事件里的完整 `before → after`，不以 `HEAD` 自比；包含候选计划或正式归档计划变化的发布准备 push 使用发布门禁。普通 `dev` / 功能 push 的缺失或全零基线明确失败，需要提供可审查的初始集成基线。首次创建 `release/*` 分支可接受全零 `before`，因其校验完整发布状态；缺失/未知的提交 SHA 仍拒绝。`release/*` 与 `main` push 也运行严格发布门禁。
+CI 由 `scripts/ci_gate.py` 读取 GitHub 原始事件：普通 PR 取 `merge-base(base.sha, head.sha)`，在临时 worktree 检查真实 PR head，避免将上游新增内容或合成 merge 的内容算给该 PR；`release/v<套件版本>` 向 `dev` 的 PR 使用发布门禁，普通功能分支不能向 `main` 提 PR，发布 head 还必须包含当前 `main` base，使推进可快进。`dev` 的普通 push 检查事件里的完整 `before → after`，不以 `HEAD` 自比；包含候选计划或正式归档计划变化的发布准备 push 使用发布门禁。普通 `dev` / 功能 push 的缺失或全零基线明确失败，需要提供可审查的初始集成基线。首次创建 `release/*` 分支可接受全零 `before`，因其校验完整发布状态；缺失/未知的提交 SHA 仍拒绝。`release/*` 与 `main` push 也运行严格发布门禁。
 
 CI 的各套件和升级矩阵在 Python 设置成功且任务未取消时分别运行；前一个门禁或测试失败仍收集后续结果，任务最终仍为失败，不使用 `continue-on-error`。
 
