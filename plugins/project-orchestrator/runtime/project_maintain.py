@@ -425,7 +425,10 @@ def _content_preview(provider: Any, env: Any, report: dict | None, accept: list[
     except EntryError as exc:
         return _("项目模板/样例"), [], str(exc), True
     files = result.get("files") or []
-    if all(item["state"] in ("unchanged", "kept-by-decision") for item in files):
+    # A prior keep decision does not cancel an explicit per-file request. In particular,
+    # --merge must retain its blocked reason and --diff must retain the requested diff.
+    named = bool(accept or keep or append or confirm or merge or pick or diff)
+    if not files or (not named and all(item["state"] in ("unchanged", "kept-by-decision") for item in files)):
         return _("项目模板/样例"), [], _("没有需要更新的模板"), True
     return _("按当前模板对比项目契约文件"), files, "", True
 
