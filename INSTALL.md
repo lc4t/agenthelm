@@ -67,6 +67,14 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - 命令行输出默认英文；要中文：`export AGENTHELM_LANG=zh`，或 `agenthelm config language zh --apply`（等同在 `~/.config/agenthelm/config.json` 写 `{"language": "zh"}`；中文系统 locale 本来就是中文）。界面语言只影响输出；写进项目文件的语言是 Profile 的 `language`，用 `agenthelm config project-language zh|en` 查看或设置。界面显示为英文且没有设置界面语言时 `check` 会提示（中文界面不提示），`agenthelm config language-hint off` 关闭提示。
 - 观点候选的自动采集与未决事项提示也由 agent-pack 的 hook 完成：Claude Code 随插件生效；Codex 需在 `/hooks` 中审阅并信任；Cursor 运行 `npx @sakanano-moe/agenthelm nudge install-hooks --client cursor` 预览，确认后加 `--apply`。`nudge status` 查看生效配置，`AGENTHELM_NO_NUDGE=1` 关闭，详见 `plugins/agent-pack/references/nudge.md`。
 
+### Cursor 从发布包更新
+
+本机无需保留 agenthelm 仓库：运行 `agenthelm update --client cursor` 预览，确认后追加 `--apply`。版本来源的 `release` 块提供 tag、tarball URL 与 SHA-256；若版本来源没有该块，会从 GitHub 的最新正式 Release 读取 `release.json`，只接受插件版本组合与当前版本来源一致的发布。
+
+预览会下载并校验发布包，但不改客户端安装；应用前先核对包内所有插件的版本，再替换 `~/.cursor/plugins/local/<插件>` 并读回版本。摘要或版本不匹配时不会替换任何插件。已有目录备份在 `~/.agent-pack/recovery/<时间>-cursor-<插件>/`；替换后重启 Cursor，文件读回成功只说明安装完成，不代表当前会话已加载。
+
+没有匹配发布包时，`check` 把 Cursor 单列为“不可用”，不计入“可更新”；可以指定本地源，例如 `agenthelm update --client cursor --source '/path/to/agenthelm checkout'`（先预览，再加 `--apply`）。部分安装时，`check` 的 `missing` 与 `next_command` 会列出缺失插件和补装命令 `agenthelm install --client cursor`。
+
 ### 从任意状态升级
 
 `agenthelm check` 开头的“安装状态”按客户端给出结论、下一条命令（预览形式）、是否改动已有安装与原件恢复位置；`--output json` 的 `install_state.clients.<客户端>` 提供同样的稳定字段（`state`、`base_state`、`sub_status`、`installed`、`missing`、`installs`、`conflicts`、`market_conflict`、`untouched`、`summary`、`next_command`、`modifies_existing`、`modifies_note`、`recovery`，另有 `market_pin`：settings 把市场固定在某个 ref 时的 `{scope, file, ref, target, at_target}`，否则 `null`）。
