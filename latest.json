@@ -5,7 +5,7 @@
   "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
-      "version": "1.11.2",
+      "version": "1.11.3",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -769,6 +769,88 @@
       "declaration": 2,
       "user_action_required": [],
       "touches": [],
+      "default_for_existing": "on",
+      "template_changes": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.11.2",
+      "to": "1.11.3",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-04",
+      "summary": "远程 HTTP MCP 支持环境变量引用、Codex 原生认证导入；新增 transfer --update 和会话开始本地能力差异提示。",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.9.0",
+      "to": "1.11.3",
+      "change_kind": "code",
+      "breaking": true,
+      "date": "2026-11-04",
+      "summary": "1.10.0（同步盘本机专属目录 local-only）、1.11.0（观点自动采集 nudge 与 hook）与 1.11.1（agenthelm config、语言提示、没有基线文件的差异摘要与追加区块、备份位置输出）合并后的对照条目：6.9.0、6.10.0 都不单独发布，随 6.11.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。 同一批次还包括：install / update 失败原因与读回验证、--client 与 ignored_clients、显式版本来源不再被缓存覆盖并统一 --refresh；check 的 Profile 未声明字段统计（--show-extras）与形态冲突说明；fix --accept-current 与按类别归并（--details）；协议与提示里的路径 shell 引用；运行时目录带 rc 后缀。 之后补入：check 的“安装状态”诊断（未安装 / 部分安装 / 市场 / 开发版或本地 / 旧方式 / 多处 / 市场冲突，开发版与本地安装不被 update / migrate 改动）；钩子出错时记录最近一次错误摘要（nudge status、doctor 可见，--clear-errors 清除）；三方合并在 update / fix 里可达（--merge / --pick / --diff）；旧方式安装按路径归属计入 --client；英文界面下 local-only 用户配置错误的判断、全角标点与占位词等漏翻；软链接的配置文件写入保持链接；备份失败清楚报错；runtime use 校验版本名。 rc.3 升级主路径：update 预览在 Claude 的市场声明与已登记市场不一致（或未登记）时直接标阻塞并给出下一步，不再等到 apply 第一步才失败；固定 ref 等于目标版本时 check 不再报 market-conflict，固定在旧 ref 时提示更新只会跟随该 ref；Codex“完成，无变化”附固定市场的命令；运行时是候选版时会话开始提示带 @<当前版本>；Cursor 在 update 预览为“不可用”时不再计入“可更新”，单列为“不可用，需 --source 本地源”；runtime install 安装候选版默认不切换 current（新增 --use）。输出整理：check --output json 的 summary.scaffold_info 与文本“脚手架·信息”条数一致，同一插件版本的不兼容说明在一次输出中只出现一次。；远程 MCP 认证环境变量引用与多机能力差异发现（#51）。",
+      "actions": [
+        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply（写入 ~/.config/agenthelm/config.json 的 language，其余设置原样保留）；中文系统 locale 本来就是中文；解析 agenthelm 文字输出的脚本改用 --output json",
+        "--accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
+        "install 对已安装的插件改为跳过并提示改用 update；install / update 在步骤“成功但读回版本没变”时显示“完成，无变化”及原因，整体退出码为 1",
+        "步骤失败时显示命令、退出码和客户端 stderr；失败后只有同一客户端的后续步骤不执行，其他客户端继续",
+        "check --strict 与会话开始的提示只统计“需要处理”的脚手架差异；缺文件等可选差异不再让 --strict 失败（CI 想看全部差异用 check --output json）",
+        "只用其中一两个客户端：check / update / install / migrate 加 --client，或 agenthelm config ignore-client <claude|codex|cursor> --apply",
+        "候选版（rc）与正式版的运行时目录分开（runtimes/6.11.0-rc.N 与 6.11.0）；从仓库检出安装的拿不到后缀，仍共用 6.11.0，内容不同时需先移走旧目录",
+        "check 新增“安装状态”诊断（--output json 的 install_state）；开发版、本地目录与软链接安装默认不被 update / migrate / install 改动，预览标“不会改动”，要纳入管理由你决定",
+        "钩子内部出错仍静默，最近一次错误摘要可用 agenthelm nudge status 查看，--clear-errors 清除；agenthelm doctor 也会提示",
+        "update --only content 与 fix update-content 支持 --merge <文件>、--pick <文件>#<序号>=mine|theirs|both、--diff <文件>（三方合并，联网只发生在显式 --merge 时）",
+        "改了 ~/.claude/settings.json 里的市场 ref 后，先重启 Claude Code 再运行 agenthelm update；预览标“阻塞”时按提示重启，或运行 claude plugin marketplace add <源>#<ref>",
+        "试用候选版运行时：agenthelm runtime install --apply --use（或装好后 agenthelm runtime use <版本> --apply）；不加 --use 时候选版（-rc.N）只装在旁边、current 不变；稳定版和首次安装的行为不变",
+        "解析 check --output json 的脚本：summary.plugins_behind 不再包含“不可用”的 Cursor（改读新增的 summary.plugins_unavailable）；summary.scaffold_info 现在包含 Profile 备注，与文本里的“脚手架·信息”条数一致",
+        "Cursor 在 update 预览里是“不可用”时：有本地仓库用 update --source <本地仓库>；不用 Cursor 用 agenthelm config ignore-client cursor --apply（Cursor 直接从发布版本更新见 #47，不在 6.11.0）",
+        "候选版运行时的会话开始提示与 check 建议命令为 npx @sakanano-moe/agenthelm@<当前版本> check（该版本需已发布到 npm）；稳定版不变",
+        "内容预览（update --only content、init_project.py --mode refresh、fix update-content）：状态词与处置词随界面语言，--diff 只输出差异，建议命令都带文件名；点名文件（--merge / --diff / --keep / --accept / --append / --pick）时，即使内容锁已是最新也照常处理，不再回答“没有需要更新的内容”"
+      ],
+      "declaration": 2,
+      "user_action_required": [
+        {
+          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply；解析 agenthelm 文字输出的脚本改用 --output json。界面语言只影响命令输出；写进项目文件的语言是项目 Profile 的 language（缺省中文），用 agenthelm config project-language zh|en 查看或设置",
+          "session": "current"
+        },
+        {
+          "what": "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
+          "session": "current"
+        },
+        {
+          "what": "启用了 opinion-manager 的项目里，随插件的 hook 会在会话开始注入协议、并在命中偏好关键词时提醒暂存；不需要时设置 AGENTHELM_NO_NUDGE=1 关闭",
+          "session": "current"
+        },
+        {
+          "what": ".opinion/inbox.json 保存用户原话，可能含敏感信息：公开仓库、同步盘或他人可见的项目，自行决定是否把 .opinion/ 排除出 Git（工具不会替你修改 .gitignore）",
+          "session": "current"
+        },
+        {
+          "what": "项目位于 iCloud / Dropbox / OneDrive 等同步目录时，check / health 会多出 local: 开头的发现；按提示处理或用 fix --skip 记录决定",
+          "session": "current"
+        },
+        {
+          "what": "CI 里用 agenthelm check --strict 的项目：脚手架差异分成需要处理 / 可选 / 信息三级，只有“需要处理”的让 --strict 失败",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "hooks/hooks.json（随插件）",
+        "~/.config/agenthelm/config.json（language、nudge、local_only）",
+        ".opinion/inbox.json",
+        ".agents/moe.sakanano.agent-pack/local-only.json",
+        "~/.agent-pack/recovery/（替换文件前的备份）",
+        "~/.config/agenthelm/config.json（ignored_clients；仅在运行 agenthelm config ignore-client … --apply 时写入）",
+        "~/.local/share/agenthelm/runtimes/<版本>[-rc.N]/",
+        "~/.local/state/agenthelm/hook-errors.json（仅钩子出错时写，最多 5 条）",
+        "~/.local/share/agenthelm/current（候选版安装不再自动切换；runtime use 或 --use 才切换）"
+      ],
       "default_for_existing": "on",
       "template_changes": []
     }

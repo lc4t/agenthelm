@@ -156,7 +156,9 @@ npx @sakanano-moe/agenthelm check --show-skipped       # 列出被跳过的项�
 | 脚手架差异的决定（跳过、保留） | `.agents/moe.sakanano.agent-pack/check-decisions.json` | 是：一次决定，所有机器生效 |
 | 本机决定（运行时未装、项目在同步盘） | `$XDG_STATE_HOME` 或 `~/.local/state` 下的 `agenthelm/decisions/` | 否 |
 | 用户级运行时 | `~/.local/share/agenthelm/`（`runtime install`） | 否：每台机器各装一次 |
-| AI 客户端里的插件 | 各客户端自己的插件目录 | 否 |
+| MCP / Skill 的项目声明 | `.agents/mcp.json`、`.agents/skills/` | 是：只同步配置与环境变量名 |
+| AI 客户端里的插件、MCP / Skill 安装 | 各客户端自己的目录与配置文件 | 否：每台机器运行 `sync --client … --apply` |
+| MCP 认证的环境变量值 | 启动客户端的本机进程环境 | 否：不要放进项目或同步盘 |
 | 版本缓存 | `$XDG_CACHE_HOME` 或 `~/.cache` 下的 `agenthelm/latest.json` | 否 |
 | `wf` / 找资料的交付物台账 | `~/.cache/agenthelm/assets/<项目绝对路径的摘要>/` | 否：路径不同就是两份台账，各自重建 |
 
@@ -165,6 +167,17 @@ npx @sakanano-moe/agenthelm check --show-skipped       # 列出被跳过的项�
 - **同步盘提示**：`health` 检测到项目位于同步盘时给出一条本机提示（不改任何文件）；`fix sync-folder` 列出项目里的可重建目录和处理方案，**不会替你移动或删除任何内容**。要把 `.venv`、`node_modules` 等移出同步盘，用下一节的 `agenthelm local-only`。
 - 同步服务可能留下 `check-decisions 2.json` 之类的冲突副本；`check` 会提示，合并到 `check-decisions.json` 后删除副本。
 - 日期 Case 目录、macOS 的 iCloud 未下载占位文件：台账不读取这些文件的内容，不触发下载。
+
+### A 机新增能力，B 机同步
+
+使用 agent-pack 的 [能力配置命令](plugins/agent-pack/references/capability-config.md)（以下 `agent-pack` 表示 `python3 <agent-pack>/runtime/agent_pack_config.py`）：
+
+1. A 机在客户端新增 MCP 或 Skill 后，先预览导入：`agent-pack transfer --from client:codex --to-project /path/to/project --mcp example`（Skill 改用 `--skill <名称>`；客户端也可选 `claude` / `cursor`），再加 `--apply` 导入。已有同名条目时加 `--update` 预览更新，审阅后加 `--apply`；旧文件会进入本机 `~/.agent-pack/recovery/`，输出给出恢复位置。
+2. 远程 HTTP MCP 可以声明 `"bearer_token_env_var": "EXAMPLE_MCP_TOKEN"`，或 `"headers": {"Authorization": "Bearer ${EXAMPLE_MCP_TOKEN}"}`。两者等价，导入统一为 header 引用，令牌值始终留在本机。远程条目不需要 `credential_env_file`。
+3. 等待同步盘同步项目声明。B 机设置自己的 `EXAMPLE_MCP_TOKEN` 环境变量后，从同一环境启动客户端，再运行 `agent-pack doctor --project /path/to/project --client codex` 查看缺失 / 不同 / 过期的能力和缺少的变量名。
+4. B 机运行 `agent-pack sync --project /path/to/project --client codex` 预览，再加 `--apply`，随后重启或重新加载客户端。其他客户端分别重复同步；令牌值不会由同步命令展开或写入包。Codex 远程 MCP 写入 `~/.codex/config.toml` 的原生环境变量字段，Claude Code 与 Cursor 使用各自支持的 header 引用。
+
+会话开始和 `agenthelm check` 会只读检查已检测到的客户端；不一致时提示运行 `doctor --client`，离线也能发现差异。要单独关闭某个客户端的能力提示，在本机 `~/.config/agenthelm/config.json` 设置 `"capability_check_ignored_clients": ["cursor"]`（保留文件中其他设置）；`config ignore-client cursor --apply` 则同时关闭该客户端的插件版本检查。提示不会自动修改客户端，也不会把客户端改动自动写回项目。
 
 ### 同步盘里的 `.venv`、`node_modules`：`agenthelm local-only`
 

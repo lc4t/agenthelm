@@ -18,6 +18,7 @@ import stat
 import sys
 import tempfile
 import tomllib
+from urllib.parse import parse_qsl, urlsplit
 from datetime import UTC, datetime
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -293,8 +294,45 @@ def validate_plugin_manifest(plugin_root: Path) -> tuple[dict[str, Any], list[st
 def _portable_mcp(name: str, raw: Any) -> McpRecord:
     if not isinstance(raw, dict):
         return McpRecord(name, {}, "", False, ("MCP entry must be an object",))
-    item = dict(raw)
+    item = json.loads(json.dumps(raw))
+    # Cursor spells process environment interpolation as ${env:NAME}.
+    if isinstance(item.get("headers"), dict):
+        item["headers"] = {key: re.sub(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", r"${\1}", value)
+                           if isinstance(value, str) else value for key, value in item["headers"].items()}
     issues: list[str] = []
+    # Canonical portable form uses headers with literal environment references.
+    # Codex's native fields describe names, never values; normalize on import.
+    for source_field in ("http_headers", "env_http_headers"):
+        value = item.pop(source_field, None)
+        if value is None:
+            continue
+        if not isinstance(value, dict) or not all(isinstance(k, str) and isinstance(v, str)
+                                                 for k, v in value.items()):
+            issues.append(f"{source_field} must be a string map")
+            continue
+        headers = dict(item.get("headers", {})) if isinstance(item.get("headers", {}), dict) else {}
+        for key, value in value.items():
+            if source_field == "env_http_headers":
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+                    issues.append(f"invalid environment variable name in {source_field}.{key}")
+                    continue
+                value = "${" + value + "}"
+            if key in headers and headers[key] != value:
+                issues.append(f"conflicting header: {key}")
+            headers[key] = value
+        item["headers"] = headers
+    bearer = item.pop("bearer_token_env_var", None)
+    if bearer is not None:
+        if not isinstance(bearer, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", bearer):
+            issues.append("bearer_token_env_var must be an environment variable name")
+        else:
+            headers = dict(item.get("headers", {})) if isinstance(item.get("headers", {}), dict) else {}
+            auth = next((key for key in headers if key.lower() == "authorization"), "Authorization")
+            value = "Bearer ${" + bearer + "}"
+            if auth in headers and headers[auth] != value:
+                issues.append("conflicting Authorization header")
+            headers[auth] = value
+            item["headers"] = headers
     mcp_type = item.get("type")
     if mcp_type == "http":
         item["type"] = "streamable-http"
@@ -317,6 +355,9 @@ def _portable_mcp(name: str, raw: Any) -> McpRecord:
             issues.append(f"{container_name} must be an object")
             continue
         for key, value in container.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                issues.append(f"{container_name} must be a string map")
+                continue
             references = ENV_REFERENCE_RE.findall(str(value))
             safe_reference = bool(references) and not SECRET_VALUE_RE.search(
                 ENV_REFERENCE_RE.sub("", str(value))
@@ -340,6 +381,16 @@ def _portable_mcp(name: str, raw: Any) -> McpRecord:
         allowed = {"type", "url", "headers"}
         if not isinstance(item.get("url"), str) or not item["url"]:
             issues.append("remote URL is required")
+        else:
+            try:
+                url = urlsplit(item["url"])
+                if url.username or url.password or any(SECRET_NAME_RE.search(key) and value
+                                                       for key, value in parse_qsl(url.query)):
+                    issues.append("possible secret in URL")
+            except ValueError:
+                issues.append("invalid remote URL")
+            if ENV_REFERENCE_RE.search(item["url"]):
+                issues.append("remote environment references must be declared in headers")
     unknown = sorted(set(item) - allowed)
     if unknown:
         issues.append("unsupported fields: " + ", ".join(unknown))
@@ -675,51 +726,106 @@ def transfer_to_project(
     mcp_names: Iterable[str],
     *,
     apply: bool = False,
+    update: bool = False,
+    recovery_root: Path | None = None,
 ) -> dict[str, Any]:
+    """Import selected capabilities; replacement requires both --update and --apply.
+
+    Previews contain changed paths and hashes, never MCP values or file contents.
+    Stage everything before moving originals; roll back the whole selection on failure.
+    """
     layout = load_project_layout(destination_project)
-    requested_skills = set(skill_names)
-    requested_mcps = set(mcp_names)
+    requested_skills, requested_mcps = set(skill_names), set(mcp_names)
     selected_skills = [item for item in source.skills if item.name in requested_skills]
     selected_mcps = [item for item in source.mcps if item.name in requested_mcps]
-    missing_skills = requested_skills - {item.name for item in selected_skills}
-    missing_mcps = requested_mcps - {item.name for item in selected_mcps}
-    if missing_skills or missing_mcps:
-        raise AgentPackError(
-            "requested items missing: "
-            + ", ".join(sorted(missing_skills | missing_mcps))
-        )
-    blocked = [
-        f"skill:{item.name}" for item in selected_skills if not item.portable
-    ] + [
-        f"mcp:{item.name}" for item in selected_mcps if not item.portable
-    ]
+    missing = (requested_skills - {item.name for item in selected_skills}) | (requested_mcps - {item.name for item in selected_mcps})
+    if missing:
+        raise AgentPackError("requested items missing: " + ", ".join(sorted(missing)))
+    blocked = [f"skill:{item.name}" for item in selected_skills if not item.portable]
+    blocked += [f"mcp:{item.name}" for item in selected_mcps if not item.portable]
     if blocked:
         raise AgentPackError("non-portable or secret-bearing items blocked: " + ", ".join(blocked))
-
-    operations: list[dict[str, str]] = []
+    # A same-name source from two installed packages is ambiguous.
+    if len(selected_skills) != len(requested_skills) or len(selected_mcps) != len(requested_mcps):
+        raise AgentPackError("duplicate selected capability; choose a plugin source instead")
+    operations: list[dict[str, Any]] = []
+    skills_to_copy = []
     for item in selected_skills:
         destination = layout.destination_skill_root / item.name
-        if destination.exists() or destination.is_symlink():
-            raise AgentPackError(f"destination already exists: {destination}")
-        operations.append({"action": "copy-skill", "name": item.name, "to": str(destination)})
-
+        exists = destination.exists() or destination.is_symlink()
+        if exists and not update:
+            raise AgentPackError(f"destination already exists: {destination}; use --update to preview replacement")
+        if exists and destination.is_symlink():
+            raise AgentPackError(f"refusing symlinked destination: {destination}")
+        before = _tree_fingerprint(destination) if exists else None
+        after = _tree_fingerprint(Path(item.path))
+        if before == after:
+            continue
+        skills_to_copy.append(item)
+        operations.append({"action": "update-skill" if exists else "copy-skill", "name": item.name,
+                           "to": str(destination), "before": before, "after": after})
     mcp_payload = _load_destination_mcp(layout.destination_mcp)
+    original_mcp = json.loads(json.dumps(mcp_payload))
     servers = mcp_payload.setdefault("mcpServers", {})
     for item in selected_mcps:
-        if item.name in servers:
-            raise AgentPackError(f"MCP destination already exists: {item.name}")
-        operations.append({"action": "merge-mcp", "name": item.name, "to": str(layout.destination_mcp)})
-
-    if apply:
-        for item in selected_skills:
-            _copy_skill(Path(item.path), layout.destination_skill_root / item.name)
-        for item in selected_mcps:
-            servers[item.name] = item.config
-        if selected_mcps:
-            if layout.destination_mcp.suffix == ".jsonc":
-                raise AgentPackError("writing legacy JSONC destinations is intentionally unsupported")
-            _write_json_atomic(layout.destination_mcp, mcp_payload)
-    return {"ok": True, "applied": apply, "operations": operations}
+        exists = item.name in servers
+        if exists and not update:
+            raise AgentPackError(f"MCP destination already exists: {item.name}; use --update to preview replacement")
+        before = servers.get(item.name, {})
+        if before == item.config:
+            continue
+        operations.append({"action": "update-mcp" if exists else "merge-mcp", "name": item.name,
+                           "to": str(layout.destination_mcp),
+                           "changed_keys": sorted(key for key in set(before) | set(item.config)
+                                                  if before.get(key) != item.config.get(key))})
+        servers[item.name] = item.config
+    result: dict[str, Any] = {"ok": True, "applied": apply, "operations": operations}
+    if not apply or not operations:
+        return result
+    if selected_mcps and layout.destination_mcp.suffix == ".jsonc":
+        raise AgentPackError("writing legacy JSONC destinations is intentionally unsupported")
+    recovery_base = (recovery_root or Path.home() / ".agent-pack" / "recovery").expanduser().resolve()
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    transaction = recovery_base / f"{stamp}-transfer-{_package_name(layout.root)}"
+    transaction.mkdir(parents=True, mode=0o700)
+    moved, created = [], []
+    mcp_written = False
+    mcp_existed = layout.destination_mcp.exists()
+    try:
+        # Fully validate / copy Skill trees before changing any destination.
+        with tempfile.TemporaryDirectory(prefix="agent-pack-transfer-") as temporary:
+            staged = Path(temporary)
+            for item in skills_to_copy:
+                _copy_skill(Path(item.path), staged / item.name)
+            for item in skills_to_copy:
+                destination = layout.destination_skill_root / item.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists():
+                    archived = transaction / "skills" / item.name
+                    archived.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(destination, archived)
+                    moved.append((archived, destination))
+                _copy_skill(staged / item.name, destination)
+                created.append(destination)
+            if mcp_payload != original_mcp:
+                if mcp_existed:
+                    shutil.copy2(layout.destination_mcp, transaction / "mcp.json")
+                    (transaction / "mcp.json").chmod(0o600)
+                _write_json_atomic(layout.destination_mcp, mcp_payload)
+                mcp_written = True
+    except Exception:
+        for destination in reversed(created):
+            shutil.rmtree(destination)
+        for archived, destination in reversed(moved):
+            os.replace(archived, destination)
+        if mcp_written:
+            if mcp_existed:
+                shutil.copy2(transaction / "mcp.json", layout.destination_mcp)
+            else:
+                layout.destination_mcp.unlink()
+        raise
+    result["recovery"] = str(transaction)
+    return result
 
 
 def _mcp_allowed(layout: ProjectLayout, name: str, client: str) -> bool:
@@ -828,7 +934,8 @@ def _portable_package_from_inventory(
     ]
     required_env: set[str] = set()
     for item in selected_mcps:
-        required_env.update(_env_references(item.config))
+        if item.config.get("type") == "stdio":
+            required_env.update(_env_references(item.config))
     if required_env:
         if layout is None or layout.credential_env_file is None:
             raise AgentPackError(
@@ -844,11 +951,12 @@ def _portable_package_from_inventory(
     for item in selected_mcps:
         config = project_mcp_config(item)
         references = _env_references(config)
-        if not references:
+        if not references or config.get("type") != "stdio":
+            if client == "cursor" and config.get("type") != "stdio" and isinstance(config.get("headers"), dict):
+                config["headers"] = {key: ENV_REFERENCE_RE.sub(r"${env:\1}", value)
+                                     for key, value in config["headers"].items()}
             rendered_mcps[item.name] = config
             continue
-        if config.get("type") != "stdio":
-            raise AgentPackError(f"environment-referenced remote MCP is unsupported: {item.name}")
         runtime_root = destination / "runtime"
         if not launcher_copied:
             runtime_root.mkdir(exist_ok=True)
@@ -879,7 +987,7 @@ def _portable_package_from_inventory(
     _write_json_atomic(destination / "plugin.json", manifest)
 
 
-def _codex_adapter(package_root: Path) -> None:
+def _codex_adapter(package_root: Path, *, native_remote: bool = False) -> None:
     manifest = _read_json(package_root / "plugin.json")
     codex_dir = package_root / ".codex-plugin"
     codex_dir.mkdir(exist_ok=True)
@@ -905,6 +1013,13 @@ def _codex_adapter(package_root: Path) -> None:
     codex_manifest.setdefault("mcpServers", "./.mcp.json")
     _write_json_atomic(codex_manifest_path, codex_manifest)
     mcp = _read_json(mcp_path)
+    # Remote MCPs are synchronized through config.toml's native env-name fields;
+    # do not load a second copy from the plugin with ambiguous header expansion.
+    remote = {name: config for name, config in mcp.get("mcpServers", {}).items() if native_remote and config.get("type") != "stdio"}
+    if remote:
+        _write_json_atomic(package_root / "codex-remote-mcp.json", {"mcpServers": remote})
+        mcp["mcpServers"] = {name: config for name, config in mcp["mcpServers"].items() if name not in remote}
+        _write_json_atomic(mcp_path, mcp)
     codex_mcps: dict[str, Any] = {}
     for name, config in mcp.get("mcpServers", {}).items():
         # Codex reads the portable mcp.json (${PLUGIN_ROOT}); this projection is
@@ -1007,7 +1122,7 @@ def _build_package(inventory: Inventory, package_name: str, parent: Path, client
     package = parent / package_name
     _portable_package_from_inventory(inventory, package_name, package, client=client)
     if client == "codex":
-        _codex_adapter(package)
+        _codex_adapter(package, native_remote=True)
     return package
 
 
@@ -1383,6 +1498,10 @@ def reconcile_project(
             else:
                 package_action = "replace-plugin"
 
+    native_plan = None
+    if client == "codex" and not retire_only:
+        import agent_pack_codex_mcp
+        native_plan = agent_pack_codex_mcp.plan(project, home, replace=replace)
     operations: list[dict[str, str]] = [] if retire_only else [
         {"action": package_action, "client": client, "name": package_name, "to": str(destination)}
     ]
@@ -1390,6 +1509,8 @@ def reconcile_project(
         {"action": "archive-" + kind, "name": name, "from": str(path)}
         for kind, name, path in retirement_targets
     )
+    if native_plan is not None:
+        operations.extend(native_plan["operations"])
     if not apply:
         return {"ok": True, "applied": False, "states": states, "operations": operations}
 
@@ -1400,6 +1521,7 @@ def reconcile_project(
     transaction.mkdir(mode=0o700)
     moved: list[tuple[Path, Path]] = []
     installed = False
+    native_applied = False
     try:
         if needs_package:
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1423,9 +1545,14 @@ def reconcile_project(
             archived.parent.mkdir(parents=True, exist_ok=True)
             os.replace(path, archived)
             moved.append((archived, path))
+        if native_plan is not None:
+            agent_pack_codex_mcp.apply(native_plan, transaction)
+            native_applied = True
         if client == "codex" and needs_package:
             _update_personal_marketplace(home, package_name)
     except Exception as exc:
+        if native_applied:
+            agent_pack_codex_mcp.rollback(native_plan)
         if installed and destination.exists():
             shutil.rmtree(destination)
         for archived, original in reversed(moved):
@@ -1497,6 +1624,12 @@ def _package_mcps(package: Path) -> dict[str, Any]:
     return servers if isinstance(servers, dict) else {}
 
 
+def remote_missing_env(inventory: Inventory, layout: ProjectLayout, client: str) -> list[str]:
+    return [f"MCP {item.name}: {name}" for item in inventory.mcps
+            if item.portable and item.config.get("type") != "stdio" and _mcp_allowed(layout, item.name, client)
+            for name in sorted(_env_references(item.config)) if not os.environ.get(name)]
+
+
 def client_drift(project: Path, client: str, home: Path | None = None) -> dict[str, Any]:
     """Compare what a client has installed for this project with the project's authority.
 
@@ -1508,7 +1641,11 @@ def client_drift(project: Path, client: str, home: Path | None = None) -> dict[s
     if client == "claude":
         import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
 
-        return agent_pack_claude.drift(project, home)
+        report = agent_pack_claude.drift(project, home)
+        layout = load_project_layout(project)
+        report["missing_env"] = remote_missing_env(inventory_project(layout.root), layout, client)
+        report["in_sync"] = report["in_sync"] and not report["missing_env"]
+        return report
     home = (home or Path.home()).expanduser().resolve()
     layout = load_project_layout(project)
     authority = inventory_project(layout.root)
@@ -1541,7 +1678,16 @@ def client_drift(project: Path, client: str, home: Path | None = None) -> dict[s
                 report["different"].append(f"package {name}: other files differ")
         native = _codex_mcps(home) if client == "codex" else _json_client_mcps(home / ".cursor" / "mcp.json")
         report["native"] = sorted(native)
-    report["in_sync"] = not (report["missing"] or report["different"] or report["stale"] or report["dangling"])
+    if client == "codex":
+        import agent_pack_codex_mcp
+        for item in authority.mcps:
+            if item.portable and item.config.get("type") != "stdio" and _mcp_allowed(layout, item.name, client):
+                if item.name not in native:
+                    report["missing"].append(f"mcp {item.name}")
+                elif native[item.name] != agent_pack_codex_mcp.native_entry(item.config):
+                    report["different"].append(f"mcp {item.name}")
+    report["missing_env"] = remote_missing_env(authority, layout, client)
+    report["in_sync"] = not (report["missing"] or report["different"] or report["stale"] or report["dangling"] or report["missing_env"])
     return report
 
 
@@ -1575,8 +1721,11 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
             )
     required_env: set[str] = set()
     for item in inventory.mcps:
-        if item.portable:
+        if item.portable and item.config.get("type") == "stdio":
             required_env.update(_env_references(item.config))
+        elif item.portable:
+            issues.extend(f"MCP {item.name}: missing environment variable: {name}"
+                          for name in sorted(_env_references(item.config)) if not os.environ.get(name))
     if required_env:
         if layout.credential_env_file is None:
             issues.append("MCP environment references require capabilities.credential_env_file")
@@ -1590,7 +1739,7 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
     for client in dict.fromkeys(clients):
         report = client_drift(layout.root, client, home)
         reports[client] = report
-        for kind in ("missing", "different", "stale", "dangling"):
+        for kind in ("missing", "different", "stale", "dangling", "missing_env"):
             issues.extend(f"{client}: {kind} {item}" for item in report[kind])
         if report["coupled"]:
             issues.append(f"{client}: install record points into another package directory: {report['coupled']}")
@@ -1653,6 +1802,8 @@ def build_parser() -> argparse.ArgumentParser:
     transfer_parser.add_argument("--mcp", action="append", default=[])
     transfer_parser.add_argument("--home", type=Path)
     transfer_parser.add_argument("--apply", action="store_true")
+    transfer_parser.add_argument("--update", action="store_true", help="preview replacement of same-name project entries")
+    transfer_parser.add_argument("--recovery-root", type=Path)
 
     sync_parser = sub.add_parser("sync")
     sync_parser.add_argument("--project", type=Path, default=Path.cwd())
@@ -1713,7 +1864,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.to_project,
                 args.skill,
                 args.mcp,
-                apply=args.apply,
+                apply=args.apply, update=args.update,
+                recovery_root=args.recovery_root or (args.home / ".agent-pack" / "recovery" if args.home else None),
             )
         elif args.command == "sync":
             result = sync_project(
