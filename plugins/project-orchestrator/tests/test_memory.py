@@ -41,6 +41,35 @@ class MemoryToolTests(unittest.TestCase):
     def check(self, *extra: object, code: int = 0) -> dict:
         return json.loads(self.run_tool("check", *extra, code=code))
 
+    def test_english_project_index_and_retirement_ignore_the_ui_language(self) -> None:
+        profile = self.project / ".agents/moe.sakanano.agent-pack/project.json"
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({"language": "en"}))
+        item = self.create("--review-after", "2026-01-02")
+        self.assertEqual(self.run_tool("index"), "- `MEM-20260101-001-fixture` (reference): WHEN_TO_RECALL | Possibly stale\n")
+        preview = json.loads(self.run_tool("retire", "--id", "MEM-20260101-001-fixture", "--promoted-to", "OPINION.md"))
+        self.assertIn("**Retired**: 2026-03-01, Promoted to OPINION.md", preview["content"])
+        self.assertNotIn("**Retired**", (self.project / item["path"]).read_text())
+        self.run_tool("retire", "--id", "MEM-20260101-001-fixture", "--reason", "Resolved", "--apply")
+        self.assertIn("**Retired**: 2026-03-01, Resolved", (self.project / item["path"]).read_text())
+        self.assertTrue(self.check()["ok"])
+
+    def test_summary_checks_accept_either_language_after_a_project_switch(self) -> None:
+        summary = self.project / ".agent-doc/chat-summary.md"
+        summary.parent.mkdir()
+        for headings in (("Assumptions to confirm", "Unresolved conflicts", "Opinion evolution candidates"),
+                         ("待确认假设", "未解决冲突", "Opinion 演化候选")):
+            with self.subTest(headings=headings):
+                summary.write_text("\n".join("## " + name + "\n\nNone.\n" for name in headings))
+                self.assertTrue(self.check()["ok"])
+        profile = self.project / ".agents/moe.sakanano.agent-pack/project.json"
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({"language": "en"}))
+        summary.write_text("## Missing required sections\n")
+        report = self.check(code=1)
+        self.assertEqual(sum(row["code"] == "summary-section-missing" for row in report["problems"]), 3)
+        self.assertTrue(all(name in json.dumps(report) for name in ("Assumptions to confirm", "Unresolved conflicts", "Opinion evolution candidates")))
+
     def test_preview_writes_nothing_and_create_numbers_entries_by_day(self) -> None:
         preview = self.create(apply=False)
         self.assertEqual(preview["status"], "preview")

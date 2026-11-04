@@ -486,7 +486,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         notes.append(_("--agents-policy {0} 没有生效：AGENTS.md 不存在、不可读，或已与模板一致").format(policy))
     elif policy != "keep":
         agents_plan = _plan_agents(agents_text, policy, init_routes(args, agents_text), pristine[AGENTS],
-                                   templates["region/agents-contract"], inputs.language,
+                                   init.localized(templates, "region/agents-contract", inputs.language), inputs.language,
                                    init.localized(templates, "region/privacy-contract", inputs.language)
                                    if inputs.privacy_declared else None)
         if agents_plan["replace"]:

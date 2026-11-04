@@ -114,3 +114,9 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 4. 新的发现 `region:<文件>#<ID>` 只在你用 `adopt` 追加过受管区块后出现，处理方式见 `init_project.py --mode region`。
 
 对下游的说明：发布条目（`release/migrations.json`）现在带 `user_action_required`、`touches`、`default_for_existing`、`template_changes`，可据此判断一次升级对你的项目意味着什么；`CHANGELOG.md` 的“不兼容点与注意”仍是完整清单。
+
+## 项目文件的语言（agents-init 6.9.0）
+
+Project Profile 顶层 `language` 决定工具新写入文件的语言；缺省与旧项目仍为 `zh`。`AGENTHELM_LANG` 仅控制界面，不会改变项目模板、记忆索引或退役标记。`--language en` 新建或接管项目时，入口、规则、空 Opinion、摘要及受管区块均使用英文。实际 Opinion 模板与自定义规则保留原文，不自动翻译用户内容。
+
+既有项目可先预览 `agenthelm config project-language en --project <项目>`，确认后加 `--apply`，然后预览 `agenthelm update --only content` 并逐文件确认。设置语言本身只修改 Profile，不自动翻译现有文件。Case、SOP 与记忆摘要检查继续识别中英文结构，换语言后旧文件仍可读取。所有用户原文保留；模板刷新仍遵循内容基线与处置确认规则。
