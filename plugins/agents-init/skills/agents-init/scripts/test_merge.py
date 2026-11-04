@@ -270,6 +270,34 @@ class MergeRefreshTests(unittest.TestCase):
         self.assertEqual(code, 0, kept)
         self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), before)
 
+    def test_old_template_render_failure_is_distinct_from_unavailable_sources(self) -> None:
+        line, new_template = self.conflicting()
+        old = subprocess.run(["git", "show", "v6.8.0:plugins/agents-init/skills/agents-init/AGENT.template.md"],
+                             capture_output=True, text=True, check=True).stdout
+        source = pack_source(old, version=self.lock_entry()["version"], label="git tag v6.8.0")
+        for lang, expected in (("zh", "历史模板缺少当前渲染所需的区块"), ("en", "historical template lacks blocks")):
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": lang}):
+                code, blocked = self.refresh(new_template, "--merge", KEY, providers=[lambda p, w: iter([source])])
+            item = self.item(blocked)
+            self.assertEqual((code, item["reason"]), (1, "baseline-template-incompatible"), blocked)
+            notes = "".join(item["note"])
+            self.assertIn(expected, notes)
+            for choice in ("--keep", "--append", "--accept"):
+                self.assertIn(choice, notes)
+            self.assertNotIn("GitHub Release", notes)
+
+    def test_network_failure_is_reported_without_claiming_the_template_was_invalid(self) -> None:
+        line, new_template = self.conflicting()
+        def offline(pack_id, wanted):
+            raise OSError("offline")
+            yield
+        for lang, expected in (("zh", "下载与校验未成功"), ("en", "download and verification did not succeed")):
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": lang}):
+                code, blocked = self.refresh(new_template, "--merge", KEY, providers=[offline])
+            item = self.item(blocked)
+            self.assertEqual((code, item["reason"]), (1, "baseline-unavailable"))
+            self.assertIn(expected, "".join(item["note"]))
+
     def test_a_source_that_does_not_render_the_recorded_baseline_is_not_trusted(self) -> None:
         line, new_template = self.conflicting()
         wrong = pack_source(self.old_template.replace(line, "some other text"), label="git tag v0.0.1")
@@ -393,7 +421,7 @@ class MergeRefreshTests(unittest.TestCase):
         code, again = self.refresh(self.new_template_with_suffix(), "--merge", KEY, providers=[self.old_provider()])
         self.assertEqual(code, 1, again)
         agents = self.item(again)
-        self.assertEqual((agents["state"], agents["action"], agents["reason"]), ("modified", "blocked", "no-baseline"))
+        self.assertEqual((agents["state"], agents["action"], agents["reason"]), ("kept-by-decision", "blocked", "no-baseline"))
         self.assertIn("无法三方合并", "".join(agents["note"]))
         self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), mine)
 

@@ -718,5 +718,35 @@
     "touches": [],
     "default_for_existing": "on",
     "template_changes": []
+  },
+  {
+    "plugin": "agents-init",
+    "from": "6.8.2",
+    "to": "6.8.3",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-04",
+    "summary": "修复内容更新阻塞退出码、纯差异输出、既有保留决定提示，以及历史基线不可用原因（#49）。",
+    "actions": [],
+    "declaration": 2,
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": []
+  },
+  {
+    "plugin": "agent-pack",
+    "from": "1.11.2",
+    "to": "1.11.3",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-04",
+    "summary": "修复内容更新阻塞退出码、纯差异输出、既有保留决定提示，以及历史基线不可用原因（#49）。",
+    "actions": [],
+    "declaration": 2,
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": []
   }
 ]

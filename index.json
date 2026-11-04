@@ -30,7 +30,7 @@
       "id": "agents-init",
       "name": "agents-init v6 / Project Profile initialization and migration",
       "description": "Create or migrate the project skeleton and root launcher; checks that project-orchestrator, agent-pack and opinion-manager from the same release are present before writing.",
-      "version": "6.8.2",
+      "version": "6.8.3",
       "status": "stable",
       "entrypoints": {
         "browser": "./plugins/agents-init/skills/agents-init/index.html",
@@ -55,7 +55,7 @@
       "id": "agent-pack",
       "name": "agent-pack / Agent extension capability management",
       "description": "Inventory, verify, install, sync, migrate and reconcile Plugins, Skills and MCP between projects and Codex / Cursor / Claude; the agenthelm command line and user-level runtime.",
-      "version": "1.11.2",
+      "version": "1.11.3",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/agent-pack/skills/agent-pack/SKILL.md",

@@ -960,11 +960,12 @@ def _inputs_from_lock(root: Path, recorded: object, fallback: Inputs) -> Inputs:
 
 
 def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], recorded: object, current: Inputs,
-                  providers: list, pack_id: str) -> dict | None:
+                  providers: list, pack_id: str, diagnostics: dict | None = None) -> dict | None:
     """Re-render ``relative`` as an earlier content pack did and return it only if it hashes to ``digest``.
 
     ``digest`` is what the content lock recorded when the file was written, so a match proves the text is exactly the
-    baseline; a wrong guess (another pack version, other inputs) never matches and is skipped.
+    baseline; a wrong guess (another pack version, other inputs) never matches and is skipped. Optional diagnostics
+    distinguish a known historical pack the current renderer cannot handle from sources that yielded no matching text.
     """
     start = _inputs_from_lock(root, recorded, current)
     variants = [start, dataclasses.replace(start, privacy_declared=not start.privacy_declared)]
@@ -982,6 +983,8 @@ def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], 
                         if text is not None and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest:
                             return {"text": text, "source": source.label, "kind": source.kind, "version": source.version}
                 except (InitError, KeyError, ValueError):
+                    if diagnostics is not None and (not versions or source.version in versions):
+                        diagnostics["reason"] = "baseline-template-incompatible"
                     continue
         except (OSError, ValueError):
             continue
@@ -1027,13 +1030,16 @@ def _refresh_notes(item: dict) -> list[str]:
     path, reason = item["path"], item.get("reason")
     notes: list[str] = []
     if reason == "baseline-unavailable":
-        notes.append(_("找不到这个文件升级前的基线（旧版本包不在本机运行时缓存和本地 git tag 里，也没能从 GitHub Release 取得），无法三方合并；"
+        notes.append(_("历史来源未能提供与内容锁摘要一致的基线（本机缓存、本地 git tag 或 GitHub Release；联网可能已关闭，或下载与校验未成功），无法三方合并；"
                        "没有改动任何文件，请改用 --keep / --append / --accept 选择"))
+    elif reason == "baseline-template-incompatible":
+        notes.append(_("内容锁里有基线摘要，但对应的历史模板缺少当前渲染所需的区块，无法重新渲染，不能三方合并；"
+                       "没有改动任何文件，此类项目请用 --keep / --append / --accept 选择"))
     elif reason == "merge-conflict":
         numbers = ", ".join(str(number) for number in item["merge"]["unresolved"])
         notes.append(_("有 {0} 处冲突需要你选择（第 {1} 块）：--pick {2}#<序号>=mine|theirs|both"
                        "（mine 保留你的、theirs 取新模板、both 两边都留）").format(len(item["merge"]["unresolved"]), numbers, path))
-    elif reason == "no-baseline" and item.get("merge_requested"):
+    elif reason == "no-baseline" and item.get("merge_requested") and item["state"] != "kept-by-decision":
         notes.append(_("内容锁里没有 {0} 的基线摘要，无法三方合并：确认不了哪个历史版本是你的起点，也不猜基线（猜错会让合并悄悄吞掉改动）；"
                        "没有改动任何文件。请改选：--keep {0} / --append {0} / --accept {0}").format(path))
     if item["action"] == "merge":
@@ -1205,10 +1211,11 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                 if reason == "edited":
                     wanted = [version for version in (file_versions.get(relative.as_posix()), entry.get("version"))
                               if version and version != UNKNOWN_PACK_VERSION]
+                    diagnostics: dict = {}
                     found = find_baseline(root, relative, baseline[relative.as_posix()], list(dict.fromkeys(wanted)),
-                                          entry.get("render_inputs"), inputs, providers, pack["id"])
+                                          entry.get("render_inputs"), inputs, providers, pack["id"], diagnostics)
                     if found is None:
-                        reason = "baseline-unavailable"
+                        reason = diagnostics.get("reason", "baseline-unavailable")
                 if found is not None:
                     merged = merge3.merge_text(found["text"], current, new)
                     chosen = picks.get(relative, {})
@@ -1233,7 +1240,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                 action = "keep"
             else:
                 action = "blocked"
-            if decided and relative not in accept and relative not in merge:
+            if decided and relative not in accept:
                 state = "kept-by-decision"
         item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
         if reason:
@@ -1287,7 +1294,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     unmet = sorted(path.as_posix() for path in append if path.as_posix() not in satisfied)
     if unmet:
         raise InitError(_("没有本地改动，不需要追加区块：") + ", ".join(unmet))
-    not_modified = sorted(item["path"] for item in plan if Path(item["path"]) in merge and item["state"] != "modified")
+    not_modified = sorted(item["path"] for item in plan if Path(item["path"]) in merge and item["state"] not in {"modified", "kept-by-decision"})
     if not_modified:
         raise InitError(_("没有需要合并的本地改动（文件没改过，或已与新模板一致）：") + ", ".join(not_modified))
     blocked = [item["path"] for item in plan if item["action"] == "blocked"]
@@ -1315,7 +1322,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     if blocked:
         hints = []
         needs_choice = [item["path"] for item in plan
-                        if item["action"] == "blocked" and item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "symlink"}]
+                        if item["action"] == "blocked" and item["state"] != "kept-by-decision"
+                        and item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "baseline-template-incompatible", "symlink"}]
         if needs_choice:
             hints.append(_("本地已改动的文件需逐个选择："))
             hints += [_("  {0}：{1}").format(path, file_choices(path) if path not in symlinks else _("--keep {0} 保留链接原样（建议）").format(path))
