@@ -22,8 +22,8 @@ if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path 
 from i18n_init import N_, _, resolve_language  # noqa: E402
 
 
-INITIALIZER_VERSION = "6.8.1"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
+INITIALIZER_VERSION = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
 # Baseline of the template-derived files this initializer wrote; `check`
