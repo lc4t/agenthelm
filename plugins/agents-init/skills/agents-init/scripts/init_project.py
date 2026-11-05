@@ -22,8 +22,8 @@ if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path 
 from i18n_init import N_, _, resolve_language  # noqa: E402
 
 
-INITIALIZER_VERSION = "6.8.1"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
+INITIALIZER_VERSION = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
 # Baseline of the template-derived files this initializer wrote; `check`
@@ -1165,7 +1165,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         raise InitError(_("只有 AGENTS.md 和 CLAUDE.md 可以追加受管区块：") + ", ".join(sorted(map(str, not_appendable))))
     if show_diff and args.apply:
         raise InitError(_("--diff 只用于查看，不能与 --apply 同用"))
-    whole_file_picks = {path.as_posix() for path in (accept | merge)} & region_paths
+    # 区块归属的文件被删除后不再有"用户正文"可保护：--accept 走原来的缺失文件逻辑重建，不在这里拒绝。
+    whole_file_picks = {path.as_posix() for path in (accept | merge) if (root / path).exists() or (root / path).is_symlink()} & region_paths
     if whole_file_picks:
         raise InitError(_("这些文件只管理已登记的区块，请用 --mode region 处理，不能替换或合并整文件：{0}").format(", ".join(sorted(whole_file_picks))))
     templates = load_templates()
@@ -1192,7 +1193,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             continue
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
-        if relative.as_posix() in region_paths and relative not in append:
+        if relative.as_posix() in region_paths and relative not in append and current is not None:
             # Keep existing whole-file decisions without renewing their template fingerprints. The region table
             # owns future comparisons; even a changed full template must never prompt about the user's text.
             item = {"path": relative.as_posix(), "state": "kept-by-decision" if relative.as_posix() in kept_before else "local-only",

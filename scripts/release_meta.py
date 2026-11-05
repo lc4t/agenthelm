@@ -15,7 +15,11 @@ Usage::
 
     python3 scripts/release_meta.py                 # verify; exit 1 on drift
     python3 scripts/release_meta.py --write         # regenerate the derived files
-    python3 scripts/release_meta.py --since v6.4.0  # also gate against a release
+    python3 scripts/release_meta.py --since v6.4.0  # legacy release gate
+    python3 scripts/release_meta.py check-changes --base origin/dev
+    python3 scripts/release_meta.py release plan --explain
+    python3 scripts/release_meta.py release --candidate --apply
+    python3 scripts/release_meta.py check-release --since v6.8.0
 
 ``--since`` fails when a plugin or a content pack changed without a version
 bump, when a bumped plugin has no matching ``release/migrations.json`` entry,
@@ -32,9 +36,13 @@ import json
 import re
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import release_workflow  # noqa: E402
 MARKETPLACE_NAME = "agenthelm"
 MARKETPLACE_FILE = ".claude-plugin/marketplace.json"
 LATEST_FILE = "latest.json"
@@ -154,6 +162,9 @@ def build_marketplace(plugins: list[dict]) -> dict:
 
 
 def read_migrations() -> list[dict]:
+    generated = release_workflow.history_migrations(types.SimpleNamespace(**globals()))
+    if generated is not None:
+        return generated
     path = ROOT / MIGRATIONS_FILE
     return read_json(path) if path.is_file() else []
 
@@ -181,6 +192,9 @@ def build_latest(plugins: list[dict]) -> dict:
 
 def migration_problems(plugins: list[dict]) -> list[str]:
     names = {item["manifest"]["name"] for item in plugins}
+    # Removed plugins keep published migration history; unknown new entries still fail.
+    for path in (ROOT / "release/history").glob("**/migrations.json"):
+        names.update(entry.get("plugin") for entry in read_json(path))
     problems = []
     for position, entry in enumerate(read_migrations()):
         label = f"{MIGRATIONS_FILE}[{position}]"
@@ -253,6 +267,9 @@ def consistency_problems(plugins: list[dict]) -> list[str]:
             problems.append(f"{name}: .codex-plugin/plugin.json version differs from plugin.json")
         if indexed.get(name) != version:
             problems.append(f"{name}: index.json version differs from plugin.json")
+        for skill in root.glob("skills/*/skill.json"):
+            if read_json(skill).get("version") != version:
+                problems.append(f"{name}: {skill.relative_to(root)} version differs from plugin.json")
         mcp = root / ".mcp.json"
         if mcp.is_file() and BARE_PLUGIN_ROOT.search(mcp.read_text(encoding="utf-8")):
             problems.append(
@@ -269,6 +286,11 @@ def consistency_problems(plugins: list[dict]) -> list[str]:
     suite = index["plugin"]["version"]
     if not VERSION_RE.fullmatch(suite):
         problems.append("index.json plugin.version (the release version) must be MAJOR.MINOR.PATCH")
+    html = ROOT / "index.html"
+    if html.is_file():
+        badges = re.findall(r"Release ([0-9]+\.[0-9]+\.[0-9]+)", html.read_text(encoding="utf-8"))
+        if not badges or any(badge != suite for badge in badges):
+            problems.append("index.html: Release badges differ from the suite version")
     cli = read_json(ROOT / CLI_PACKAGE)["version"]
     if cli != suite:
         problems.append(f"{CLI_PACKAGE} version {cli} must equal the release version {suite}")
@@ -365,6 +387,9 @@ def release_declaration_problems(ref: str, item: dict, relative: str, entry: dic
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"check-changes", "check-release", "release"}:
+        return release_workflow.main(types.SimpleNamespace(**globals()), argv)
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--write", action="store_true", help="regenerate the derived files")
     parser.add_argument("--since", metavar="REF", help="also gate version bumps against a release ref")
@@ -372,6 +397,9 @@ def main(argv: list[str] | None = None) -> int:
 
     plugins = load_plugins()
     generated = {}
+    history = release_workflow.history_migrations(types.SimpleNamespace(**globals()))
+    if history is not None:
+        generated[MIGRATIONS_FILE] = dump(history)
     for item in plugins:
         content = refreshed_content(item)
         if content is not None:

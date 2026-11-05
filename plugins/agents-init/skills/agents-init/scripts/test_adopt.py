@@ -555,6 +555,23 @@ class RegionLifecycleTests(AdoptCase):
         self.assertEqual((self.root / scaffold.DECISIONS_PATH).read_bytes(), decisions)
         self.assertNotIn("content:AGENTS.md", {f["id"] for f in self.check()["findings"]})
 
+    def test_deleted_region_owned_file_can_still_be_recreated_by_refresh(self) -> None:
+        self.adopted_with_regions()
+        (self.root / "AGENTS.md").unlink()
+        preview = self.cmd("refresh")
+        self.assertEqual(preview.returncode, 0, preview.stdout)
+        row = next(row for row in json.loads(preview.stdout)["files"] if row["path"] == "AGENTS.md")
+        self.assertEqual((row["state"], row["action"]), ("missing", "skip"))
+        self.assertNotIn("comparison", row)
+        self.assertFalse((self.root / "AGENTS.md").exists())
+        done = self.cmd("refresh", "--accept", "AGENTS.md", "--apply", "--recovery-dir", str(self.recovery / "recreate"))
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertTrue((self.root / "AGENTS.md").is_file())
+        lock = json.loads((self.root / init_project.CONTENT_LOCK_PATH).read_text())["packs"]["agents-init/project-contract"]
+        self.assertNotIn("AGENTS.md", lock["files"])
+        self.assertIn("AGENTS.md", lock["regions"])
+        self.assertNotIn("skel:AGENTS.md", {f["id"] for f in self.check()["findings"]})
+
     def test_whole_file_actions_on_region_owned_files_require_region_mode(self) -> None:
         self.adopted_with_regions()
         before = snapshot(self.root)

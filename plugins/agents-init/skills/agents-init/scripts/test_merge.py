@@ -332,6 +332,13 @@ class MergeRefreshTests(unittest.TestCase):
         self.assertIn("THEIRS " + line, text)
 
     def test_a_file_kept_across_an_upgrade_remembers_which_pack_version_its_baseline_came_from(self) -> None:
+        # This fixture models a 1.3.0 -> 1.4.0 upgrade regardless of the current release's pack version.
+        # The synthetic old provider below also labels these template bytes 1.3.0.
+        lock_path = self.root / init_project.CONTENT_LOCK_PATH
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        lock["packs"][PACK_ID]["version"] = "1.3.0"
+        lock["packs"][PACK_ID].pop("file_versions", None)
+        lock_path.write_text(json.dumps(lock), encoding="utf-8")
         self.edit_user_file(self.template_line(), "我自己改过的一行")
         code, kept = self.refresh(self.new_template_with_suffix(), "--keep", KEY, "--apply", providers=[])
         self.assertEqual(code, 0, kept)
