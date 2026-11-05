@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "Case 命令 `case.py new` / `update` 新增 `--dry-run`：运行与写入相同的校验并返回目标路径与 unified diff，不建立目录、不改文件；省略该参数仍直接写入，旧脚本无需迁移。补充写操作命令盘点与 hook 例外说明。",
+    "en": "Add `--dry-run` to `case.py new` and `update`: run the same validation and return the target path and a unified diff without creating directories or changing files. Omitting it still writes immediately, so existing scripts need no migration. Document the write-command inventory and the hook exception."
+  },
+  "changes": [
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
