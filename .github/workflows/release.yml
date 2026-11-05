@@ -73,7 +73,7 @@ jobs:
       - name: Validate Cursor release artifacts before publishing
         run: >-
           python scripts/validate_release.py latest.json release.json
-          "agenthelm-${GITHUB_REF_NAME}.tar.gz" --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+          "agenthelm-${GITHUB_REF_NAME}.tar.gz" --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
 
       - name: Publish the GitHub release
         env:
