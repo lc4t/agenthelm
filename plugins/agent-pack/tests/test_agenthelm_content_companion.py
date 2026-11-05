@@ -146,6 +146,26 @@ class ContentCompanionTests(unittest.TestCase):
             self.assertNotIn("--client cursor", step["next"])
             self.assertNotIn("ignore-client", step["blocked"])
 
+    def test_all_copies_old_blocks_every_named_file_entry_point_and_names_the_next_command(self) -> None:
+        current = self.install("codex", "8.0.0")
+        self.install("claude", "7.0.0")
+        for flags, apply in ((("--merge", "AGENTS.md"), False), (("--diff", "AGENTS.md"), False),
+                             (("--keep", "AGENTS.md", "--apply"), True)):
+            with self.subTest(flags=flags):
+                before = (self.project / LOCK).read_bytes()
+                done = self.update(*flags)
+                self.assertEqual(done.returncode, 1 if apply else 0, done.stdout + done.stderr)
+                step = json.loads(done.stdout)["steps"][0]
+                self.assertEqual((step["status"], step["blocker"]), ("blocked", "outdated-agents-init"))
+                self.assertIn(str(current), step["blocked"])
+                self.assertIn("update --only plugins --client codex", step["next"])
+                self.assertNotIn("result", step)
+                self.assertEqual((self.project / LOCK).read_bytes(), before)
+        text = subprocess.run([sys.executable, str(CLI), "update", "--only", "content", "--project", str(self.project),
+                               "--latest", str(self.latest), "--diff", "AGENTS.md"], capture_output=True, text=True,
+                              env=self.env, timeout=30)
+        self.assertEqual(text.returncode, 0, text.stdout + text.stderr)
+
     def test_all_copies_old_block_apply_and_name_the_selected_copy_and_next_command(self) -> None:
         current = self.install("codex", "8.0.0")
         self.install("claude", "7.0.0")

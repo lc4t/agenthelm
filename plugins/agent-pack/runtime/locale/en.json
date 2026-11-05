@@ -608,6 +608,5 @@
  "保持原样": "keep",
  "随运行时提供的副本": "the copy bundled with the runtime",
  "先更新 agents-init：实际选用 {0} {1}（{2}），需要 {3}；下一步：{4}": "Update agents-init first: refresh selected {0} {1} ({2}), but requires {3}; next: {4}",
- "；不用该客户端时：{0} config ignore-client {1} --apply": "; if you do not use this client: {0} config ignore-client {1} --apply",
  "其他客户端的 agents-init 较旧：{0}；建议分别升级；内容刷新使用 {1}（{2}），不受这些副本阻塞。": "Older agents-init copies in other clients: {0}; update them separately. Content refresh uses {1} ({2}) and is not blocked by these copies."
 }

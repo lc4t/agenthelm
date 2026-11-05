@@ -718,20 +718,5 @@
     "touches": [],
     "default_for_existing": "on",
     "template_changes": []
-  },
-  {
-    "plugin": "agent-pack",
-    "from": "1.11.2",
-    "to": "1.11.3",
-    "change_kind": "code",
-    "breaking": false,
-    "date": "2026-11-04",
-    "summary": "内容刷新按实际选用的 agents-init 副本判断是否落后，并遵循客户端选择与忽略设置；其他客户端的旧副本只提示升级，不再阻塞。全部可用副本过旧时写明客户端、版本、路径与可执行的下一步（不可远程更新的 Cursor 改走其他客户端或运行时），让 --apply 返回非零。",
-    "actions": [],
-    "declaration": 2,
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "on",
-    "template_changes": []
   }
 ]
