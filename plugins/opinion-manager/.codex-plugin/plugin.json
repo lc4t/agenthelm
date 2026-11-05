@@ -1,6 +1,6 @@
 {
   "name": "opinion-manager",
-  "version": "0.5.2",
+  "version": "0.5.1",
   "description": "Choose template variants and exact versions; manage personal Profiles, locked snapshots and upgrade previews.",
   "author": {
     "name": "lc4t"

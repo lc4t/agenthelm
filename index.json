@@ -30,7 +30,7 @@
       "id": "agents-init",
       "name": "agents-init v6 / Project Profile initialization and migration",
       "description": "Create or migrate the project skeleton and root launcher; checks that project-orchestrator, agent-pack and opinion-manager from the same release are present before writing.",
-      "version": "6.9.0",
+      "version": "6.8.2",
       "status": "stable",
       "entrypoints": {
         "browser": "./plugins/agents-init/skills/agents-init/index.html",
@@ -43,7 +43,7 @@
       "id": "project-orchestrator",
       "name": "project-orchestrator / project lifecycle orchestration",
       "description": "Organizes Case workspaces or keeps existing Task/Case layouts; search, lossless migration, verification, scoped Git delivery, and a project menu that works without any AI agent.",
-      "version": "1.12.0",
+      "version": "1.11.3",
       "status": "stable",
       "entrypoints": {
         "agent": "./plugins/project-orchestrator/skills/project-orchestrator/SKILL.md",
@@ -68,7 +68,7 @@
       "id": "opinion-manager",
       "name": "opinion-manager / Agent behavior rule management",
       "description": "Three first-run entry points plus optional memory candidates; one content confirmation, then Profile, body and lock are saved separately, with exact versions and protection of personal edits.",
-      "version": "0.5.2",
+      "version": "0.5.1",
       "status": "experimental",
       "entrypoints": {
         "agent": "./plugins/opinion-manager/skills/opinion-manager/SKILL.md",

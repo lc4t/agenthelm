@@ -119,4 +119,4 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 
 Project Profile 顶层 `language` 决定工具新写入文件的语言；缺省与旧项目仍为 `zh`。`AGENTHELM_LANG` 仅控制界面，不会改变项目模板、记忆索引或退役标记。`--language en` 新建或接管项目时，入口、规则、空 Opinion、摘要及受管区块均使用英文。实际 Opinion 模板与自定义规则保留原文，不自动翻译用户内容。
 
-既有项目可先预览 `agenthelm config project-language en --project <项目>`，确认后加 `--apply`，然后预览 `agenthelm update --only content` 并逐文件确认。设置语言本身只修改 Profile，不自动翻译现有文件。Case、SOP 与记忆摘要检查继续识别中英文结构，换语言后旧文件仍可读取。所有用户原文保留；模板刷新仍遵循内容基线与处置确认规则。
+既有项目可先预览 `agenthelm config project-language en --project <项目>`，确认后加 `--apply`；设置语言本身只修改 Profile，不改写任何文件。之后先预览 `agenthelm update --only content`（对应 `init_project.py --mode refresh`），再决定是否应用：没有被阻止的文件时，`--apply` 会一次替换全部未改动的模板文件（原中文整份换成英文）；你改过的文件会被阻止，需逐个选择 `--keep`、`--merge`、`--append` 或 `--accept`，存在被阻止的文件时 `--apply` 不写入任何文件。不在内容锁内的 `OPINION.md`、`.agent-doc/` 文件不会被刷新。`language` 为 `zh` 或缺省的项目不受影响。Case、SOP 与记忆摘要检查继续识别中英文结构，换语言后旧文件仍可读取。所有用户原文保留；模板刷新仍遵循内容基线与处置确认规则。
