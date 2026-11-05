@@ -503,6 +503,8 @@ def _content_change(item: dict, effective: dict[str, str]) -> str:
         reason = item.get("reason")
         note += {"no-baseline": _("（要求了三方合并，但内容锁里没有它的基线摘要，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）"),
                  "baseline-unavailable": _("（要求了三方合并，但找不到升级前的基线，无法合并；没有改动任何文件）"),
+                 "baseline-template-incompatible": _("（要求了三方合并，但历史模板无法按当前方式重新渲染，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）"),
+                 "baseline-digest-mismatch": _("（要求了三方合并，但历史模板渲染结果与内容锁摘要不一致，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）"),
                  "merge-conflict": _("（三方合并有冲突块未选择：用 --pick {0}#<序号>=mine|theirs|both 逐块选择）").format(item["path"])}.get(reason, "")
     elif item.get("reason") == "no-baseline" and item["state"] == "modified":
         note += _("（内容锁里没有它的基线，无法判断是你改过还是模板变了）")

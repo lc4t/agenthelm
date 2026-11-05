@@ -286,6 +286,20 @@ class MergeRefreshTests(unittest.TestCase):
                 self.assertIn(choice, notes)
             self.assertNotIn("GitHub Release", notes)
 
+    def test_rendered_template_that_misses_the_lock_digest_is_not_blamed_on_the_network(self) -> None:
+        line, new_template = self.conflicting()
+        source = pack_source(self.old_template.replace("机器可读权威源", "机器可读权威来源", 1), version=self.lock_entry()["version"])
+        for lang, expected in (("zh", "与内容锁记录的摘要不一致"), ("en", "does not match the digest recorded in the content lock")):
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": lang}):
+                code, blocked = self.refresh(new_template, "--merge", KEY, providers=[lambda p, w: iter([source])])
+            item = self.item(blocked)
+            self.assertEqual((code, item["reason"]), (1, "baseline-digest-mismatch"), blocked)
+            notes = "".join(item["note"])
+            self.assertIn(expected, notes)
+            self.assertNotIn("联网" if lang == "zh" else "networking", notes)
+            for choice in ("--keep", "--append", "--accept"):
+                self.assertIn(choice, notes)
+
     def test_network_failure_is_reported_without_claiming_the_template_was_invalid(self) -> None:
         line, new_template = self.conflicting()
         def offline(pack_id, wanted):
@@ -302,7 +316,7 @@ class MergeRefreshTests(unittest.TestCase):
         line, new_template = self.conflicting()
         wrong = pack_source(self.old_template.replace(line, "some other text"), label="git tag v0.0.1")
         code, blocked = self.refresh(new_template, "--merge", KEY, providers=[lambda pack_id, wanted: iter([wrong])])
-        self.assertEqual((code, self.item(blocked)["reason"]), (1, "baseline-unavailable"))
+        self.assertEqual((code, self.item(blocked)["reason"]), (1, "baseline-digest-mismatch"))
 
     def test_a_failing_source_is_skipped_and_the_next_one_is_used(self) -> None:
         self.edit_user_file(self.template_line(), "我自己改过的一行")
@@ -360,6 +374,13 @@ class MergeRefreshTests(unittest.TestCase):
         self.assertIn("THEIRS " + line, text)
 
     def test_a_file_kept_across_an_upgrade_remembers_which_pack_version_its_baseline_came_from(self) -> None:
+        # This fixture models a 1.3.0 -> 1.4.0 upgrade regardless of the current release's pack version.
+        # The synthetic old provider below also labels these template bytes 1.3.0.
+        lock_path = self.root / init_project.CONTENT_LOCK_PATH
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        lock["packs"][PACK_ID]["version"] = "1.3.0"
+        lock["packs"][PACK_ID].pop("file_versions", None)
+        lock_path.write_text(json.dumps(lock), encoding="utf-8")
         self.edit_user_file(self.template_line(), "我自己改过的一行")
         code, kept = self.refresh(self.new_template_with_suffix(), "--keep", KEY, "--apply", providers=[])
         self.assertEqual(code, 0, kept)

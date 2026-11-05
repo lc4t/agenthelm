@@ -22,8 +22,8 @@ if str(Path(__file__).resolve().parent) not in sys.path:  # also loaded by path 
 from i18n_init import N_, _, resolve_language  # noqa: E402
 
 
-INITIALIZER_VERSION = "6.8.1"
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
+INITIALIZER_VERSION = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
 PROFILE_SCHEMA = "https://skill.sakanano.moe/skills/agents-init/project.schema.json"
 PROFILE_PATH = Path(".agents/moe.sakanano.agent-pack/project.json")
 # Baseline of the template-derived files this initializer wrote; `check`
@@ -982,6 +982,8 @@ def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], 
                         text = files_for(variant, templates, source.launcher).get(relative)
                         if text is not None and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest:
                             return {"text": text, "source": source.label, "kind": source.kind, "version": source.version}
+                        if text is not None and diagnostics is not None and (not versions or source.version in versions):
+                            diagnostics["rendered"] = True  # 来源可用、模板可渲染，只是结果与内容锁摘要对不上
                 except (InitError, KeyError, ValueError):
                     if diagnostics is not None and (not versions or source.version in versions):
                         diagnostics["reason"] = "baseline-template-incompatible"
@@ -1031,6 +1033,9 @@ def _refresh_notes(item: dict) -> list[str]:
     notes: list[str] = []
     if reason == "baseline-unavailable":
         notes.append(_("历史来源未能提供与内容锁摘要一致的基线（本机缓存、本地 git tag 或 GitHub Release；联网可能已关闭，或下载与校验未成功），无法三方合并；"
+                       "没有改动任何文件，请改用 --keep / --append / --accept 选择"))
+    elif reason == "baseline-digest-mismatch":
+        notes.append(_("历史来源可用，模板也能渲染，但渲染结果与内容锁记录的摘要不一致（渲染输入或文件基线不同），无法确认你的起点，不能三方合并；"
                        "没有改动任何文件，请改用 --keep / --append / --accept 选择"))
     elif reason == "baseline-template-incompatible":
         notes.append(_("内容锁里有基线摘要，但对应的历史模板缺少当前渲染所需的区块，无法重新渲染，不能三方合并；"
@@ -1215,7 +1220,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                     found = find_baseline(root, relative, baseline[relative.as_posix()], list(dict.fromkeys(wanted)),
                                           entry.get("render_inputs"), inputs, providers, pack["id"], diagnostics)
                     if found is None:
-                        reason = diagnostics.get("reason", "baseline-unavailable")
+                        reason = diagnostics.get("reason") or (
+                            "baseline-digest-mismatch" if diagnostics.get("rendered") else "baseline-unavailable")
                 if found is not None:
                     merged = merge3.merge_text(found["text"], current, new)
                     chosen = picks.get(relative, {})
@@ -1323,7 +1329,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         hints = []
         needs_choice = [item["path"] for item in plan
                         if item["action"] == "blocked" and item["state"] != "kept-by-decision"
-                        and item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "baseline-template-incompatible", "symlink"}]
+                        and item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "baseline-template-incompatible", "baseline-digest-mismatch", "symlink"}]
         if needs_choice:
             hints.append(_("本地已改动的文件需逐个选择："))
             hints += [_("  {0}：{1}").format(path, file_choices(path) if path not in symlinks else _("--keep {0} 保留链接原样（建议）").format(path))

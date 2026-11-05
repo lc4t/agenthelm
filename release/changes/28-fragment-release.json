@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "按变更片段生成版本与发布提交，先发布产物再推进 main；初始化器版本读取插件清单。",
+    "en": "Generate versions and release commits from change fragments; publish artifacts before promoting main, and read the initializer version from its manifest."
+  },
+  "changes": [
+    {
+      "scope": "suite",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agents-init",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

@@ -5,11 +5,11 @@
   "released_at": "2026-10-29",
   "plugins": {
     "agent-pack": {
-      "version": "1.11.3",
+      "version": "1.11.2",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
-      "version": "6.8.3",
+      "version": "6.8.2",
       "source": "./plugins/agents-init",
       "content": {
         "agents-init/project-contract": {
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.11.4",
+      "version": "1.11.3",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -766,51 +766,6 @@
         "project health 默认把“项目位于同步盘 + 本机专属目录”“各客户端插件版本不一致”各合并为一行，--details 展开逐项",
         "fix update-content 的 --diff 现在会显示差异（以前不显示）；--merge 取不到基线时预览在该文件行写明原因"
       ],
-      "declaration": 2,
-      "user_action_required": [],
-      "touches": [],
-      "default_for_existing": "on",
-      "template_changes": []
-    },
-    {
-      "plugin": "agents-init",
-      "from": "6.8.2",
-      "to": "6.8.3",
-      "change_kind": "code",
-      "breaking": false,
-      "date": "2026-11-04",
-      "summary": "修复内容更新阻塞退出码、纯差异输出、既有保留决定提示，以及历史基线不可用原因（#49）。",
-      "actions": [],
-      "declaration": 2,
-      "user_action_required": [],
-      "touches": [],
-      "default_for_existing": "on",
-      "template_changes": []
-    },
-    {
-      "plugin": "agent-pack",
-      "from": "1.11.2",
-      "to": "1.11.3",
-      "change_kind": "code",
-      "breaking": false,
-      "date": "2026-11-04",
-      "summary": "修复内容更新阻塞退出码、纯差异输出、既有保留决定提示，以及历史基线不可用原因（#49）。",
-      "actions": [],
-      "declaration": 2,
-      "user_action_required": [],
-      "touches": [],
-      "default_for_existing": "on",
-      "template_changes": []
-    },
-    {
-      "plugin": "project-orchestrator",
-      "from": "1.11.3",
-      "to": "1.11.4",
-      "change_kind": "code",
-      "breaking": false,
-      "date": "2026-11-04",
-      "summary": "fix update-content 在显式点名已保留文件时保留 refresh 计划，继续提供合并阻塞原因、既有保留状态与文件差异，不再误报没有需要更新的模板（#49）。",
-      "actions": [],
       "declaration": 2,
       "user_action_required": [],
       "touches": [],
