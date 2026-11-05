@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import re
+import stat
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,12 @@ def _section_name(line: str) -> str | None:
     return None
 
 
+def _toml_string(value: str) -> str:
+    """A TOML basic string. JSON's escapes are valid TOML; keep non-BMP characters literal because JSON would emit
+    surrogate pairs, which TOML rejects, and escape DEL, which TOML forbids unescaped."""
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def render(original: str, entries: dict[str, dict], removed: set[str]) -> str:
     """Replace only explicitly owned named tables; retain all other source bytes."""
     output: list[str] = []
@@ -58,12 +65,12 @@ def render(original: str, entries: dict[str, dict], removed: set[str]) -> str:
             output.append(line)
     text = "".join(output).rstrip() + "\n" if output else ""
     for name, config in sorted(entries.items()):
-        text += f"\n[mcp_servers.{json.dumps(name)}]\n"
+        text += f"\n[mcp_servers.{_toml_string(name)}]\n"
         for key, value in config.items():
             if isinstance(value, dict):
-                encoded = "{ " + ", ".join(json.dumps(k) + " = " + json.dumps(v) for k, v in value.items()) + " }"
+                encoded = "{ " + ", ".join(_toml_string(k) + " = " + _toml_string(v) for k, v in value.items()) + " }"
             else:
-                encoded = json.dumps(value)
+                encoded = _toml_string(value)
             text += f"{key} = {encoded}\n"
     return text
 
@@ -112,10 +119,14 @@ def plan(project: Path, home: Path, *, replace: bool = False) -> dict:
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # A rewrite keeps the file's permissions (mkstemp would otherwise narrow 0644 to 0600); new files stay 0600.
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     handle, temporary = tempfile.mkstemp(prefix=".agent-pack-", dir=path.parent)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             stream.write(text)
+        if mode is not None:
+            os.chmod(temporary, mode)
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):

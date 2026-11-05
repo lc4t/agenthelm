@@ -41,6 +41,29 @@ SECRET_VALUE_RE = re.compile(
     re.IGNORECASE,
 )
 ENV_REFERENCE_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# Known credential prefixes; only a long identifier counts, so SK_KEY or GH_TOKEN remain valid variable names.
+TOKEN_PREFIX_RE = re.compile(r"^(?:gh[pousr]_|github_pat_|sk[-_]|pk[-_]|rk[-_]|xox[abprs]|glpat|AKIA|eyJ|ya29)", re.IGNORECASE)
+
+
+def looks_like_token(name: str) -> bool:
+    """True when something spelled as an environment variable *name* is more likely a pasted credential value.
+
+    Real variable names are short and conventional (``EXAMPLE_MCP_TOKEN``). A well-known credential prefix on a long
+    identifier, a long mixed-case alphanumeric run, or an implausibly long name is treated as a credential.
+    """
+    if len(name) > 64:
+        return True
+    if len(name) >= 20 and TOKEN_PREFIX_RE.match(name):
+        return True
+    return (len(name) >= 24 and any(c.islower() for c in name) and any(c.isupper() for c in name)
+            and any(c.isdigit() for c in name))
+
+
+def _safe_env_reference(text: str) -> bool:
+    """A value made of ``${NAME}`` references with nothing credential-like in the names or around them."""
+    references = ENV_REFERENCE_RE.findall(text)
+    return (bool(references) and not any(looks_like_token(name) for name in references)
+            and not SECRET_VALUE_RE.search(ENV_REFERENCE_RE.sub("", text)))
 # Placeholders the client resolves at launch time (immutable package root and
 # client-managed writable state). They are never credentials and must not
 # trigger the credential-env-file requirement or env-launcher wrapping.
@@ -316,6 +339,9 @@ def _portable_mcp(name: str, raw: Any) -> McpRecord:
                 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
                     issues.append(f"invalid environment variable name in {source_field}.{key}")
                     continue
+                if looks_like_token(value):
+                    issues.append(f"{source_field}.{key} looks like a credential, not a variable name")
+                    continue
                 value = "${" + value + "}"
             if key in headers and headers[key] != value:
                 issues.append(f"conflicting header: {key}")
@@ -325,6 +351,8 @@ def _portable_mcp(name: str, raw: Any) -> McpRecord:
     if bearer is not None:
         if not isinstance(bearer, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", bearer):
             issues.append("bearer_token_env_var must be an environment variable name")
+        elif looks_like_token(bearer):
+            issues.append("bearer_token_env_var looks like a credential, not a variable name")
         else:
             headers = dict(item.get("headers", {})) if isinstance(item.get("headers", {}), dict) else {}
             auth = next((key for key in headers if key.lower() == "authorization"), "Authorization")
@@ -358,20 +386,19 @@ def _portable_mcp(name: str, raw: Any) -> McpRecord:
             if not isinstance(key, str) or not isinstance(value, str):
                 issues.append(f"{container_name} must be a string map")
                 continue
-            references = ENV_REFERENCE_RE.findall(str(value))
-            safe_reference = bool(references) and not SECRET_VALUE_RE.search(
-                ENV_REFERENCE_RE.sub("", str(value))
-            )
+            safe_reference = _safe_env_reference(str(value))
             if (SECRET_NAME_RE.search(str(key)) or SECRET_VALUE_RE.search(str(value))) and not safe_reference:
+                issues.append(f"possible secret in {container_name}.{key}")
+            elif any(looks_like_token(name) for name in ENV_REFERENCE_RE.findall(str(value))):
                 issues.append(f"possible secret in {container_name}.{key}")
     args = item.get("args", [])
     if isinstance(args, list):
         for index, value in enumerate(args):
             rendered = str(value)
-            safe_reference = bool(ENV_REFERENCE_RE.search(rendered)) and not SECRET_VALUE_RE.search(
-                ENV_REFERENCE_RE.sub("", rendered)
-            )
+            safe_reference = _safe_env_reference(rendered)
             if (SECRET_NAME_RE.search(rendered) or SECRET_VALUE_RE.search(rendered)) and not safe_reference:
+                issues.append(f"possible secret reference in args[{index}]")
+            elif any(looks_like_token(name) for name in ENV_REFERENCE_RE.findall(rendered)):
                 issues.append(f"possible secret reference in args[{index}]")
     if mcp_type == "stdio":
         allowed = {"type", "command", "args", "env", "cwd"}

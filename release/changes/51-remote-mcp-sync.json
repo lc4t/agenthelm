@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "远程 HTTP MCP 支持以环境变量名引用令牌（headers 的 ${NAME} 或 Codex 的 bearer_token_env_var），按 Claude Code / Codex / Cursor 翻译并写入 Codex 原生 config.toml；doctor 只报告缺少的变量名；transfer 新增 --update 预览并显式替换同名 Skill / MCP；check 与会话开始提示项目声明与本机客户端的差异；README 补充多机同步流程。",
+    "en": "Remote HTTP MCP servers can reference a token by environment variable name (headers ${NAME} or Codex bearer_token_env_var), translated for Claude Code, Codex and Cursor, and written to Codex's native config.toml; doctor reports only the names of missing variables; transfer gains --update to preview and explicitly replace same-name Skills / MCP servers; check and the session-start notice report drift between project declarations and local clients; the README documents the multi-machine workflow."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        ".agents/mcp.json",
+        "~/.codex/config.toml（仅 sync --client codex --apply 时写入 mcp_servers 远程条目）",
+        "~/.agent-pack/state/codex-remote-<项目>.json（记录写入的条目归属，不含令牌值）",
+        "~/.agent-pack/recovery/（替换前的备份）",
+        "~/.config/agenthelm/config.json（capability_check_ignored_clients，可选）"
+      ],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

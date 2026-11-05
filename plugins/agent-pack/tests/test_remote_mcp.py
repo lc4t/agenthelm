@@ -97,6 +97,81 @@ class RemoteMcpTests(unittest.TestCase):
                     {"url": "https://user:password@mcp.example.com/mcp"}):
             self.assertFalse(core._portable_mcp("unsafe", raw).portable)
 
+    TOKEN_SHAPED = ("ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8", "sk_live_abcdef0123456789abcdef",
+                    "github_pat_11ABCDEFG0abcdefghijk", "aB3dE5gH7jK9mN1pQ3rS5tU7vW9xY1zA", "AKIAIOSFODNN7EXAMPLE")
+    CONVENTIONAL = ("EXAMPLE_MCP_TOKEN", "GITHUB_TOKEN", "GH_TOKEN", "SK_KEY", "OPENAI_API_KEY", "ExampleMcpToken",
+                    "my_mcp_token_2", "MCP_SERVER_BEARER_TOKEN_PROD_2")
+
+    def test_token_shaped_names_are_rejected_in_every_reference_position(self):
+        url = self.remote["url"]
+        for token in self.TOKEN_SHAPED:
+            with self.subTest(token=token[:6]):
+                for raw in ({"url": url, "bearer_token_env_var": token},
+                            {"url": url, "env_http_headers": {"X-Api-Key": token}},
+                            {"url": url, "headers": {"Authorization": "Bearer ${" + token + "}"}},
+                            {"url": url, "headers": {"X-Custom": "${" + token + "}"}},
+                            {"command": "server", "env": {"API": "${" + token + "}"}},
+                            {"command": "server", "args": ["--key=${" + token + "}"]}):
+                    parsed = core._portable_mcp("example", raw)
+                    self.assertFalse(parsed.portable, raw)
+                    self.assertNotIn(token, " ".join(parsed.issues))
+        for name in self.CONVENTIONAL:
+            with self.subTest(name=name):
+                self.assertTrue(core._portable_mcp("example", {"url": url, "bearer_token_env_var": name}).portable)
+                self.assertTrue(core._portable_mcp("example", {"url": url, "env_http_headers": {"X-Api-Key": name}}).portable)
+                self.assertTrue(core._portable_mcp(
+                    "example", {"url": url, "headers": {"Authorization": "Bearer ${" + name + "}"}}).portable)
+
+    def test_token_pasted_into_a_native_variable_name_field_is_not_imported(self):
+        token = self.TOKEN_SHAPED[0]
+        (self.home / ".codex").mkdir()
+        (self.home / ".codex/config.toml").write_text(
+            f'[mcp_servers.leaky]\nurl = "https://mcp.example.com/mcp"\nbearer_token_env_var = "{token}"\n')
+        write_json(self.home / ".claude.json", {"mcpServers": {"leaky": {
+            "url": "https://mcp.example.com/mcp", "headers": {"Authorization": "Bearer ${" + token + "}"}}}})
+        before = self.config.read_bytes()
+        for client in ("codex", "claude"):
+            inventory = core.inventory_client(client, self.home)
+            leaky = next(item for item in inventory.mcps if item.name == "leaky")
+            self.assertFalse(leaky.portable)
+            with self.assertRaises(core.AgentPackError) as raised:
+                core.transfer_to_project(inventory, self.project, [], ["leaky"], update=True, apply=True,
+                                         recovery_root=self.home / "recovery")
+            self.assertNotIn(token, str(raised.exception))
+            self.assertIn("blocked", str(raised.exception))
+        self.assertEqual(self.config.read_bytes(), before)
+        for path in self.project.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(token.encode(), path.read_bytes(), str(path))
+        self.assertFalse((self.home / "recovery").exists() and any((self.home / "recovery").rglob("*")))
+
+    def test_codex_rewrite_keeps_permissions_and_new_files_stay_private(self):
+        path = self.home / ".codex/config.toml"
+        path.parent.mkdir()
+        path.write_text('model = "gpt-test"\n')
+        path.chmod(0o644)
+        core.sync_project(self.project, "codex", home=self.home, apply=True)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        write_json(self.config, {"mcpServers": {}})
+        core.sync_project(self.project, "codex", home=self.home, apply=True)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        path.unlink()
+        write_json(self.config, {"mcpServers": {"example": self.remote}})
+        core.sync_project(self.project, "codex", home=self.home, apply=True)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_codex_server_names_with_non_bmp_quote_and_control_characters_round_trip(self):
+        for name in ("emoji\U0001F600", '名前"x', "tab\tname", "del\x7fname"):
+            with self.subTest(name=repr(name)):
+                home = self.root / f"home-{abs(hash(name))}"
+                home.mkdir()
+                write_json(self.config, {"mcpServers": {name: self.remote}})
+                core.sync_project(self.project, "codex", home=home, apply=True)
+                servers = tomllib.loads((home / ".codex/config.toml").read_text(encoding="utf-8"))["mcp_servers"]
+                self.assertEqual(servers[name], {"url": self.remote["url"], "bearer_token_env_var": "EXAMPLE_MCP_TOKEN"})
+                with mock.patch.dict(os.environ, {"EXAMPLE_MCP_TOKEN": self.secret}):
+                    self.assertTrue(core.client_drift(self.project, "codex", home)["in_sync"])
+
     def test_transfer_update_preview_recovery_and_skill_update(self):
         source = make_project(self.root / "source", "source")
         skill = source / ".agents/skills/sample-skill/SKILL.md"
