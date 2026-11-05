@@ -31,15 +31,16 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      # vX.Y.Z on main is a release. vX.Y.Z-rc.N on dev is a release candidate: a GitHub
+      # vX.Y.Z at the tip of release/vX.Y.Z is a release. RC tags stay on dev: a GitHub
       # pre-release and an npm "next" version for trying dev before it reaches main.
       # Client marketplaces follow main, so a candidate never reaches them.
-      - name: Tag must name the release version (main) or a candidate of it (dev)
+      - name: Tag must name the prepared release branch or a candidate on dev
         id: kind
         run: |
           version="$(python -c "import json; print(json.load(open('index.json'))['plugin']['version'])")"
           if [ "$GITHUB_REF_NAME" = "v${version}" ]; then
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+            test "$(git rev-parse "origin/release/v${version}")" = "$GITHUB_SHA"
+            git merge-base --is-ancestor origin/main "$GITHUB_SHA"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$GITHUB_REF_NAME" | grep -Eq "^v${version//./\\.}-rc\.[0-9]+$"; then
             git merge-base --is-ancestor "$GITHUB_SHA" origin/dev
@@ -58,8 +59,7 @@ jobs:
 
       - name: Version gate against the previous release
         run: |
-          previous="$(git describe --tags --abbrev=0 --exclude '*-rc.*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
-          if [ -n "$previous" ]; then python scripts/release_meta.py --since "$previous"; else python scripts/release_meta.py; fi
+          python scripts/release_meta.py check-release --tag "$GITHUB_REF_NAME"
 
       - name: Build the release tarball
         run: |
@@ -103,8 +103,5 @@ jobs:
           npm stage publish --tag "$channel"
           echo "::notice::@sakanano-moe/agenthelm@${version} is staged; approve it on npmjs.com with 2FA to publish."
 
-      - name: Refresh the site so latest.json carries this release
-        if: steps.kind.outputs.prerelease != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run pages.yml --ref main
+      # Do not touch main or Pages here. A maintainer first approves npm staging,
+      # then fast-forwards main to the reviewed tag; that push deploys Pages.
