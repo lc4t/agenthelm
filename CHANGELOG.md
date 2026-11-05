@@ -1,12 +1,5 @@
 # 更新记录
 
-## 未发布 — agent-pack 1.11.3、project-orchestrator 1.11.4（#50）
-
-- health 默认标题同时列可见项数与展开项数；check 合并同步盘和本机专属目录提示，--details 展开。
-- check --hook 使用 --latest / --offline / --client；固定 ref 提示明确插件版本，缺少 release.tag 时说明目标未知。
-- Claude 执行汇总说明旧版本缓存位置；英文界面标明历史迁移说明目前只有中文；runtime 旁置目录的标签不代表内容更新。
-- 候选版 Codex 市场必须显式 --ref。实机三方合并、Codex/Cursor hook、移除市场影响仍待验证，步骤和证据要求记录在 release/ACCEPTANCE.md。
-
 ## 2026-11-02 — agenthelm 6.11.0（正式版）：流程（SOP）管理、同步盘本机专属目录、观点自动采集、命令行多语言、接管已有目录，以及升级路径修复
 
 相对 `6.8.0` 的合并说明。内容与 `v6.11.0-rc.3` 一致（正式版只增加本说明），三轮候选版的逐项变化见下面的 rc.2、rc.3 小节与各功能小节。

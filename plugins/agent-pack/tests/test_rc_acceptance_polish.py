@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import json
+import shutil
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -17,13 +19,47 @@ import agenthelm
 class AcceptancePolishTests(Fixture):
     lang = "zh"
 
-    def test_hook_uses_explicit_latest_and_selected_client(self):
-        self.claude_plugin("1.0.0")
-        code, text = self.run_text("check", "--hook", "--no-project", "--offline", "--client", "claude")
+    def hook_output(self, *args: str) -> tuple[int, str]:
+        """Run the session-start hook in-process, recording network attempts in ``self.network_calls``."""
+        out = io.StringIO()
+        with redirect_stdout(out), mock.patch.object(agenthelm.urllib.request, "urlopen",
+                                                      side_effect=OSError("network is unavailable")) as opener:
+            code = agenthelm.main(["check", "--hook", "--no-project", "--home", str(self.home), *args])
+        self.network_calls = opener.call_count
+        return code, out.getvalue()
+
+    def test_hook_filters_by_client(self):
+        self.three_clients_behind()
+        code, only_codex = self.hook_output("--latest", str(self.latest_file), "--client", "codex")
         self.assertEqual(code, 0)
-        self.assertIn("1", text)
-        self.assertIn("Claude Code", text)
-        self.assertFalse((self.home / ".local/state/agenthelm/hook-errors.json").exists())
+        self.assertIn("Codex", only_codex)
+        self.assertNotIn("Claude Code", only_codex)
+        self.assertNotIn("Cursor", only_codex)
+        shutil.rmtree(self.home / ".cache", ignore_errors=True)
+        shutil.rmtree(self.home / ".local/state", ignore_errors=True)
+        _code, only_claude = self.hook_output("--latest", str(self.latest_file), "--client", "claude")
+        self.assertIn("Claude Code", only_claude)
+        self.assertNotIn("Codex", only_claude)
+
+    def test_hook_uses_the_explicit_latest_source(self):
+        self.claude_plugin("1.0.0")
+        current = self.home / "current-latest.json"
+        write(current, {**json.loads(self.latest_file.read_text()), "migrations": [],
+                        "plugins": {"agent-pack": {"version": "1.0.0"}}})
+        code, text = self.hook_output("--latest", str(current))
+        self.assertEqual((code, text), (0, ""))  # up to date under the explicit source: silent
+        code, text = self.hook_output("--latest", str(self.latest_file))
+        self.assertEqual(code, 0)
+        self.assertIn("Claude Code", text)  # behind under the other explicit source
+        self.assertEqual(self.network_calls, 0)  # an explicit source is read locally, never fetched
+
+    def test_hook_offline_never_touches_the_network(self):
+        self.claude_plugin("1.0.0")
+        code, text = self.hook_output("--offline")  # no cache and no source: nothing to compare, and no fetch
+        self.assertEqual((code, text), (0, ""))
+        self.assertEqual(self.network_calls, 0)
+        _code, _text = self.hook_output()  # control: without --offline the hook does try the network
+        self.assertGreater(self.network_calls, 0)
 
     def test_unknown_target_pin_is_not_described_as_known_old_ref(self):
         write(self.home / ".claude/settings.json", {"extraKnownMarketplaces": {"agenthelm": {
