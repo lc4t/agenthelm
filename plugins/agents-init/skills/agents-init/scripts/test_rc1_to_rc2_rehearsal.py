@@ -76,7 +76,12 @@ class Rehearsal(unittest.TestCase):
         """npm 包布局：<package>/package.json（候选版本号）+ <package>/runtime/{index.json,plugins/…}。"""
         runtime = package / "runtime"
         (runtime / "plugins").mkdir(parents=True)
-        shutil.copy(REPO / "index.json", runtime / "index.json")
+        # The runtime code is current, but its delivery labels model the historical rc.1 -> rc.2 fixture.
+        # Pin the suite base alongside the npm wrapper; a future real suite version must not
+        # invalidate the synthetic candidate label or turn this preview into a stable-runtime install.
+        index = json.loads((REPO / "index.json").read_text(encoding="utf-8"))
+        index["plugin"]["version"] = "6.11.0"
+        (runtime / "index.json").write_text(json.dumps(index), encoding="utf-8")
         ignore = shutil.ignore_patterns("tests", "__pycache__", "test_*.py", "node_modules")
         for name in PLUGIN_NAMES:
             shutil.copytree(REPO / "plugins" / name, runtime / "plugins" / name, ignore=ignore)
