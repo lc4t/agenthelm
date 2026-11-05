@@ -23,7 +23,7 @@
 | [#50](https://github.com/lc4t/agenthelm/issues/50)：rc.3 小问题 | 独立修复 PR，逐项 disposition 与待验清单 | 下表的实机项目 |
 | [#51](https://github.com/lc4t/agenthelm/issues/51)：远程 MCP 与多机声明 | 独立修复 PR，三客户端配置与不泄漏夹具 | A 机导入修改、B 机发现与同步；客户端实际展开环境变量并连接 |
 | [#24](https://github.com/lc4t/agenthelm/issues/24)：剩余国际化 | 已完成项见 issue 评论；剩余项分开审阅 | 英文内容人工审校仍待有资质的审阅者完成 |
-| [#28](https://github.com/lc4t/agenthelm/issues/28)：发布流程 | 单独审阅流程变更 | 完整发布演练需维护者执行；不得用单元测试声称 GitHub/npm/客户端已验证 |
+| [#28](https://github.com/lc4t/agenthelm/issues/28)：发布流程 | 实现已由 [PR #62](https://github.com/lc4t/agenthelm/pull/62) 合入 `dev`（变更片段与新发布门禁） | 完整发布演练（GitHub Release、npm 暂存与 2FA、Pages、分支保护）需维护者执行；不得用单元测试声称 GitHub/npm/客户端已验证 |
 
 表中的修复入口表示拟交付范围；以关联 PR 的最终 diff、测试记录与 CI 为准，不能据此把 issue 的验收项全部打勾。
 
@@ -43,4 +43,4 @@
 
 ## 审阅与合并顺序
 
-本轮所有 PR 都以 `dev` 为目标，不自动合并。当前仓库仍使用手工版本声明门禁，独立修复可能改到同一版本载体；合并时需重新核对版本与派生元数据。#28 改变这套流程，应独立审阅；若先合并 #28，其余 PR 的版本载体改为唯一命名的变更片段后，再跑新的 PR 门禁。不要把功能 PR 直接合入 `main` 来绕开门禁。
+本轮所有 PR 都以 `dev` 为目标，不自动合并。[PR #62](https://github.com/lc4t/agenthelm/pull/62) 已合入 `dev`：功能 PR 不再手改版本与派生发布载体，而是新增唯一命名的 `release/changes/<issue>-<slug>.json` 变更片段，并通过 `python3 scripts/release_meta.py check-changes --base origin/dev` 门禁（规则见 `release/VERSIONING.md`）。基于 #62 之前旧 `dev` 的 PR 需先合并当前 `dev`，把发布载体恢复为 `dev` 的值并补片段后再跑新门禁；GitHub 上旧工作流的绿灯不能代表新门禁通过。不要把功能 PR 直接合入 `main` 来绕开门禁。
