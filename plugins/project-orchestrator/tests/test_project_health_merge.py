@@ -81,7 +81,9 @@ class SyncFolderMergeCase(RealProjectCase):
         root = self.synced_project()
         _, text = self.health(root)
         _, details = self.health(root, "--details")
-        self.assertEqual(re.search(r"建议处理（(\d+)）", text).group(1), re.search(r"建议处理（(\d+)）", details).group(1))
+        visible, total = re.search(r"建议处理（(\d+) 项，展开 (\d+) 项）", text).groups()
+        self.assertLess(int(visible), int(total))
+        self.assertEqual(total, re.search(r"建议处理（(\d+)）", details).group(1))
 
 
 class SyncFolderMergeEnglishCase(SyncFolderMergeCase):
@@ -105,7 +107,9 @@ class SyncFolderMergeEnglishCase(SyncFolderMergeCase):
         root = self.synced_project()
         _, text = self.health(root)
         _, details = self.health(root, "--details")
-        self.assertEqual(re.search(r"Suggested \((\d+)\)", text).group(1), re.search(r"Suggested \((\d+)\)", details).group(1))
+        visible, total = re.search(r"Suggested \((\d+) shown, (\d+) expanded\)", text).groups()
+        self.assertLess(int(visible), int(total))
+        self.assertEqual(total, re.search(r"Suggested \((\d+)\)", details).group(1))
 
 
 class UpdatePlanDedupeCase(unittest.TestCase):
@@ -153,7 +157,7 @@ class VersionSkewMergeCase(unittest.TestCase):
         self.assertIn("3 个插件在各客户端的版本不一致", text)
         for name in ("agent-pack", "agents-init", "project-orchestrator"):
             self.assertIn(name, text)
-        self.assertIn("建议处理（3）", text)
+        self.assertIn("建议处理（1 项，展开 3 项）", text)
 
     def test_details_lists_each_plugin(self) -> None:
         found = self.findings(["agent-pack", "agents-init"])

@@ -107,6 +107,53 @@ class UpgradeMatrixTests(unittest.TestCase):
         return {item["path"]: (item["state"], item["action"]) for item in result["files"]}
 
 
+    def test_rc1_adoption_compares_only_regions_after_full_template_changes(self) -> None:
+        tag = "v6.11.0-rc.1"
+        if tag not in self.available:
+            self.skipTest(self.missing.get(tag, "rc.1 unavailable"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root, home = base / "adopted", base / "home"
+            root.mkdir()
+            home.mkdir()
+            user = "# Existing project\n\nRun my own build command.\n"
+            (root / "AGENTS.md").write_text(user)
+            done = subprocess.run([sys.executable, str(self.old_roots[tag] / OLD_SCRIPT), "--project", str(root),
+                                   *fx.BASE_ARGS, "--mode", "adopt", "--agents-policy", "append",
+                                   "--recovery-dir", str(base / "old-backup"), "--apply"],
+                                  capture_output=True, text=True, check=False, env={**os.environ, "HOME": str(home)})
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            before = (root / "AGENTS.md").read_bytes()
+            decision_path = root / fx.scaffold.DECISIONS_PATH
+            decisions = decision_path.read_bytes()
+            code, report = fx.cli(root, "check", home=home)
+            self.assertNotIn("content:AGENTS.md", {f["id"] for f in report["findings"]})
+            # rc.1's contract body itself is unchanged; make an intact older block and matching lock baseline
+            # so that the same historical project also exercises a region update independently of user text.
+            region = fx.init_project._regions()
+            old_body = "Previous managed instructions.\n"
+            agents_path = root / "AGENTS.md"
+            agents_path.write_text(region.upsert(agents_path.read_text(), "agents-contract", old_body, force=True)[0])
+            lock_path = root / fx.init_project.CONTENT_LOCK_PATH
+            lock = json.loads(lock_path.read_text())
+            lock["packs"]["agents-init/project-contract"]["regions"]["AGENTS.md"]["agents-contract"] = region.digest(old_body)
+            lock_path.write_text(json.dumps(lock))
+            before = agents_path.read_bytes()
+            code, report = fx.cli(root, "check", home=home)
+            self.assertIn("region-outdated", {f["kind"] for f in report["findings"]})
+            code, preview = self.refresh(root, base)
+            self.assertEqual(code, 0, preview)
+            item = next(row for row in preview["files"] if row["path"] == "AGENTS.md")
+            self.assertEqual((item["comparison"], item["action"]), ("regions", "keep"))
+            self.assertNotIn("AGENTS.md", preview["blocked"])
+            code, updated = fx.cli(root, "region", "--apply", home=home)
+            self.assertEqual(code, 0, updated)
+            self.assertTrue((root / "AGENTS.md").read_text().startswith(user))
+            self.assertEqual(decision_path.read_bytes(), decisions)
+            code, report = fx.cli(root, "check", home=home)
+            self.assertNotIn("content:AGENTS.md", {f["id"] for f in report["findings"]})
+            self.assertNotEqual((root / "AGENTS.md").read_bytes(), before)
+
     # -------------------------------------------------------------- 状态处置
 
     @per_tag
