@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "接管项目中登记了受管区块的 AGENTS.md / CLAUDE.md 只比较受管区块：区块外用户正文不再因整文件模板变化被报为待处理；整文件 --accept / --merge 被拒绝并指向 --mode region；旧保留决定保留，刷新时清除不再适用的整文件基线（#45）。",
+    "en": "For adopted projects, AGENTS.md / CLAUDE.md files with recorded managed regions are compared by region only: text outside the regions no longer becomes a pending change when the whole-file template changes; whole-file --accept / --merge are rejected in favor of --mode region; earlier keep decisions are preserved and obsolete whole-file baselines are dropped on refresh (#45)."
+  },
+  "changes": [
+    {"scope": "agents-init", "level": "patch", "actions": [], "user_action_required": [], "touches": [".agents/moe.sakanano.agent-pack/content.lock.json"], "default_for_existing": "advisory", "template_changes": [], "contracts": []}
+  ],
+  "suite": null
+}

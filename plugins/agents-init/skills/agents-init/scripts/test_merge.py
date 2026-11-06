@@ -446,7 +446,7 @@ class MergeRefreshTests(unittest.TestCase):
         self.assertIn("无法三方合并", "".join(agents["note"]))
         self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), mine)
 
-    def test_a7_append_then_merge_still_merges_when_the_lock_has_a_baseline(self) -> None:
+    def test_append_transfers_ownership_to_regions_and_whole_file_merge_is_refused(self) -> None:
         line = self.template_line()
         (self.root / KEY).write_text(self.original + "\n我的补充\n", encoding="utf-8")
         new_template = init_project.load_templates()[KEY].replace(line, "THEIRS " + line)
@@ -454,17 +454,14 @@ class MergeRefreshTests(unittest.TestCase):
         self.assertEqual(code, 0, appended)
         after_append = (self.root / KEY).read_text(encoding="utf-8")
         self.assertIn("我的补充", after_append)
-        code, preview = self.refresh(new_template, "--merge", KEY, providers=[self.old_provider()])
-        self.assertEqual((code, self.item(preview)["action"]), (0, "merge"), preview)
-        self.assertEqual(self.item(preview)["merge"]["conflicts"], [])
-        self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), after_append)  # 预览不写
-        code, done = self.refresh(new_template, "--merge", KEY, "--apply", "--recovery-dir", str(self.recovery / "m"),
-                                  providers=[self.old_provider()])
-        self.assertEqual(code, 0, done)
-        merged = (self.root / KEY).read_text(encoding="utf-8")
-        self.assertIn("THEIRS " + line, merged)
-        self.assertIn("我的补充", merged)
-        self.assertEqual((Path(done["recovery"]) / KEY).read_text(encoding="utf-8"), after_append)
+        lock = json.loads((self.root / init_project.CONTENT_LOCK_PATH).read_text())
+        self.assertNotIn(KEY, lock["packs"]["agents-init/project-contract"]["files"])
+        for extra in ((), ("--apply",)):
+            with self.subTest(extra=extra):
+                code, blocked = self.refresh(new_template, "--merge", KEY, *extra, providers=[self.old_provider()])
+                self.assertEqual((code, blocked["code"]), (2, "invalid-request"), blocked)
+                self.assertIn("--mode region", blocked["error"])
+                self.assertEqual((self.root / KEY).read_text(encoding="utf-8"), after_append)
 
     def test_a7_merge_overrides_an_earlier_keep_decision_but_still_stops_on_unchosen_conflicts(self) -> None:
         line, new_template = self.conflicting()
