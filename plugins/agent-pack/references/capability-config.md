@@ -141,8 +141,18 @@ Codex 同步会写入 `~/.agents/plugins/plugins/<name>` 可移植包、`.codex-
 - 禁止静默覆盖现有 Skill、MCP 名称、Agent Plugin、客户端包或 marketplace 条目。
 - 在 `native_mcp_sources` 中声明历史或客户端专属 MCP 文件。可移植条目成为打包候选；包含密钥的条目保持为 `blocked`/doctor warning，并留在客户端本地。
 - 原生 MCP 来源可以使用 `__PROJECT_DIR__` 与 `__REPO_ROOT__`；源文件保留占位符，生成客户端包时解析为当前本地项目路径。
-- 把 `credential_env_file` 设置为项目相对路径的 dotenv 文件，权限必须为 `0600`。生成包只保存 `${VAR}` 引用；本地 launcher 在 MCP 启动时读取值，禁止复制进 Git 或插件 manifest。
+- **stdio 的环境变量引用**：把 `credential_env_file` 设置为项目相对路径的 dotenv 文件，权限必须为 `0600`。生成包只保存 `${VAR}` 引用；本地 launcher 在 MCP 启动时读取值，禁止复制进 Git 或插件 manifest。
 - 使用 `mcp_client_policy.<server>.include` 或 `.exclude` 完成客户端路由（`codex`、`cursor`、`claude` 各自生效）。禁止在 MCP 定义中放入 adapter 专属 `_skip` 字段。
 - 客户端里本机才有的认证值（例如远程 MCP 的 `headers.Authorization`）不进入项目；同步与 bootstrap 默认保留它们，`--reset-overrides` 才丢弃。
 - `${PLUGIN_ROOT}` 用于不可变包文件，`${PLUGIN_DATA}` 用于客户端管理的可写状态。
 - 客户端原生 adapter 只在安装阶段使用；Agent Plugins 1.0 文件保持权威源地位。
+
+## 远程 HTTP 认证与更新项目声明
+
+远程 MCP 的 `headers.Authorization: "Bearer ${EXAMPLE_MCP_TOKEN}"` 与 `bearer_token_env_var: "EXAMPLE_MCP_TOKEN"` 等价，不读取 `credential_env_file`。Codex 导入还支持 `http_headers` / `env_http_headers`，Cursor 导入接受 `${env:NAME}`；项目统一保存 `${NAME}` 引用。`doctor --client` 只检查进程环境中变量是否非空，只显示变量名。不要把令牌值传给任何导入或同步命令。
+
+`sync --client codex` 把远程配置写入原生 `~/.codex/config.toml` 的 `bearer_token_env_var` / `env_http_headers`，项目包只加载 stdio MCP，避免远程服务器重复加载。现存同名原生配置不同、或本项目安装的条目被本机改动时，需 `--replace`（替换整条配置）；未被本机改动的条目在后续同步时更新，删除时仅移除仍与记录一致的条目。其他 TOML 内容保留，旧配置进入本机恢复目录。Codex 的 header 变量只支持纯 `${NAME}` 或 Authorization 的 `Bearer ${NAME}`，更复杂的拼接会明确拒绝。Claude Code 原样保存 `${NAME}`，Cursor 输出 `${env:NAME}`；已有 Claude 本机认证值仍按上述覆盖规则保留，需要改为项目引用时显式加 `--reset-overrides`。
+
+`transfer --update` 允许更新已有同名 Skill / MCP；默认预览列出变化路径、Skill 前后摘要和 MCP 变化的键名，不显示配置值。只有同时加 `--apply` 才替换，旧内容进入本机恢复目录，失败时回滚。MCP Tool `agent_pack_transfer` 提供等价的 `update` / `apply` 参数。
+
+`check` / SessionStart 本地比较检测到的客户端与项目声明；一致时不增加提示，联网版本检查失败也不会阻止差异提示。只关闭能力检查可在本机用户配置设置 `capability_check_ignored_clients: ["cursor"]`；忽略整个客户端沿用 `agenthelm config ignore-client cursor --apply`。多机完整步骤见 [README](../../../README.md#A-机新增能力B-机同步)。

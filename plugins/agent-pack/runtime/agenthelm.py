@@ -993,6 +993,40 @@ def unused_client_hints(env: Env, plugins: list[dict], ignored: list[str]) -> li
     return hints
 
 
+def capability_findings(env: Env, project: Path | None, clients: list[str] | None = None) -> list[dict]:
+    """Local, read-only discovery; never requires latest.json or network access."""
+    if project is None:
+        return []
+    import agent_pack_config as capabilities
+    try:
+        inventory = capabilities.inventory_project(project)
+        if not inventory.skills and not inventory.mcps:
+            return []
+        selected = active_clients(env, clients)
+        disabled = read_json(env.config_file).get("capability_check_ignored_clients", []) if env.config_file.is_file() else []
+        reports = []
+        for client in selected:
+            if client in disabled:
+                continue
+            try:
+                report = capabilities.client_drift(project, client, env.home)
+            except capabilities.AgentPackError:
+                # Invalid portable config is explained by doctor, with no values in the notice.
+                report = {"client": client, "in_sync": False}
+            if not report["in_sync"]:
+                reports.append(report)
+        return reports
+    except (OSError, ValueError, capabilities.AgentPackError):
+        return []
+
+
+def capability_notice(reports: list[dict]) -> str | None:
+    if not reports:
+        return None
+    clients = _("、").join(CLIENT_NAMES[item["client"]] for item in reports)
+    return _("项目声明的 MCP / Skill 与本机 {0} 不一致；运行 agent-pack doctor --client <客户端> 查看详情。").format(clients)
+
+
 def run_check(env: Env, project: Path | None, *, latest_source: str | None = None, offline: bool = False,
               max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False,
               clients: list[str] | None = None, source: Path | None = None) -> dict:
@@ -1054,6 +1088,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
     content_errors = [item for item in content if item["status"] == "error"]  # 内容锁无法解析：无法判断，不能当作“已是最新”
     opinion_updates = [item for item in opinion if item["status"] == "update-available"]
+    capabilities = capability_findings(env, project, clients)
     settings = user_settings_module()
     language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold)
     return {
@@ -1072,6 +1107,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "scaffold": scaffold,
         "machine": machine,
         "language": language,
+        "capabilities": capabilities,
         "summary": {
             "scaffold_findings": scaffold_active,
             "scaffold_required": scaffold_required,
@@ -1321,6 +1357,9 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         if show_skipped:
             for item in shown:
                 lines.append(_("      {0} {1} → {2}（未检查）").format(item["plugin"], item.get("version"), item.get("latest")))
+    notice = capability_notice(report.get("capabilities") or [])
+    if notice:
+        lines.append(notice)
     lines += render_install_state(report.get("install_state") or {})
     if not report["plugins"]:
         lines.append(_("未发现已安装的 agenthelm 插件。"))
@@ -1478,12 +1517,14 @@ def hook(env: Env, project: Path | None, output: str, *, latest_source: str | No
     """Session-start entry: silent unless something is behind; never fails the session."""
     if not update_check_enabled(env):
         return 0
+    local_notice = capability_notice(capability_findings(env, project, clients))
     try:
         report = run_check(env, project, hook_mode=True, latest_source=latest_source, offline=offline, clients=clients)
     except Exception as exc:  # noqa: BLE001 - an update notice must never break a session
         record_hook_error(env, "update-check", exc)
-        return 0
-    message = "\n".join(part for part in (one_line(report), (report.get("language") or {}).get("session_hint")) if part) or None
+        report = {}
+    message = "\n".join(part for part in (one_line(report) if report else None, local_notice,
+                                           (report.get("language") or {}).get("session_hint")) if part) or None
     if message is None or not notice_due(env, message):
         return 0
     if output == "claude-hook":

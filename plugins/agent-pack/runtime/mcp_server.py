@@ -144,6 +144,8 @@ TOOLS = [
                 "mcps": {"type": "array", "items": {"type": "string"}, "default": []},
                 "home": {"type": "string"},
                 "apply": {"type": "boolean", "default": False},
+                "update": {"type": "boolean", "default": False},
+                "recoveryRoot": {"type": "string"},
             },
             "required": ["source", "toProject"],
             "additionalProperties": False,
@@ -236,7 +238,9 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             Path(arguments["toProject"]),
             arguments.get("skills", []),
             arguments.get("mcps", []),
-            apply=bool(arguments.get("apply", False)),
+            apply=bool(arguments.get("apply", False)), update=bool(arguments.get("update", False)),
+            recovery_root=Path(arguments["recoveryRoot"]) if arguments.get("recoveryRoot") else (
+                home / ".agent-pack" / "recovery" if home else None),
         )
     if name == "agent_pack_sync":
         recovery_value = arguments.get("recoveryRoot")
