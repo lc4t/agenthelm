@@ -313,5 +313,8 @@
  "--keep {0} 保留链接原样（建议）": "--keep {0} leaves the link as it is (recommended)",
  "  {0}：{1}": "  {0}: {1}",
  "；": "; ",
- "未声明私有路径，不追加隐私约定（privacy.forbidden_default_reads 为空）": "No private paths declared, so the privacy convention is not appended (privacy.forbidden_default_reads is empty)"
+ "未声明私有路径，不追加隐私约定（privacy.forbidden_default_reads 为空）": "No private paths declared, so the privacy convention is not appended (privacy.forbidden_default_reads is empty)",
+ "历史来源未能提供与内容锁摘要一致的基线（本机缓存、本地 git tag 或 GitHub Release；联网可能已关闭，或下载与校验未成功），无法三方合并；没有改动任何文件，请改用 --keep / --append / --accept 选择": "Historical sources could not provide a baseline matching the content lock digest (runtime cache, local git tags or GitHub Release; networking may be disabled, or download and verification did not succeed). A three-way merge is unavailable; no files changed. Choose --keep / --append / --accept instead",
+ "内容锁里有基线摘要，但对应的历史模板缺少当前渲染所需的区块，无法重新渲染，不能三方合并；没有改动任何文件，此类项目请用 --keep / --append / --accept 选择": "The content lock has a baseline digest, but the corresponding historical template lacks blocks required by the current renderer. It cannot be re-rendered for a three-way merge; no files changed. For these projects, choose --keep / --append / --accept",
+ "历史来源可用，模板也能渲染，但渲染结果与内容锁记录的摘要不一致（渲染输入或文件基线不同），无法确认你的起点，不能三方合并；没有改动任何文件，请改用 --keep / --append / --accept 选择": "A historical source is available and its template renders, but the result does not match the digest recorded in the content lock (different render inputs or file baseline). Your starting point cannot be confirmed, so a three-way merge is unavailable; no files changed. Choose --keep / --append / --accept instead"
 }

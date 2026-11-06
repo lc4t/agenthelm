@@ -1977,6 +1977,9 @@ def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
                     if apply and isinstance(outcome, dict) and outcome.get("applied") is False and outcome.get("blocked"):
                         # Files still wait for a choice: nothing was written, so this is not "done".
                         record["status"], record["needs_choice"] = "blocked", True
+                        record["reason"] = outcome.get("hint") or "\n".join(
+                            note for item in outcome.get("files", []) if item.get("action") == "blocked"
+                            for note in item.get("note", []))
                 except Unavailable as exc:
                     record["status"], record["error"] = "unavailable", str(exc)
                     if step.client == "cursor":
@@ -2019,7 +2022,7 @@ def step_outcome_ok(results: list[dict], *, blockers: bool = False) -> bool:
     """False when a step failed, ran without effect, or still waits for a choice (``blockers``: or is held back by
     a cause the user has to resolve, e.g. Claude Code has not registered the declared market yet)."""
     return not any(r["status"] in {"failed", "unchanged"} or r.get("needs_choice")
-                   or (blockers and r["status"] == "blocked" and r.get("blocker")) for r in results)
+                   or (blockers and r["status"] == "blocked" and (r.get("blocker") or r.get("kind") == "content")) for r in results)
 
 
 def outcome_summary(results: list[dict]) -> dict:
@@ -2041,9 +2044,10 @@ def outcome_summary(results: list[dict]) -> dict:
             entry["status"] = status
         if status in {"unavailable"} and record.get("error"):
             entry["reason"] = record["error"]
-        if status == "blocked" and record.get("blocker"):
-            entry["blocker"] = record["blocker"]
-            entry["reason"] = record["blocked"]
+        if status == "blocked":
+            if record.get("blocker"):
+                entry["blocker"] = record["blocker"]
+            entry["reason"] = record.get("blocked") or record.get("reason") or (record.get("result") or {}).get("hint")
     return {"ok": step_outcome_ok(results, blockers=True), "clients": clients}
 
 
@@ -2708,6 +2712,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.output == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif args.command == "update" and args.diff:
+        content_results = [record for record in payload["steps"] if record.get("kind") == "content"]
+        for record in content_results:
+            result = record.get("result") or {}
+            diffs = result.get("diffs") or {}
+            for path, diff in diffs.items():
+                if diff:
+                    print(diff, end="" if diff.endswith("\n") else "\n")
+                else:
+                    print(_("（{0} 与新模板没有差异）").format(path))
+            if not diffs:
+                print(record.get("error") or record.get("blocked") or _("没有可显示的文件差异"))
+        if not content_results:
+            print(payload.get("message") or _("没有可显示的文件差异"))
     else:
         print(origin_line(payload["latest"]))
         if args.command == "migrate":

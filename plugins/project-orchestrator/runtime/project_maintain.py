@@ -425,7 +425,10 @@ def _content_preview(provider: Any, env: Any, report: dict | None, accept: list[
     except EntryError as exc:
         return _("项目模板/样例"), [], str(exc), True
     files = result.get("files") or []
-    if all(item["state"] in ("unchanged", "kept-by-decision") for item in files):
+    # A prior keep decision does not cancel an explicit per-file request. In particular,
+    # --merge must retain its blocked reason and --diff must retain the requested diff.
+    named = bool(accept or keep or append or confirm or merge or pick or diff)
+    if not files or (not named and all(item["state"] in ("unchanged", "kept-by-decision") for item in files)):
         return _("项目模板/样例"), [], _("没有需要更新的模板"), True
     return _("按当前模板对比项目契约文件"), files, "", True
 
@@ -500,6 +503,8 @@ def _content_change(item: dict, effective: dict[str, str]) -> str:
         reason = item.get("reason")
         note += {"no-baseline": _("（要求了三方合并，但内容锁里没有它的基线摘要，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）"),
                  "baseline-unavailable": _("（要求了三方合并，但找不到升级前的基线，无法合并；没有改动任何文件）"),
+                 "baseline-template-incompatible": _("（要求了三方合并，但历史模板无法按当前方式重新渲染，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）"),
+                 "baseline-digest-mismatch": _("（要求了三方合并，但历史模板渲染结果与内容锁摘要不一致，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）"),
                  "merge-conflict": _("（三方合并有冲突块未选择：用 --pick {0}#<序号>=mine|theirs|both 逐块选择）").format(item["path"])}.get(reason, "")
     elif item.get("reason") == "no-baseline" and item["state"] == "modified":
         note += _("（内容锁里没有它的基线，无法判断是你改过还是模板变了）")

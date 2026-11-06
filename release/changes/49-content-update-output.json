@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。",
+    "en": "Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49)."
+  },
+  "changes": [
+    {"scope": "agent-pack", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []},
+    {"scope": "agents-init", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []},
+    {"scope": "project-orchestrator", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []}
+  ],
+  "suite": null
+}
