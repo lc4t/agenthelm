@@ -4,7 +4,10 @@ The walker follows the ``{a,b,c} ...`` sub-command group of every parser, so a n
 discovered set at once. It must then be classified below, otherwise the test fails and says where to add it:
 * READ_ONLY: runs a safe read-only case;
 * PREVIEW:   a write command - runs its preview (no ``--apply``) and the test proves nothing on disk changed;
-* HELP_ONLY: only ``--help`` is exercised, with the reason why no case runs here.
+* HELP_ONLY: only ``--help`` is exercised, with the reason why no case runs here;
+* DIRECT_WRITE: a command that writes at once and offers neither ``--apply`` nor ``--dry-run`` (#46); only ``--help`` runs.
+  Every one needs its reason and is listed in docs/write-commands.md. The reconciliation tests keep this table honest:
+  a command that gains a preview flag must leave it, and a command with a preview flag cannot hide in READ_ONLY or here.
 Every discovered command also gets its ``--help`` checked for Chinese left in English output.
 """
 from __future__ import annotations
@@ -28,6 +31,7 @@ SUBCOMMANDS = re.compile(r"\{([A-Za-z0-9_,-]+)\}\s+\.\.\.")  # the sub-command g
 # name -> (argv prefix, sub-command path before the walk starts). {project} is the temporary project.
 ROOTS: dict[str, tuple[list[str], list[str]]] = {
     "agenthelm": ([str(AGENTHELM)], []),
+    "agent-pack": ([str(PLUGINS / "agent-pack/runtime/agent_pack_config.py")], []),
     "nudge": ([str(AGENTHELM)], ["nudge"]),  # dispatched before the main parser, so it is not in `agenthelm --help`
     "sop": ([str(ORCHESTRATOR / "sop.py"), "--project", "{project}"], []),  # `agenthelm project sop` passes everything on to it
     "case": ([str(ORCHESTRATOR / "case.py")], []),
@@ -41,6 +45,8 @@ ROOTS: dict[str, tuple[list[str], list[str]]] = {
 
 P = ["--project", "{project}"]
 READ_ONLY: dict[str, list[str]] = {
+    "agent-pack inventory": ["--source", "project:{project}"],
+    "agent-pack doctor": P,
     "agenthelm check": ["--offline", "--no-project"],
     "agenthelm doctor": ["--no-project"],
     "agenthelm locate": ["agents-init"],
@@ -55,12 +61,12 @@ READ_ONLY: dict[str, list[str]] = {
     "agenthelm project show": [*P, "--no-input", "missing"],
     "agenthelm project guide": [*P, "--no-input"],
     "agenthelm project health": [*P, "--no-input", "--offline"],
-    "agenthelm project tools": [*P, "--no-input"],
     "agenthelm project capabilities": [*P, "--no-input"],
     "agenthelm project scenarios": [*P, "--no-input"],
     "agenthelm project sop": [*P, "--no-input", "list"],
     "nudge status": [],
-    "sop list": [], "sop index": [], "sop show": ["demo"], "sop validate": ["demo"], "sop interview": ["demo"], "sop defaults": [],
+    "sop list": [], "sop index": [], "sop show": ["demo"], "sop validate": ["demo"], "sop interview": ["demo"],
+    "sop events": ["case.created", "--case", "quarterly"],
     "sop preflight": ["demo"], "sop match": ["hello"], "sop due": [], "sop status": [],
     "case list": P, "case show": [*P, "quarterly"], "case validate": P,
     "assets find": [*P, "report"], "assets recent": P, "assets cases": P, "assets refs": [*P, "nothing/here.md"], "assets check": P,
@@ -68,6 +74,10 @@ READ_ONLY: dict[str, list[str]] = {
     "opinion verify": P,
 }
 PREVIEW: dict[str, list[str]] = {
+    "agent-pack transfer": ["--from", "project:{project}", "--to-project", "{project}", "--skill", "missing"],
+    "agent-pack sync": [*P, "--client", "codex"],
+    "agent-pack bootstrap": ["--plugin", str(PLUGINS / "agent-pack"), "--client", "cursor"],
+    "agent-pack reconcile": [*P, "--client", "claude"],
     "agenthelm install": ["--latest", "{latest}"],
     "agenthelm update": ["--no-project", "--latest", "{latest}"],
     "agenthelm migrate": ["--latest", "{latest}"],
@@ -82,20 +92,19 @@ PREVIEW: dict[str, list[str]] = {
     "agenthelm config unignore-client": ["claude"],
     "agenthelm config project-language": ["en", *P],
     "agenthelm project fix": [*P, "--no-input"],
+    "agenthelm project tools": [*P, "--no-input"],
     "agenthelm project record": [*P, "--no-input", "new", "--title", "Second", "--goal", "Goal"],
     "nudge install-hooks": ["--client", "cursor"],
     "sop new": ["--slug", "fresh", "--template", "blank"],
+    "sop defaults": ["--set", "max_retries=2"],
     "sop activate": ["demo"], "sop retire": ["demo"], "sop restore": ["demo"], "sop decide": ["demo", "--set", "max_retries=2"],
     "sop revise": ["demo", "--bump", "patch", "--note", "why"], "sop run": ["demo"], "sop init": [], "sop private": ["--create"],
-    "assets rebuild": P,
+    "case new": [*P, "--title", "Preview", "--slug", "preview", "--goal", "Goal", "--next-action", "Review", "--dry-run"],
+    "case update": [*P, "quarterly", "--log", "Preview log", "--dry-run"],
+    "sop step": ["missing", "1", "--done"],
+    "sop confirm-read": ["missing", "private/input.txt"],
 }
 HELP_ONLY: dict[str, str] = {
-    "case new": "has no preview, it writes at once; its English run is in test_a_real_project_speaks_english",
-    "case update": "has no preview, it writes at once; its English run is in test_a_real_project_speaks_english",
-    "nudge hook": "reads a client's hook JSON on stdin and writes the nudge state; covered by the nudge tests in plugins/agent-pack/tests",
-    "sop events": "fires an event into the Cases; needs an existing event case, covered by the SOP tests of project-orchestrator",
-    "sop step": "edits a step of an executed Case; needs a Case from `sop run --apply`",
-    "sop confirm-read": "records a file read confirmation inside a Case",
     "memory": "a single command with flags only; its English output is in the project-orchestrator tests",
     "wf": "interactive file finder; its English menu is covered by test_i18n.EnglishOutputTests",
     "case_workspace": "a single command with flags only",
@@ -107,9 +116,15 @@ HELP_ONLY: dict[str, str] = {
     "opinion compare": "needs two Profiles",
     "opinion context": "needs a Profile",
     "opinion lifecycle": "needs a store with an Occurrence log",
-    "opinion inbox": "needs a store with candidates",
     "init": "a single command with many flags; its English flows are covered by the recovery and no-baseline tests",
 }
+
+DIRECT_WRITE: dict[str, str] = {
+    "nudge hook": "client event consumer: reads a hook JSON on stdin and writes the local de-duplication state; covered by the nudge tests in plugins/agent-pack/tests",
+    "assets rebuild": "rebuilds the file index at once; it writes only the machine-local cache $XDG_CACHE_HOME/agenthelm/assets (default ~/.cache), never the project",
+    "opinion inbox": "add / decide / present / expire write .opinion/inbox.json at once (decide needs --confirmed); covered by the opinion-manager inbox tests",
+}
+PREVIEW_FLAG = re.compile(r"--(?:apply|dry-run)\b")
 
 
 def tree(env: dict, prefix: list[str], start: list[str], path: list[str], found: dict, label: str) -> None:
@@ -173,12 +188,45 @@ class EveryCommandTests(unittest.TestCase):
         return state
 
     def test_every_discovered_command_is_classified(self) -> None:
-        known = {*READ_ONLY, *PREVIEW, *HELP_ONLY}
+        known = {*READ_ONLY, *PREVIEW, *HELP_ONLY, *DIRECT_WRITE}
         self.assertGreater(len(self.commands), 60, "the walker found too few commands - did the help format change?")
         missing = [name for name in self.commands if name not in known]
         self.assertEqual(missing, [], "新增了子命令：把它登记到 READ_ONLY（只读用例）/ PREVIEW（写操作的预览用例）/ HELP_ONLY（写明原因）")
         stale = [name for name in known if name not in self.commands]
         self.assertEqual(stale, [], "登记表里有已经不存在的命令")
+
+    def help_text(self, command: str) -> str:
+        prefix, start, words = self.commands[command]
+        completed = subprocess.run([sys.executable, *prefix, *start, *words, "--help"], capture_output=True, text=True,
+                                   env=self.env, timeout=120, check=False)
+        self.assertEqual(completed.returncode, 0, command)
+        return completed.stdout
+
+    def test_write_command_registry_matches_the_real_help(self) -> None:
+        """Reconcile the tables with every discovered command's own ``--help`` (#46)."""
+        groups = {"READ_ONLY": READ_ONLY, "PREVIEW": PREVIEW, "HELP_ONLY": HELP_ONLY, "DIRECT_WRITE": DIRECT_WRITE}
+        seen: dict[str, str] = {}
+        for label, table in groups.items():
+            for name in table:
+                self.assertNotIn(name, seen, f"{name} is registered in both {seen.get(name)} and {label}")
+                seen[name] = label
+        for name in self.commands:
+            has_flag = bool(PREVIEW_FLAG.search(self.help_text(name)))
+            label = seen[name]
+            if label == "PREVIEW":
+                self.assertTrue(has_flag, f"{name}: registered as PREVIEW but its --help offers no --apply/--dry-run")
+            elif label in ("READ_ONLY", "DIRECT_WRITE"):
+                self.assertFalse(has_flag, f"{name}: has --apply/--dry-run, so it is not {label}; move it to PREVIEW (or HELP_ONLY with a reason)")
+        for name, reason in {**HELP_ONLY, **DIRECT_WRITE}.items():
+            self.assertTrue(reason.strip(), name)
+
+    def test_read_only_cases_change_nothing(self) -> None:
+        self.setup_sop()
+        for key, arguments in READ_ONLY.items():
+            with self.subTest(command=key):
+                before = self.snapshot()
+                self.run_case(key, arguments)
+                self.assertEqual(self.snapshot(), before, f"{key}: registered as read-only but changed the disk")
 
     def test_every_help_screen_speaks_english(self) -> None:
         for command, (prefix, start, words) in self.commands.items():

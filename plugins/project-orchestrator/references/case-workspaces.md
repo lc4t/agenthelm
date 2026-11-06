@@ -165,3 +165,7 @@ python3 runtime/wf.py 笔记 9月1号                                 # 在项�
 ## 初始化器升级
 
 新项目默认 Case 工作目录；既有项目的模式默认保留。显式使用 `init_project.py --mode migrate --work-mode case-workspace --replace .agents/moe.sakanano.agent-pack/project.json --recovery-dir <项目外目录>` 更新 Profile。原 task 配置保留为 `legacy_task`，初始化器不搬业务文件；原数据迁移由本工具的已审阅映射单独执行。私有路径、业务内容和映射只保存于目标项目，不进入公共分发包。
+
+## Case CLI 写入预览
+
+`case.py new` / `case.py update` 可加 `--dry-run`，运行同样的校验并返回目标路径与 unified diff，不建立目录也不改文件。省略该参数保持原来的直接写入方式，旧脚本无需迁移。执行更新时可用 `--expect-sha256` 防止覆盖并发修改。完整命令盘点、兼容策略与 hook 例外见仓库的 [写操作预览策略](../../../docs/write-commands.md)。
