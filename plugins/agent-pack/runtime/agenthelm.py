@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from i18n_agent_pack import _, N_  # noqa: E402
+from i18n_agent_pack import _, N_, resolve_language  # noqa: E402
 
 MARKETPLACE = "agenthelm"
 NPX = "npx @sakanano-moe/agenthelm"
@@ -664,6 +664,8 @@ def _advice(diag: dict, client: str) -> dict:
         if conflict["reason"] == "pinned":
             summary = _("{0} 的 settings 把 agenthelm 市场固定在 {1}（{2}）：不带它的 marketplace add 会被拒绝，update 也只会跟随这个 ref。").format(
                 name, conflict["ref"], conflict["file"])
+            if not (diag.get("market_pin") or {}).get("target"):
+                summary += _("目标版本未知：latest.json 没有 release.tag，无法判断这个 ref 是否已经是目标版本。")
         else:
             summary = _("{0} 的 settings 声明 agenthelm 市场指向 {1}（{2}），与 agenthelm 默认来源不同：用默认来源 marketplace add 会被拒绝。").format(
                 name, conflict["declared"], conflict["file"])
@@ -738,10 +740,10 @@ def content_findings(project: Path, latest: dict) -> list[dict]:
     return findings
 
 
-def locate_companion(name: str, installed: list[dict]) -> Path | None:
+def locate_companion(name: str, installed: list[dict], *, excluded: set[Path] | None = None) -> Path | None:
     """The newest copy of a companion plugin: next to this one or in any client install."""
     candidates = [PLUGIN_ROOT.parent / name, *(Path(item["path"]) for item in installed if item["plugin"] == name)]
-    candidates = [path for path in candidates if (path / "plugin.json").is_file()]
+    candidates = [path for path in candidates if path not in (excluded or set()) and (path / "plugin.json").is_file()]
     return max(candidates, key=lambda path: version_key(_manifest_version(path) or "") or (0,)) if candidates else None
 
 
@@ -991,6 +993,40 @@ def unused_client_hints(env: Env, plugins: list[dict], ignored: list[str]) -> li
     return hints
 
 
+def capability_findings(env: Env, project: Path | None, clients: list[str] | None = None) -> list[dict]:
+    """Local, read-only discovery; never requires latest.json or network access."""
+    if project is None:
+        return []
+    import agent_pack_config as capabilities
+    try:
+        inventory = capabilities.inventory_project(project)
+        if not inventory.skills and not inventory.mcps:
+            return []
+        selected = active_clients(env, clients)
+        disabled = read_json(env.config_file).get("capability_check_ignored_clients", []) if env.config_file.is_file() else []
+        reports = []
+        for client in selected:
+            if client in disabled:
+                continue
+            try:
+                report = capabilities.client_drift(project, client, env.home)
+            except capabilities.AgentPackError:
+                # Invalid portable config is explained by doctor, with no values in the notice.
+                report = {"client": client, "in_sync": False}
+            if not report["in_sync"]:
+                reports.append(report)
+        return reports
+    except (OSError, ValueError, capabilities.AgentPackError):
+        return []
+
+
+def capability_notice(reports: list[dict]) -> str | None:
+    if not reports:
+        return None
+    clients = _("、").join(CLIENT_NAMES[item["client"]] for item in reports)
+    return _("项目声明的 MCP / Skill 与本机 {0} 不一致；运行 agent-pack doctor --client <客户端> 查看详情。").format(clients)
+
+
 def run_check(env: Env, project: Path | None, *, latest_source: str | None = None, offline: bool = False,
               max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False,
               clients: list[str] | None = None, source: Path | None = None) -> dict:
@@ -1023,7 +1059,15 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     for item in plugins:
         item["unavailable"] = None
     if any(item["client"] == "cursor" for item in behind):
-        reason = cursor_unavailable(latest, source, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
+        # Keep the resolved release for the update preview/apply as well: otherwise
+        # GitHub's latest release may move between the check and the download.
+        if source is None and not latest.get("release"):
+            release = github_release(latest, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
+            if release:
+                latest["release"] = release
+            reason = release_problem(release)
+        else:
+            reason = cursor_unavailable(latest, source, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
         for item in behind:
             if reason and item["client"] == "cursor":
                 item["unavailable"] = reason
@@ -1044,6 +1088,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     content_updates = [item for item in content if item["status"] in {"update-available", "conflict"}]
     content_errors = [item for item in content if item["status"] == "error"]  # 内容锁无法解析：无法判断，不能当作“已是最新”
     opinion_updates = [item for item in opinion if item["status"] == "update-available"]
+    capabilities = capability_findings(env, project, clients)
     settings = user_settings_module()
     language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold)
     return {
@@ -1062,6 +1107,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         "scaffold": scaffold,
         "machine": machine,
         "language": language,
+        "capabilities": capabilities,
         "summary": {
             "scaffold_findings": scaffold_active,
             "scaffold_required": scaffold_required,
@@ -1250,11 +1296,25 @@ def render_scaffold(report: dict, show_skipped: bool, details: bool = False, sho
     return lines
 
 
-def render_machine(report: dict) -> list[str]:
+def render_machine(report: dict, *, details: bool = False) -> list[str]:
     lines = []
-    for item in report.get("machine", {}).get("findings", []):
+    findings = report.get("machine", {}).get("findings", [])
+    head = next((item for item in findings if item["id"] == "local:sync-folder"), None)
+    local = [item for item in findings if item["id"].startswith("local:real:")]
+    if head and local and not details:
+        lines.append(_("  [本机] {0}，连同 {1} 个本机专属目录：{2}\n      处理：agenthelm local-only check（逐项信息：check --details）").format(
+            head["title"], len(local), _("、").join(f"{item['id'].split(':', 2)[-1]} (ID {item['id']})" for item in local)))
+        findings = [item for item in findings if item is not head and item not in local]
+    for item in findings:
         lines.append(_("  [本机] {0}：{1}\n      影响：{2}\n      处理：{3}\n      ID {4}（只记在这台机器上；fix --skip {5} --reason …）").format(item['title'], item['reason'], item['impact'], item['next'], item['id'], item['id']))
     return lines
+
+
+def migration_language_note(entries: list[dict]) -> str | None:
+    """Historical release declarations are source data; warn when English notes are unavailable."""
+    if resolve_language() == "en" and any(re.search(r"[\u4e00-\u9fff]", str(item.get("summary", ""))) for item in entries):
+        return _("迁移说明目前仅有中文；界面语言不改变历史发布声明。")
+    return None
 
 
 def render_install_state(state: dict) -> list[str]:
@@ -1285,6 +1345,9 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
     lines = []
     origin = report["latest"]["source"]
     lines.append(origin_line(origin))
+    note = migration_language_note([step for item in report["plugins"] for step in item.get("steps", []) if step.get("breaking")])
+    if note:
+        lines.append(note)
     clients = report.get("clients") or {}
     if clients.get("selected"):
         lines.append(_("只处理所选客户端：{0}").format(_("、").join(CLIENT_NAMES[name] for name in clients["selected"])))
@@ -1294,6 +1357,9 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         if show_skipped:
             for item in shown:
                 lines.append(_("      {0} {1} → {2}（未检查）").format(item["plugin"], item.get("version"), item.get("latest")))
+    notice = capability_notice(report.get("capabilities") or [])
+    if notice:
+        lines.append(notice)
     lines += render_install_state(report.get("install_state") or {})
     if not report["plugins"]:
         lines.append(_("未发现已安装的 agenthelm 插件。"))
@@ -1349,7 +1415,7 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         elif item["status"] in {"error", "unknown"}:
             lines.append(f"  [Opinion] {item.get('error')}")
     lines += render_scaffold(report, show_skipped, details, show_extras)
-    lines += render_machine(report)
+    lines += render_machine(report, details=details)
     lines += [_("  [语言] {0}").format(hint) for hint in (report.get("language") or {}).get("hints", [])]
     if not report["plugins"]:
         lines.append(_("运行 `{0} install` 预览安装。").format(CLI))
@@ -1446,16 +1512,19 @@ def clear_hook_errors(env: Env) -> bool:
         return False
 
 
-def hook(env: Env, project: Path | None, output: str) -> int:
+def hook(env: Env, project: Path | None, output: str, *, latest_source: str | None = None,
+         offline: bool = False, clients: list[str] | None = None) -> int:
     """Session-start entry: silent unless something is behind; never fails the session."""
     if not update_check_enabled(env):
         return 0
+    local_notice = capability_notice(capability_findings(env, project, clients))
     try:
-        report = run_check(env, project, hook_mode=True)
+        report = run_check(env, project, hook_mode=True, latest_source=latest_source, offline=offline, clients=clients)
     except Exception as exc:  # noqa: BLE001 - an update notice must never break a session
         record_hook_error(env, "update-check", exc)
-        return 0
-    message = "\n".join(part for part in (one_line(report), (report.get("language") or {}).get("session_hint")) if part) or None
+        report = {}
+    message = "\n".join(part for part in (one_line(report) if report else None, local_notice,
+                                           (report.get("language") or {}).get("session_hint")) if part) or None
     if message is None or not notice_due(env, message):
         return 0
     if output == "claude-hook":
@@ -1565,6 +1634,21 @@ def release_source(latest: dict, workdir: Path, source: Path | None = None) -> P
     roots = [path for path in extracted.iterdir() if path.is_dir()]
     if len(roots) != 1 or not (roots[0] / "plugins").is_dir():
         raise CheckError(_("发布包结构不符合预期"))
+    # Validate every advertised plugin before the first installation writes to the
+    # client's directory. A valid digest alone does not guarantee the advertised BOM.
+    for name, expected in _plugin_versions(latest).items():
+        plugin = roots[0] / "plugins" / name
+        try:
+            identity = read_json(plugin / "plugin.json").get("name")
+        except (OSError, ValueError, AttributeError):
+            identity = None
+        if identity != name:
+            raise CheckError(_("发布包里的 {0} 身份为 {1}，与发布清单不符；没有改动客户端安装").format(
+                name, identity or "?"))
+        actual = _manifest_version(plugin)
+        if actual != expected:
+            raise CheckError(_("发布包里的 {0} 版本为 {1}，发布清单要求 {2}；没有改动客户端安装").format(
+                name, actual or "?", expected))
     return roots[0]
 
 
@@ -1767,11 +1851,13 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
             if pinned:
                 newest = max((entry["latest"] for entry in behind if entry["client"] == "claude" and entry.get("latest")),
                              key=lambda text: version_key(text) or (0,), default="?")
-                note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（最新版本 {1}）。"
+                note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（插件最新版本 {1}）。"
                          "要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。"
                          ).format(pinned, newest)
                 if release_tag(latest):
                     note += _("目标 tag：{0}。").format(release_tag(latest))
+                else:
+                    note += _("目标版本未知：latest.json 没有 release.tag，无法判断这个 ref 是否已经是目标版本。")
             sync = report.get("market_sync")
             block = dict(blocked=sync["reason"], blocker="market-not-synced", next=sync["next"]) if sync else {}
             steps.append(Step("update", "claude", _("刷新 Claude Code 的 agenthelm 市场"), command, **{"blocked": blocked, **block},
@@ -1805,17 +1891,38 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
     return steps
 
 
+def content_companion(env: Env, report: dict) -> tuple[Path | None, list[dict]]:
+    """Use the same client selection for planning and execution, retaining an independent runtime sibling."""
+    installed = installed_plugins(env, {"agents-init"})
+    selection = report.get("clients") or select_clients(env, None)
+    selected = selection.get("selected") or selection.get("explicit")
+    excluded = set(selection.get("ignored") or []) | set(selection.get("excluded") or [])
+    available = []
+    for entry in installed:
+        owner = legacy_owner(env, entry) if entry["client"] == "legacy" else entry["client"]
+        if owner is None or (owner not in excluded and (not selected or owner in selected)):
+            available.append(entry)
+    # A sibling can itself be an ignored client install (e.g. Cursor's plugins/local).
+    # Only independent runtime siblings bypass client selection.
+    excluded_paths = {Path(entry["path"]) for entry in installed} - {Path(entry["path"]) for entry in available}
+    return locate_companion("agents-init", available, excluded=excluded_paths), available
+
+
 def content_step(env: Env, item: dict, report: dict, project: Path, accept: list[str], keep: list[str],
                  recovery_dir: Path | None, *, content_flags: list[str] | None = None) -> Step:
     if item["plugin"] != "agents-init":
         return Step("content", None, _("{0}：没有可用的刷新工具").format(item['pack']), blocked="unsupported")
-    stale = any(entry["plugin"] == "agents-init" and entry["status"] == "behind" for entry in report["plugins"])
+    # Use the same newest available copy that actually runs refresh. A stale copy in
+    # another client (including an unavailable Cursor install) must not veto it.
+    manager, installed = content_companion(env, report)
+    required = report["_latest"].get("plugins", {}).get("agents-init", {}).get("version")
+    current = _manifest_version(manager) if manager is not None else None
+    stale = bool(manager is not None and required and (not current or is_newer(required, current)))
     description = _("重新渲染 {0} {1} → {2}").format(item['pack'], item['version'], item['latest']) \
         if item.get("status") in {"update-available", "conflict"} else _("按当前模板处理指定的文件：{0} {1}").format(item['pack'], item['version'])
 
     def run(apply: bool, _recovery_root: Path | None) -> dict:
-        installed = installed_plugins(env, {"agents-init"})
-        manager = locate_companion("agents-init", installed)
+        manager, _installed = content_companion(env, report)
         if manager is None:
             raise CheckError(_("未找到已安装的 agents-init"))
         command = [sys.executable, str(manager / "skills/agents-init/scripts/init_project.py"),
@@ -1840,8 +1947,25 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
             raise CheckError(str(outcome["error"]))
         return outcome
 
-    blocked = _("先更新 agents-init 插件，再用新模板预览") if stale else None
-    return Step("content", None, description, action=run, blocked=blocked)
+    blocked, advice, note = None, None, None
+    older = [entry for entry in report["plugins"]
+             if entry["plugin"] == "agents-init" and entry["status"] in {"behind", "unavailable"}]
+    if stale:
+        owner = next((entry["client"] for entry in installed if Path(entry["path"]) == manager), None)
+        client = CLIENT_NAMES.get(owner, _("随运行时提供的副本"))
+        updatable = [entry["client"] for entry in installed if entry["client"] in {"claude", "codex"}]
+        update_client = owner if owner in updatable else next(iter(updatable), None)
+        advice = (f"{CLI} update --only plugins --client {update_client}" if update_client
+                  else f"{CLI} runtime update --apply")
+        blocked = _("先更新 agents-init：实际选用 {0} {1}（{2}），需要 {3}；下一步：{4}").format(
+            client, current or "?", manager, required, advice)
+    elif older:
+        copies = _("、").join(f"{CLIENT_NAMES.get(entry['client'], entry['client'])} {entry.get('version') or '?'}"
+                              for entry in older)
+        note = _("其他客户端的 agents-init 较旧：{0}；建议分别升级；内容刷新使用 {1}（{2}），不受这些副本阻塞。").format(
+            copies, current or "?", manager)
+    return Step("content", None, description, action=run, blocked=blocked, note=note,
+                blocker="outdated-agents-init" if stale else None, next=advice)
 
 
 STDERR_LINES = 20
@@ -1932,6 +2056,9 @@ def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
                     if apply and isinstance(outcome, dict) and outcome.get("applied") is False and outcome.get("blocked"):
                         # Files still wait for a choice: nothing was written, so this is not "done".
                         record["status"], record["needs_choice"] = "blocked", True
+                        record["reason"] = outcome.get("hint") or "\n".join(
+                            note for item in outcome.get("files", []) if item.get("action") == "blocked"
+                            for note in item.get("note", []))
                 except Unavailable as exc:
                     record["status"], record["error"] = "unavailable", str(exc)
                     if step.client == "cursor":
@@ -1974,7 +2101,7 @@ def step_outcome_ok(results: list[dict], *, blockers: bool = False) -> bool:
     """False when a step failed, ran without effect, or still waits for a choice (``blockers``: or is held back by
     a cause the user has to resolve, e.g. Claude Code has not registered the declared market yet)."""
     return not any(r["status"] in {"failed", "unchanged"} or r.get("needs_choice")
-                   or (blockers and r["status"] == "blocked" and r.get("blocker")) for r in results)
+                   or (blockers and r["status"] == "blocked" and (r.get("blocker") or r.get("kind") == "content")) for r in results)
 
 
 def outcome_summary(results: list[dict]) -> dict:
@@ -1996,9 +2123,10 @@ def outcome_summary(results: list[dict]) -> dict:
             entry["status"] = status
         if status in {"unavailable"} and record.get("error"):
             entry["reason"] = record["error"]
-        if status == "blocked" and record.get("blocker"):
-            entry["blocker"] = record["blocker"]
-            entry["reason"] = record["blocked"]
+        if status == "blocked":
+            if record.get("blocker"):
+                entry["blocker"] = record["blocker"]
+            entry["reason"] = record.get("blocked") or record.get("reason") or (record.get("result") or {}).get("hint")
     return {"ok": step_outcome_ok(results, blockers=True), "clients": clients}
 
 
@@ -2017,6 +2145,8 @@ def render_outcome(results: list[dict]) -> list[str]:
         if entry["not_run"]:
             text += _("；其后 {0} 步没有执行").format(entry["not_run"])
         lines.append(text)
+        if name == "claude" and entry["applied"]:
+            lines.append(_(RECOVERY_HINTS["claude"]))
     bad = [names.get(n, n) for n, e in ordered if e["status"] in {"failed", "unchanged"} or e.get("blocker")]
     good = [names.get(n, n) for n, e in ordered if e["status"] == "ok"]
     if bad:
@@ -2554,7 +2684,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(args, "no_project") and not args.no_project:
         project = (args.project or Path.cwd()).resolve()
     if args.command == "check" and args.hook:
-        return hook(env, project, args.hook_format)
+        return hook(env, project, args.hook_format, latest_source=args.latest, offline=args.offline, clients=args.client)
     if args.command == "locate":
         found = locate(env, args.plugin, args.version, include_legacy=args.include_legacy)
         if args.output == "json":
@@ -2598,7 +2728,7 @@ def main(argv: list[str] | None = None) -> int:
             payload: dict = {"ok": step_outcome_ok(results), "applied": args.apply, "latest": origin,
                              "clients": clients, "steps": results}
         elif args.command == "update":
-            report = run_check(env, project, latest_source=args.latest, max_age=0, clients=args.client)
+            report = run_check(env, project, latest_source=args.latest, max_age=0, clients=args.client, source=args.source)
             origin = report["latest"]["source"]
             recovery = args.recovery_dir
             if args.apply and recovery is None and project is not None:
@@ -2661,8 +2791,26 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.output == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif args.command == "update" and args.diff:
+        content_results = [record for record in payload["steps"] if record.get("kind") == "content"]
+        for record in content_results:
+            result = record.get("result") or {}
+            diffs = result.get("diffs") or {}
+            for path, diff in diffs.items():
+                if diff:
+                    print(diff, end="" if diff.endswith("\n") else "\n")
+                else:
+                    print(_("（{0} 与新模板没有差异）").format(path))
+            if not diffs:
+                print(record.get("error") or record.get("blocked") or _("没有可显示的文件差异"))
+        if not content_results:
+            print(payload.get("message") or _("没有可显示的文件差异"))
     else:
         print(origin_line(payload["latest"]))
+        if args.command == "migrate":
+            note = migration_language_note(latest.get("migrations", []))
+            if note:
+                print(note)
         if payload.get("message"):
             print(payload["message"])
         _print_steps(payload["steps"], args.apply)

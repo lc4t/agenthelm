@@ -131,7 +131,8 @@ class ProjectRuntimeConfigTests(unittest.TestCase):
         self.assertFalse((destination / ".agents" / "skills" / "sample-skill").exists())
 
         applied = transfer_to_project(
-            inventory, destination, ["sample-skill"], ["local-check"], apply=True
+            inventory, destination, ["sample-skill"], ["local-check"], apply=True,
+            recovery_root=self.root / "recovery"
         )
         self.assertTrue(applied["applied"])
         self.assertTrue((destination / ".agents" / "skills" / "sample-skill" / "SKILL.md").is_file())

@@ -1461,5 +1461,8 @@
  "定制文件逐个处理，例如 {0}：--keep {0} 保留你的版本；--accept {0} 用新模板替换（会丢弃本地内容时再加 --confirm-discard {0}）；--merge {0} 三方合并（冲突块用 --pick {0}#<序号>=mine|theirs|both）；--diff {0} 只看差异。": "Customized files are handled one by one, for example {0}: --keep {0} keeps your version; --accept {0} replaces it with the new template (when that drops local content also add --confirm-discard {0}); --merge {0} three-way merges (resolve conflict blocks with --pick {0}#<number>=mine|theirs|both); --diff {0} shows only the difference.",
  "（{0} 与新模板没有差异）": "({0} has no difference from the new template)",
  "AGENTS.md / CLAUDE.md 也可用 --append {0} 保留原文、只追加带标记的区块。": " For AGENTS.md / CLAUDE.md, --append {0} also keeps your text and only appends a marked region.",
- "只预览，不写入（省略时保持直接写入）": "Preview without writing (omitting this keeps the existing immediate-write behavior)"
+ "只预览，不写入（省略时保持直接写入）": "Preview without writing (omitting this keeps the existing immediate-write behavior)",
+ "（要求了三方合并，但历史模板无法按当前方式重新渲染，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）": " (a three-way merge was requested, but the historical template cannot be re-rendered the current way; no files changed. Choose keep / append / accept the new template instead)",
+ "（要求了三方合并，但历史模板渲染结果与内容锁摘要不一致，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）": " (a three-way merge was requested, but the historical template's render does not match the content-lock digest; no files changed. Choose keep / append / accept the new template instead)",
+ "{0}（{1} 项，展开 {2} 项）": "{0} ({1} shown, {2} expanded)"
 }

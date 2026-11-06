@@ -486,7 +486,7 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         notes.append(_("--agents-policy {0} 没有生效：AGENTS.md 不存在、不可读，或已与模板一致").format(policy))
     elif policy != "keep":
         agents_plan = _plan_agents(agents_text, policy, init_routes(args, agents_text), pristine[AGENTS],
-                                   templates["region/agents-contract"], inputs.language,
+                                   init.localized(templates, "region/agents-contract", inputs.language), inputs.language,
                                    init.localized(templates, "region/privacy-contract", inputs.language)
                                    if inputs.privacy_declared else None)
         if agents_plan["replace"]:
@@ -592,6 +592,14 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
     decided = []
     # A file that gained a managed region is "kept and appended to"; only untouched files are "kept as they were".
     appended = {str(m["path"]) for m in modifications if m["kind"] == "modify" and m.get("region")}
+    # Region-owned files have no whole-file finding anymore. Keep the adoption decision as an audit record,
+    # compatible with existing locks and refresh --keep decisions, without using it to compare user text later.
+    for name in sorted(appended):
+        scaffold.decide(root, f"content:{name}", "keep",
+                        reason="adopt: kept the file that existed before adoption and appended a managed region",
+                        fingerprint=scaffold.sha(files[Path(name)]), scope="project", apply=True,
+                        state_dir=getattr(args, "state_dir", None))
+        decided.append(f"content:{name}")
     after = scaffold.check(root, state_dir=getattr(args, "state_dir", None), reprompt=True)
     for finding in after["findings"]:
         if finding["kind"] == "content-differs" or finding["kind"].startswith("privacy-contract-"):

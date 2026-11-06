@@ -531,19 +531,19 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher:
     }
     replacements["PRIVACY_SECTION"] = privacy_section(templates, inputs.language, inputs.privacy_declared)
     replacements["PRIVACY_RULES_LINE"] = localized(templates, "privacy/rules-line", inputs.language).rstrip("\n")
-    agents = render_template(templates["AGENTS.md"], replacements)
-    route = render_template(templates["ROUTE.md"], replacements)
+    agents = render_template(localized(templates, "AGENTS.md", inputs.language), replacements)
+    route = render_template(localized(templates, "ROUTE.md", inputs.language), replacements)
     files = {
         Path("AGENTS.md"): agents,
-        Path("AGENT.RULES.md"): render_template(templates["AGENT.RULES.md"], replacements),
-        Path("OPINION.md"): render_template(templates["OPINION.md"], replacements),
-        Path("CLAUDE.md"): render_template(templates["CLAUDE.md"], replacements),
+        Path("AGENT.RULES.md"): render_template(localized(templates, "AGENT.RULES.md", inputs.language), replacements),
+        Path("OPINION.md"): render_template(localized(templates, "OPINION.md", inputs.language), replacements),
+        Path("CLAUDE.md"): render_template(localized(templates, "CLAUDE.md", inputs.language), replacements),
         Path("AGENT.md"): route,
         Path(".agents/plugin.json"): json_text({
             "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
             "name": inputs.slug,
             "version": "0.1.0",
-            "description": "项目本地的可移植 Agent 能力包。",
+            "description": "Portable Agent capabilities local to this project." if inputs.language == "en" else "项目本地的可移植 Agent 能力包。",
         }),
         Path(".agents/mcp.json"): json_text({
             "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
@@ -551,13 +551,13 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher:
         }),
         PROFILE_PATH: json_text(profile),
         Path(".agents/skills/.gitkeep"): "",
-        Path(".agent-doc/plan.md"): render_template(templates[".agent-doc/plan.md"], replacements),
-        Path(".agent-doc/progress.md"): render_template(templates[".agent-doc/progress.md"], replacements),
-        Path(".agent-doc/chat-summary.md"): render_template(templates[".agent-doc/chat-summary.md"], replacements),
+        Path(".agent-doc/plan.md"): render_template(localized(templates, ".agent-doc/plan.md", inputs.language), replacements),
+        Path(".agent-doc/progress.md"): render_template(localized(templates, ".agent-doc/progress.md", inputs.language), replacements),
+        Path(".agent-doc/chat-summary.md"): render_template(localized(templates, ".agent-doc/chat-summary.md", inputs.language), replacements),
         Path("memory/.gitkeep"): "",
         Path("sops/.gitkeep"): "",
         Path("private/.gitignore"): PRIVATE_IGNORE,
-        Path("docs/refs/README.md"): render_template(templates["docs/refs/README.md"], replacements),
+        Path("docs/refs/README.md"): render_template(localized(templates, "docs/refs/README.md", inputs.language), replacements),
         Path("docs/drafts/.gitkeep"): "",
     }
     if inputs.work_mode == "case-workspace":
@@ -827,6 +827,11 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str], *, inpu
         for path_, ids in regions.items():
             merged[path_] = {**merged.get(path_, {}), **ids}
         updated["regions"] = dict(sorted(merged.items()))
+    # Whole-file baselines cannot describe a file owned only through regions. Older locks may contain both.
+    for region_path, ids in updated.get("regions", {}).items():
+        if ids:
+            updated["files"].pop(region_path, None)
+            updated.get("file_versions", {}).pop(region_path, None)
     lock["packs"][pack["id"]] = updated
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, json_text(lock))
@@ -960,11 +965,12 @@ def _inputs_from_lock(root: Path, recorded: object, fallback: Inputs) -> Inputs:
 
 
 def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], recorded: object, current: Inputs,
-                  providers: list, pack_id: str) -> dict | None:
+                  providers: list, pack_id: str, diagnostics: dict | None = None) -> dict | None:
     """Re-render ``relative`` as an earlier content pack did and return it only if it hashes to ``digest``.
 
     ``digest`` is what the content lock recorded when the file was written, so a match proves the text is exactly the
-    baseline; a wrong guess (another pack version, other inputs) never matches and is skipped.
+    baseline; a wrong guess (another pack version, other inputs) never matches and is skipped. Optional diagnostics
+    distinguish a known historical pack the current renderer cannot handle from sources that yielded no matching text.
     """
     start = _inputs_from_lock(root, recorded, current)
     variants = [start, dataclasses.replace(start, privacy_declared=not start.privacy_declared)]
@@ -981,7 +987,11 @@ def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], 
                         text = files_for(variant, templates, source.launcher).get(relative)
                         if text is not None and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest:
                             return {"text": text, "source": source.label, "kind": source.kind, "version": source.version}
+                        if text is not None and diagnostics is not None and (not versions or source.version in versions):
+                            diagnostics["rendered"] = True  # 来源可用、模板可渲染，只是结果与内容锁摘要对不上
                 except (InitError, KeyError, ValueError):
+                    if diagnostics is not None and (not versions or source.version in versions):
+                        diagnostics["reason"] = "baseline-template-incompatible"
                     continue
         except (OSError, ValueError):
             continue
@@ -1026,14 +1036,22 @@ def _refresh_notes(item: dict) -> list[str]:
     """Human lines for a file refresh cannot silently decide: why, what each choice costs, what to type."""
     path, reason = item["path"], item.get("reason")
     notes: list[str] = []
+    if item.get("comparison") == "regions":
+        return [_("只比较已登记的受管区块，区块外内容属于你；用 --mode region 查看并更新区块，整文件模板变化不再追问")]
     if reason == "baseline-unavailable":
-        notes.append(_("找不到这个文件升级前的基线（旧版本包不在本机运行时缓存和本地 git tag 里，也没能从 GitHub Release 取得），无法三方合并；"
+        notes.append(_("历史来源未能提供与内容锁摘要一致的基线（本机缓存、本地 git tag 或 GitHub Release；联网可能已关闭，或下载与校验未成功），无法三方合并；"
                        "没有改动任何文件，请改用 --keep / --append / --accept 选择"))
+    elif reason == "baseline-digest-mismatch":
+        notes.append(_("历史来源可用，模板也能渲染，但渲染结果与内容锁记录的摘要不一致（渲染输入或文件基线不同），无法确认你的起点，不能三方合并；"
+                       "没有改动任何文件，请改用 --keep / --append / --accept 选择"))
+    elif reason == "baseline-template-incompatible":
+        notes.append(_("内容锁里有基线摘要，但对应的历史模板缺少当前渲染所需的区块，无法重新渲染，不能三方合并；"
+                       "没有改动任何文件，此类项目请用 --keep / --append / --accept 选择"))
     elif reason == "merge-conflict":
         numbers = ", ".join(str(number) for number in item["merge"]["unresolved"])
         notes.append(_("有 {0} 处冲突需要你选择（第 {1} 块）：--pick {2}#<序号>=mine|theirs|both"
                        "（mine 保留你的、theirs 取新模板、both 两边都留）").format(len(item["merge"]["unresolved"]), numbers, path))
-    elif reason == "no-baseline" and item.get("merge_requested"):
+    elif reason == "no-baseline" and item.get("merge_requested") and item["state"] != "kept-by-decision":
         notes.append(_("内容锁里没有 {0} 的基线摘要，无法三方合并：确认不了哪个历史版本是你的起点，也不猜基线（猜错会让合并悄悄吞掉改动）；"
                        "没有改动任何文件。请改选：--keep {0} / --append {0} / --accept {0}").format(path))
     if item["action"] == "merge":
@@ -1135,6 +1153,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     # every file that differs from the new render counts as locally modified.
     entry = (lock.get("packs") or {}).get(pack["id"]) or {}
     baseline: dict[str, str] = dict(entry.get("files") or {})
+    region_paths = {path for path, ids in (entry.get("regions") or {}).items() if ids}
     file_versions: dict[str, str] = dict(entry.get("file_versions") or {})  # 文件基线是哪个内容包版本渲染的（未更新的文件仍是旧版本）
     inputs = inputs_from_profile(root)
     rendered = files_for(inputs)
@@ -1157,6 +1176,10 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         raise InitError(_("只有 AGENTS.md 和 CLAUDE.md 可以追加受管区块：") + ", ".join(sorted(map(str, not_appendable))))
     if show_diff and args.apply:
         raise InitError(_("--diff 只用于查看，不能与 --apply 同用"))
+    # 区块归属的文件被删除后不再有"用户正文"可保护：--accept 走原来的缺失文件逻辑重建，不在这里拒绝。
+    whole_file_picks = {path.as_posix() for path in (accept | merge) if (root / path).exists() or (root / path).is_symlink()} & region_paths
+    if whole_file_picks:
+        raise InitError(_("这些文件只管理已登记的区块，请用 --mode region 处理，不能替换或合并整文件：{0}").format(", ".join(sorted(whole_file_picks))))
     templates = load_templates()
     regions = _regions()
     merge3 = _merge3() if merge else None
@@ -1181,6 +1204,24 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             continue
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest() if current is not None else None
+        if relative.as_posix() in region_paths and relative not in append and current is not None:
+            # Keep existing whole-file decisions without renewing their template fingerprints. The region table
+            # owns future comparisons; even a changed full template must never prompt about the user's text.
+            item = {"path": relative.as_posix(), "state": "kept-by-decision" if relative.as_posix() in kept_before else "local-only",
+                    "action": "keep", "comparison": "regions"}
+            if relative in show_diff:
+                diffs = []
+                for region_id in sorted(entry["regions"][relative.as_posix()]):
+                    key = f"region/{region_id}"
+                    if key not in templates:
+                        continue
+                    existing = regions.get(current, region_id) if current is not None else None
+                    diffs.append(_unified_diff(f"{relative.as_posix()}#{region_id}", existing.body if existing else "",
+                                               regions.normalize(localized(templates, key, inputs.language))))
+                item["diff"] = "".join(diffs)
+            item["note"] = _refresh_notes(item)
+            plan.append(item)
+            continue
         added, lost = line_delta(current or "", new)
         reason = None
         merge_info = None
@@ -1205,10 +1246,12 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                 if reason == "edited":
                     wanted = [version for version in (file_versions.get(relative.as_posix()), entry.get("version"))
                               if version and version != UNKNOWN_PACK_VERSION]
+                    diagnostics: dict = {}
                     found = find_baseline(root, relative, baseline[relative.as_posix()], list(dict.fromkeys(wanted)),
-                                          entry.get("render_inputs"), inputs, providers, pack["id"])
+                                          entry.get("render_inputs"), inputs, providers, pack["id"], diagnostics)
                     if found is None:
-                        reason = "baseline-unavailable"
+                        reason = diagnostics.get("reason") or (
+                            "baseline-digest-mismatch" if diagnostics.get("rendered") else "baseline-unavailable")
                 if found is not None:
                     merged = merge3.merge_text(found["text"], current, new)
                     chosen = picks.get(relative, {})
@@ -1233,7 +1276,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                 action = "keep"
             else:
                 action = "blocked"
-            if decided and relative not in accept and relative not in merge:
+            if decided and relative not in accept:
                 state = "kept-by-decision"
         item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
         if reason:
@@ -1287,7 +1330,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     unmet = sorted(path.as_posix() for path in append if path.as_posix() not in satisfied)
     if unmet:
         raise InitError(_("没有本地改动，不需要追加区块：") + ", ".join(unmet))
-    not_modified = sorted(item["path"] for item in plan if Path(item["path"]) in merge and item["state"] != "modified")
+    not_modified = sorted(item["path"] for item in plan if Path(item["path"]) in merge and item["state"] not in {"modified", "kept-by-decision"})
     if not_modified:
         raise InitError(_("没有需要合并的本地改动（文件没改过，或已与新模板一致）：") + ", ".join(not_modified))
     blocked = [item["path"] for item in plan if item["action"] == "blocked"]
@@ -1315,7 +1358,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     if blocked:
         hints = []
         needs_choice = [item["path"] for item in plan
-                        if item["action"] == "blocked" and item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "symlink"}]
+                        if item["action"] == "blocked" and item["state"] != "kept-by-decision"
+                        and item.get("reason") in {"no-baseline", "edited", "baseline-unavailable", "baseline-template-incompatible", "baseline-digest-mismatch", "symlink"}]
         if needs_choice:
             hints.append(_("本地已改动的文件需逐个选择："))
             hints += [_("  {0}：{1}").format(path, file_choices(path) if path not in symlinks else _("--keep {0} 保留链接原样（建议）").format(path))
@@ -1352,6 +1396,10 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             _atomic_write(target, text, os.stat(target).st_mode & 0o7777)
     files = dict(baseline)
     for item in plan:
+        if item.get("comparison") == "regions":
+            files.pop(item["path"], None)
+            file_versions.pop(item["path"], None)
+            continue
         if item["action"] in {"replace", "create", "merge"} or item["state"] == "unchanged":
             files[item["path"]] = item["new_sha256"]
             file_versions[item["path"]] = pack["version"]
@@ -1369,12 +1417,18 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         for path, ids in new_regions.items():
             merged.setdefault(path, {}).update(ids)
         new_entry["regions"] = dict(sorted(merged.items()))
+    for region_path, ids in new_entry.get("regions", {}).items():
+        if ids:
+            new_entry["files"].pop(region_path, None)
+            new_entry.get("file_versions", {}).pop(region_path, None)
     lock.setdefault("packs", {})[pack["id"]] = new_entry
     lock_path = root / CONTENT_LOCK_PATH
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(lock_path, json_text(lock))
     # 显式 --keep / --append 的选择记入决定文件：同样的模板内容以后不再追问，模板实质变化时才再问。
     for item in plan:
+        if item.get("comparison") == "regions":
+            continue
         chosen_keep = Path(item["path"]) in (keep | append) or item["action"] in {"append", "merge"}
         if chosen_keep and item["state"] in {"modified", "local-only", "kept-by-decision", "symlink"}:
             _scaffold().decide(root, f"content:{item['path']}", "keep",

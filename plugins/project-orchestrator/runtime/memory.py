@@ -21,6 +21,7 @@ STATUSES = ("active", "retired")
 SCALARS = ("schema_version", "id", "type", "status", "description", "created", "verified_at", "review_after", "supersedes", "promoted_to")
 REQUIRED = ("schema_version", "id", "type", "status", "description", "created", "verified_at")
 SUMMARY_SECTIONS = ("待确认假设", "未解决冲突", "Opinion 演化候选")
+SUMMARY_SECTION_PAIRS = dict(zip(SUMMARY_SECTIONS, ("Assumptions to confirm", "Unresolved conflicts", "Opinion evolution candidates")))
 IDENTITY = re.compile(r"MEM-\d{8}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 
@@ -69,6 +70,13 @@ def settings(args: argparse.Namespace) -> tuple[Path, Path, dict[str, Any]]:
     policy_path = args.policy or declared.get("policy")
     policy = read_json(confined(project, policy_path)) if policy_path else {}
     return project, root, policy
+
+
+def file_language(project: Path) -> str:
+    """Generated file language belongs to the project, independently of UI settings."""
+    path = project / PROJECT_PROFILE
+    profile = read_json(path) if path.is_file() else {}
+    return "en" if profile.get("language") == "en" else "zh"
 
 
 def parse_entry(text: str) -> tuple[dict[str, Any], str]:
@@ -136,17 +144,20 @@ def is_due(meta: dict[str, Any], policy: dict[str, Any], today: date) -> bool:
     return deadline is not None and deadline < today
 
 
-def index_lines(entries: list[dict[str, Any]], policy: dict[str, Any], today: date) -> list[str]:
+def index_lines(entries: list[dict[str, Any]], policy: dict[str, Any], today: date, language: str = "zh") -> list[str]:
     lines = []
     for entry in entries:
         meta = entry["meta"]
         if meta.get("status") != "active":
             continue
         try:
-            mark = _("｜可能过期") if is_due(meta, policy, today) else ""
+            mark = (" | Possibly stale" if language == "en" else "｜可能过期") if is_due(meta, policy, today) else ""
         except EntryError:
             mark = ""
-        lines.append(f"- `{meta.get('id', entry['path'].stem)}`（{meta.get('type', '?')}）：{meta.get('description', '')}{mark}")
+        if language == "en":
+            lines.append(f"- `{meta.get('id', entry['path'].stem)}` ({meta.get('type', '?')}): {meta.get('description', '')}{mark}")
+        else:
+            lines.append(f"- `{meta.get('id', entry['path'].stem)}`（{meta.get('type', '?')}）：{meta.get('description', '')}{mark}")
     return lines
 
 
@@ -213,9 +224,12 @@ def check_budgets(project: Path, lines: list[str], policy: dict[str, Any]) -> li
     if path.is_file():
         text = path.read_text(encoding="utf-8")
         headings = [line[3:].strip() for line in text.splitlines() if line.startswith("## ")]
-        for section in summary.get("required_sections", SUMMARY_SECTIONS):
+        default_sections = tuple(SUMMARY_SECTION_PAIRS.values()) if file_language(project) == "en" else SUMMARY_SECTIONS
+        for section in summary.get("required_sections", default_sections):
             # 按前缀匹配，项目可以在固定小节名之后补充说明。
-            if not any(heading.startswith(section) for heading in headings):
+            # Default section names accept either file language, including files kept after a language switch.
+            variants = next(((zh, en) for zh, en in SUMMARY_SECTION_PAIRS.items() if section in (zh, en)), (section,))
+            if not any(heading.startswith(variant) for heading in headings for variant in variants):
                 found.append({"code": "summary-section-missing", "entry": path.name, "message": _("缺少小节：{0}").format(section)})
         if summary.get("max_bytes") and len(text.encode("utf-8")) > int(summary["max_bytes"]):
             found.append({"code": "summary-too-large", "entry": path.name, "message": _("超过 {0} 字节").format(summary['max_bytes'])})
@@ -231,7 +245,7 @@ def command_check(project: Path, root: Path, policy: dict[str, Any], today: date
         if identity in seen:
             problems.append({"code": "duplicate-id", "entry": entry["path"].name, "message": _("与 {0} 编号重复").format(seen[identity])})
         seen.setdefault(identity, entry["path"].name)
-    lines = index_lines(entries, policy, today)
+    lines = index_lines(entries, policy, today, file_language(project))
     problems.extend(check_budgets(project, lines, policy))
     active = [entry["meta"] for entry in entries if entry["meta"].get("status") == "active"]
     due = []
@@ -289,7 +303,10 @@ def command_update(args: argparse.Namespace, project: Path, root: Path, today: d
             fail(_("retire 需要 --reason 或 --promoted-to"))
         meta["status"] = "retired"
         meta["promoted_to"] = args.promoted_to or meta.get("promoted_to", "")
-        body = body.rstrip() + f"\n\n**退役**：{today.isoformat()}，{args.reason or '已晋升到 ' + args.promoted_to}\n"
+        if file_language(project) == "en":
+            body = body.rstrip() + f"\n\n**Retired**: {today.isoformat()}, {args.reason or 'Promoted to ' + args.promoted_to}\n"
+        else:
+            body = body.rstrip() + f"\n\n**退役**：{today.isoformat()}，{args.reason or '已晋升到 ' + args.promoted_to}\n"
     else:
         meta["verified_at"] = today.isoformat()
         if args.review_after:
@@ -331,7 +348,7 @@ def run(args: argparse.Namespace) -> tuple[int, str]:
     today = parse_date(args.today, "--today") if args.today else date.today()
     if args.action == "index":
         entries, _problems = load_entries(root)
-        lines = index_lines(entries, policy, today)
+        lines = index_lines(entries, policy, today, file_language(project))
         if args.output == "json":
             return 0, json.dumps({"ok": True, "lines": lines}, ensure_ascii=False, indent=2) + "\n"
         return 0, "\n".join(lines) + ("\n" if lines else "")
