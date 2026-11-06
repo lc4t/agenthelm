@@ -1025,7 +1025,15 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     for item in plugins:
         item["unavailable"] = None
     if any(item["client"] == "cursor" for item in behind):
-        reason = cursor_unavailable(latest, source, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
+        # Keep the resolved release for the update preview/apply as well: otherwise
+        # GitHub's latest release may move between the check and the download.
+        if source is None and not latest.get("release"):
+            release = github_release(latest, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
+            if release:
+                latest["release"] = release
+            reason = release_problem(release)
+        else:
+            reason = cursor_unavailable(latest, source, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
         for item in behind:
             if reason and item["client"] == "cursor":
                 item["unavailable"] = reason
@@ -1585,6 +1593,21 @@ def release_source(latest: dict, workdir: Path, source: Path | None = None) -> P
     roots = [path for path in extracted.iterdir() if path.is_dir()]
     if len(roots) != 1 or not (roots[0] / "plugins").is_dir():
         raise CheckError(_("发布包结构不符合预期"))
+    # Validate every advertised plugin before the first installation writes to the
+    # client's directory. A valid digest alone does not guarantee the advertised BOM.
+    for name, expected in _plugin_versions(latest).items():
+        plugin = roots[0] / "plugins" / name
+        try:
+            identity = read_json(plugin / "plugin.json").get("name")
+        except (OSError, ValueError, AttributeError):
+            identity = None
+        if identity != name:
+            raise CheckError(_("发布包里的 {0} 身份为 {1}，与发布清单不符；没有改动客户端安装").format(
+                name, identity or "?"))
+        actual = _manifest_version(plugin)
+        if actual != expected:
+            raise CheckError(_("发布包里的 {0} 版本为 {1}，发布清单要求 {2}；没有改动客户端安装").format(
+                name, actual or "?", expected))
     return roots[0]
 
 
@@ -2622,7 +2645,7 @@ def main(argv: list[str] | None = None) -> int:
             payload: dict = {"ok": step_outcome_ok(results), "applied": args.apply, "latest": origin,
                              "clients": clients, "steps": results}
         elif args.command == "update":
-            report = run_check(env, project, latest_source=args.latest, max_age=0, clients=args.client)
+            report = run_check(env, project, latest_source=args.latest, max_age=0, clients=args.client, source=args.source)
             origin = report["latest"]["source"]
             recovery = args.recovery_dir
             if args.apply and recovery is None and project is not None:
