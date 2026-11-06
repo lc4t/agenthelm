@@ -510,3 +510,172 @@ v5 把生命周期与扩展管理合并在 `project-runtime` 中，Profile 位�
 - Project Profile 声明记忆提供方；`AGENT.RULES.md` 含记忆的写入去向、召回核实与客户端私有记忆边界。
 - 个人规则、凭据、token、私有路径或私有 Skill 内容均未进入公开模板。
 - 除非用户逐项批准替换，否则保留现有文件。
+
+## English project file templates
+
+These blocks use the Project Profile `language`, independently of the interface language. Their structure and placeholders match the Chinese blocks above.
+
+<!-- agents-init:template AGENTS.md.en -->
+```markdown
+# PROJECT_NAME — Agent entry point
+
+## Project Profile
+
+- Type: PROJECT_TYPE
+- VCS: VCS
+- Stack: STACK
+- Runtime: RUNTIME
+- Agent clients: AGENT_CLI
+
+Machine-readable source of truth: `.agents/moe.sakanano.agent-pack/project.json`.
+
+## Session entry
+
+1. Load `project-orchestrator` as the single project lifecycle Skill.
+2. Have it read the Project Profile, current Git state, and the entry files required for the current task.
+3. Use domain Skills for deliverables and deterministic Tools for state changes.
+4. Delegate Plugin, Skill and MCP inventory, synchronization and migration to `agent-pack`.
+5. When `OPINION.md` contains user-confirmed rules, obtain guidance from `opinion-manager` before implementation and run its check before delivery. If the Profile declares layered loading, read core rules and the bundle index first, then the matching bundles; read the full `OPINION.md` when the tool returns `fallback`.
+6. Read the memory index declared in the Project Profile's `memory` section. Verify a memory before acting on it, as specified in `AGENT.RULES.md`.
+
+## Responsibilities
+
+- `agents-init` only creates or migrates this scaffold.
+- `project-orchestrator` selects the work container by `work.mode`, organizes Case directories, manages progress, validates orchestration, and handles Git handoffs.
+- `agent-pack` manages Plugin/Skill/MCP capabilities between projects and clients.
+- Opinion guides and reviews deliverables; it does not manage the project lifecycle.
+- Domain Skills must not create unrelated Tasks, edit root progress, modify themselves, or commit autonomously.
+- Preserve unrelated changes. Pushes, releases, merges, deletion and destructive migration require explicit authorization.
+
+## Project menu
+
+Run `ENTRY_COMMAND` without an Agent to open the project menu: find files, see progress, read the project guide, check and maintain. Agents needing the same information use its subcommands with `--output json` (for example, `ENTRY_COMMAND find <words> --output json`); do not create a separate search implementation. Write commands preview by default.
+
+PRIVACY_SECTION
+
+## Project-specific entry points
+
+- Commands: TODO
+- Tests: TODO
+- Build: TODO
+- Architecture/documentation: TODO
+- User rules: if `AGENT.USER.md` exists (user content moved from the original `AGENTS.md` during adoption), follow it alongside this file.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template AGENT.RULES.md.en -->
+```markdown
+# Project-specific rules
+
+This file holds stable constraints unique to this repository. The `project-orchestrator` Skill owns the shared lifecycle; `agent-pack` manages additional capabilities.
+
+## Commands and validation
+
+- Initialization: TODO
+- Tests: TODO
+- Build: TODO
+
+## File locations and generated output
+
+- Source of truth: TODO
+- Generated output: TODO
+
+## Privacy and external systems
+
+- PRIVACY_RULES_LINE
+- External writes requiring authorization: all, unless explicitly configured otherwise
+
+## Memory
+
+- Destination: each kind of information has one source of truth; other locations contain pointers. Store stable project facts and external reference locations in memory entries, work in progress in the selected work mode's authoritative record, and behavioral or expression preferences through the `opinion-manager` candidate confirmation flow. `.agent-doc/chat-summary.md` contains only unresolved matters and pointers.
+- Exclude from memory: facts directly available from files or version history, information already in rules or this file, completed-work logs, and details useful only in the current conversation.
+- Recall: memories reflect facts when recorded. Before acting on one, verify that its files, commands and external objects still exist; update or retire stale entries.
+- Client-private memory: built-in client memory holds only that client's runtime facts. Put project facts, preferences and conclusions in the repository so every client reads the same content.
+- Wrap-up: generate the memory index and run checks before finishing a milestone.
+- Parameters (size budgets, review intervals): not configured
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template OPINION.md.en -->
+```markdown
+# Project Opinion overlay
+
+Opinion is not configured yet.
+
+Use `opinion-manager` to apply a template, select individual rules, or start from scratch; candidates can also be proposed from authorized memories. A complete preview takes effect after user confirmation. Personal content belongs only in this project.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template CLAUDE.md.en -->
+```markdown
+@AGENTS.md
+
+## Claude Code
+
+Put Claude Code-specific instructions here; shared project rules belong in `AGENTS.md` and `AGENT.RULES.md`.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template ROUTE.md.en -->
+```markdown
+# Agent routing
+
+Read `AGENTS.md` and follow its Project Profile. Load `project-orchestrator` for the project lifecycle; delegate Plugin/Skill/MCP capability management to `agent-pack`, and Opinion generation, reading and review to `opinion-manager`.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template region/agents-contract.en -->
+```markdown
+## agenthelm project contract
+
+agenthelm manages this project's lifecycle. Before substantive work:
+
+1. Load `project-orchestrator` and read `.agents/moe.sakanano.agent-pack/project.json` (Project Profile).
+2. Read `AGENT.RULES.md` for project-specific constraints; delegate Plugin/Skill/MCP management to `agent-pack`, and Opinion to `opinion-manager`.
+3. The rest of this file contains user rules that existed before adoption. Follow them alongside this contract.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template .agent-doc/plan.md.en -->
+```markdown
+# Plan
+
+There is no active multi-step plan.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template .agent-doc/progress.md.en -->
+```markdown
+# Progress
+
+There is no active work record. `project-orchestrator` manages project work through the configured project subsystem.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template .agent-doc/chat-summary.md.en -->
+```markdown
+# Session summary
+
+This file contains only unresolved matters and pointers to authoritative locations. Once resolved, record the conclusion in its proper location and remove it here.
+
+## Assumptions to confirm
+
+None.
+
+## Unresolved conflicts
+
+None.
+
+## Opinion evolution candidates
+
+None. Submit candidate rules through `opinion-manager` for user confirmation; never promote them automatically here.
+```
+<!-- /agents-init:template -->
+
+<!-- agents-init:template docs/refs/README.md.en -->
+```markdown
+# References
+
+Place reusable references here when the project contract requires retaining them.
+```
+<!-- /agents-init:template -->
