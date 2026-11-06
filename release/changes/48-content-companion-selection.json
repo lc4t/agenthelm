@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "内容刷新按实际执行刷新的 agents-init 副本判断是否落后，并遵循 --client 与忽略设置；其他客户端的旧副本只提示升级，不再阻塞内容更新；所有可用副本过旧时写明客户端、版本、路径和下一步命令（#48）。",
+    "en": "Content refresh decides staleness from the agents-init copy that actually runs it, honoring --client and ignore settings; older copies in other clients only produce an upgrade note instead of blocking; when every usable copy is too old the client, version, path and next command are reported (#48)."
+  },
+  "changes": [
+    {"scope": "agent-pack", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []}
+  ],
+  "suite": null
+}

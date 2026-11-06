@@ -740,10 +740,10 @@ def content_findings(project: Path, latest: dict) -> list[dict]:
     return findings
 
 
-def locate_companion(name: str, installed: list[dict]) -> Path | None:
+def locate_companion(name: str, installed: list[dict], *, excluded: set[Path] | None = None) -> Path | None:
     """The newest copy of a companion plugin: next to this one or in any client install."""
     candidates = [PLUGIN_ROOT.parent / name, *(Path(item["path"]) for item in installed if item["plugin"] == name)]
-    candidates = [path for path in candidates if (path / "plugin.json").is_file()]
+    candidates = [path for path in candidates if path not in (excluded or set()) and (path / "plugin.json").is_file()]
     return max(candidates, key=lambda path: version_key(_manifest_version(path) or "") or (0,)) if candidates else None
 
 
@@ -1850,17 +1850,38 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
     return steps
 
 
+def content_companion(env: Env, report: dict) -> tuple[Path | None, list[dict]]:
+    """Use the same client selection for planning and execution, retaining an independent runtime sibling."""
+    installed = installed_plugins(env, {"agents-init"})
+    selection = report.get("clients") or select_clients(env, None)
+    selected = selection.get("selected") or selection.get("explicit")
+    excluded = set(selection.get("ignored") or []) | set(selection.get("excluded") or [])
+    available = []
+    for entry in installed:
+        owner = legacy_owner(env, entry) if entry["client"] == "legacy" else entry["client"]
+        if owner is None or (owner not in excluded and (not selected or owner in selected)):
+            available.append(entry)
+    # A sibling can itself be an ignored client install (e.g. Cursor's plugins/local).
+    # Only independent runtime siblings bypass client selection.
+    excluded_paths = {Path(entry["path"]) for entry in installed} - {Path(entry["path"]) for entry in available}
+    return locate_companion("agents-init", available, excluded=excluded_paths), available
+
+
 def content_step(env: Env, item: dict, report: dict, project: Path, accept: list[str], keep: list[str],
                  recovery_dir: Path | None, *, content_flags: list[str] | None = None) -> Step:
     if item["plugin"] != "agents-init":
         return Step("content", None, _("{0}：没有可用的刷新工具").format(item['pack']), blocked="unsupported")
-    stale = any(entry["plugin"] == "agents-init" and entry["status"] == "behind" for entry in report["plugins"])
+    # Use the same newest available copy that actually runs refresh. A stale copy in
+    # another client (including an unavailable Cursor install) must not veto it.
+    manager, installed = content_companion(env, report)
+    required = report["_latest"].get("plugins", {}).get("agents-init", {}).get("version")
+    current = _manifest_version(manager) if manager is not None else None
+    stale = bool(manager is not None and required and (not current or is_newer(required, current)))
     description = _("重新渲染 {0} {1} → {2}").format(item['pack'], item['version'], item['latest']) \
         if item.get("status") in {"update-available", "conflict"} else _("按当前模板处理指定的文件：{0} {1}").format(item['pack'], item['version'])
 
     def run(apply: bool, _recovery_root: Path | None) -> dict:
-        installed = installed_plugins(env, {"agents-init"})
-        manager = locate_companion("agents-init", installed)
+        manager, _installed = content_companion(env, report)
         if manager is None:
             raise CheckError(_("未找到已安装的 agents-init"))
         command = [sys.executable, str(manager / "skills/agents-init/scripts/init_project.py"),
@@ -1885,8 +1906,25 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
             raise CheckError(str(outcome["error"]))
         return outcome
 
-    blocked = _("先更新 agents-init 插件，再用新模板预览") if stale else None
-    return Step("content", None, description, action=run, blocked=blocked)
+    blocked, advice, note = None, None, None
+    older = [entry for entry in report["plugins"]
+             if entry["plugin"] == "agents-init" and entry["status"] in {"behind", "unavailable"}]
+    if stale:
+        owner = next((entry["client"] for entry in installed if Path(entry["path"]) == manager), None)
+        client = CLIENT_NAMES.get(owner, _("随运行时提供的副本"))
+        updatable = [entry["client"] for entry in installed if entry["client"] in {"claude", "codex"}]
+        update_client = owner if owner in updatable else next(iter(updatable), None)
+        advice = (f"{CLI} update --only plugins --client {update_client}" if update_client
+                  else f"{CLI} runtime update --apply")
+        blocked = _("先更新 agents-init：实际选用 {0} {1}（{2}），需要 {3}；下一步：{4}").format(
+            client, current or "?", manager, required, advice)
+    elif older:
+        copies = _("、").join(f"{CLIENT_NAMES.get(entry['client'], entry['client'])} {entry.get('version') or '?'}"
+                              for entry in older)
+        note = _("其他客户端的 agents-init 较旧：{0}；建议分别升级；内容刷新使用 {1}（{2}），不受这些副本阻塞。").format(
+            copies, current or "?", manager)
+    return Step("content", None, description, action=run, blocked=blocked, note=note,
+                blocker="outdated-agents-init" if stale else None, next=advice)
 
 
 STDERR_LINES = 20
