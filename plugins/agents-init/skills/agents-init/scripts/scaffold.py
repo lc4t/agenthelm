@@ -255,7 +255,7 @@ def read_lock(root: Path) -> tuple[dict | None, str | None]:
         return None, None if exc.code == "refresh-unavailable" else str(exc)
 
 
-def _skeleton_state(ctx: Context, entry: dict, baseline: dict[str, str]) -> str:
+def _skeleton_state(ctx: Context, entry: dict, baseline: dict[str, str], region_paths: set[str] | None = None) -> str:
     target = ctx.root / entry["path"]
     compare = entry["compare"]
     if compare == "opinion":
@@ -266,6 +266,9 @@ def _skeleton_state(ctx: Context, entry: dict, baseline: dict[str, str]) -> str:
         return "missing"
     if _lstat(target) is None:
         return "missing"
+    # A region-owned file belongs to the user outside its recorded blocks. Region rows below compare those blocks.
+    if entry["path"] in (region_paths or set()):
+        return "ok"
     if compare == "lock" and entry["path"] in ctx.tracked and entry["path"] not in baseline:
         current = _file_digest(target)
         expected = ctx.expected_text(entry["path"])
@@ -890,7 +893,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
 
     skeleton = []
     for entry in ctx.entries():
-        state = _skeleton_state(ctx, entry, baseline)
+        state = _skeleton_state(ctx, entry, baseline, {path for path, ids in (pack_entry or {}).get("regions", {}).items() if ids})
         skeleton.append({"path": entry["path"], "compare": entry["compare"], "required": entry["required"],
                          "state": state, "fingerprint": entry["fingerprint"]})
         if state == "missing" and entry["required"]:

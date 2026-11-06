@@ -90,6 +90,46 @@ class ContentMergeUpdateTests(unittest.TestCase):
         self.assertEqual(self.tree(), before)
         self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), mine)
 
+    def test_previously_kept_file_is_named_as_kept_without_another_recommended_keep(self) -> None:
+        self.old_lock_without_baseline()
+        kept = self.cli("update", "--only", "content", "--keep", "AGENTS.md", "--apply")
+        self.assertEqual(kept.returncode, 0, kept.stdout + kept.stderr)
+        for lang, state in (("zh", "已决定保留"), ("en", "kept by decision")):
+            done = self.cli("update", "--only", "content", "--merge", "AGENTS.md", lang=lang)
+            self.assertIn(state, done.stdout)
+            self.assertNotIn("(recommended)", done.stdout)
+            self.assertNotIn("（建议）", done.stdout)
+            self.assertNotIn("本地已改动的文件需逐个选择", done.stdout)
+            self.assertIn("--accept AGENTS.md", done.stdout)
+            self.assertIn("无法三方合并" if lang == "zh" else "three-way merge", done.stdout)
+            if lang == "en":
+                self.assertFalse(CJK.search(done.stdout), done.stdout)
+
+    def test_content_prerequisite_block_is_an_apply_failure_even_without_a_blocker_code(self) -> None:
+        sys.path.insert(0, str(RUNTIME))
+        import agenthelm
+        step = agenthelm.Step("content", None, "refresh", blocked="Update agents-init first")
+        for apply in (False, True):
+            results = agenthelm.execute_steps([step], apply=apply, recovery_root=None)
+            self.assertEqual(agenthelm.step_outcome_ok(results, blockers=apply), not apply)
+            summary = agenthelm.outcome_summary(results)
+            self.assertEqual(summary["clients"]["content"]["reason"], step.blocked)
+            self.assertFalse(summary["ok"])
+
+    def test_blocked_apply_fails_and_preview_succeeds_with_a_readable_json_reason(self) -> None:
+        self.old_lock_without_baseline()
+        for lang in ("zh", "en"):
+            before = self.tree()
+            preview = self.cli("update", "--only", "content", "--merge", "AGENTS.md", lang=lang)
+            self.assertEqual(preview.returncode, 0, preview.stdout)
+            done = self.cli("update", "--only", "content", "--merge", "AGENTS.md", "--apply", "--output", "json", lang=lang)
+            self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+            payload = json.loads(done.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["steps"][0]["status"], "blocked")
+            self.assertTrue(payload["steps"][0]["reason"])
+            self.assertEqual(self.tree(), before)
+
     def test_append_then_merge_is_also_handed_to_refresh(self) -> None:
         self.old_lock_without_baseline()
         done = self.cli("update", "--only", "content", "--append", "AGENTS.md", "--apply", "--recovery-dir", str(self.base / "rec"))
@@ -130,6 +170,7 @@ class ContentMergeUpdateTests(unittest.TestCase):
         self.old_lock_without_baseline()
         for lang in ("zh", "en"):
             done = self.cli("update", "--only", "content", "--diff", "AGENTS.md", lang=lang)
+            self.assertTrue(all(line.startswith(("---", "+++", "@@", "+", "-", " ")) for line in done.stdout.splitlines()), done.stdout)
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
             self.assertIn("--- a/AGENTS.md", done.stdout)
             self.assertIn("-我的补充", done.stdout)
