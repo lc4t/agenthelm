@@ -1517,7 +1517,7 @@ def hook(env: Env, project: Path | None, output: str, *, latest_source: str | No
     """Session-start entry: silent unless something is behind; never fails the session."""
     if not update_check_enabled(env):
         return 0
-    local_notice = capability_notice(capability_findings(env, project))
+    local_notice = capability_notice(capability_findings(env, project, clients))
     try:
         report = run_check(env, project, hook_mode=True, latest_source=latest_source, offline=offline, clients=clients)
     except Exception as exc:  # noqa: BLE001 - an update notice must never break a session
