@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "Cursor 可在没有本地仓库时从 GitHub 发布包更新：下载后校验 SHA-256、归档路径与每个插件的身份和版本，全部通过才替换 ~/.cursor/plugins/local 下的插件并读回；check 与 update 对 Cursor 不可用的口径一致；发布工作流在上传前校验 release.json 与归档。",
+    "en": "Cursor can update from a GitHub release archive without a local checkout: the download is verified for SHA-256, archive paths and each plugin's identity and version before anything under ~/.cursor/plugins/local is replaced, then read back; check and update agree when Cursor is unavailable; the release workflow validates release.json and the archive before publishing."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        "~/.cursor/plugins/local/<插件>（update --client cursor --apply 时替换）",
+        "~/.agent-pack/recovery/<时间>-cursor-<插件>/（替换前备份）"
+      ],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
