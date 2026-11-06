@@ -462,7 +462,7 @@ def main(argv: list[str], host: Any) -> int:
             if latest_origin is not None:
                 lines.append(host.origin_line(latest_origin))
             for version in data["inactive_newer"]:
-                lines.append(_("已安装但未启用：{0}（current 仍是 {1}）；启用：agenthelm runtime use {0} --apply").format(
+                lines.append(_("其他已安装目录：{0}（目录版本号高于 current {1}，不代表内容更新）；切换：agenthelm runtime use {0} --apply").format(
                     version, active["version"]))
             if data["update_available"]:
                 lines.append(_("有新版本 {0}：agenthelm runtime update 预览").format(data['latest_release']))
