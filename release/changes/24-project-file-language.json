@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。",
+    "en": "Project file language: projects with language=en get complete English entry, rules, Opinion placeholder, summary and managed-region templates; the memory index, retirement marker and summary-section check follow the project language; add documentation pairing and glossary gates. Existing files are never rewritten automatically."
+  },
+  "changes": [
+    {
+      "scope": "agents-init",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [
+        {"what": "language=en 的既有项目：下次内容刷新会把已有中文模板文件整份替换为英文；先预览 `--mode refresh`，改过的文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响。", "session": "current"}
+      ],
+      "touches": ["AGENTS.md", "AGENT.RULES.md", "CLAUDE.md", "AGENT.md", "docs/refs/README.md"],
+      "default_for_existing": "advisory",
+      "template_changes": [
+        {"path": "AGENTS.md", "class": "semantic"},
+        {"path": "AGENT.RULES.md", "class": "semantic"},
+        {"path": "CLAUDE.md", "class": "semantic"},
+        {"path": "AGENT.md", "class": "semantic"},
+        {"path": "docs/refs/README.md", "class": "semantic"}
+      ],
+      "contracts": []
+    },
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "opinion-manager",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

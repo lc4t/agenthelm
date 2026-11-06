@@ -531,19 +531,19 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher:
     }
     replacements["PRIVACY_SECTION"] = privacy_section(templates, inputs.language, inputs.privacy_declared)
     replacements["PRIVACY_RULES_LINE"] = localized(templates, "privacy/rules-line", inputs.language).rstrip("\n")
-    agents = render_template(templates["AGENTS.md"], replacements)
-    route = render_template(templates["ROUTE.md"], replacements)
+    agents = render_template(localized(templates, "AGENTS.md", inputs.language), replacements)
+    route = render_template(localized(templates, "ROUTE.md", inputs.language), replacements)
     files = {
         Path("AGENTS.md"): agents,
-        Path("AGENT.RULES.md"): render_template(templates["AGENT.RULES.md"], replacements),
-        Path("OPINION.md"): render_template(templates["OPINION.md"], replacements),
-        Path("CLAUDE.md"): render_template(templates["CLAUDE.md"], replacements),
+        Path("AGENT.RULES.md"): render_template(localized(templates, "AGENT.RULES.md", inputs.language), replacements),
+        Path("OPINION.md"): render_template(localized(templates, "OPINION.md", inputs.language), replacements),
+        Path("CLAUDE.md"): render_template(localized(templates, "CLAUDE.md", inputs.language), replacements),
         Path("AGENT.md"): route,
         Path(".agents/plugin.json"): json_text({
             "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
             "name": inputs.slug,
             "version": "0.1.0",
-            "description": "项目本地的可移植 Agent 能力包。",
+            "description": "Portable Agent capabilities local to this project." if inputs.language == "en" else "项目本地的可移植 Agent 能力包。",
         }),
         Path(".agents/mcp.json"): json_text({
             "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
@@ -551,13 +551,13 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher:
         }),
         PROFILE_PATH: json_text(profile),
         Path(".agents/skills/.gitkeep"): "",
-        Path(".agent-doc/plan.md"): render_template(templates[".agent-doc/plan.md"], replacements),
-        Path(".agent-doc/progress.md"): render_template(templates[".agent-doc/progress.md"], replacements),
-        Path(".agent-doc/chat-summary.md"): render_template(templates[".agent-doc/chat-summary.md"], replacements),
+        Path(".agent-doc/plan.md"): render_template(localized(templates, ".agent-doc/plan.md", inputs.language), replacements),
+        Path(".agent-doc/progress.md"): render_template(localized(templates, ".agent-doc/progress.md", inputs.language), replacements),
+        Path(".agent-doc/chat-summary.md"): render_template(localized(templates, ".agent-doc/chat-summary.md", inputs.language), replacements),
         Path("memory/.gitkeep"): "",
         Path("sops/.gitkeep"): "",
         Path("private/.gitignore"): PRIVATE_IGNORE,
-        Path("docs/refs/README.md"): render_template(templates["docs/refs/README.md"], replacements),
+        Path("docs/refs/README.md"): render_template(localized(templates, "docs/refs/README.md", inputs.language), replacements),
         Path("docs/drafts/.gitkeep"): "",
     }
     if inputs.work_mode == "case-workspace":
