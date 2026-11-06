@@ -56,6 +56,7 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - 让项目脱离 AI 客户端也能打开菜单：预览 `npx @sakanano-moe/agenthelm runtime install`，经同意后 `--apply`；运行时写入用户数据目录 `~/.local/share/agenthelm/`。
 - 离线安装：解压发布包 `agenthelm-v<版本>.tar.gz`，运行 `python3 <解压目录>/plugins/agent-pack/runtime/agenthelm.py runtime install --apply`。
 - 试用候选版（版本号带 `-rc.N`，npm 标签 `next`）：用 `npx @sakanano-moe/agenthelm@<版本> …` 运行（不带版本的 `npx` 解析到 npm `latest`，即稳定版）；候选版运行时给出的提示命令会自带 `@<版本>`。`runtime install` 装候选版时**默认不切换 `current`**（项目启动器、hook、终端里的 `agenthelm` 继续用原来的运行时），要启用加 `--use`，或之后运行 `agenthelm runtime use <版本> --apply`；第一次安装（没有 `current`）仍会设为当前。稳定版的行为不变（装完即切换）。
+- Codex 候选版验收：把安装预览中的市场添加命令替换为 `codex plugin marketplace add lc4t/agenthelm --ref <候选版 tag>`；不带 `--ref` 会跟随 `main`，不代表安装了候选版。完整步骤、来源未知时的处理与实机待验项目见 [候选版验收](release/ACCEPTANCE.md)。
 - Agent 自己需要查资料或看进展时，调用 `./<启动器> find <词> --output json`、`progress --output json` 等子命令，不另写查找逻辑；写入类子命令默认只预览。
 
 ## 4. 检查与更新
@@ -66,6 +67,14 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - Claude Code 升级插件后，`~/.claude/plugins/cache/agenthelm/<插件>/` 下会留着旧版本目录（例如 agent-pack 的 1.6.3、1.8.0）。这是客户端的缓存行为：`~/.claude/plugins/installed_plugins.json` 指向的是新版本，旧目录不影响使用。想省磁盘可以手动删除不再被 `installed_plugins.json` 引用的版本目录；agenthelm 不会替你清理，也不读取这些旧目录。
 - 命令行输出默认英文；要中文：`export AGENTHELM_LANG=zh`，或 `agenthelm config language zh --apply`（等同在 `~/.config/agenthelm/config.json` 写 `{"language": "zh"}`；中文系统 locale 本来就是中文）。界面语言只影响输出；写进项目文件的语言是 Profile 的 `language`，用 `agenthelm config project-language zh|en` 查看或设置。界面显示为英文且没有设置界面语言时 `check` 会提示（中文界面不提示），`agenthelm config language-hint off` 关闭提示。
 - 观点候选的自动采集与未决事项提示也由 agent-pack 的 hook 完成：Claude Code 随插件生效；Codex 需在 `/hooks` 中审阅并信任；Cursor 运行 `npx @sakanano-moe/agenthelm nudge install-hooks --client cursor` 预览，确认后加 `--apply`。`nudge status` 查看生效配置，`AGENTHELM_NO_NUDGE=1` 关闭，详见 `plugins/agent-pack/references/nudge.md`。
+
+### Cursor 从发布包更新
+
+本机无需保留 agenthelm 仓库：运行 `agenthelm update --client cursor` 预览，确认后追加 `--apply`。版本来源的 `release` 块提供 tag、tarball URL 与 SHA-256；若版本来源没有该块，会从 GitHub 的最新正式 Release 读取 `release.json`，只接受插件版本组合与当前版本来源一致的发布。
+
+预览会下载并校验发布包，但不改客户端安装；应用前先核对包内所有插件的版本，再替换 `~/.cursor/plugins/local/<插件>` 并读回版本。摘要或版本不匹配时不会替换任何插件。已有目录备份在 `~/.agent-pack/recovery/<时间>-cursor-<插件>/`；替换后重启 Cursor，文件读回成功只说明安装完成，不代表当前会话已加载。
+
+没有匹配发布包时，`check` 把 Cursor 单列为“不可用”，不计入“可更新”；可以指定本地源，例如 `agenthelm update --client cursor --source '/path/to/agenthelm checkout'`（先预览，再加 `--apply`）。部分安装时，`check` 的 `missing` 与 `next_command` 会列出缺失插件和补装命令 `agenthelm install --client cursor`。
 
 ### 从任意状态升级
 

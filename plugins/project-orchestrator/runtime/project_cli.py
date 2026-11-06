@@ -264,8 +264,7 @@ def render_health(health: dict, show_skipped: bool = False, details: bool = Fals
         if not members:
             continue
         colour = S.red if key == "must" else S.yellow if key in ("suggest", "update") else S.dim
-        lines.append(colour(S.bold(_("{0}（{1}）").format(_(label), len(members)))))
-        # 同类项合并为一行（统计数字取实际成员数）；--details 或 --output json 看逐项明细，JSON 里的 findings 不变。
+        # Count the numbered rows the user can actually see; JSON keeps the full finding count.
         shown: list[tuple[dict, list[dict]]] = []
         index: dict[str, int] = {}
         for finding in members:
@@ -276,6 +275,9 @@ def render_health(health: dict, show_skipped: bool = False, details: bool = Fals
                     continue
                 index[group["id"]] = len(shown)
             shown.append((finding, [finding]))
+        count = (_("{0}（{1} 项，展开 {2} 项）").format(_(label), len(shown), len(members))
+                 if len(shown) != len(members) else _("{0}（{1}）").format(_(label), len(members)))
+        lines.append(colour(S.bold(count)))
         for finding, merged in shown:
             numbered.append(finding)
             number = S.bold(S.cyan(f'{len(numbered):>2}'))
