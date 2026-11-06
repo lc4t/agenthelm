@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。",
+    "en": "rc.3 acceptance polish (#50): project health headings show both visible and expanded counts; the pinned-ref note says \"plugin latest version\" and states when the target is unknown; check --hook honours --latest / --offline / --client; the Claude update summary names where old version directories remain; check merges the sync-folder and machine-local lines; the English UI states that migration notes are Chinese-only; runtime status no longer implies newer content for side-by-side directories; Codex candidate acceptance is documented."
+  },
+  "changes": [
+    {"scope": "agent-pack", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []},
+    {"scope": "project-orchestrator", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []},
+    {"scope": "suite", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []}
+  ],
+  "suite": null
+}
