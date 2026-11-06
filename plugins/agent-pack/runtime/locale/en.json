@@ -607,5 +607,10 @@
  "有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），请用 {1} fix update-content（或 update --only content --keep {2}）逐个处理。": "Differences with no baseline: {0} (the content differs from the template and the content lock has no baseline). Handle them one by one with {1} fix update-content (or update --only content --keep {2}).",
  "保持原样": "keep",
  "发布包里的 {0} 版本为 {1}，发布清单要求 {2}；没有改动客户端安装": "Release archive has {0} version {1}, but the release manifest requires {2}; client installations were not changed",
- "发布包里的 {0} 身份为 {1}，与发布清单不符；没有改动客户端安装": "Release archive plugin {0} identifies as {1}, which differs from the release manifest; no client installation was changed"
+ "发布包里的 {0} 身份为 {1}，与发布清单不符；没有改动客户端安装": "Release archive plugin {0} identifies as {1}, which differs from the release manifest; no client installation was changed",
+ "提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（插件最新版本 {1}）。要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。": "Note: Claude's settings pin the agenthelm marketplace to {0}, so an update only follows that ref and the version may not change (plugin latest version: {1}). To follow the new version, change the ref of the agenthelm marketplace declaration in settings.json to the target tag, or remove the ref to follow main (agenthelm does not edit settings.json for you).",
+ "目标版本未知：latest.json 没有 release.tag，无法判断这个 ref 是否已经是目标版本。": "Target version unknown: latest.json has no release.tag, so this ref cannot be confirmed as the target version.",
+ "  [本机] {0}，连同 {1} 个本机专属目录：{2}\n      处理：agenthelm local-only check（逐项信息：check --details）": "  [Machine] {0}, machine-local directories: {1}: {2}\n      Next: agenthelm local-only check (individual findings: check --details)",
+ "迁移说明目前仅有中文；界面语言不改变历史发布声明。": "Migration notes are currently available only in Chinese; the interface language does not change historical release declarations.",
+ "其他已安装目录：{0}（目录版本号高于 current {1}，不代表内容更新）；切换：agenthelm runtime use {0} --apply": "Other installed directory: {0} (its version label is higher than current {1}; its contents may be older); switch: agenthelm runtime use {0} --apply"
 }
