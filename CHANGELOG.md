@@ -1,5 +1,43 @@
 # 更新记录
 
+<!-- release-plan:start -->
+## 2026-11-07 — agenthelm 6.12.0
+
+### agent-pack 1.12.0
+
+- Cursor 可在没有本地仓库时从 GitHub 发布包更新：下载后校验 SHA-256、归档路径与每个插件的身份和版本，全部通过才替换 ~/.cursor/plugins/local 下的插件并读回；check 与 update 对 Cursor 不可用的口径一致；发布工作流在上传前校验 release.json 与归档。
+- 内容刷新按实际执行刷新的 agents-init 副本判断是否落后，并遵循 --client 与忽略设置；其他客户端的旧副本只提示升级，不再阻塞内容更新；所有可用副本过旧时写明客户端、版本、路径和下一步命令（#48）。
+- 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。
+- rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。
+- 远程 HTTP MCP 支持以环境变量名引用令牌（headers 的 ${NAME} 或 Codex 的 bearer_token_env_var），按 Claude Code / Codex / Cursor 翻译并写入 Codex 原生 config.toml；doctor 只报告缺少的变量名；transfer 新增 --update 预览并显式替换同名 Skill / MCP；check 与会话开始提示项目声明与本机客户端的差异；README 补充多机同步流程。
+
+### agents-init 6.9.0
+
+- 项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。
+- 按变更片段生成版本与发布提交，先发布产物再推进 main；初始化器版本读取插件清单。
+- 接管项目中登记了受管区块的 AGENTS.md / CLAUDE.md 只比较受管区块：区块外用户正文不再因整文件模板变化被报为待处理；整文件 --accept / --merge 被拒绝并指向 --mode region；旧保留决定保留，刷新时清除不再适用的整文件基线（#45）。
+- 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。
+
+### opinion-manager 0.5.2
+
+- 项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。
+
+### project-orchestrator 1.11.4
+
+- 项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。
+- Case 命令 `case.py new` / `update` 新增 `--dry-run`：运行与写入相同的校验并返回目标路径与 unified diff，不建立目录、不改文件；省略该参数仍直接写入，旧脚本无需迁移。补充写操作命令盘点与 hook 例外说明。
+- 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。
+- rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。
+
+### suite 6.12.0
+
+- 按变更片段生成版本与发布提交，先发布产物再推进 main；初始化器版本读取插件清单。
+- Cursor 可在没有本地仓库时从 GitHub 发布包更新：下载后校验 SHA-256、归档路径与每个插件的身份和版本，全部通过才替换 ~/.cursor/plugins/local 下的插件并读回；check 与 update 对 Cursor 不可用的口径一致；发布工作流在上传前校验 release.json 与归档。
+- rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。
+- 远程 HTTP MCP 支持以环境变量名引用令牌（headers 的 ${NAME} 或 Codex 的 bearer_token_env_var），按 Claude Code / Codex / Cursor 翻译并写入 Codex 原生 config.toml；doctor 只报告缺少的变量名；transfer 新增 --update 预览并显式替换同名 Skill / MCP；check 与会话开始提示项目声明与本机客户端的差异；README 补充多机同步流程。
+<!-- release-plan:end -->
+
+
 ## 2026-11-02 — agenthelm 6.11.0（正式版）：流程（SOP）管理、同步盘本机专属目录、观点自动采集、命令行多语言、接管已有目录，以及升级路径修复
 
 相对 `6.8.0` 的合并说明。内容与 `v6.11.0-rc.3` 一致（正式版只增加本说明），三轮候选版的逐项变化见下面的 rc.2、rc.3 小节与各功能小节。
