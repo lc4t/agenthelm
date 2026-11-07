@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "迁移说明修正：切换项目文件语言后，check 与 update --only content 不提示模板变化，改为说明用 fix update-content 或 init_project.py --mode refresh 预览，并写清两者对改过文件的处理差异。",
+    "en": "Fix the migration notes: after switching the project file language, check and update --only content do not report template changes; point to fix update-content or init_project.py --mode refresh for the preview and explain how they treat edited files differently."
+  },
+  "changes": [
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
