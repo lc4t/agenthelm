@@ -314,7 +314,10 @@ class MergeRefreshTests(unittest.TestCase):
 
     def test_a_source_that_does_not_render_the_recorded_baseline_is_not_trusted(self) -> None:
         line, new_template = self.conflicting()
-        wrong = pack_source(self.old_template.replace(line, "some other text"), label="git tag v0.0.1")
+        # The source must claim the pack version the lock recorded, otherwise it is not a candidate at all and the
+        # reason degrades to baseline-unavailable; a hard-coded version would break on every pack version bump.
+        wrong = pack_source(self.old_template.replace(line, "some other text"), version=self.lock_entry()["version"],
+                            label="git tag v0.0.1")
         code, blocked = self.refresh(new_template, "--merge", KEY, providers=[lambda pack_id, wanted: iter([wrong])])
         self.assertEqual((code, self.item(blocked)["reason"]), (1, "baseline-digest-mismatch"))
 
