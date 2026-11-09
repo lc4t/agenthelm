@@ -257,6 +257,18 @@ class AdoptTests(InboxBase):
         self.assertEqual(set(self.statuses().values()), {"pending"})
         self.assertFalse((self.root / "OPINION.md").exists())
 
+    def test_works_when_the_system_temp_dir_is_behind_a_symlink(self) -> None:
+        """macOS 的临时目录在 /var -> /private/var 之下；versioned 拒绝含符号链接的路径，预览用的临时文件须先解析。"""
+        ids = self.two()
+        with tempfile.TemporaryDirectory() as holder:
+            real = Path(holder).resolve() / "real"
+            real.mkdir()
+            (Path(holder).resolve() / "link").symlink_to(real)
+            with mock.patch.object(tempfile, "tempdir", str(Path(holder).resolve() / "link")):
+                preview = self.preview(*ids)
+                result = self.apply(*ids, confirm=preview["confirmation_sha256"])
+        self.assertEqual(result["status"], "written")
+
     def test_apply_writes_opinion_lock_and_reads_back_then_marks_formal(self) -> None:
         ids = self.two()
         preview = self.preview(*ids)

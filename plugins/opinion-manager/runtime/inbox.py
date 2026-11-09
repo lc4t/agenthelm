@@ -276,6 +276,7 @@ def adoptable(data: dict[str, Any], ids: list[str]) -> list[dict[str, Any]]:
 
 def adopt_plan(root: Path, items: list[dict[str, Any]], workdir: Path) -> dict[str, Any]:
     """只读：与 profile / compose 的预览同一套函数，返回写入所需的全部输入与各自指纹。"""
+    workdir = workdir.resolve()  # versioned.safe_path 拒绝含符号链接的路径；macOS 的临时目录在 /var -> /private/var 之下
     lock_path = root / "opinion.lock.json"
     current_lock = versioned.file_state(lock_path)
     previous = versioned.validate_lock(json.loads(current_lock))["profile"] if current_lock is not None else None
