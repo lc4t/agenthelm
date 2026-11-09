@@ -184,7 +184,7 @@ class PlaceholderTests(SyncPreviewParityTests):
                 self.assertEqual(pay_p, pay_a)
                 self.assertIn("MCP from-plugin", pay_p["error"])
                 self.assertIn("${PLUGIN_ROOT}/runtime/server.py", pay_p["error"])
-                self.assertIn(f"source directory {plugin_dir}", pay_p["error"])
+                self.assertIn(f"source directory {plugin_dir.resolve()}", pay_p["error"])  # macOS: /var -> /private/var
                 self.assertEqual({str(p) for p in home.rglob("*")}, before, "nothing written")
         project, home, _ = self.two_source_project("claude", "missing-doctor", with_server=False)
         rc, payload, _out, _err = self.cli(home, "doctor", "--project", str(project))
