@@ -1095,17 +1095,17 @@ def _portable_package_from_inventory(
         config_name = hashlib.sha256(item.name.encode("utf-8")).hexdigest()[:16] + ".json"
         _write_json_atomic(runtime_root / config_name, config)
         assert layout is not None and layout.credential_env_file is not None
-        rendered_mcps[item.name] = {
-            "type": "stdio",
-            "command": "python3",
-            "args": [
-                "${PLUGIN_ROOT}/runtime/mcp_env_launcher.py",
-                "--env-file",
-                str(layout.credential_env_file.resolve()),
-                "--config",
-                f"${{PLUGIN_ROOT}}/runtime/{config_name}",
-            ],
-        }
+        launcher_args = [
+            "${PLUGIN_ROOT}/runtime/mcp_env_launcher.py",
+            "--env-file",
+            str(layout.credential_env_file.resolve()),
+            "--config",
+            f"${{PLUGIN_ROOT}}/runtime/{config_name}",
+        ]
+        if "${PLUGIN_DATA}" in json.dumps(config):
+            # The client expands placeholders in the launcher's own args, not in the config file it reads (#91).
+            launcher_args += ["--plugin-data", "${PLUGIN_DATA}"]
+        rendered_mcps[item.name] = {"type": "stdio", "command": "python3", "args": launcher_args}
 
     _write_json_atomic(destination / "mcp.json", {
         "$schema": AGENT_PLUGIN_MCP_SCHEMA,
