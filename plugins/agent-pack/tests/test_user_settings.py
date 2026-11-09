@@ -299,6 +299,51 @@ class CheckHintTests(CommandCase):
         done = self.run_cli("config", "project-language", "en", "--project", str(empty))
         self.assertEqual(done.returncode, 2, done.stdout)
 
+    def test_project_language_apply_honours_recovery_dir_and_leaves_the_default_alone(self) -> None:
+        """#80：config project-language --apply 与其他写命令一样可以指定备份目录；缺省行为不变。"""
+        profile_path = self.root / PROFILE
+        original = profile_path.read_bytes()
+        default = self.home / ".agent-pack"
+        chosen = self.base / "chosen-backup"
+        preview = self.run_cli("config", "project-language", "en", "--project", str(self.root), "--recovery-dir", str(chosen))
+        self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+        self.assertFalse(chosen.exists() or default.exists())  # a preview writes no backup anywhere
+        done = self.run_cli("config", "project-language", "en", "--project", str(self.root), "--apply",
+                            "--recovery-dir", str(chosen), "--output", "json")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        payload = json.loads(done.stdout)
+        self.assertEqual(Path(payload["recovery"]), chosen)
+        self.assertEqual((chosen / PROFILE).read_bytes(), original)
+        self.assertFalse(default.exists(), "the default ~/.agent-pack/recovery must not be touched")
+        # without the flag the documented default is still used
+        again = self.run_cli("config", "project-language", "zh", "--project", str(self.root), "--apply", "--output", "json")
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertTrue(Path(json.loads(again.stdout)["recovery"]).is_relative_to(default / "recovery"))
+
+    def test_project_language_recovery_dir_inside_the_project_is_refused_without_writing(self) -> None:
+        profile_path = self.root / PROFILE
+        before = profile_path.read_bytes()
+        done = self.run_cli("config", "project-language", "en", "--project", str(self.root), "--apply",
+                            "--recovery-dir", str(self.root / "backup"))
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertEqual(profile_path.read_bytes(), before)
+        self.assertFalse((self.home / ".agent-pack").exists())
+
+    def test_the_user_settings_writers_honour_recovery_dir_too(self) -> None:
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text('{"update_check": false}\n', encoding="utf-8")
+        chosen = self.base / "settings-backup"
+        for command in (("language", "zh"), ("language-hint", "off"), ("ignore-client", "cursor")):
+            with self.subTest(command=command):
+                shutil_target = chosen / command[0]
+                done = self.run_cli("config", *command, "--apply", "--recovery-dir", str(shutil_target), "--output", "json")
+                self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+                self.assertTrue((shutil_target / "config.json").is_file())
+                self.assertEqual(Path(json.loads(done.stdout)["recovery"]), shutil_target)
+        self.assertFalse((self.home / ".agent-pack").exists())
+        again = self.run_cli("config", "language", "en", "--apply", "--recovery-dir", str(chosen / "language"))
+        self.assertEqual(again.returncode, 2, again.stdout)  # a folder that already holds a copy is not overwritten
+
 
 class SessionStartTests(unittest.TestCase):
     """会话开始：语言未设置时多一行；同一条一天至多一次。"""
