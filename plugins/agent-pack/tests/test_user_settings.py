@@ -269,7 +269,10 @@ class CheckHintTests(CommandCase):
         shutil_copy = json.loads(profile_path.read_text())
         shutil_copy["language"] = "en"
         profile_path.write_text(json.dumps(shutil_copy, indent=2), encoding="utf-8")
-        self.assertEqual(self.language(env=env)["hints"], [])
+        # Declaring en no longer asks for a declaration; the lock still says zh, so only the #79 drift hint (a preview pointer) remains.
+        (hint,) = self.language(env=env)["hints"]
+        self.assertIn("fix update-content", hint)
+        self.assertNotIn("project-language", hint)
 
     def test_project_language_command_previews_then_changes_only_the_profile(self) -> None:
         profile_path = self.root / PROFILE

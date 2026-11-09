@@ -86,7 +86,18 @@ def short_hint(status: dict) -> str:
         _(LANGUAGE_NAMES[status["language"]]))
 
 
-def report_section(variables: Mapping[str, str], settings: Mapping[str, Any], scaffold: dict | None) -> dict:
+def drift_hint(drift: list[dict], cli: str = "agenthelm") -> str:
+    """Profile 的 language 与已渲染文件的语言不一致：只指路到预览入口，不改写任何文件。"""
+    wanted, rendered = _(LANGUAGE_NAMES[drift[0]["profile"]]), _(LANGUAGE_NAMES[drift[0]["rendered"]])
+    return _("项目文件语言（Profile 的 language）是 {0}，但内容锁记录的上次渲染语言是 {1}（{2}），已有文件仍是{1}。"
+             "运行 {3} fix update-content 预览整份替换（不加 --apply 不写入；你改过的文件默认保留），"
+             "或在 agents-init 的 scripts 目录运行 init_project.py --mode refresh --project <项目> 预览。"
+             "check 与 update --only content 不会自动改写既有文件。").format(
+        wanted, rendered, _("、").join(item["pack"] for item in drift), cli)
+
+
+def report_section(variables: Mapping[str, str], settings: Mapping[str, Any], scaffold: dict | None,
+                   drift: list[dict] | None = None, cli: str = "agenthelm") -> dict:
     """check 报告里的 ``language`` 段（无论是否提示都给出，便于脚本读取）。"""
     status = language_status(variables, settings)
     declared_known = isinstance(scaffold, dict) and isinstance(scaffold.get("project_language"), dict)
@@ -95,7 +106,9 @@ def report_section(variables: Mapping[str, str], settings: Mapping[str, Any], sc
     return {"interface": {"language": status["language"], "source": status["source"], "explicit": status["explicit"]},
             "project": {"declared": declared, "effective": declared or "zh"} if declared_known else None,
             "hint_dismissed": status["dismissed"],
-            "hints": ([interface_hint(status)] if status["hint"] else []) + ([project_hint()] if project_needs_hint else []),
+            "drift": drift or [],
+            "hints": ([interface_hint(status)] if status["hint"] else []) + ([project_hint()] if project_needs_hint else [])
+                     + ([drift_hint(drift, cli)] if drift else []),
             "session_hint": short_hint(status) if status["hint"] else None}
 
 

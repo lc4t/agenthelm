@@ -740,6 +740,32 @@ def content_findings(project: Path, latest: dict) -> list[dict]:
     return findings
 
 
+def language_drift(project: Path) -> list[dict]:
+    """Packs whose files were last rendered in a different language than the Profile's ``language`` now says.
+
+    ``config project-language`` changes only the Profile, and the content lock keeps the language each pack was rendered with
+    (``render_inputs.language``; ``zh`` when a pre-6.9 lock has ``render_inputs`` without it). Packs with no
+    ``render_inputs`` cannot be judged and are skipped, so an old lock or an undeclared language never raises a false alarm.
+    """
+    try:
+        profile = read_json(project / PROFILE_FILE)
+        lock = read_json(project / CONTENT_LOCK)
+    except (OSError, ValueError, AttributeError):
+        return []
+    wanted = profile.get("language") if isinstance(profile, dict) else None
+    wanted = wanted if wanted in ("zh", "en") else "zh"
+    packs = lock.get("packs") if isinstance(lock, dict) else None
+    result = []
+    for pack_id, entry in sorted((packs or {}).items()):
+        inputs = entry.get("render_inputs") if isinstance(entry, dict) else None
+        if not isinstance(inputs, dict):
+            continue
+        rendered = inputs.get("language") if inputs.get("language") in ("zh", "en") else "zh"
+        if rendered != wanted:
+            result.append({"pack": pack_id, "profile": wanted, "rendered": rendered})
+    return result
+
+
 def locate_companion(name: str, installed: list[dict], *, excluded: set[Path] | None = None) -> Path | None:
     """The newest copy of a companion plugin: next to this one or in any client install."""
     candidates = [PLUGIN_ROOT.parent / name, *(Path(item["path"]) for item in installed if item["plugin"] == name)]
@@ -941,6 +967,16 @@ def baseline_less_differences(env: Env, project: Path | None) -> list[str]:
     return [item["path"] for item in (report or {}).get("findings", []) if item.get("kind") == "content-differs" and item.get("path")]
 
 
+def missing_region_files(env: Env, project: Path | None) -> list[str]:
+    """Region-owned files (AGENTS.md / CLAUDE.md of an adopted project) that no longer exist: refresh skips them unless named."""
+    try:
+        report = scaffold_report(env, project)
+    except Exception:  # noqa: BLE001 - a hint only; never let it break update
+        return []
+    paths = {item["path"] for item in (report or {}).get("findings", []) if item.get("kind") == "region-missing" and item.get("path")}
+    return sorted(path for path in paths if project is not None and not (project / path).exists() and not (project / path).is_symlink())
+
+
 def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
     module = scaffold_module(env)
     if scaffold is None or module is None or not scaffold.get("available"):
@@ -1090,7 +1126,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     opinion_updates = [item for item in opinion if item["status"] == "update-available"]
     capabilities = capability_findings(env, project, clients)
     settings = user_settings_module()
-    language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold)
+    language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold,
+                                       drift=language_drift(project) if project else None, cli=CLI)
     return {
         "ok": True,
         "latest": {"source": origin, "released_at": latest.get("released_at")},
@@ -2808,8 +2845,15 @@ def main(argv: list[str] | None = None) -> int:
                 elif chosen and args.only != "plugins":  # 用户点名了文件，却没有任何待更新内容：不能装作处理过
                     payload["message"] = _("项目没有内容锁（或内容锁里没有可刷新的内容包），--accept / --keep / --append / --diff / --merge 指定的文件没有被处理；没有改动任何文件。"
                                            "没有内容锁的项目用 {0} fix update-content。").format(CLI)
+                elif (lost := missing_region_files(env, project) if args.only != "plugins" else []):
+                    # 区块归属文件被删除：refresh 默认跳过缺失文件，不能说「没有需要更新的内容」
+                    payload["message"] = _("项目里缺少 {0}（接管项目登记了受管区块）。重建带区块标记的文件：{1} update --only content {2} --apply（缺失文件没有本地内容，不需要 --confirm-discard）。").format(
+                        _("、").join(lost), CLI, " ".join(f"--accept {path}" for path in lost))
                 else:
                     payload["message"] = _("没有需要更新的内容。")
+                    drift = (report.get("language") or {}).get("drift") if args.only != "plugins" else None
+                    if drift:  # a language switch changes no version: point at the preview instead of leaving "nothing to do"
+                        payload["message"] += " " + user_settings_module().drift_hint(drift, CLI)
                     differing = baseline_less_differences(env, project) if args.only != "plugins" else []
                     if differing:  # check lists them (no baseline in the lock); update has nothing to render for them
                         payload["message"] += _("有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），"

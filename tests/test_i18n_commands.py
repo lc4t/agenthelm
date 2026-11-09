@@ -103,6 +103,7 @@ PREVIEW: dict[str, list[str]] = {
     "case update": [*P, "quarterly", "--log", "Preview log", "--dry-run"],
     "sop step": ["missing", "1", "--done"],
     "sop confirm-read": ["missing", "private/input.txt"],
+    "opinion inbox": ["adopt", "cand-none", "--project", "{project}"],  # adopt previews by default; add / decide / present / expire write .opinion/inbox.json at once (covered by the opinion-manager inbox tests)
 }
 HELP_ONLY: dict[str, str] = {
     "memory": "a single command with flags only; its English output is in the project-orchestrator tests",
@@ -122,7 +123,6 @@ HELP_ONLY: dict[str, str] = {
 DIRECT_WRITE: dict[str, str] = {
     "nudge hook": "client event consumer: reads a hook JSON on stdin and writes the local de-duplication state; covered by the nudge tests in plugins/agent-pack/tests",
     "assets rebuild": "rebuilds the file index at once; it writes only the machine-local cache $XDG_CACHE_HOME/agenthelm/assets (default ~/.cache), never the project",
-    "opinion inbox": "add / decide / present / expire write .opinion/inbox.json at once (decide needs --confirmed); covered by the opinion-manager inbox tests",
 }
 PREVIEW_FLAG = re.compile(r"--(?:apply|dry-run)\b")
 # Write commands that back up the files they replace and let the caller choose where (#80). Reconciled against ``--help`` below,
