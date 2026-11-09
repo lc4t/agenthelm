@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。",
+    "en": "After switching the project file language, check compares the Profile's language with the language the content lock recorded at the last render and, when they differ, points to fix update-content or init_project.py --mode refresh for a preview of the full replacement (advisory only: no files are rewritten, exit code and fingerprint are unchanged); update --only content adds the same hint after \"nothing to update\"; correct MIGRATION.md and INSTALL.md (#79)."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
