@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -14,6 +15,7 @@ RUNTIME = Path(__file__).resolve().parents[1] / "runtime"
 sys.path.insert(0, str(RUNTIME))
 import inbox  # noqa: E402
 import inbox_text  # noqa: E402
+import versioned  # noqa: E402
 
 SCRIPT = RUNTIME / "opinion_manager.py"
 START = datetime(2026, 10, 1, 8, 0, tzinfo=UTC)
@@ -38,7 +40,7 @@ class InboxBase(unittest.TestCase):
     def run_action(self, action: str, *ids: str, **options):
         defaults = dict(project=self.root, title=None, text=None, scope=[], quote=None, client=None, session=None,
                         status=None, unpresented=False, to=None, confirmed=False, note=None, days=None,
-                        max_chars=6000, output="json", lang="zh")
+                        max_chars=6000, output="json", lang="zh", apply=False, confirm=None)
         defaults.update(options)
         import argparse
         return inbox.run(argparse.Namespace(action=action, ids=list(ids), **defaults))
@@ -101,7 +103,8 @@ class InboxTests(InboxBase):
     def test_formal_is_only_bookkeeping(self) -> None:
         identity = self.add()["id"]
         result = self.run_action("decide", identity, to="formal", confirmed=True)
-        self.assertIn("完整预览", result["reminder"])
+        self.assertIn("尚未写入 OPINION.md", result["reminder"])
+        self.assertIn("inbox adopt", result["next_step"])
         self.assertFalse(result["writes_stable_rules"])
         self.assertFalse((self.root / "OPINION.md").exists())
 
@@ -222,6 +225,255 @@ class InboxTests(InboxBase):
         self.assertIn(added["id"], brief["text"])
 
 
+class AdoptTests(InboxBase):
+    """inbox adopt：预览一次、确认一次、写入并读回；只复用 versioned 的 profile / compose / verify。"""
+
+    def tree(self) -> dict[str, str]:
+        return {str(path.relative_to(self.root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(self.root.rglob("*")) if path.is_file() and path.name != ".inbox.lock"}
+
+    def statuses(self) -> dict[str, str]:
+        return {key: item["status"] for key, item in inbox.load(self.root)["candidates"].items()}
+
+    def two(self) -> tuple[str, str]:
+        return (self.add("先给结论", "回答先给结论再展开")["id"], self.add("不写套话", "不写无信息量的客套话")["id"])
+
+    def preview(self, *ids: str, **options) -> dict:
+        return self.run_action("adopt", *ids, **options)
+
+    def apply(self, *ids: str, confirm: str | None = None, **options) -> dict:
+        return self.run_action("adopt", *ids, apply=True, confirm=confirm, **options)
+
+    def test_preview_writes_nothing_byte_for_byte(self) -> None:
+        ids = self.two()
+        before = self.tree()
+        result = self.preview(*ids)
+        self.assertEqual(self.tree(), before)
+        self.assertEqual((result["status"], result["writes_stable_rules"], result["blocked"]), ("preview", False, None))
+        self.assertIn("回答先给结论再展开", result["content"])
+        self.assertIn("不写无信息量的客套话", result["content"])
+        self.assertRegex(result["confirmation_sha256"], r"^[0-9a-f]{64}$")
+        self.assertIn(result["confirmation_sha256"], result["next_step"])
+        self.assertEqual(set(self.statuses().values()), {"pending"})
+        self.assertFalse((self.root / "OPINION.md").exists())
+
+    def test_works_when_the_system_temp_dir_is_behind_a_symlink(self) -> None:
+        """macOS 的临时目录在 /var -> /private/var 之下；versioned 拒绝含符号链接的路径，预览用的临时文件须先解析。"""
+        ids = self.two()
+        with tempfile.TemporaryDirectory() as holder:
+            real = Path(holder).resolve() / "real"
+            real.mkdir()
+            (Path(holder).resolve() / "link").symlink_to(real)
+            with mock.patch.object(tempfile, "tempdir", str(Path(holder).resolve() / "link")):
+                preview = self.preview(*ids)
+                result = self.apply(*ids, confirm=preview["confirmation_sha256"])
+        self.assertEqual(result["status"], "written")
+
+    def test_apply_writes_opinion_lock_and_reads_back_then_marks_formal(self) -> None:
+        ids = self.two()
+        preview = self.preview(*ids)
+        result = self.apply(*ids, confirm=preview["confirmation_sha256"])
+        self.assertEqual((result["status"], result["writes_stable_rules"], result["changed"]), ("written", True, list(ids)))
+        opinion = (self.root / "OPINION.md").read_text(encoding="utf-8")
+        self.assertEqual(opinion, preview["content"])
+        lock = json.loads((self.root / "opinion.lock.json").read_text(encoding="utf-8"))
+        self.assertEqual(lock["opinion_sha256"], versioned.text_digest(opinion))
+        self.assertEqual(result["verified"]["opinion_sha256"], lock["opinion_sha256"])
+        self.assertEqual(versioned.verify_project(self.root)["status"], "verified")
+        self.assertTrue(Path(preview["profile_path"]).is_file())
+        self.assertEqual(set(self.statuses().values()), {"formal"})
+        history = inbox.load(self.root)["candidates"][ids[0]]["history"][-1]
+        self.assertEqual(history["to"], "formal")
+        self.assertTrue(history["note"].startswith("adopted:"))
+        self.assertEqual(self.tree().keys() & {"OPINION.md", "opinion.lock.json"}, {"OPINION.md", "opinion.lock.json"})
+
+    def test_second_adoption_revises_the_profile_and_keeps_earlier_rules(self) -> None:
+        first, second = self.two()
+        self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+        preview = self.preview(second)
+        self.assertNotEqual(preview["profile"].rsplit("@", 1)[1], "1.0.0")
+        self.apply(second, confirm=preview["confirmation_sha256"])
+        opinion = (self.root / "OPINION.md").read_text(encoding="utf-8")
+        self.assertIn("回答先给结论再展开", opinion)
+        self.assertIn("不写无信息量的客套话", opinion)
+        self.assertEqual(versioned.verify_project(self.root)["status"], "verified")
+
+    def test_missing_or_already_formal_ids_fail_the_whole_call_with_a_clear_message(self) -> None:
+        first, second = self.two()
+        self.run_action("decide", second, to="formal", confirmed=True)
+        before = self.tree()
+        with self.assertRaisesRegex(inbox.InboxError, "cand-20261001-999"):
+            self.preview(first, "cand-20261001-999")
+        with self.assertRaisesRegex(inbox.InboxError, second):
+            self.preview(first, second)
+        with self.assertRaisesRegex(inbox.InboxError, second):
+            self.apply(first, second, confirm="0" * 64)
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(self.statuses()[first], "pending")
+
+    def test_apply_needs_the_previewed_fingerprint(self) -> None:
+        ids = self.two()
+        before = self.tree()
+        with self.assertRaisesRegex(inbox.InboxError, "--confirm"):
+            self.apply(*ids)
+        with self.assertRaisesRegex(inbox.InboxError, "preview"):
+            self.apply(*ids, confirm="0" * 64, lang="en")
+        self.assertEqual(self.tree(), before)
+        self.assertFalse((self.root / "OPINION.md").exists())
+
+    def test_fingerprint_mismatch_after_the_preview_refuses_and_changes_nothing(self) -> None:
+        (first,) = self.two()[:1]
+        preview = self.preview(first)
+        (self.root / "OPINION.md").write_text("# 我手写的规则\n", encoding="utf-8")
+        before = self.tree()
+        with self.assertRaises(inbox.InboxError):
+            self.apply(first, confirm=preview["confirmation_sha256"])
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(self.statuses()[first], "pending")
+
+    def test_existing_hand_written_opinion_is_blocked_not_overwritten(self) -> None:
+        (first,) = self.two()[:1]
+        (self.root / "OPINION.md").write_text("# 我手写的规则\n", encoding="utf-8")
+        before = self.tree()
+        preview = self.preview(first)
+        self.assertTrue(preview["blocked"])
+        with self.assertRaises(inbox.InboxError):
+            self.apply(first, confirm=preview["confirmation_sha256"])
+        self.assertEqual(self.tree(), before)
+
+    def test_failure_after_writing_rolls_back_files_profile_and_status(self) -> None:
+        first, second = self.two()
+        self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+        settled = self.tree()
+        preview = self.preview(second)
+        with mock.patch.object(versioned, "verify_project", side_effect=versioned.OpinionVersionError("boom")):
+            with self.assertRaisesRegex(versioned.OpinionVersionError, "boom"):
+                self.apply(second, confirm=preview["confirmation_sha256"])
+        self.assertEqual(self.tree(), settled, "OPINION.md、锁、Profile 文件都回到失败前")
+        self.assertEqual(self.statuses()[second], "pending")
+
+    def inject(self, point: str):
+        """在 adopt --apply 的三个真实位置注入失败：Profile 写入后 / compose 写入后 / 我们自己的读回 verify。"""
+        real_compose, real_verify = versioned.compose_command, versioned.verify_project
+        calls = {"verify": 0}
+
+        def compose_fails_before_writing(args):
+            if args.apply:
+                raise versioned.OpinionVersionError("after-profile")
+            return real_compose(args)
+
+        def compose_fails_after_writing(args):
+            result = real_compose(args)
+            if args.apply:
+                raise versioned.OpinionVersionError("after-compose")
+            return result
+
+        def second_verify_fails(project):
+            calls["verify"] += 1
+            if calls["verify"] >= 2:
+                raise versioned.OpinionVersionError("after-verify")
+            return real_verify(project)
+
+        return {"profile": mock.patch.object(versioned, "compose_command", compose_fails_before_writing),
+                "compose": mock.patch.object(versioned, "compose_command", compose_fails_after_writing),
+                "verify": mock.patch.object(versioned, "verify_project", second_verify_fails)}[point]
+
+    def test_failure_at_each_of_three_points_restores_everything(self) -> None:
+        for settled in (False, True):
+            for point, marker in (("profile", "after-profile"), ("compose", "after-compose"), ("verify", "after-verify")):
+                with self.subTest(settled=settled, point=point):
+                    self.tearDown_project()
+                    first, second = self.two()
+                    if settled:
+                        self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+                    target = first if not settled else second
+                    before, states = self.tree(), self.statuses()
+                    preview = self.preview(target)
+                    with self.inject(point), self.assertRaisesRegex(versioned.OpinionVersionError, marker):
+                        self.apply(target, confirm=preview["confirmation_sha256"])
+                    self.assertEqual(self.tree(), before, "OPINION.md、锁、Profile 文件都回到失败前（逐字节）")
+                    self.assertEqual(self.statuses(), states)
+                    self.assertEqual(self.preview(target)["confirmation_sha256"], preview["confirmation_sha256"], "回滚后可以用同一指纹重试")
+
+    def tearDown_project(self) -> None:
+        import shutil
+        for path in self.root.iterdir():
+            shutil.rmtree(path) if path.is_dir() else path.unlink()
+
+    def test_any_change_after_the_preview_rejects_the_confirmation_with_zero_writes(self) -> None:
+        first, second = self.two()
+        self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+
+        def candidate_text() -> None:
+            data = inbox.load(self.root)
+            data["candidates"][second]["text"] = "改过的正文"
+            inbox.save(self.root, data)
+
+        def profile() -> None:
+            lock = json.loads((self.root / "opinion.lock.json").read_text(encoding="utf-8"))
+            changed = {**lock["profile"], "custom": lock["profile"]["custom"] + "\n\n- 另一条"}
+            content = versioned.render(changed)
+            (self.root / "OPINION.md").write_text(content, encoding="utf-8")
+            (self.root / "opinion.lock.json").write_text(versioned.pretty(versioned.lock_value(changed, content)), encoding="utf-8")
+
+        def opinion() -> None:
+            with (self.root / "OPINION.md").open("a", encoding="utf-8") as handle:
+                handle.write("\n手工追加\n")
+
+        for name, change in (("candidate", candidate_text), ("profile", profile), ("opinion", opinion)):
+            with self.subTest(change=name):
+                self.tearDown_project()
+                first, second = self.two()
+                self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+                preview = self.preview(second)
+                change()
+                before, states = self.tree(), self.statuses()
+                with self.assertRaises(inbox.InboxError):
+                    self.apply(second, confirm=preview["confirmation_sha256"])
+                self.assertEqual(self.tree(), before)
+                self.assertEqual(self.statuses(), states)
+
+    def test_failure_on_a_fresh_project_leaves_no_opinion_lock_or_profile(self) -> None:
+        ids = self.two()
+        preview = self.preview(*ids)
+        before = self.tree()
+        with mock.patch.object(inbox, "save", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.apply(*ids, confirm=preview["confirmation_sha256"])
+        self.assertEqual(self.tree(), before)
+        self.assertFalse((self.root / ".opinion" / "profiles").exists())
+        self.assertEqual(set(self.statuses().values()), {"pending"})
+
+    def test_decide_formal_says_it_is_not_in_opinion_yet_and_names_adopt(self) -> None:
+        (first,) = self.two()[:1]
+        result = self.run_action("decide", first, to="formal", confirmed=True, lang="en")
+        self.assertFalse(result["in_opinion"])
+        self.assertFalse(result["writes_stable_rules"])
+        self.assertIn("inbox adopt", result["next_step"])
+        self.assertIn(first, result["next_step"])
+        self.assertIn("not in OPINION.md", result["reminder"])
+        self.assertIn("尚未写入", self.run_action("decide", first, to="trial", confirmed=True, lang="zh")["reminder"] + inbox_text.MESSAGES["formal_next"]["zh"])
+
+    def test_english_cli_output_has_no_chinese_outside_the_user_content(self) -> None:
+        arguments = ("--project", str(self.root), "--lang", "en")
+        cli("add", *arguments, "--title", "Lead with the answer", "--text", "Answer first, then details", "--scope", "replies")
+        code, preview = cli("adopt", "cand-" + START.strftime("%Y%m%d") + "-001", *arguments)
+        self.assertEqual(code, 2, "the fake clock is not used by the subprocess; the id date differs")
+        identity = next(iter(inbox.load(self.root)["candidates"]))
+        code, preview = cli("adopt", identity, *arguments)
+        self.assertEqual(code, 0)
+        outside = {key: value for key, value in preview.items() if key != "content"}
+        self.assertFalse(CatalogTests.CJK.search(json.dumps(outside, ensure_ascii=False)), outside)
+        self.assertIn("inbox adopt", preview["next_step"])
+        code, result = cli("adopt", identity, *arguments, "--apply", "--confirm", preview["confirmation_sha256"])
+        self.assertEqual((code, result["status"]), (0, "written"))
+        self.assertFalse(CatalogTests.CJK.search(json.dumps({k: v for k, v in result.items() if k != "verified"}, ensure_ascii=False)), result)
+        code, error = cli("adopt", identity, *arguments)
+        self.assertEqual(code, 2)
+        self.assertIn("Already formal", error["error"])
+        self.assertFalse(CatalogTests.CJK.search(error["error"]))
+
+
 class LanguageTests(InboxBase):
     """同一组行为在英文下：提示、错误与协议换成英文，数据与命令保持不变。"""
 
@@ -236,7 +488,7 @@ class LanguageTests(InboxBase):
             self.run_action("decide", "cand-missing", to="trial", confirmed=True)
         with self.assertRaisesRegex(inbox.InboxError, "Title must not be empty"):
             self.run_action("add", title="", text="x", scope=["a"])
-        self.assertIn("Adopting as formal only records", self.run_action("decide", identity, to="formal", confirmed=True)["reminder"])
+        self.assertIn("is not in OPINION.md yet", self.run_action("decide", identity, to="formal", confirmed=True)["reminder"])
         self.run_action("decide", identity, to="trial", confirmed=True)
         text = self.run_action("brief", session="s9")["text"]
         self.assertTrue(text.startswith("[Opinion protocol"))

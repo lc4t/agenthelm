@@ -28,6 +28,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("agent-pack/runtime/agent_pack_nudge.py", "<module>"): "default trigger keywords: user input words, they come with English siblings",
     ("agent-pack/runtime/agenthelm_runtime.py", "<module>"): "text of the generated launcher script, written to disk",
     ("opinion-manager/runtime/opinion_manager.py", "render_opinion"): "OPINION.md body, language independent by design",
+    ("opinion-manager/runtime/inbox.py", "candidate_rule"): "OPINION.md custom-rules line written by inbox adopt, same language-independent body as render_rule",
     ("opinion-manager/runtime/versioned.py", "render"): "OPINION.md body, language independent by design",
     ("opinion-manager/runtime/versioned.py", "custom_section"): "OPINION.md custom-rules heading, shared by the body and the context slices",
     ("opinion-manager/runtime/versioned.py", "render_rule"): "OPINION.md rule text, language independent by design",
