@@ -72,6 +72,10 @@ TOOLS = [
                 "project": {"type": "string"},
                 "client": {"type": "string", "enum": ["codex", "cursor", "claude"]},
                 "replace": {"type": "boolean", "default": False},
+                "replaceMcp": {"type": "boolean", "default": False},
+                "replaceSkills": {"type": "boolean", "default": False},
+                "only": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skills", "plugins"]}, "default": [],
+                         "description": "claude: sync only these types; default is all"},
                 "resetOverrides": {"type": "boolean", "default": False},
                 "home": {"type": "string"},
                 "retireSkills": {"type": "array", "items": {"type": "string"}, "default": []},
@@ -155,7 +159,7 @@ TOOLS = [
     {
         "name": "agent_pack_sync",
         "title": "Sync Project Capabilities to an Agent Client",
-        "description": "Dry-run or install a project's portable capability package into Codex, Cursor or Claude Code. apply defaults to false; replaced content goes to the recovery directory. Claude Code keeps local credential values unless resetOverrides, and only replaces entries it did not install with replace.",
+        "description": "Dry-run or install a project's portable capability package into Codex, Cursor or Claude Code. apply defaults to false; replaced content goes to the recovery directory. Claude Code keeps local credential values unless resetOverrides, and only replaces entries it did not install with replace (replaceMcp / replaceSkills limit that to one type; only limits the sync to mcp, skills or plugins).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -165,6 +169,10 @@ TOOLS = [
                 "apply": {"type": "boolean", "default": False},
                 "replace": {"type": "boolean", "default": False},
                 "resetOverrides": {"type": "boolean", "default": False},
+                "replaceMcp": {"type": "boolean", "default": False},
+                "replaceSkills": {"type": "boolean", "default": False},
+                "only": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skills", "plugins"]}, "default": [],
+                         "description": "claude: sync only these types (plugins = package and install record); default is all"},
                 "recoveryRoot": {"type": "string"},
             },
             "required": ["project", "client"],
@@ -223,6 +231,9 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             retire_only=bool(arguments.get("retireOnly", False)),
             replace=bool(arguments.get("replace", False)),
             reset_overrides=bool(arguments.get("resetOverrides", False)),
+            only=arguments.get("only", []),
+            replace_mcp=bool(arguments.get("replaceMcp", False)),
+            replace_skills=bool(arguments.get("replaceSkills", False)),
         )
     if name == "agent_pack_inventory":
         inventory = inventory_source(arguments["source"], home)
@@ -252,6 +263,9 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             replace=bool(arguments.get("replace", False)),
             reset_overrides=bool(arguments.get("resetOverrides", False)),
             recovery_root=Path(recovery_value) if isinstance(recovery_value, str) else None,
+            only=arguments.get("only", []),
+            replace_mcp=bool(arguments.get("replaceMcp", False)),
+            replace_skills=bool(arguments.get("replaceSkills", False)),
         )
     if name == "agent_pack_cloud_sync_safety_check":
         import agenthelm  # noqa: PLC0415 - shipped next to this file

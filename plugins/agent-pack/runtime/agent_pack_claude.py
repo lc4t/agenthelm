@@ -41,6 +41,60 @@ def record_path(home: Path, name: str) -> Path:
     return core._claude_plugin_records(home) / name
 
 
+SYNC_TYPES = ("plugins", "skills", "mcp")   # what ``--only`` can select; the default is all of them
+
+
+def normalize_only(only: Iterable[str] | None) -> frozenset[str]:
+    """``--only`` values (repeatable or comma separated) as a set of types; empty or None means every type."""
+    types: set[str] = set()
+    for value in only or ():
+        for part in str(value).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if part not in SYNC_TYPES:
+                raise core.AgentPackError(f"unknown --only type: {part} (choose from {', '.join(SYNC_TYPES)})")
+            types.add(part)
+    return frozenset(types or SYNC_TYPES)
+
+
+def _compose_package(existing: Path, built: Path, only: frozenset[str], scratch: Path) -> Path:
+    """The package tree a partial sync installs: what is already installed, with only the selected parts replaced.
+
+    ``skills`` owns ``skills/``; ``mcp`` owns ``mcp.json`` and ``runtime/`` (the launcher and its configs);
+    ``plugins`` owns everything else (the manifest). Unselected parts keep exactly what is installed.
+    """
+    composed = scratch / "composed" / built.name
+    composed.parent.mkdir(parents=True, exist_ok=True)
+    if existing.is_dir() and not existing.is_symlink():
+        shutil.copytree(existing, composed, symlinks=False)
+    else:
+        composed.mkdir()
+    parts = {"skills": ("skills",), "mcp": ("mcp.json", "runtime")}
+    owned = {name for names in parts.values() for name in names}
+
+    def replace(name: str) -> None:
+        target = composed / name
+        if target.is_dir():
+            shutil.rmtree(target)
+        elif target.exists():
+            target.unlink()
+        if (built / name).is_dir():
+            shutil.copytree(built / name, target, symlinks=False)
+        elif (built / name).is_file():
+            shutil.copy2(built / name, target)
+
+    for kind, names in parts.items():
+        if kind in only:
+            for name in names:
+                replace(name)
+    if "plugins" in only or not existing.is_dir():
+        for child in sorted(built.iterdir()):
+            if child.name not in owned:
+                replace(child.name)
+    return composed
+
+
 def state_path(home: Path, name: str) -> Path:
     return home / ".claude" / "agent-pack" / "state" / f"{name}.json"
 
@@ -166,8 +220,15 @@ def _render_package_mcps(package: Path, home: Path, name: str) -> dict[str, dict
 
 def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: bool = False,
                  retire_skills: Iterable[str] = (), retire_plugins: Iterable[str] = (),
-                 retire_only: bool = False) -> dict[str, Any]:
-    """Every change a Claude sync would make, without writing; conflicts are listed, not raised."""
+                 retire_only: bool = False, only: frozenset[str] = frozenset(SYNC_TYPES),
+                 package_tree: Path | None = None) -> dict[str, Any]:
+    """Every change a Claude sync would make, without writing; conflicts are listed, not raised.
+
+    ``only`` limits the sync to those types (#68): ``plugins`` is the package and its install record,
+    ``skills`` the user-level Skill links, ``mcp`` the user-scope MCP entries. ``package_tree`` is the
+    tree that will be installed as the package (default: ``built``). Explicit retirements are never filtered.
+    """
+    package_tree = package_tree or built
     layout = core.load_project_layout(project)
     authority = core.inventory_project(layout.root)
     name = core._package_name(layout.root)
@@ -191,9 +252,12 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     conflicts: list[str] = []
     overrides: list[dict[str, Any]] = []
 
+    sync_skills, sync_mcps = "skills" in only, "mcp" in only
     if not retire_only:
+        # The package is the carrier of the other two types, so a partial sync still installs it (composed
+        # from what is installed plus the selected parts); the record link follows the package.
         if package.exists() and not package.is_symlink():
-            same = core._tree_fingerprint(package) == core._tree_fingerprint(built)
+            same = core._tree_fingerprint(package) == core._tree_fingerprint(package_tree)
             operations.append({"action": "keep-package" if same else "replace-package", "name": name, "to": str(package)})
         else:
             operations.append({"action": "install-package", "name": name, "to": str(package)})
@@ -206,7 +270,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             operations.append({"action": "link-record", "name": name, "to": str(record)})
 
         skills_root = home / ".claude" / "skills"
-        for skill in sorted(desired_skills):
+        for skill in sorted(desired_skills if sync_skills else ()):
             path, target = skills_root / skill, package / "skills" / skill
             link = _link_target(path)
             ours = skill in owned_skills or (link is not None and (
@@ -221,18 +285,18 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                 action = "conflict-skill"
                 conflicts.append(f"skill {skill}: {path}")
             operations.append({"action": action, "name": skill, "to": str(path)})
-        for skill in sorted(owned_skills - desired_skills):
+        for skill in sorted(owned_skills - desired_skills if sync_skills else ()):
             path = skills_root / skill
             if path.is_symlink() or path.exists():
                 operations.append({"action": "remove-skill", "name": skill, "from": str(path)})
-        if legacy_root is not None and skills_root.is_dir():
+        if sync_skills and legacy_root is not None and skills_root.is_dir():
             for path in sorted(skills_root.iterdir()):
                 link = _link_target(path)
                 if (path.name not in desired_skills and path.name not in owned_skills and link is not None
                         and _inside(link, legacy_root)):
                     operations.append({"action": "remove-skill", "name": path.name, "from": str(path)})
 
-        for server, rendered in desired_mcps.items():
+        for server, rendered in (desired_mcps.items() if sync_mcps else ()):
             state_name, entry, kept = classify_mcp(rendered, existing.get(server), reset=reset_overrides)
             if state_name == "differ":
                 if server in owned_mcps:
@@ -243,7 +307,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             if kept:
                 overrides.append({"name": server, "keys": kept})
             operations.append({"action": f"{state_name}-mcp", "name": server, "keys": kept, "_entry": entry})
-        for server in sorted(owned_mcps - set(desired_mcps)):
+        for server in sorted(owned_mcps - set(desired_mcps) if sync_mcps else ()):
             if server in existing:
                 operations.append({"action": "remove-mcp", "name": server,
                                    "reason": "excluded for claude" if server in excluded else "no longer in project"})
@@ -271,8 +335,9 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
 
     native = sorted(server for server in existing if server not in desired_mcps and server not in owned_mcps)
     return {"name": name, "layout": layout, "operations": operations, "conflicts": conflicts,
-            "retire_only": retire_only,
-            "overrides": overrides, "excluded": [server for server in excluded if server in existing],
+            "retire_only": retire_only, "only": sorted(only),
+            "overrides": overrides if sync_mcps else [],
+            "excluded": [server for server in excluded if server in existing] if sync_mcps else [],
             "native": native, "legacy_root": str(legacy_root) if legacy_root else None,
             "desired_skills": sorted(desired_skills), "desired_mcps": sorted(desired_mcps)}
 
@@ -284,35 +349,69 @@ def _public(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 # ---------------------------------------------------------------- apply
 
+def _conflict_summary(conflicts: list[str]) -> dict[str, int]:
+    """Conflicts counted per type; a conflict string starts with ``skill`` or ``mcp``."""
+    counts = {"skills": sum(1 for item in conflicts if item.startswith("skill ")),
+              "mcp": sum(1 for item in conflicts if item.startswith("mcp "))}
+    return {key: number for key, number in counts.items() if number}
+
+
+def _global_warnings(home: Path, summary: dict[str, int]) -> list[str]:
+    """What a replace reaches beyond this project: user-level Skills and MCP entries serve every project."""
+    warnings = []
+    if summary.get("skills"):
+        warnings.append(f"replaces {summary['skills']} user-level Skill(s) in {home / '.claude' / 'skills'}; "
+                        "they apply to every project (the replaced originals go to recovery)")
+    if summary.get("mcp"):
+        warnings.append(f"replaces {summary['mcp']} user-scope MCP entr{'y' if summary['mcp'] == 1 else 'ies'} in "
+                        f"{core._claude_user_config(home)}; they apply to every project (the replaced originals go to recovery)")
+    return warnings
+
+
 def sync_project(project: Path, *, home: Path | None = None, apply: bool = False, replace: bool = False,
                  reset_overrides: bool = False, recovery_root: Path | None = None,
                  retire_skills: Iterable[str] = (), retire_plugins: Iterable[str] = (),
-                 retire_only: bool = False) -> dict[str, Any]:
+                 retire_only: bool = False, only: Iterable[str] | None = None,
+                 replace_mcp: bool = False, replace_skills: bool = False) -> dict[str, Any]:
     home = (home or Path.home()).expanduser().resolve()
     retire_skills, retire_plugins = list(retire_skills), list(retire_plugins)
+    types = normalize_only(only)
     with tempfile.TemporaryDirectory(prefix="agent-pack-claude-") as temporary:
         layout = core.load_project_layout(project)
         authority = core.inventory_project(layout.root)
         name = core._package_name(layout.root)
         built = core._build_package(authority, name, Path(temporary), "claude", home)
+        tree = built if types == frozenset(SYNC_TYPES) else _compose_package(
+            package_root(home, name), built, types, Path(temporary))
         plan = plan_project(project, home, built=built, reset_overrides=reset_overrides,
-                            retire_skills=retire_skills, retire_plugins=retire_plugins, retire_only=retire_only)
-        if plan["conflicts"] and not replace:
+                            retire_skills=retire_skills, retire_plugins=retire_plugins, retire_only=retire_only,
+                            only=types, package_tree=tree)
+        blocking = [item for item in plan["conflicts"]
+                    if not (replace or (replace_mcp and item.startswith("mcp ")) or
+                            (replace_skills and item.startswith("skill ")))]
+        if blocking:
             raise core.AgentPackError("Claude client already has different content not installed by this package "
-                                      "(use --replace; replaced items go to recovery): " + "; ".join(plan["conflicts"]))
+                                      "(use --replace, or --replace-mcp / --replace-skills for one type; "
+                                      "replaced items go to recovery): " + "; ".join(blocking))
         result: dict[str, Any] = {
             "ok": True, "applied": False, "client": "claude", "package": name,
             "operations": _public(plan["operations"]), "overrides": plan["overrides"],
             "excluded": plan["excluded"], "native": plan["native"],
             "notes": ["restart Claude Code to load changed Skills and MCP servers"],
         }
+        summary = _conflict_summary(plan["conflicts"])
+        if summary:
+            result["conflicts"] = summary
+            result["warnings"] = _global_warnings(home, summary)
+        if types != frozenset(SYNC_TYPES):
+            result["only"] = sorted(types)
         if plan["legacy_root"]:
             result["migrated_from"] = plan["legacy_root"]
         changes = [item for item in plan["operations"] if not item["action"].startswith("keep-")]
         if not apply or not changes:
             result["applied"] = apply and not changes
             return result
-        result["recovery"] = str(_apply(plan, built, home, recovery_root))
+        result["recovery"] = str(_apply(plan, tree, home, recovery_root))
         result["applied"] = True
         return result
 
@@ -373,7 +472,8 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
                 link(Path(item["to"]), package / "skills" / item_name)
             if action == "archive-plugin":
                 archive(Path(item["from"]), "plugins", item_name)
-        servers = config.setdefault("mcpServers", {})
+        # A sync that does not include mcp never opens ~/.claude.json for writing (#68).
+        servers = config.setdefault("mcpServers", {}) if "mcp" in plan["only"] else {}
         replaced: dict[str, Any] = {}
         mcp_state: dict[str, str] = {}
         for item in plan["operations"]:
@@ -393,9 +493,14 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
             core._write_json_atomic(config_path, config, mode=mode)
             config_written = True
         if not plan["retire_only"]:
+            # A partial sync records only the types it handled; the others keep their recorded ownership.
+            before = _read_state(home, name)
+            only = set(plan["only"])
             core._write_json_atomic(state_path(home, name), {
-                "schema_version": STATE_SCHEMA, "package": name, "skills": plan["desired_skills"],
-                "mcps": mcp_state, "updated_at": stamp}, mode=0o600)
+                "schema_version": STATE_SCHEMA, "package": name,
+                "skills": plan["desired_skills"] if "skills" in only else before.get("skills", []),
+                "mcps": mcp_state if "mcp" in only else before.get("mcps", {}),
+                "updated_at": stamp}, mode=0o600)
     except Exception as exc:
         if config_written:
             core._write_json_atomic(config_path, original_config, mode=0o600)

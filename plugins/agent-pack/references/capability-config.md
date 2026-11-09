@@ -69,6 +69,12 @@ python3 /path/to/agent-pack/runtime/agent_pack_config.py --output json bootstrap
 - 按项目和 Claude 的 `mcp_client_policy` 单独生成一份包，放在 `~/.claude/agent-pack/packages/<name>/`；安装记录 `~/.claude/agent-pack/plugins/<name>` 改为指向它；Skill 链接与 MCP 条目都指向这份包。
 - `~/.claude/agent-pack/state/<name>.json` 记下本包装进 Claude 的 Skill 与 MCP。项目里新增的会加上，改了的会更新，删掉或被策略排除的会移除；**只动清单里的条目**，用户自己配置的条目从不改动。
 - 与用户自己的同名条目冲突时停止，加 `--replace` 才替换（旧内容进恢复目录）。本机认证默认保留，`--reset-overrides` 丢弃。
+- **按类型同步（`--only`）与按类型替换（`--replace-mcp` / `--replace-skills`）**，`sync` 与 `reconcile` 共用，MCP Tool `agent_pack_sync` / `agent_pack_reconcile` 暴露同名参数 `only` / `replaceMcp` / `replaceSkills`：
+  - `--only mcp|skills|plugins`（可重复或逗号分隔，不带时为全部）：`mcp` = `~/.claude.json` 里的用户级 MCP 条目；`skills` = `~/.claude/skills/` 里的 Skill 链接；`plugins` = 项目包与安装记录。没选中的类型不出现在 `operations`，不计入冲突，也不写入（包括 `~/.claude.json`）；包是另外两类的载体，所以部分同步仍会安装包，但只替换所选类型对应的部分（`skills/`、`mcp.json` 与 `runtime/`、清单），其余保持已安装的内容。`state` 只更新所选类型的归属记录。
+  - `--replace` 仍替换全部类型的冲突；`--replace-mcp` 只放行 MCP 冲突，`--replace-skills` 只放行 Skill 冲突，没放行类型的冲突照常阻塞。
+  - 预览和结果在有冲突时给出 `conflicts`（按类型计数），并在 `warnings` 里提示：用户级 Skill 与 MCP 条目对所有项目生效，被替换的原件进恢复目录。
+  - 显式的 `--retire-skill` / `--retire-plugin` 不受 `--only` 过滤。Codex 与 Cursor 把 Skill、MCP 与清单装在同一个包里，只接受全部类型（`--only mcp,skills,plugins` 等价于不带）；部分选择与 `--replace-skills` 会明确报错、不写入。`--replace-mcp` 在 Codex 等同于对原生远程 MCP 条目使用 `--replace`。`bootstrap` 已有按名称选择的 `--skill` / `--mcp`，不增加 `--only`。
+
 - 安装记录原来指向别的目录（旧做法：`bootstrap --plugin ~/.agents/plugins/plugins/<name> --client claude`）时，第一次同步自动迁移：旧记录指向写入恢复目录的 `record.json`，指向旧目录的 Skill 链接改为指向新包。此后 Codex 端的包怎么变、是否删除，都不影响 Claude。
 - 默认只预览；`--apply` 时整笔操作写入同一个恢复目录，任一步失败全部回滚。
 
