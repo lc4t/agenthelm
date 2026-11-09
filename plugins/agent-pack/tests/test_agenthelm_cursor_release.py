@@ -153,6 +153,36 @@ class CursorReleaseTests(unittest.TestCase):
         self.assertIn("opinion-manager", cursor["summary"])
         self.assertIn("install --client cursor", cursor["next_command"])
 
+    def text_cli(self, *flags: str) -> tuple[int, str]:
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = agenthelm.main(["update", "--home", str(self.home), "--latest", str(self.latest_file),
+                                   "--client", "cursor", "--no-project", "--output", "text", *flags])
+        return code, output.getvalue()
+
+    def test_update_says_where_the_replaced_plugin_directories_are_backed_up(self) -> None:
+        """#80：预览写将备份到哪里，apply 写实际路径；--recovery-dir 对 Cursor 步骤同样生效。"""
+        default = self.home / ".agent-pack" / "recovery"
+        code, preview = self.text_cli()
+        self.assertEqual(code, 0, preview)
+        self.assertIn(f"{default}/<timestamp>-cursor-agent-pack/replaced-plugin/agent-pack", preview)
+        self.assertIn("the timestamp is fixed when it runs", preview)
+        self.assertFalse(default.exists())
+        chosen = self.root / "chosen"
+        code, preview = self.text_cli("--recovery-dir", str(chosen))
+        self.assertIn(f"{chosen}/<timestamp>-cursor-opinion-manager/replaced-plugin/opinion-manager", preview)
+        code, applied = self.text_cli("--recovery-dir", str(chosen), "--apply")
+        self.assertEqual(code, 0, applied)
+        for name in self.latest["plugins"]:
+            (line,) = [text for text in applied.splitlines() if f"replaced {name} directory" in text]
+            where = Path(line.split("to: ", 1)[1])
+            self.assertEqual(where.parent.name, "replaced-plugin")
+            self.assertTrue(where.is_relative_to(chosen), where)
+            self.assertEqual(json.loads((where / "plugin.json").read_text())["version"], "1.0.0")  # the old copy is really there
+        self.assertFalse(default.exists(), "--recovery-dir keeps the default recovery folder untouched")
+        code, again = self.text_cli("--apply")  # same versions now: nothing to replace, so nothing to back up
+        self.assertNotIn("replaced", again)
+
 
 if __name__ == "__main__":
     unittest.main()

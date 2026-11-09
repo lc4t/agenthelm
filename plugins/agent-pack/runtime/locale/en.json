@@ -618,6 +618,18 @@
  "  [本机] {0}，连同 {1} 个本机专属目录：{2}\n      处理：agenthelm local-only check（逐项信息：check --details）": "  [Machine] {0}, machine-local directories: {1}: {2}\n      Next: agenthelm local-only check (individual findings: check --details)",
  "迁移说明目前仅有中文；界面语言不改变历史发布声明。": "Migration notes are currently available only in Chinese; the interface language does not change historical release declarations.",
  "其他已安装目录：{0}（目录版本号高于 current {1}，不代表内容更新）；切换：agenthelm runtime use {0} --apply": "Other installed directory: {0} (its version label is higher than current {1}; its contents may be older); switch: agenthelm runtime use {0} --apply",
+ "所选客户端的 agents-init 较旧：{0}；建议升级；内容刷新使用 {1}（{2}），不受这些副本阻塞。": "The agents-init copies in the selected clients are older: {0}; update them. Content refresh uses {1} ({2}) and is not blocked by these copies.",
+ "时间戳": "timestamp",
+ "被替换的文件（{0} 个）": "the files to be replaced ({0})",
+ "被替换的 {0} 目录": "the replaced {0} directory",
+ "替换前会把{0}备份到：{1}": "Before replacing, {0} will be backed up to: {1}",
+ "替换前会把{0}备份到：{1}（时间戳在执行时确定）": "Before replacing, {0} will be backed up to: {1} (the timestamp is fixed when it runs)",
+ "已把被替换的 {0} 目录备份到：{1}": "Backed up the replaced {0} directory to: {1}",
+ "预览被阻塞：没有可以执行的步骤（见上面的 [阻塞] 项与下一步）。先处理，再重新预览；这时运行 --apply 也不会执行任何步骤。": "Preview blocked: no step can run (see the [blocked] items and their next steps above). Resolve them and preview again; running --apply now would not run any step.",
+ "以上为预览；其中有步骤被阻塞（见上），--apply 只执行未被阻塞的步骤，被阻塞的步骤需先按提示处理。": "The above is a preview; some steps are blocked (see above). --apply runs only the steps that are not blocked; resolve the blocked ones first as advised.",
+ "被替换文件的备份目录（项目外；Cursor 插件目录备份在其下的子目录），缺省 ~/.agent-pack/recovery/": "Folder for backups of replaced files (outside the project; Cursor plugin directories are backed up in sub-folders of it); default ~/.agent-pack/recovery/",
+ "被替换文件的备份目录；缺省 ~/.agent-pack/recovery/<时间>-agenthelm-<标签>（项目 Profile 的备份目录须在项目外）": "Folder for the backup of replaced files; default ~/.agent-pack/recovery/<time>-agenthelm-<label> (for a project Profile the folder must be outside the project)",
+ "备份目录里已有 {0}": "The backup folder already holds {0}",
  "项目文件语言（Profile 的 language）是 {0}，但内容锁记录的上次渲染语言是 {1}（{2}），已有文件仍是{1}。运行 {3} fix update-content 预览整份替换（不加 --apply 不写入；你改过的文件默认保留），或在 agents-init 的 scripts 目录运行 init_project.py --mode refresh --project <项目> 预览。check 与 update --only content 不会自动改写既有文件。": "The project file language (the Profile's language) is {0}, but the content lock records {1} as the language the files were last rendered in ({2}), so the existing files are still {1}. Run {3} fix update-content to preview a full replacement (nothing is written without --apply; files you changed are kept by default), or run init_project.py --mode refresh --project <project> from the agents-init scripts directory to preview. check and update --only content never rewrite existing files on their own.",
  "项目里缺少 {0}（接管项目登记了受管区块）。重建带区块标记的文件：{1} update --only content {2} --apply（缺失文件没有本地内容，不需要 --confirm-discard）。": "{0} is missing (this adopted project registered managed regions). Recreate it with the region markers: {1} update --only content {2} --apply (a missing file has no local content, so --confirm-discard is not needed)."
 }
