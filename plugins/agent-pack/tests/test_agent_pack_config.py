@@ -107,6 +107,10 @@ class ProjectRuntimeConfigTests(unittest.TestCase):
                 }
             },
         })
+        # The referenced files must exist in the entry's own source directory (#71): the test is
+        # about reserved placeholders not being credential keys, not about missing files.
+        (project / ".agents" / "runtime").mkdir()
+        (project / ".agents" / "runtime" / "server.py").write_text("", encoding="utf-8")
         result = doctor(project)
         self.assertTrue(result["ok"], result["issues"])
         self.assertFalse(
