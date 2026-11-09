@@ -60,6 +60,18 @@ def looks_like_token(name: str) -> bool:
             and any(c.isdigit() for c in name))
 
 
+# A path-shaped argument (absolute, ``~``, drive letter, or one of our own path placeholders) names
+# a location. Directory names such as ``credential`` or ``token`` in it say nothing about a secret
+# value (#90), so only the value-shaped patterns apply to such arguments.
+PATH_SHAPED_RE = re.compile(r"^(?:[/~]|[A-Za-z]:[\\/]|__PROJECT_DIR__|__REPO_ROOT__|\$\{(?:PLUGIN_ROOT|PLUGIN_DATA|HOME)\})")
+
+
+def _secret_like_arg(text: str) -> bool:
+    if SECRET_VALUE_RE.search(text):
+        return True
+    return not PATH_SHAPED_RE.match(text) and bool(SECRET_NAME_RE.search(text))
+
+
 def _safe_env_reference(text: str) -> bool:
     """A value made of ``${NAME}`` references with nothing credential-like in the names or around them."""
     references = ENV_REFERENCE_RE.findall(text)
@@ -406,7 +418,7 @@ def _portable_mcp(name: str, raw: Any) -> McpRecord:
         for index, value in enumerate(args):
             rendered = str(value)
             safe_reference = _safe_env_reference(rendered)
-            if (SECRET_NAME_RE.search(rendered) or SECRET_VALUE_RE.search(rendered)) and not safe_reference:
+            if _secret_like_arg(rendered) and not safe_reference:
                 issues.append(f"possible secret reference in args[{index}]")
             elif any(looks_like_token(name) for name in ENV_REFERENCE_RE.findall(rendered)):
                 issues.append(f"possible secret reference in args[{index}]")
@@ -1095,17 +1107,17 @@ def _portable_package_from_inventory(
         config_name = hashlib.sha256(item.name.encode("utf-8")).hexdigest()[:16] + ".json"
         _write_json_atomic(runtime_root / config_name, config)
         assert layout is not None and layout.credential_env_file is not None
-        rendered_mcps[item.name] = {
-            "type": "stdio",
-            "command": "python3",
-            "args": [
-                "${PLUGIN_ROOT}/runtime/mcp_env_launcher.py",
-                "--env-file",
-                str(layout.credential_env_file.resolve()),
-                "--config",
-                f"${{PLUGIN_ROOT}}/runtime/{config_name}",
-            ],
-        }
+        launcher_args = [
+            "${PLUGIN_ROOT}/runtime/mcp_env_launcher.py",
+            "--env-file",
+            str(layout.credential_env_file.resolve()),
+            "--config",
+            f"${{PLUGIN_ROOT}}/runtime/{config_name}",
+        ]
+        if "${PLUGIN_DATA}" in json.dumps(config):
+            # The client expands placeholders in the launcher's own args, not in the config file it reads (#91).
+            launcher_args += ["--plugin-data", "${PLUGIN_DATA}"]
+        rendered_mcps[item.name] = {"type": "stdio", "command": "python3", "args": launcher_args}
 
     _write_json_atomic(destination / "mcp.json", {
         "$schema": AGENT_PLUGIN_MCP_SCHEMA,
@@ -1555,6 +1567,63 @@ def _component_state(
     return states
 
 
+def _marketplace_without(text: str, name: str) -> str:
+    """The marketplace file text without the entry named ``name``; other entries and layout are kept."""
+    payload = json.loads(text)
+    payload["plugins"] = [item for item in payload["plugins"]
+                          if not (isinstance(item, dict) and item.get("name") == name)]
+    indent = 2
+    match = re.search(r"\n([ \t]+)\S", text)
+    if match:
+        indent = "\t" if match.group(1).startswith("\t") else len(match.group(1))
+    return json.dumps(payload, indent=indent, ensure_ascii=False) + ("\n" if text.endswith("\n") else "")
+
+
+def _codex_retirement_extras(home: Path, name: str, primary: Path) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Codex keeps a retired plugin in a personal copy, a marketplace entry, a cache and config.toml.
+
+    The copy and the marketplace entry are archived and removed; the cache versions and the user's
+    config.toml are listed as residuals with a manual step.
+    """
+    operations: list[dict[str, str]] = []
+    residuals: list[dict[str, str]] = []
+    copy = _client_package_destination("codex", home, name)
+    if (copy.exists() or copy.is_symlink()) and copy.resolve() != primary.resolve():
+        operations.append({"action": "archive-plugin-copy", "name": name, "from": str(copy)})
+    market = home / ".agents" / "plugins" / "marketplace.json"
+    if market.is_symlink():
+        residuals.append({"client": "codex", "kind": "marketplace-entry", "name": name, "path": str(market),
+                          "manual": f"remove the {name} entry from this file by hand (symlinked file, not edited automatically)"})
+    elif market.is_file():
+        try:
+            plugins = json.loads(market.read_text(encoding="utf-8")).get("plugins", [])
+            listed = isinstance(plugins, list) and any(isinstance(item, dict) and item.get("name") == name for item in plugins)
+        except (OSError, ValueError, AttributeError):
+            listed = False
+            residuals.append({"client": "codex", "kind": "marketplace-entry", "name": name, "path": str(market),
+                              "manual": f"unreadable marketplace file; remove the {name} entry by hand if present"})
+        if listed:
+            operations.append({"action": "remove-marketplace-entry", "name": name, "from": str(market)})
+    cache = home / ".codex" / "plugins" / "cache"
+    if cache.is_dir() and not cache.is_symlink():
+        for market_dir in sorted(path for path in cache.iterdir() if path.is_dir()):
+            plugin_dir = market_dir / name
+            if plugin_dir.is_dir():
+                left = [path for path in sorted(plugin_dir.iterdir()) if path.resolve() != primary.resolve()]
+                if left:
+                    residuals.append({"client": "codex", "kind": "cache", "name": name, "path": str(plugin_dir),
+                                      "manual": "other cached versions or copies remain; delete the directory when no longer needed"})
+    config = home / ".codex" / "config.toml"
+    try:
+        mentioned = config.is_file() and f"{name}@" in config.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        mentioned = False
+    if mentioned:
+        residuals.append({"client": "codex", "kind": "config", "name": name, "path": str(config),
+                          "manual": f"remove the [plugins.\"{name}@...\"] table by hand (user configuration, not edited automatically)"})
+    return operations, residuals
+
+
 def reconcile_project(
     project: Path,
     client: str,
@@ -1658,14 +1727,18 @@ def reconcile_project(
     operations: list[dict[str, str]] = [] if retire_only else [
         {"action": package_action, "client": client, "name": package_name, "to": str(destination)}
     ]
-    operations.extend(
-        {"action": "archive-" + kind, "name": name, "from": str(path)}
-        for kind, name, path in retirement_targets
-    )
+    residuals: list[dict[str, str]] = []
+    for kind, name, path in retirement_targets:
+        operations.append({"action": "archive-" + kind, "name": name, "from": str(path)})
+        if kind == "plugin" and client == "codex":
+            extra_operations, extra_residuals = _codex_retirement_extras(home, name, path)
+            operations.extend(extra_operations)
+            residuals.extend(extra_residuals)
     if native_plan is not None:
         operations.extend(native_plan["operations"])
+    extras = {"residuals": residuals} if residuals else {}
     if not apply:
-        return {"ok": True, "applied": False, "states": states, "operations": operations}
+        return {"ok": True, "applied": False, "states": states, "operations": operations, **extras}
 
     recovery_base = (recovery_root or home / ".agent-pack" / "recovery").expanduser().resolve()
     recovery_base.mkdir(parents=True, exist_ok=True)
@@ -1675,6 +1748,7 @@ def reconcile_project(
     moved: list[tuple[Path, Path]] = []
     installed = False
     native_applied = False
+    marketplace_backup: tuple[Path, bytes] | None = None
     try:
         if needs_package:
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1698,6 +1772,21 @@ def reconcile_project(
             archived.parent.mkdir(parents=True, exist_ok=True)
             os.replace(path, archived)
             moved.append((archived, path))
+        for operation in operations:
+            if operation["action"] == "archive-plugin-copy":
+                copy = Path(operation["from"])
+                archived = transaction / "plugin-copies" / operation["name"]
+                archived.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(copy, archived)
+                moved.append((archived, copy))
+            elif operation["action"] == "remove-marketplace-entry":
+                market = Path(operation["from"])
+                original_bytes = market.read_bytes()
+                marketplace_backup = (market, original_bytes)
+                (transaction / "marketplace").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(market, transaction / "marketplace" / market.name)
+                market.write_text(_marketplace_without(original_bytes.decode("utf-8"), operation["name"]),
+                                  encoding="utf-8")
         if native_plan is not None:
             agent_pack_codex_mcp.apply(native_plan, transaction)
             native_applied = True
@@ -1706,6 +1795,8 @@ def reconcile_project(
     except Exception as exc:
         if native_applied:
             agent_pack_codex_mcp.rollback(native_plan)
+        if marketplace_backup is not None:
+            marketplace_backup[0].write_bytes(marketplace_backup[1])
         if installed and destination.exists():
             shutil.rmtree(destination)
         for archived, original in reversed(moved):
@@ -1715,7 +1806,7 @@ def reconcile_project(
         raise AgentPackError(f"reconcile rolled back: {exc}") from exc
     return {
         "ok": True, "applied": True, "states": states, "operations": operations,
-        "recovery": str(transaction),
+        "recovery": str(transaction), **extras,
     }
 
 
@@ -1937,6 +2028,8 @@ def _print(value: dict[str, Any], output: str) -> None:
     for operation in value.get("operations", []):
         target = operation.get("to") or operation.get("from", "")
         print(f"- {operation['action']}: {operation.get('name', '')} -> {target}")
+    for item in value.get("residuals", []):
+        print(f"! residual {item['kind']}: {item['name']} -> {item['path']} ({item['manual']})")
     for issue in value.get("issues", []):
         print(f"! {issue}")
     for warning in value.get("warnings", []):

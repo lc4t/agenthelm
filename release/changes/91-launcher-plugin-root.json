@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agent-pack：被启动器包装的 MCP 条目引用 ${PLUGIN_ROOT}（包内 Skill 路径等）或 ${PLUGIN_DATA} 时能正常启动，不再报 credential env file missing key: PLUGIN_ROOT；启动器按自身位置推导包根，PLUGIN_DATA 由客户端展开后经 --plugin-data 传入。",
+    "en": "agent-pack: launcher-wrapped MCP entries that reference ${PLUGIN_ROOT} (e.g. package Skill paths) or ${PLUGIN_DATA} now start correctly instead of failing with 'credential env file missing key: PLUGIN_ROOT'; the launcher derives the package root from its own location and receives PLUGIN_DATA from the client via --plugin-data."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

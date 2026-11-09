@@ -205,6 +205,44 @@ def _inside(path: Path, root: Path) -> bool:
 
 # ---------------------------------------------------------------- plan
 
+def _plugin_skill_links(home: Path, plugin_path: Path) -> list[Path]:
+    """User-level Skill links that point into the retired plugin's directory and nowhere else.
+
+    Only symlinks are considered; a real directory (the user's own Skill) and links to any other
+    place (project package, other plugins, hand-made links) are never returned.
+    """
+    skills_root = home / ".claude" / "skills"
+    if not skills_root.is_dir() or skills_root.is_symlink():
+        return []
+    roots = {plugin_path.resolve()}
+    found: list[Path] = []
+    for child in sorted(skills_root.iterdir(), key=lambda item: item.name):
+        target = _link_target(child)
+        if target is not None and any(_inside(target, root) for root in roots):
+            found.append(child)
+    return found
+
+
+def _plugin_residuals(home: Path, plugin: str, plugin_path: Path, config: dict[str, Any]) -> list[dict[str, str]]:
+    """Entries a retirement leaves on purpose: files Claude Code owns or that may hold local credentials."""
+    residuals: list[dict[str, str]] = []
+    prefixes = {str(plugin_path), str(plugin_path.resolve())}
+    config_path = core._claude_user_config(home)
+    for server, entry in sorted(config.items()):
+        if any(text.startswith(prefix + os.sep) or text == prefix for text in _strings(entry) for prefix in prefixes):
+            residuals.append({
+                "client": "claude", "kind": "mcp", "name": server, "path": str(config_path),
+                "manual": f"MCP server {server} still points into the retired plugin; remove it with "
+                          f"`claude mcp remove --scope user {server}` (the file may hold local credentials, so it is not edited automatically)"})
+    managed = home / ".claude" / "plugins"
+    if _inside(plugin_path, managed):
+        residuals.append({
+            "client": "claude", "kind": "installed-record", "name": plugin,
+            "path": str(managed / "installed_plugins.json"),
+            "manual": f"Claude Code owns this install record; run `claude plugin uninstall {plugin}`"})
+    return residuals
+
+
 def _render_package_mcps(package: Path, home: Path, name: str) -> dict[str, dict[str, Any]]:
     servers: dict[str, dict[str, Any]] = {}
     mcp_path = package / "mcp.json"
@@ -251,6 +289,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     operations: list[dict[str, Any]] = []
     conflicts: list[str] = []
     overrides: list[dict[str, Any]] = []
+    residuals: list[dict[str, str]] = []
 
     sync_skills, sync_mcps = "skills" in only, "mcp" in only
     if not retire_only:
@@ -330,12 +369,18 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
         if path is None:
             raise core.AgentPackError(f"retire plugin not installed: {plugin}")
         operations.append({"action": "archive-plugin", "name": plugin, "from": str(path)})
+        taken = {item["name"] for item in operations if item["action"].endswith("-skill")}
+        for link in _plugin_skill_links(home, path):
+            if link.name not in taken:
+                operations.append({"action": "archive-skill", "name": link.name, "from": str(link),
+                                   "reason": f"links into retired plugin {plugin}"})
+        residuals.extend(_plugin_residuals(home, plugin, path, existing))
     if retire_only and not (retire_skills or retire_plugins):
         raise core.AgentPackError("retire-only reconcile needs at least one --retire-skill or --retire-plugin")
 
     native = sorted(server for server in existing if server not in desired_mcps and server not in owned_mcps)
     return {"name": name, "layout": layout, "operations": operations, "conflicts": conflicts,
-            "retire_only": retire_only, "only": sorted(only),
+            "retire_only": retire_only, "residuals": residuals, "only": sorted(only),
             "overrides": overrides if sync_mcps else [],
             "excluded": [server for server in excluded if server in existing] if sync_mcps else [],
             "native": native, "legacy_root": str(legacy_root) if legacy_root else None,
@@ -405,6 +450,8 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
             result["warnings"] = _global_warnings(home, summary)
         if types != frozenset(SYNC_TYPES):
             result["only"] = sorted(types)
+        if plan["residuals"]:
+            result["residuals"] = plan["residuals"]
         if plan["legacy_root"]:
             result["migrated_from"] = plan["legacy_root"]
         changes = [item for item in plan["operations"] if not item["action"].startswith("keep-")]
