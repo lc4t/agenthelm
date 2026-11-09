@@ -967,6 +967,16 @@ def baseline_less_differences(env: Env, project: Path | None) -> list[str]:
     return [item["path"] for item in (report or {}).get("findings", []) if item.get("kind") == "content-differs" and item.get("path")]
 
 
+def missing_region_files(env: Env, project: Path | None) -> list[str]:
+    """Region-owned files (AGENTS.md / CLAUDE.md of an adopted project) that no longer exist: refresh skips them unless named."""
+    try:
+        report = scaffold_report(env, project)
+    except Exception:  # noqa: BLE001 - a hint only; never let it break update
+        return []
+    paths = {item["path"] for item in (report or {}).get("findings", []) if item.get("kind") == "region-missing" and item.get("path")}
+    return sorted(path for path in paths if project is not None and not (project / path).exists() and not (project / path).is_symlink())
+
+
 def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
     module = scaffold_module(env)
     if scaffold is None or module is None or not scaffold.get("available"):
@@ -2789,6 +2799,10 @@ def main(argv: list[str] | None = None) -> int:
                 elif chosen and args.only != "plugins":  # 用户点名了文件，却没有任何待更新内容：不能装作处理过
                     payload["message"] = _("项目没有内容锁（或内容锁里没有可刷新的内容包），--accept / --keep / --append / --diff / --merge 指定的文件没有被处理；没有改动任何文件。"
                                            "没有内容锁的项目用 {0} fix update-content。").format(CLI)
+                elif (lost := missing_region_files(env, project) if args.only != "plugins" else []):
+                    # 区块归属文件被删除：refresh 默认跳过缺失文件，不能说「没有需要更新的内容」
+                    payload["message"] = _("项目里缺少 {0}（接管项目登记了受管区块）。重建带区块标记的文件：{1} update --only content {2} --apply（缺失文件没有本地内容，不需要 --confirm-discard）。").format(
+                        _("、").join(lost), CLI, " ".join(f"--accept {path}" for path in lost))
                 else:
                     payload["message"] = _("没有需要更新的内容。")
                     drift = (report.get("language") or {}).get("drift") if args.only != "plugins" else None

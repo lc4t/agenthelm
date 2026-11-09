@@ -1516,14 +1516,18 @@ def reconcile_project(
     needs_package = not retire_only
     if retire_only:
         package_action = "skip-plugin"
-    elif destination.exists() or destination.is_symlink():
+    else:
+        # Build the package in a scratch directory for every preview and apply, so the
+        # portability, secret and credential-key checks run before anything is written and a
+        # preview reports exactly what ``--apply`` would (same ok, exit code and message).
         with tempfile.TemporaryDirectory(prefix="agent-pack-plan-") as temporary:
             expected = _build_package(authority, package_name, Path(temporary), client)
-            if _tree_fingerprint(expected) == _tree_fingerprint(destination):
-                package_action = "keep-plugin"
-                needs_package = False
-            else:
-                package_action = "replace-plugin"
+            if destination.exists() or destination.is_symlink():
+                if _tree_fingerprint(expected) == _tree_fingerprint(destination):
+                    package_action = "keep-plugin"
+                    needs_package = False
+                else:
+                    package_action = "replace-plugin"
 
     native_plan = None
     if client == "codex" and not retire_only:
@@ -1935,4 +1939,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Run through the importable module, not ``__main__``: ``agent_pack_claude`` and
+    # ``agent_pack_codex_mcp`` do ``import agent_pack_config``, which would otherwise load a
+    # second copy of this file whose ``AgentPackError`` is a different class, so ``main()``'s
+    # ``except AgentPackError`` could not catch what they raise (a stack trace, exit 1).
+    import agent_pack_config as _module  # noqa: PLC0415
+
+    raise SystemExit(_module.main())
