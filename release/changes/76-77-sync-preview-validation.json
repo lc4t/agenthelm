@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agent-pack：不可移植的 MCP 条目在三个客户端的 sync 与 doctor 中一律一行报错、退出码 2；Codex 与 Cursor 的 sync 预览与 --apply 使用同一套校验。",
+    "en": "agent-pack: a non-portable MCP entry now fails sync and doctor with a one-line error and exit code 2 on all three clients, and the Codex and Cursor sync preview runs the same checks as --apply."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
