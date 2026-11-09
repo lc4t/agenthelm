@@ -121,7 +121,7 @@ Project Profile 顶层 `language` 决定工具新写入文件的语言；缺省�
 
 既有项目可先预览 `agenthelm config project-language en --project <项目>`，确认后加 `--apply`；设置语言本身只修改 Profile，不改写任何文件。
 
-**切换语言后，`agenthelm check` 与 `agenthelm update --only content` 不会提示模板变化**：它们按内容包版本判断是否落后，而语言切换不改变版本。要把已有模板文件换成英文，请直接用下面两条路径之一先预览，再决定是否应用：
+**切换语言后，`agenthelm check` 与 `agenthelm update --only content` 不会把它算作“有内容可更新”**：它们按内容包版本判断是否落后，而语言切换不改变版本。但 `check` 会比较 Profile 的 `language` 与内容锁里记录的上次渲染语言（`render_inputs.language`，旧锁缺省为 `zh`），两者不一致时输出一条 `[语言]` 提示（`--output json` 在 `language.drift` 里），`update --only content` 的“没有需要更新的内容”后也带同一条提示。这条提示只指路，不改写文件，也不改变 `check` 的退出码、`--strict` 与指纹；已一致的项目、没有内容锁或锁里没有 `render_inputs` 的项目不提示。要把已有模板文件换成英文，请用下面两条路径之一先预览，再决定是否应用：
 
 - `agenthelm fix update-content`：你改过的文件默认保留（逐个用 `--keep`、`--merge`、`--append` 或 `--accept` 处置），其余未改动的模板文件整份替换为英文，退出码 0。
 - `init_project.py --mode refresh --project <项目>`（在 agents-init 的 `scripts` 目录）：只要有被阻止的文件（你改过的），整体阻塞，`--apply` 不写入任何文件，退出码 1；没有被阻止的文件时，`--apply` 一次替换全部未改动的模板文件。
