@@ -122,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
     def common(parser: argparse.ArgumentParser, project: bool = False) -> None:
         parser.add_argument("--output", choices=("text", "json"), default="text")
         parser.add_argument("--apply", action="store_true", help=_("写入（缺省只预览）"))
+        parser.add_argument("--recovery-dir", type=Path,
+                            help=_("被替换文件的备份目录；缺省 ~/.agent-pack/recovery/<时间>-agenthelm-<标签>（项目 Profile 的备份目录须在项目外）"))
         if project:
             parser.add_argument("--project", type=Path, help=_("项目目录；缺省当前目录"))
 
@@ -214,10 +216,13 @@ def _set_key(args: argparse.Namespace, host: Any, env: Any, key: str, value: Any
         lines.append("  " + _("{0} 已经是这个值，没有需要改的。").format(label))
     elif args.apply:
         if path.is_file():  # 替换前备份，和其他会替换文件的命令一样
-            recovery = host.recovery_dir_for(env, "config")
+            recovery = args.recovery_dir.expanduser().resolve() if args.recovery_dir else host.recovery_dir_for(env, "config")
             try:
-                recovery.mkdir(parents=True, mode=0o700)
-                (recovery / path.name).write_bytes(path.read_bytes())
+                recovery.mkdir(parents=True, mode=0o700, exist_ok=args.recovery_dir is not None)
+                backup = recovery / path.name
+                if backup.exists():  # an explicit folder may already hold a copy: never overwrite it
+                    raise FileExistsError(_("备份目录里已有 {0}").format(backup))
+                backup.write_bytes(path.read_bytes())
             except OSError as exc:  # abort before rewriting: no backup, no change
                 message = _("无法备份 {0} 到 {1}（{2}）；没有改动任何文件。").format(path, recovery, exc)
                 _emit(args, {"ok": False, "error": message}, [message])
@@ -243,7 +248,8 @@ def _project_language(args: argparse.Namespace, host: Any, env: Any) -> int:
         _emit(args, {"ok": False, "error": message}, [message])
         return 3
     command = [sys.executable, str(script), "--project", str(project), "--mode", "language", "--language", args.value,
-               "--output", "json"] + (["--apply"] if args.apply else [])
+               "--output", "json"] + (["--apply"] if args.apply else []) \
+        + (["--recovery-dir", str(args.recovery_dir.expanduser().resolve())] if args.recovery_dir else [])
     completed = subprocess.run(command, capture_output=True, text=True, check=False, env=env.child_environment())
     try:
         result = json.loads(completed.stdout)
