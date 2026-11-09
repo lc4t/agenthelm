@@ -572,6 +572,36 @@ class RegionLifecycleTests(AdoptCase):
         self.assertIn("AGENTS.md", lock["regions"])
         self.assertNotIn("skel:AGENTS.md", {f["id"] for f in self.check()["findings"]})
 
+    def test_deleted_region_owned_files_are_restored_with_their_region_markers(self) -> None:
+        """#78: 删除接管项目的 AGENTS.md / CLAUDE.md 后，--accept 恢复出来的文件必须带着登记的区块标记。"""
+        self.adopted_with_regions()
+        for name, ids in (("AGENTS.md", {"agents-contract", "privacy-contract"}), ("CLAUDE.md", {"claude-import"})):
+            (self.root / name).unlink()
+        self.assertFalse(self.check()["ok"])
+        self.assertEqual(self.cmd("check").returncode, 1)
+        preview = self.cmd("refresh", "--accept", "AGENTS.md", "--accept", "CLAUDE.md")
+        self.assertEqual(preview.returncode, 0, preview.stdout)  # 缺失文件不需要 --confirm-discard
+        self.assertFalse((self.root / "AGENTS.md").exists())
+        done = self.cmd("refresh", "--accept", "AGENTS.md", "--accept", "CLAUDE.md", "--apply",
+                        "--recovery-dir", str(self.recovery / "restore"))
+        self.assertEqual(done.returncode, 0, done.stdout)
+        for name, ids in (("AGENTS.md", {"agents-contract", "privacy-contract"}), ("CLAUDE.md", {"claude-import"})):
+            text = (self.root / name).read_text()
+            self.assertEqual({region.id for region in regions.find(text)}, ids, name)
+            self.assertTrue(all(region.intact for region in regions.find(text)), name)
+        lock = json.loads((self.root / init_project.CONTENT_LOCK_PATH).read_text())["packs"]["agents-init/project-contract"]
+        self.assertEqual(set(lock["regions"]), {"AGENTS.md", "CLAUDE.md"})
+        self.assertNotIn("AGENTS.md", lock["files"])
+        report = self.check()
+        self.assertTrue(report["ok"], report["findings"])
+        self.assertEqual([row["state"] for row in report["regions"]], ["ok", "ok", "ok"])
+        self.assertEqual(self.cmd("check").returncode, 0)
+        # 幂等：已经恢复后再运行不再改动任何文件
+        before = snapshot(self.root)
+        again = self.cmd("refresh", "--apply")
+        self.assertEqual(again.returncode, 0, again.stdout)
+        self.assertEqual(snapshot(self.root), before)
+
     def test_whole_file_actions_on_region_owned_files_require_region_mode(self) -> None:
         self.adopted_with_regions()
         before = snapshot(self.root)

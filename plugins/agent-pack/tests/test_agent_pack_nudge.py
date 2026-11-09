@@ -257,6 +257,10 @@ class NudgeTests(unittest.TestCase):
         request = self.stop(config=config)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("adopt as formal / trial in this project / hold / discard", request)
         self.assertIn("--confirmed --lang en", request)
+        self.assertIn("inbox adopt <ids...>", request)
+        self.assertIn("--apply --confirm <confirmation_sha256>", request)
+        self.assertIn('"Approved" is not "in effect"', request)
+        self.assertNotIn("--to trial|formal|held|rejected", request, "formal is reached through inbox adopt, not decide")
         self.assertIn("   - Rule: Answer first的完整规则", request)
 
     def test_english_status_and_install_output(self) -> None:

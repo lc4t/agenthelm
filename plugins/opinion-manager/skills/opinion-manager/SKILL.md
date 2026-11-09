@@ -59,9 +59,10 @@ description: Generate, compose, review and maintain behavior rules between the u
 
 - **暂存**：用户在工作中表达长期偏好、对你行为的纠正或规则（“以后都……”“不要再……”“记住……”）时，立即用 `inbox add` 暂存标题、完整规则、适用范围和用户原话。不打断当前任务，不需要确认。一次性的任务要求、项目事实和命令不是候选。宁可多暂存，裁决环节会过滤。
 - **匹配**：实施前读取 OPINION.md；用户已同意试行的候选（`inbox list --status trial`，hook 会随协议注入）同样遵循，交付时说明是否适用。
-- **确认**：任务完成或即将完成时，把本次会话新增的候选用编号列表一次性交给用户：正式采纳 / 项目内试行 / 暂缓 / 丢弃。用户明确表态后用 `inbox decide … --confirmed` 记录；每个会话集中确认一次，不逐条追问。
-- **转正式**：`formal` 只记录用户意愿。写入 OPINION.md 仍走上文的完整预览与确认流程，候选正文作为个人规则输入。
-- **边界**：`inbox` 不写 OPINION.md、Profile 或锁；重复出现不等于确认。试行超过设定天数未转正会回到待确认。
+- **确认**：任务完成或即将完成时，把本次会话新增的候选用编号列表一次性交给用户：正式采纳 / 项目内试行 / 暂缓 / 丢弃。用户明确表态后记录：试行 / 暂缓 / 丢弃用 `inbox decide … --confirmed`；用户说「采纳」时直接用 `inbox adopt`，不先 `decide`。每个会话集中确认一次，不逐条追问。
+- **采纳并写入**：用户说「采纳」后，运行 `inbox adopt <编号…>`（不带 `--apply`，零写入）预览：候选正文作为个人规则输入，走与 `profile` / `compose` 相同的完整流程，一次展示 `content`；用户确认后追加 `--apply --confirm <confirmation_sha256>`，一次写入并 `verify` 读回，成功后候选才记为 `formal`。多条候选一次预览、一次确认，全部成功或都不改。
+- **已批准不等于已生效**：`decide --to formal` 只记录状态，输出 `in_opinion: false` 与 `next_step`，`OPINION.md` 未写入，后续会话不会加载；必须继续 `inbox adopt`。
+- **边界**：除 `adopt --apply`（须带预览指纹）外，`inbox` 不写 OPINION.md、Profile 或锁；重复出现不等于确认。试行超过设定天数未转正会回到待确认。
 - **隐私**：收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议项目保持私有。`inbox add` 返回 `notice` 时如实转告用户；是否公开仓库、是否排除 `.opinion/` 由用户决定，不要替用户决定，也不要自行修改 `.gitignore`。
 - **语言**：提示与协议有中文、英文两种，命令带 `--lang zh|en`；向用户转告和确认时使用用户正在使用的语言。候选内容是用户自己的话，不翻译。
 - **未决汇总**：开新会话时 agent-pack 按阈值提示待确认数量与久未处理的天数；用户可在 Project Profile 的 `opinion.nudge` 或 `~/.config/agenthelm/config.json` 的 `nudge` 调整，或用 `AGENTHELM_NO_NUDGE=1` 关闭。

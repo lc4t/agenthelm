@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。",
+    "en": "Recreating a deleted AGENTS.md / CLAUDE.md of an adopted project with --accept now restores its registered managed regions; update --only content hints at the missing file."
+  },
+  "changes": [
+    {
+      "scope": "agents-init",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": ["AGENTS.md", "CLAUDE.md"],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": ["AGENTS.md", "CLAUDE.md"],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
