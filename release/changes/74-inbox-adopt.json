@@ -4,15 +4,27 @@
     "zh": "新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。",
     "en": "Add inbox adopt: adopting a candidate and writing it to OPINION.md now takes one preview and one confirmation; decide --to formal now says it is not written yet."
   },
-  "changes": [{
-    "scope": "opinion-manager",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "on",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

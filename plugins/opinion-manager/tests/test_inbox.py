@@ -340,6 +340,87 @@ class AdoptTests(InboxBase):
         self.assertEqual(self.tree(), settled, "OPINION.md、锁、Profile 文件都回到失败前")
         self.assertEqual(self.statuses()[second], "pending")
 
+    def inject(self, point: str):
+        """在 adopt --apply 的三个真实位置注入失败：Profile 写入后 / compose 写入后 / 我们自己的读回 verify。"""
+        real_compose, real_verify = versioned.compose_command, versioned.verify_project
+        calls = {"verify": 0}
+
+        def compose_fails_before_writing(args):
+            if args.apply:
+                raise versioned.OpinionVersionError("after-profile")
+            return real_compose(args)
+
+        def compose_fails_after_writing(args):
+            result = real_compose(args)
+            if args.apply:
+                raise versioned.OpinionVersionError("after-compose")
+            return result
+
+        def second_verify_fails(project):
+            calls["verify"] += 1
+            if calls["verify"] >= 2:
+                raise versioned.OpinionVersionError("after-verify")
+            return real_verify(project)
+
+        return {"profile": mock.patch.object(versioned, "compose_command", compose_fails_before_writing),
+                "compose": mock.patch.object(versioned, "compose_command", compose_fails_after_writing),
+                "verify": mock.patch.object(versioned, "verify_project", second_verify_fails)}[point]
+
+    def test_failure_at_each_of_three_points_restores_everything(self) -> None:
+        for settled in (False, True):
+            for point, marker in (("profile", "after-profile"), ("compose", "after-compose"), ("verify", "after-verify")):
+                with self.subTest(settled=settled, point=point):
+                    self.tearDown_project()
+                    first, second = self.two()
+                    if settled:
+                        self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+                    target = first if not settled else second
+                    before, states = self.tree(), self.statuses()
+                    preview = self.preview(target)
+                    with self.inject(point), self.assertRaisesRegex(versioned.OpinionVersionError, marker):
+                        self.apply(target, confirm=preview["confirmation_sha256"])
+                    self.assertEqual(self.tree(), before, "OPINION.md、锁、Profile 文件都回到失败前（逐字节）")
+                    self.assertEqual(self.statuses(), states)
+                    self.assertEqual(self.preview(target)["confirmation_sha256"], preview["confirmation_sha256"], "回滚后可以用同一指纹重试")
+
+    def tearDown_project(self) -> None:
+        import shutil
+        for path in self.root.iterdir():
+            shutil.rmtree(path) if path.is_dir() else path.unlink()
+
+    def test_any_change_after_the_preview_rejects_the_confirmation_with_zero_writes(self) -> None:
+        first, second = self.two()
+        self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+
+        def candidate_text() -> None:
+            data = inbox.load(self.root)
+            data["candidates"][second]["text"] = "改过的正文"
+            inbox.save(self.root, data)
+
+        def profile() -> None:
+            lock = json.loads((self.root / "opinion.lock.json").read_text(encoding="utf-8"))
+            changed = {**lock["profile"], "custom": lock["profile"]["custom"] + "\n\n- 另一条"}
+            content = versioned.render(changed)
+            (self.root / "OPINION.md").write_text(content, encoding="utf-8")
+            (self.root / "opinion.lock.json").write_text(versioned.pretty(versioned.lock_value(changed, content)), encoding="utf-8")
+
+        def opinion() -> None:
+            with (self.root / "OPINION.md").open("a", encoding="utf-8") as handle:
+                handle.write("\n手工追加\n")
+
+        for name, change in (("candidate", candidate_text), ("profile", profile), ("opinion", opinion)):
+            with self.subTest(change=name):
+                self.tearDown_project()
+                first, second = self.two()
+                self.apply(first, confirm=self.preview(first)["confirmation_sha256"])
+                preview = self.preview(second)
+                change()
+                before, states = self.tree(), self.statuses()
+                with self.assertRaises(inbox.InboxError):
+                    self.apply(second, confirm=preview["confirmation_sha256"])
+                self.assertEqual(self.tree(), before)
+                self.assertEqual(self.statuses(), states)
+
     def test_failure_on_a_fresh_project_leaves_no_opinion_lock_or_profile(self) -> None:
         ids = self.two()
         preview = self.preview(*ids)
