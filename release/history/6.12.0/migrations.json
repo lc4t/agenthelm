@@ -1,0 +1,107 @@
+[
+  {
+    "plugin": "agent-pack",
+    "from": "1.11.2",
+    "to": "1.12.0",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-09",
+    "summary": "Cursor 可在没有本地仓库时从 GitHub 发布包更新：下载后校验 SHA-256、归档路径与每个插件的身份和版本，全部通过才替换 ~/.cursor/plugins/local 下的插件并读回；check 与 update 对 Cursor 不可用的口径一致；发布工作流在上传前校验 release.json 与归档。; 内容刷新按实际执行刷新的 agents-init 副本判断是否落后，并遵循 --client 与忽略设置；其他客户端的旧副本只提示升级，不再阻塞内容更新；所有可用副本过旧时写明客户端、版本、路径和下一步命令（#48）。; 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。; rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。; 远程 HTTP MCP 支持以环境变量名引用令牌（headers 的 ${NAME} 或 Codex 的 bearer_token_env_var），按 Claude Code / Codex / Cursor 翻译并写入 Codex 原生 config.toml；doctor 只报告缺少的变量名；transfer 新增 --update 预览并显式替换同名 Skill / MCP；check 与会话开始提示项目声明与本机客户端的差异；README 补充多机同步流程。",
+    "summary_en": "Cursor can update from a GitHub release archive without a local checkout: the download is verified for SHA-256, archive paths and each plugin's identity and version before anything under ~/.cursor/plugins/local is replaced, then read back; check and update agree when Cursor is unavailable; the release workflow validates release.json and the archive before publishing.; Content refresh decides staleness from the agents-init copy that actually runs it, honoring --client and ignore settings; older copies in other clients only produce an upgrade note instead of blocking; when every usable copy is too old the client, version, path and next command are reported (#48).; Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49).; rc.3 acceptance polish (#50): project health headings show both visible and expanded counts; the pinned-ref note says \"plugin latest version\" and states when the target is unknown; check --hook honours --latest / --offline / --client; the Claude update summary names where old version directories remain; check merges the sync-folder and machine-local lines; the English UI states that migration notes are Chinese-only; runtime status no longer implies newer content for side-by-side directories; Codex candidate acceptance is documented.; Remote HTTP MCP servers can reference a token by environment variable name (headers ${NAME} or Codex bearer_token_env_var), translated for Claude Code, Codex and Cursor, and written to Codex's native config.toml; doctor reports only the names of missing variables; transfer gains --update to preview and explicitly replace same-name Skills / MCP servers; check and the session-start notice report drift between project declarations and local clients; the README documents the multi-machine workflow.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [
+      "~/.cursor/plugins/local/<插件>（update --client cursor --apply 时替换）",
+      "~/.agent-pack/recovery/<时间>-cursor-<插件>/（替换前备份）",
+      ".agents/mcp.json",
+      "~/.codex/config.toml（仅 sync --client codex --apply 时写入 mcp_servers 远程条目）",
+      "~/.agent-pack/state/codex-remote-<项目>.json（记录写入的条目归属，不含令牌值）",
+      "~/.agent-pack/recovery/（替换前的备份）",
+      "~/.config/agenthelm/config.json（capability_check_ignored_clients，可选）"
+    ],
+    "template_changes": [],
+    "default_for_existing": "on"
+  },
+  {
+    "plugin": "agents-init",
+    "from": "6.8.2",
+    "to": "6.9.0",
+    "change_kind": "both",
+    "breaking": false,
+    "date": "2026-11-09",
+    "summary": "项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。; 按变更片段生成版本与发布提交，先发布产物再推进 main；初始化器版本读取插件清单。; 接管项目中登记了受管区块的 AGENTS.md / CLAUDE.md 只比较受管区块：区块外用户正文不再因整文件模板变化被报为待处理；整文件 --accept / --merge 被拒绝并指向 --mode region；旧保留决定保留，刷新时清除不再适用的整文件基线（#45）。; 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。",
+    "summary_en": "Project file language: projects with language=en get complete English entry, rules, Opinion placeholder, summary and managed-region templates; the memory index, retirement marker and summary-section check follow the project language; add documentation pairing and glossary gates. Existing files are never rewritten automatically.; Generate versions and release commits from change fragments; publish artifacts before promoting main, and read the initializer version from its manifest.; For adopted projects, AGENTS.md / CLAUDE.md files with recorded managed regions are compared by region only: text outside the regions no longer becomes a pending change when the whole-file template changes; whole-file --accept / --merge are rejected in favor of --mode region; earlier keep decisions are preserved and obsolete whole-file baselines are dropped on refresh (#45).; Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49).",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [
+      {
+        "what": "language=en 的既有项目：下次内容刷新会把已有中文模板文件整份替换为英文；先预览 `--mode refresh`，改过的文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响。",
+        "session": "current"
+      }
+    ],
+    "touches": [
+      "AGENTS.md",
+      "AGENT.RULES.md",
+      "CLAUDE.md",
+      "AGENT.md",
+      "docs/refs/README.md",
+      ".agents/moe.sakanano.agent-pack/content.lock.json"
+    ],
+    "template_changes": [
+      {
+        "path": "AGENTS.md",
+        "class": "semantic"
+      },
+      {
+        "path": "AGENT.RULES.md",
+        "class": "semantic"
+      },
+      {
+        "path": "CLAUDE.md",
+        "class": "semantic"
+      },
+      {
+        "path": "AGENT.md",
+        "class": "semantic"
+      },
+      {
+        "path": "docs/refs/README.md",
+        "class": "semantic"
+      }
+    ],
+    "default_for_existing": "on"
+  },
+  {
+    "plugin": "opinion-manager",
+    "from": "0.5.1",
+    "to": "0.5.2",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-09",
+    "summary": "项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。",
+    "summary_en": "Project file language: projects with language=en get complete English entry, rules, Opinion placeholder, summary and managed-region templates; the memory index, retirement marker and summary-section check follow the project language; add documentation pairing and glossary gates. Existing files are never rewritten automatically.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "template_changes": [],
+    "default_for_existing": "on"
+  },
+  {
+    "plugin": "project-orchestrator",
+    "from": "1.11.3",
+    "to": "1.11.4",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-09",
+    "summary": "项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。; Case 命令 `case.py new` / `update` 新增 `--dry-run`：运行与写入相同的校验并返回目标路径与 unified diff，不建立目录、不改文件；省略该参数仍直接写入，旧脚本无需迁移。补充写操作命令盘点与 hook 例外说明。; 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。; rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。",
+    "summary_en": "Project file language: projects with language=en get complete English entry, rules, Opinion placeholder, summary and managed-region templates; the memory index, retirement marker and summary-section check follow the project language; add documentation pairing and glossary gates. Existing files are never rewritten automatically.; Add `--dry-run` to `case.py new` and `update`: run the same validation and return the target path and a unified diff without creating directories or changing files. Omitting it still writes immediately, so existing scripts need no migration. Document the write-command inventory and the hook exception.; Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49).; rc.3 acceptance polish (#50): project health headings show both visible and expanded counts; the pinned-ref note says \"plugin latest version\" and states when the target is unknown; check --hook honours --latest / --offline / --client; the Claude update summary names where old version directories remain; check merges the sync-folder and machine-local lines; the English UI states that migration notes are Chinese-only; runtime status no longer implies newer content for side-by-side directories; Codex candidate acceptance is documented.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "template_changes": [],
+    "default_for_existing": "on"
+  }
+]

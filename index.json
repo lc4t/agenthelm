@@ -4,7 +4,7 @@
     "name": "agenthelm",
     "description": "Cross-agent project management plugins: project contract, lifecycle, extension capabilities and behavior rules. 跨 Agent 的项目管理插件集。",
     "version": "0.7.0",
-    "updated_at": "2026-11-07",
+    "updated_at": "2026-11-09",
     "homepage": "./index.html",
     "domain": "agenthelm.sakanano.moe",
     "legacy_domain": "skill.sakanano.moe"

@@ -5,7 +5,16 @@
     "en": "Content refresh decides staleness from the agents-init copy that actually runs it, honoring --client and ignore settings; older copies in other clients only produce an upgrade note instead of blocking; when every usable copy is too old the client, version, path and next command are reported (#48)."
   },
   "changes": [
-    {"scope": "agent-pack", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []}
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
   ],
   "suite": null
 }

@@ -5,9 +5,36 @@
     "en": "Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49)."
   },
   "changes": [
-    {"scope": "agent-pack", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []},
-    {"scope": "agents-init", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []},
-    {"scope": "project-orchestrator", "level": "patch", "actions": [], "user_action_required": [], "touches": [], "default_for_existing": "on", "template_changes": [], "contracts": []}
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agents-init",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
   ],
   "suite": null
 }

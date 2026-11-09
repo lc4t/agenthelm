@@ -10,16 +10,40 @@
       "level": "minor",
       "actions": [],
       "user_action_required": [
-        {"what": "language=en 的既有项目：下次内容刷新会把已有中文模板文件整份替换为英文；先预览 `--mode refresh`，改过的文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响。", "session": "current"}
+        {
+          "what": "language=en 的既有项目：下次内容刷新会把已有中文模板文件整份替换为英文；先预览 `--mode refresh`，改过的文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响。",
+          "session": "current"
+        }
       ],
-      "touches": ["AGENTS.md", "AGENT.RULES.md", "CLAUDE.md", "AGENT.md", "docs/refs/README.md"],
+      "touches": [
+        "AGENTS.md",
+        "AGENT.RULES.md",
+        "CLAUDE.md",
+        "AGENT.md",
+        "docs/refs/README.md"
+      ],
       "default_for_existing": "advisory",
       "template_changes": [
-        {"path": "AGENTS.md", "class": "semantic"},
-        {"path": "AGENT.RULES.md", "class": "semantic"},
-        {"path": "CLAUDE.md", "class": "semantic"},
-        {"path": "AGENT.md", "class": "semantic"},
-        {"path": "docs/refs/README.md", "class": "semantic"}
+        {
+          "path": "AGENTS.md",
+          "class": "semantic"
+        },
+        {
+          "path": "AGENT.RULES.md",
+          "class": "semantic"
+        },
+        {
+          "path": "CLAUDE.md",
+          "class": "semantic"
+        },
+        {
+          "path": "AGENT.md",
+          "class": "semantic"
+        },
+        {
+          "path": "docs/refs/README.md",
+          "class": "semantic"
+        }
       ],
       "contracts": []
     },

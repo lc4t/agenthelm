@@ -5,7 +5,18 @@
     "en": "For adopted projects, AGENTS.md / CLAUDE.md files with recorded managed regions are compared by region only: text outside the regions no longer becomes a pending change when the whole-file template changes; whole-file --accept / --merge are rejected in favor of --mode region; earlier keep decisions are preserved and obsolete whole-file baselines are dropped on refresh (#45)."
   },
   "changes": [
-    {"scope": "agents-init", "level": "patch", "actions": [], "user_action_required": [], "touches": [".agents/moe.sakanano.agent-pack/content.lock.json"], "default_for_existing": "advisory", "template_changes": [], "contracts": []}
+    {
+      "scope": "agents-init",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        ".agents/moe.sakanano.agent-pack/content.lock.json"
+      ],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
   ],
   "suite": null
 }
