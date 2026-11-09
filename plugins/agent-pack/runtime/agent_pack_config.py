@@ -60,6 +60,18 @@ def looks_like_token(name: str) -> bool:
             and any(c.isdigit() for c in name))
 
 
+# A path-shaped argument (absolute, ``~``, drive letter, or one of our own path placeholders) names
+# a location. Directory names such as ``credential`` or ``token`` in it say nothing about a secret
+# value (#90), so only the value-shaped patterns apply to such arguments.
+PATH_SHAPED_RE = re.compile(r"^(?:[/~]|[A-Za-z]:[\\/]|__PROJECT_DIR__|__REPO_ROOT__|\$\{(?:PLUGIN_ROOT|PLUGIN_DATA|HOME)\})")
+
+
+def _secret_like_arg(text: str) -> bool:
+    if SECRET_VALUE_RE.search(text):
+        return True
+    return not PATH_SHAPED_RE.match(text) and bool(SECRET_NAME_RE.search(text))
+
+
 def _safe_env_reference(text: str) -> bool:
     """A value made of ``${NAME}`` references with nothing credential-like in the names or around them."""
     references = ENV_REFERENCE_RE.findall(text)
@@ -406,7 +418,7 @@ def _portable_mcp(name: str, raw: Any) -> McpRecord:
         for index, value in enumerate(args):
             rendered = str(value)
             safe_reference = _safe_env_reference(rendered)
-            if (SECRET_NAME_RE.search(rendered) or SECRET_VALUE_RE.search(rendered)) and not safe_reference:
+            if _secret_like_arg(rendered) and not safe_reference:
                 issues.append(f"possible secret reference in args[{index}]")
             elif any(looks_like_token(name) for name in ENV_REFERENCE_RE.findall(rendered)):
                 issues.append(f"possible secret reference in args[{index}]")
@@ -1095,17 +1107,17 @@ def _portable_package_from_inventory(
         config_name = hashlib.sha256(item.name.encode("utf-8")).hexdigest()[:16] + ".json"
         _write_json_atomic(runtime_root / config_name, config)
         assert layout is not None and layout.credential_env_file is not None
-        rendered_mcps[item.name] = {
-            "type": "stdio",
-            "command": "python3",
-            "args": [
-                "${PLUGIN_ROOT}/runtime/mcp_env_launcher.py",
-                "--env-file",
-                str(layout.credential_env_file.resolve()),
-                "--config",
-                f"${{PLUGIN_ROOT}}/runtime/{config_name}",
-            ],
-        }
+        launcher_args = [
+            "${PLUGIN_ROOT}/runtime/mcp_env_launcher.py",
+            "--env-file",
+            str(layout.credential_env_file.resolve()),
+            "--config",
+            f"${{PLUGIN_ROOT}}/runtime/{config_name}",
+        ]
+        if "${PLUGIN_DATA}" in json.dumps(config):
+            # The client expands placeholders in the launcher's own args, not in the config file it reads (#91).
+            launcher_args += ["--plugin-data", "${PLUGIN_DATA}"]
+        rendered_mcps[item.name] = {"type": "stdio", "command": "python3", "args": launcher_args}
 
     _write_json_atomic(destination / "mcp.json", {
         "$schema": AGENT_PLUGIN_MCP_SCHEMA,

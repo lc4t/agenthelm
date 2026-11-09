@@ -165,8 +165,8 @@ Codex 同步会写入 `~/.agents/plugins/plugins/<name>` 可移植包、`.codex-
 | `${HOME}`、`${USER}`、`${LOGNAME}`、`${TMPDIR}`、`${XDG_CONFIG_HOME}`、`${XDG_DATA_HOME}`、`${XDG_CACHE_HOME}`、`${XDG_STATE_HOME}` | 系统变量，描述本机而不是凭据。`HOME` 取 `--home`（默认当前用户主目录），XDG 变量取进程环境，未设置时用 `HOME` 下的默认目录 | `sync` / `bootstrap` 生成包时展开为本机值；每台机器各自同步，所以是“用户主目录”的可移植写法，禁止写死绝对路径 |
 | `__PROJECT_DIR__` | 该条目所在 MCP 来源文件的目录 | 生成包时展开 |
 | `__REPO_ROOT__` | 项目根目录 | 生成包时展开 |
-| `${PLUGIN_ROOT}/<路径>` | 该条目所在来源的插件目录（来源文件所在目录）里的文件 | 生成包时按**各自来源**解析；包内本来就有的（`skills/<名称>/…`）保持 `${PLUGIN_ROOT}`，其余指向来源目录里实际存在的文件的绝对路径；两处都没有则 `sync` 与 `doctor` 阻塞并给出条目名、来源文件与路径 |
-| `${PLUGIN_DATA}` | 客户端管理的可写状态目录 | 由客户端在启动时解析 |
+| `${PLUGIN_ROOT}/<路径>`（含被 launcher 包装的条目） | 该条目所在来源的插件目录（来源文件所在目录）里的文件 | 生成包时按**各自来源**解析；包内本来就有的（`skills/<名称>/…`）保持 `${PLUGIN_ROOT}`，其余指向来源目录里实际存在的文件的绝对路径；两处都没有则 `sync` 与 `doctor` 阻塞并给出条目名、来源文件与路径。launcher 按自身位置（`<包根>/runtime/`）推导 `PLUGIN_ROOT`，不从进程环境或 `credential_env_file` 读取 |
+| `${PLUGIN_DATA}` | 客户端管理的可写状态目录 | 由客户端在启动时解析；被 launcher 包装的条目（含凭据键）引用它时，生成的 launcher 参数末尾追加 `--plugin-data ${PLUGIN_DATA}`，由客户端展开后传给 launcher，launcher 再代入其 config |
 | 其他 `${NAME}` | 凭据键 | 必须在 `credential_env_file` 里存在；缺失时 `sync` 阻塞并只列出键名 |
 
 系统变量不要求出现在 `credential_env_file` 中；真正缺失的凭据键仍会被报告。预览与 `--apply` 使用同一套校验。

@@ -487,6 +487,55 @@ def cursor_commands(runtime: Path) -> dict[str, dict]:
             "stop": {"command": f"{base} stop", "timeout": 10}}
 
 
+# ---------------------------------------------------------------- a stable runtime path for the hook command
+
+# Directory names that package runners use for a throw-away copy of a package; the cache can be emptied at any time.
+#   npm / npx: <npm cache>/_npx/<hash>/node_modules/...   (cache: ~/.npm on macOS and Linux, %LocalAppData%\npm-cache on Windows;
+#              the ``_npx`` folder name is the same everywhere, and npm_config_cache only moves its parent)
+#   pnpm dlx:  <pnpm cache>/dlx/<hash>/...                (a path that also has a pnpm component)
+#   yarn dlx:  <tmp>/xfs-<hash>/dlx-<pid>/...
+#   bunx:      <tmp>/bunx-<uid>-<package>@<version>/...
+# Only npm's layout is confirmed on a real machine (macOS, issue #81); the others come from the tools' documented behaviour
+# and are not run here.
+EPHEMERAL_PARTS = ("_npx",)
+BUNX_PART = re.compile(r"^bunx-\d+-")
+
+
+def is_ephemeral_runtime(path: Any) -> bool:
+    """True when ``path`` lies in a package runner's disposable cache. A pure function of the path text: POSIX and Windows
+    separators and letter case are both accepted, so the same answer comes out on every platform."""
+    parts = [part.lower() for part in re.split(r"[\\/]+", str(path)) if part]
+    if any(part in EPHEMERAL_PARTS for part in parts):
+        return True
+    if any(BUNX_PART.match(part) for part in parts):
+        return True
+    if any(part.startswith("dlx-") for part in parts) and any(part.startswith("xfs-") for part in parts):
+        return True
+    return "dlx" in parts and any("pnpm" in part for part in parts)
+
+
+def running_runtime() -> Path:
+    """The agenthelm.py next to this module (the one that is running)."""
+    return Path(__file__).resolve().with_name("agenthelm.py")
+
+
+def stable_runtime(env: Any, running: Path) -> tuple[Path | None, dict]:
+    """The agenthelm.py a hook command should call: this file when it is not in a disposable cache, otherwise an installed
+    copy (Cursor's plugin directory, then the ``runtime install`` data directory); None when there is none."""
+    if not is_ephemeral_runtime(running):
+        return running, {"source": "running-file", "ephemeral": None, "searched": []}
+    candidates = [("cursor-plugin", env.home / ".cursor" / "plugins" / "local" / "agent-pack" / "runtime" / "agenthelm.py")]
+    try:
+        import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
+        candidates.append(("runtime-current", agenthelm_runtime.current_link(env) / "plugins" / "agent-pack" / "runtime" / "agenthelm.py"))
+    except Exception:  # noqa: BLE001 - the data directory is optional
+        pass
+    for source, path in candidates:
+        if path.is_file() and not is_ephemeral_runtime(path):
+            return path, {"source": source, "ephemeral": str(running), "searched": [str(item) for _, item in candidates]}
+    return None, {"source": None, "ephemeral": str(running), "searched": [str(item) for _, item in candidates]}
+
+
 def merged_cursor_hooks(existing: dict, runtime: Path, remove: bool) -> dict:
     data = json.loads(json.dumps(existing)) if existing else {}
     data.setdefault("version", 1)
@@ -518,11 +567,19 @@ def install_hooks(args: argparse.Namespace, host: Any) -> dict:
         raise host.CheckError(say("err_hooks_json", lang, target=target, error=exc)) from exc
     if not isinstance(existing, dict):
         raise host.CheckError(say("err_hooks_root", lang, target=target))
-    runtime = Path(__file__).resolve().with_name("agenthelm.py")
+    running = running_runtime()
+    runtime, where = (running, {"source": "running-file", "ephemeral": None, "searched": []}) if args.remove else stable_runtime(env, running)
+    if runtime is None:  # nothing stable to point the hooks at: writing would leave hooks that break when the cache is cleaned
+        searched = ", ".join(where["searched"])
+        message = say("err_unstable_runtime", lang, runtime=where["ephemeral"], searched=searched)
+        if args.apply:
+            raise host.CheckError(message)
+        return {"ok": True, "applied": False, "target": str(target), "changed": False, "remove": False, "blocked": message,
+                "runtime": where, "hooks": existing.get("hooks", {}), "note": say("note_cursor", lang), "lang": lang}
     merged = merged_cursor_hooks(existing, runtime, args.remove)
     changed = merged != existing
     result = {"ok": True, "applied": False, "target": str(target), "changed": changed, "remove": args.remove,
-              "hooks": merged.get("hooks", {})}
+              "runtime": {**where, "path": str(runtime)}, "hooks": merged.get("hooks", {})}
     if args.apply and changed:
         if target.is_file():
             backup = target.with_name(target.name + ".agenthelm-bak")
@@ -606,8 +663,14 @@ def main(argv: list[str], host: Any) -> int:
         print("\n".join(lines))
     else:
         lang = result["lang"]
+        if result.get("blocked"):
+            print(say("install_line", lang, verb=say("install_blocked", lang), target=result["target"]))
+            print(result["blocked"])
+            return 0
         verb = say("install_written" if result["applied"] else ("install_unchanged" if not result["changed"] else "install_preview"), lang)
         print(say("install_line", lang, verb=verb, target=result["target"]))
+        if result["runtime"].get("ephemeral"):
+            print(say("note_runtime_replaced", lang, ephemeral=result["runtime"]["ephemeral"], stable=result["runtime"]["path"]))
         print(json.dumps(result["hooks"], ensure_ascii=False, indent=2))
         print(result["note"])
     return 0

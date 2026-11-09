@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。",
+    "en": "nudge install-hooks run from a package runner's temporary cache (npx and similar): the hook commands now use an installed stable entry (Cursor's plugin directory, then the runtime install's current); when none exists the preview warns and --apply refuses to write (exit code 2); --remove and existing hook entries are unaffected; INSTALL.md and nudge.md explain this (#81)."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
