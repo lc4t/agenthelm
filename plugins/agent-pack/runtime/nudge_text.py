@@ -86,6 +86,17 @@ MESSAGES: dict[str, dict[str, str]] = {
     "err_hooks_root": {"zh": "{target} 的根节点必须是对象", "en": "The root of {target} must be an object"},
     "err_backup": {"zh": "无法备份 {target} 到 {backup}（{error}）；没有改动任何文件。",
                    "en": "Could not back up {target} to {backup} ({error}); nothing was changed."},
+    "err_unstable_runtime": {
+        "zh": "当前运行的 agenthelm 位于临时缓存 {runtime}，缓存清理后 hook 会失效，且没有找到已安装的稳定入口（已查找：{searched}）；"
+              "没有写入任何文件。先安装稳定入口：agenthelm install --client cursor --apply，或 agenthelm runtime install --apply，再重新运行 nudge install-hooks。",
+        "en": "The running agenthelm is in a temporary cache ({runtime}), so the hooks would break once the cache is cleaned, and no installed stable entry was found (looked in: {searched}); "
+              "nothing was written. Install a stable entry first: agenthelm install --client cursor --apply, or agenthelm runtime install --apply, then run nudge install-hooks again.",
+    },
+    "note_runtime_replaced": {
+        "zh": "注意：当前运行的 agenthelm 在临时缓存 {ephemeral}，hook 命令改用稳定入口 {stable}。",
+        "en": "Note: the running agenthelm is in a temporary cache ({ephemeral}); the hook commands use the stable entry {stable} instead.",
+    },
+    "install_blocked": {"zh": "预览被阻塞，不会写入", "en": "Preview blocked; nothing would be written"},
     "status_project": {"zh": "项目：{project}", "en": "Project: {project}"},
     "status_no_project": {"zh": "（不在启用 opinion-manager 的项目里）", "en": "(not in a project that uses opinion-manager)"},
     "status_switch": {"zh": "开关：{state}", "en": "Switch: {state}"},
