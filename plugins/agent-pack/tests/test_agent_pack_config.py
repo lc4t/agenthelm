@@ -606,5 +606,62 @@ class MarketplaceInventoryTests(unittest.TestCase):
             self.assertEqual([(item["name"], item["version"]) for item in codex.plugins], [("opinion-manager", "0.4.1")])
 
 
+class SecretHeuristicPathTests(unittest.TestCase):
+    """#90: directory names such as credential/secret/token must not read as secret values."""
+
+    def _project(self, parent: Path) -> Path:
+        project = make_project(parent / "project", "source-project")
+        profile_path = project / ".agents" / PROJECT_PROFILE_NAMESPACE / "project.json"
+        profile = json.loads(profile_path.read_text())
+        profile["capabilities"]["credential_env_file"] = ".env"
+        write_json(profile_path, profile)
+        write_json(project / ".agents" / "mcp.json", {
+            "$schema": AGENT_PLUGIN_MCP_SCHEMA,
+            "mcpServers": {"needs-key": {"type": "stdio", "command": "node",
+                                         "env": {"SERVICE_KEY": "${SERVICE_KEY}"}}},
+        })
+        (project / ".env").write_text("SERVICE_KEY=value\n", encoding="utf-8")
+        (project / ".env").chmod(0o600)
+        return project
+
+    def test_secret_like_directory_names_pass_for_every_client(self) -> None:
+        for word in ("credential-present", "secret_store", "my-token", "Passwords"):
+            for client in ("claude", "codex", "cursor"):
+                with self.subTest(word=word, client=client), tempfile.TemporaryDirectory() as temporary:
+                    base = Path(temporary) / word
+                    project = self._project(base)
+                    home = base / "home"
+                    result = sync_project(project, client, home=home, apply=True)
+                    self.assertTrue(result["ok"], result)
+                    self.assertTrue(doctor(project)["ok"])
+
+    def test_secret_like_home_path_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = self._project(base / "plain")
+            home = base / "token-home"
+            result = sync_project(project, "claude", home=home, apply=True)
+            self.assertTrue(result["ok"], result)
+
+    def test_token_shaped_values_stay_blocked_without_echo(self) -> None:
+        bad = ["Authorization: Bearer abc123def456", "Bearer abc123def456",
+               "sk-" + "a" * 20, "ghp_" + "A" * 24, "AKIA" + "B" * 16,
+               "--password", "--api-key", "/tmp/x/Bearer secretvalue99"]
+        for value in bad:
+            with self.subTest(value=value):
+                record = agent_pack_config._portable_mcp("x", {"command": "node", "args": ["run", value]})
+                self.assertFalse(record.portable)
+                self.assertIn("args[1]", "; ".join(record.issues))
+                self.assertNotIn(value, "; ".join(record.issues))
+
+    def test_path_shaped_values_are_not_name_matched(self) -> None:
+        for value in ("/home/u/credentials/run.js", "~/secrets/run.js", "C:\\tokens\\run.js",
+                      "D:/password-store/run.js", "${PLUGIN_ROOT}/skills/token-tool/x.js",
+                      "__PROJECT_DIR__/secret/x.js"):
+            with self.subTest(value=value):
+                record = agent_pack_config._portable_mcp("x", {"command": "node", "args": [value]})
+                self.assertTrue(record.portable, record.issues)
+
+
 if __name__ == "__main__":
     unittest.main()
