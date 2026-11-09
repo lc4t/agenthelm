@@ -294,7 +294,7 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
         layout = core.load_project_layout(project)
         authority = core.inventory_project(layout.root)
         name = core._package_name(layout.root)
-        built = core._build_package(authority, name, Path(temporary), "claude")
+        built = core._build_package(authority, name, Path(temporary), "claude", home)
         plan = plan_project(project, home, built=built, reset_overrides=reset_overrides,
                             retire_skills=retire_skills, retire_plugins=retire_plugins, retire_only=retire_only)
         if plan["conflicts"] and not replace:
@@ -419,7 +419,7 @@ def drift(project: Path, home: Path | None = None) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="agent-pack-claude-") as temporary:
         layout = core.load_project_layout(project)
         name = core._package_name(layout.root)
-        built = core._build_package(core.inventory_project(layout.root), name, Path(temporary), "claude")
+        built = core._build_package(core.inventory_project(layout.root), name, Path(temporary), "claude", home)
         plan = plan_project(project, home, built=built)
     report: dict[str, Any] = {"client": "claude", "package": name, "missing": [], "different": [],
                               "overrides": plan["overrides"], "stale": [], "native": plan["native"],

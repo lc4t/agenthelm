@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "update 输出措辞与备份位置：--client 选定的客户端不再被称为“其他客户端”；预览被阻塞时不再提示追加 --apply；update 的预览写明被替换文件的备份位置、apply 写出实际路径（内容步骤与 Cursor 都覆盖），--recovery-dir 对 Cursor 步骤同样生效；config 的写子命令（含 project-language）支持 --recovery-dir（#80）。",
+    "en": "update wording and backup location: a client chosen with --client is no longer called an \"other client\"; a blocked preview no longer tells you to add --apply; update previews name where replaced files will be backed up and --apply prints the actual path (content step and Cursor); --recovery-dir now also applies to Cursor steps; the config write sub-commands (including project-language) accept --recovery-dir (#80)."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

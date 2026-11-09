@@ -26,8 +26,8 @@ MESSAGES: dict[str, dict[str, str]] = {
    python3 {runtime} inbox add --project {project} --title "<标题>" --text "<完整规则>" --scope "<适用范围>" --quote "<用户原话>"{session} --lang {lang}
    一次性的任务要求、项目事实和命令不是候选。暂存不需要确认，也不会改变任何规则。
 3. 任务完成或即将完成时，若本次暂存了候选，用编号列表一次性请用户裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃。
-   用户明确表态后记录：python3 {runtime} inbox decide <编号…> --project {project} --to trial|formal|held|rejected --confirmed --lang {lang}
-   采纳为正式只改状态；写入 OPINION.md 须走 opinion-manager 的完整预览与确认。
+   用户明确表态后记录：python3 {runtime} inbox decide <编号…> --project {project} --to trial|held|rejected --confirmed --lang {lang}
+   用户说“采纳”时不要 decide：直接 python3 {runtime} inbox adopt <编号…> --project {project} --lang {lang} 预览（零写入），展示 content，用户确认后加 --apply --confirm <confirmation_sha256> 一次写入并读回。「已批准」不等于「已生效」：只有 adopt --apply 成功才写入 OPINION.md。
 4. 未经用户确认，不得把候选写入 OPINION.md，也不得把一次出现当作确认。
 5. inbox add 的结果带 notice（首次暂存时出现）时，用一句话如实转告用户。收件箱保存用户原话，可能含敏感信息；
    是否公开仓库、是否排除 .opinion/ 由用户决定，不要自行修改 .gitignore、删除或改写内容。
@@ -38,8 +38,8 @@ MESSAGES: dict[str, dict[str, str]] = {
    python3 {runtime} inbox add --project {project} --title "<title>" --text "<the full rule>" --scope "<where it applies>" --quote "<the user's own words>"{session} --lang {lang}
    One-off task requirements, project facts and commands are not candidates. Stashing needs no confirmation and changes no rule.
 3. When the task is done or nearly done and you stashed candidates in this session, ask the user once, as a numbered list: adopt as formal / trial in this project / hold / discard.
-   After the user states a decision explicitly, record it: python3 {runtime} inbox decide <ids...> --project {project} --to trial|formal|held|rejected --confirmed --lang {lang}
-   Adopting as formal only records the decision; writing it into OPINION.md goes through opinion-manager's full preview and confirmation.
+   After the user states a decision explicitly, record it: python3 {runtime} inbox decide <ids...> --project {project} --to trial|held|rejected --confirmed --lang {lang}
+   When the user says "adopt", do not decide: run python3 {runtime} inbox adopt <ids...> --project {project} --lang {lang} to preview (writes nothing), show the content, and once the user confirms add --apply --confirm <confirmation_sha256> to write and read back in one step. "Approved" is not "in effect": OPINION.md is written only when adopt --apply succeeds.
 4. Never write a candidate into OPINION.md without the user's confirmation, and never treat a single occurrence as confirmation.
 5. When the result of inbox add carries a notice (shown on the first stash), pass it on to the user in one sentence, as written. The inbox stores the user's own words, which may contain sensitive information; whether to make the repository public or to exclude .opinion/ is the user's decision. Do not edit .gitignore, delete or rewrite anything yourself.
 6. Relay and confirm in the language the user is using.""",
@@ -79,8 +79,21 @@ MESSAGES: dict[str, dict[str, str]] = {
     "err_ids": {"zh": "需要至少一个候选编号", "en": "At least one candidate id is required"},
     "err_need_to": {"zh": "decide 需要 --to", "en": "decide needs --to"},
     "err_need_days": {"zh": "expire 需要 --days", "en": "expire needs --days"},
-    "formal_reminder": {"zh": "正式采纳只记录状态；写入 OPINION.md 须经 opinion-manager 的完整预览与确认。",
-                        "en": "Adopting as formal only records the status; writing into OPINION.md needs opinion-manager's full preview and confirmation."},
+    "formal_reminder": {"zh": "「已批准」不等于「已生效」：候选只是记为 formal，尚未写入 OPINION.md，后续会话不会加载它；下一步是 inbox adopt。",
+                        "en": "\"Approved\" is not \"in effect\": the candidate is only recorded as formal and is not in OPINION.md yet, so later sessions do not load it. The next step is inbox adopt."},
+    "formal_next": {"zh": "尚未写入 OPINION.md；下一步预览并写入：{command}",
+                    "en": "Not written to OPINION.md yet; next, preview and write it: {command}"},
+    "adopt_next": {"zh": "向用户展示 content 并取得确认后运行：{command}",
+                   "en": "Show the user the content and, once they confirm, run: {command}"},
+    "adopt_done": {"zh": "已写入 OPINION.md 并读回核对；{count} 条候选已生效。", "en": "Written to OPINION.md and read back; {count} candidate(s) now in effect."},
+    "err_adopt_formal": {"zh": "候选已是 formal：{ids}（已批准或已写入）；若尚未写入 OPINION.md，先用 decide --to pending --confirmed 退回再采纳",
+                         "en": "Already formal: {ids} (approved or already written). If it is not in OPINION.md yet, move it back with decide --to pending --confirmed, then adopt"},
+    "err_adopt_confirm": {"zh": "写入需要先预览并让用户确认：去掉 --apply 预览，用户确认后加 --apply --confirm <confirmation_sha256>",
+                          "en": "Writing needs a preview the user has confirmed: preview without --apply, then add --apply --confirm <confirmation_sha256> once they agree"},
+    "err_adopt_stale": {"zh": "预览之后内容已变化（候选、Profile 或 OPINION.md），未写入；请重新预览。当前指纹：{fingerprint}",
+                        "en": "The content changed since the preview (candidates, Profile or OPINION.md); nothing was written. Preview again. Current fingerprint: {fingerprint}"},
+    "err_adopt_unresolved": {"zh": "Profile 升级存在未确认的冲突：{ids}", "en": "The Profile upgrade has unresolved conflicts: {ids}"},
+    "err_adopt_readback": {"zh": "写入后读回的 OPINION.md 与预览不一致，已回滚", "en": "The OPINION.md read back differs from the preview; rolled back"},
     "list_empty": {"zh": "没有符合条件的候选。", "en": "No matching candidates."},
     "list_rule": {"zh": "   - 规则：{text}", "en": "   - Rule: {text}"},
     "list_scope": {"zh": "   - 适用：{scopes}", "en": "   - Applies to: {scopes}"},

@@ -86,7 +86,18 @@ def short_hint(status: dict) -> str:
         _(LANGUAGE_NAMES[status["language"]]))
 
 
-def report_section(variables: Mapping[str, str], settings: Mapping[str, Any], scaffold: dict | None) -> dict:
+def drift_hint(drift: list[dict], cli: str = "agenthelm") -> str:
+    """Profile 的 language 与已渲染文件的语言不一致：只指路到预览入口，不改写任何文件。"""
+    wanted, rendered = _(LANGUAGE_NAMES[drift[0]["profile"]]), _(LANGUAGE_NAMES[drift[0]["rendered"]])
+    return _("项目文件语言（Profile 的 language）是 {0}，但内容锁记录的上次渲染语言是 {1}（{2}），已有文件仍是{1}。"
+             "运行 {3} fix update-content 预览整份替换（不加 --apply 不写入；你改过的文件默认保留），"
+             "或在 agents-init 的 scripts 目录运行 init_project.py --mode refresh --project <项目> 预览。"
+             "check 与 update --only content 不会自动改写既有文件。").format(
+        wanted, rendered, _("、").join(item["pack"] for item in drift), cli)
+
+
+def report_section(variables: Mapping[str, str], settings: Mapping[str, Any], scaffold: dict | None,
+                   drift: list[dict] | None = None, cli: str = "agenthelm") -> dict:
     """check 报告里的 ``language`` 段（无论是否提示都给出，便于脚本读取）。"""
     status = language_status(variables, settings)
     declared_known = isinstance(scaffold, dict) and isinstance(scaffold.get("project_language"), dict)
@@ -95,7 +106,9 @@ def report_section(variables: Mapping[str, str], settings: Mapping[str, Any], sc
     return {"interface": {"language": status["language"], "source": status["source"], "explicit": status["explicit"]},
             "project": {"declared": declared, "effective": declared or "zh"} if declared_known else None,
             "hint_dismissed": status["dismissed"],
-            "hints": ([interface_hint(status)] if status["hint"] else []) + ([project_hint()] if project_needs_hint else []),
+            "drift": drift or [],
+            "hints": ([interface_hint(status)] if status["hint"] else []) + ([project_hint()] if project_needs_hint else [])
+                     + ([drift_hint(drift, cli)] if drift else []),
             "session_hint": short_hint(status) if status["hint"] else None}
 
 
@@ -109,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
     def common(parser: argparse.ArgumentParser, project: bool = False) -> None:
         parser.add_argument("--output", choices=("text", "json"), default="text")
         parser.add_argument("--apply", action="store_true", help=_("写入（缺省只预览）"))
+        parser.add_argument("--recovery-dir", type=Path,
+                            help=_("被替换文件的备份目录；缺省 ~/.agent-pack/recovery/<时间>-agenthelm-<标签>（项目 Profile 的备份目录须在项目外）"))
         if project:
             parser.add_argument("--project", type=Path, help=_("项目目录；缺省当前目录"))
 
@@ -201,10 +216,13 @@ def _set_key(args: argparse.Namespace, host: Any, env: Any, key: str, value: Any
         lines.append("  " + _("{0} 已经是这个值，没有需要改的。").format(label))
     elif args.apply:
         if path.is_file():  # 替换前备份，和其他会替换文件的命令一样
-            recovery = host.recovery_dir_for(env, "config")
+            recovery = args.recovery_dir.expanduser().resolve() if args.recovery_dir else host.recovery_dir_for(env, "config")
             try:
-                recovery.mkdir(parents=True, mode=0o700)
-                (recovery / path.name).write_bytes(path.read_bytes())
+                recovery.mkdir(parents=True, mode=0o700, exist_ok=args.recovery_dir is not None)
+                backup = recovery / path.name
+                if backup.exists():  # an explicit folder may already hold a copy: never overwrite it
+                    raise FileExistsError(_("备份目录里已有 {0}").format(backup))
+                backup.write_bytes(path.read_bytes())
             except OSError as exc:  # abort before rewriting: no backup, no change
                 message = _("无法备份 {0} 到 {1}（{2}）；没有改动任何文件。").format(path, recovery, exc)
                 _emit(args, {"ok": False, "error": message}, [message])
@@ -230,7 +248,8 @@ def _project_language(args: argparse.Namespace, host: Any, env: Any) -> int:
         _emit(args, {"ok": False, "error": message}, [message])
         return 3
     command = [sys.executable, str(script), "--project", str(project), "--mode", "language", "--language", args.value,
-               "--output", "json"] + (["--apply"] if args.apply else [])
+               "--output", "json"] + (["--apply"] if args.apply else []) \
+        + (["--recovery-dir", str(args.recovery_dir.expanduser().resolve())] if args.recovery_dir else [])
     completed = subprocess.run(command, capture_output=True, text=True, check=False, env=env.child_environment())
     try:
         result = json.loads(completed.stdout)

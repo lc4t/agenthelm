@@ -740,6 +740,32 @@ def content_findings(project: Path, latest: dict) -> list[dict]:
     return findings
 
 
+def language_drift(project: Path) -> list[dict]:
+    """Packs whose files were last rendered in a different language than the Profile's ``language`` now says.
+
+    ``config project-language`` changes only the Profile, and the content lock keeps the language each pack was rendered with
+    (``render_inputs.language``; ``zh`` when a pre-6.9 lock has ``render_inputs`` without it). Packs with no
+    ``render_inputs`` cannot be judged and are skipped, so an old lock or an undeclared language never raises a false alarm.
+    """
+    try:
+        profile = read_json(project / PROFILE_FILE)
+        lock = read_json(project / CONTENT_LOCK)
+    except (OSError, ValueError, AttributeError):
+        return []
+    wanted = profile.get("language") if isinstance(profile, dict) else None
+    wanted = wanted if wanted in ("zh", "en") else "zh"
+    packs = lock.get("packs") if isinstance(lock, dict) else None
+    result = []
+    for pack_id, entry in sorted((packs or {}).items()):
+        inputs = entry.get("render_inputs") if isinstance(entry, dict) else None
+        if not isinstance(inputs, dict):
+            continue
+        rendered = inputs.get("language") if inputs.get("language") in ("zh", "en") else "zh"
+        if rendered != wanted:
+            result.append({"pack": pack_id, "profile": wanted, "rendered": rendered})
+    return result
+
+
 def locate_companion(name: str, installed: list[dict], *, excluded: set[Path] | None = None) -> Path | None:
     """The newest copy of a companion plugin: next to this one or in any client install."""
     candidates = [PLUGIN_ROOT.parent / name, *(Path(item["path"]) for item in installed if item["plugin"] == name)]
@@ -941,6 +967,16 @@ def baseline_less_differences(env: Env, project: Path | None) -> list[str]:
     return [item["path"] for item in (report or {}).get("findings", []) if item.get("kind") == "content-differs" and item.get("path")]
 
 
+def missing_region_files(env: Env, project: Path | None) -> list[str]:
+    """Region-owned files (AGENTS.md / CLAUDE.md of an adopted project) that no longer exist: refresh skips them unless named."""
+    try:
+        report = scaffold_report(env, project)
+    except Exception:  # noqa: BLE001 - a hint only; never let it break update
+        return []
+    paths = {item["path"] for item in (report or {}).get("findings", []) if item.get("kind") == "region-missing" and item.get("path")}
+    return sorted(path for path in paths if project is not None and not (project / path).exists() and not (project / path).is_symlink())
+
+
 def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
     module = scaffold_module(env)
     if scaffold is None or module is None or not scaffold.get("available"):
@@ -1090,7 +1126,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     opinion_updates = [item for item in opinion if item["status"] == "update-available"]
     capabilities = capability_findings(env, project, clients)
     settings = user_settings_module()
-    language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold)
+    language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold,
+                                       drift=language_drift(project) if project else None, cli=CLI)
     return {
         "ok": True,
         "latest": {"source": origin, "released_at": latest.get("released_at")},
@@ -1799,11 +1836,24 @@ def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Pat
                 env: Env | None = None) -> Step:
     def run(apply: bool, recovery_root: Path | None) -> list[dict]:
         config = _agent_pack_config()
+        base = (recovery_root or home / ".agent-pack" / "recovery").expanduser().resolve()
         with tempfile.TemporaryDirectory(prefix="agenthelm-") as temporary:
             root = release_source(latest, Path(temporary), source)
-            return [config.install_plugin(root / "plugins" / plugin, "cursor", home=home, apply=apply,
-                                          replace=True, recovery_root=recovery_root)
-                    for plugin in plugins]
+            results = []
+            for plugin in plugins:
+                before = set(base.glob(f"*-cursor-{plugin}")) if apply and base.is_dir() else set()
+                outcome = config.install_plugin(root / "plugins" / plugin, "cursor", home=home, apply=apply,
+                                                replace=True, recovery_root=recovery_root)
+                replaced = any(op.get("action") == "replace-plugin" for op in outcome.get("operations", []))
+                if replaced and not apply:  # the timestamp is fixed when the replacement runs
+                    outcome["backup"] = {"plugin": plugin, "path": str(base / f"<{_('时间戳')}>-cursor-{plugin}" / "replaced-plugin" / plugin),
+                                         "planned": True}
+                elif replaced:
+                    moved = sorted(set(base.glob(f"*-cursor-{plugin}")) - before)
+                    if moved:
+                        outcome["backup"] = {"plugin": plugin, "path": str(moved[-1] / "replaced-plugin" / plugin), "planned": False}
+                results.append(outcome)
+            return results
     note = None
     if env is not None:
         present = {plugin: version for plugin, version in installed_versions(env, "cursor", plugins).items() if version}
@@ -1945,6 +1995,11 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
         if completed.returncode not in (0, 1) and isinstance(outcome, dict) and outcome.get("error"):
             # Exit 1 is a normal "blocked, choose per file"; anything else (e.g. no usable backup folder) is a failure.
             raise CheckError(str(outcome["error"]))
+        if isinstance(outcome, dict) and not apply:
+            replacing = [item["path"] for item in outcome.get("files", []) if item.get("action") == "replace"]
+            if replacing:  # the timestamp is fixed when the refresh runs; --recovery-dir names the exact folder
+                outcome["backup"] = {"files": replacing, "planned": True, "exact": recovery_dir is not None, "path": str(
+                    recovery_dir or env.home / ".agent-pack" / "recovery" / f"<{_('时间戳')}>-agenthelm-content")}
         return outcome
 
     blocked, advice, note = None, None, None
@@ -1962,8 +2017,13 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
     elif older:
         copies = _("、").join(f"{CLIENT_NAMES.get(entry['client'], entry['client'])} {entry.get('version') or '?'}"
                               for entry in older)
-        note = _("其他客户端的 agents-init 较旧：{0}；建议分别升级；内容刷新使用 {1}（{2}），不受这些副本阻塞。").format(
-            copies, current or "?", manager)
+        chosen = set((report.get("clients") or {}).get("selected") or [])
+        if chosen and all(entry["client"] in chosen for entry in older):  # the user picked these clients: they are not "other"
+            note = _("所选客户端的 agents-init 较旧：{0}；建议升级；内容刷新使用 {1}（{2}），不受这些副本阻塞。").format(
+                copies, current or "?", manager)
+        else:
+            note = _("其他客户端的 agents-init 较旧：{0}；建议分别升级；内容刷新使用 {1}（{2}），不受这些副本阻塞。").format(
+                copies, current or "?", manager)
     return Step("content", None, description, action=run, blocked=blocked, note=note,
                 blocker="outdated-agents-init" if stale else None, next=advice)
 
@@ -2421,7 +2481,7 @@ def parser() -> argparse.ArgumentParser:
                         help=_("内容更新：三方合并这个文件（用旧版本包还原出升级前的基线，保留你的改动并带入新模板的变化；--apply 前先备份）"))
     update.add_argument("--pick", action="append", default=[], metavar=_("文件#块=mine|theirs|both"),
                         help=_("内容更新：为 --merge 的冲突块选择 mine（保留你的）、theirs（取新模板）或 both（两边都留）"))
-    update.add_argument("--recovery-dir", type=Path, help=_("被替换文件的备份目录（项目外），缺省 ~/.agent-pack/recovery/"))
+    update.add_argument("--recovery-dir", type=Path, help=_("被替换文件的备份目录（项目外；Cursor 插件目录备份在其下的子目录），缺省 ~/.agent-pack/recovery/"))
     update.add_argument("--source", type=Path, help=_("Cursor 更新用的本地仓库（默认下载发布包）"))
     update.add_argument("--apply", action="store_true")
 
@@ -2474,6 +2534,21 @@ def content_action_label(action: str) -> str:
 
 def _pad(text: str, width: int = 10) -> str:
     return text + " " * max(width - sum(2 if ord(char) > 0x2E7F else 1 for char in text), 0)
+
+
+def backup_lines(record: dict, apply: bool) -> list[str]:
+    """Where the files a step replaces are (or will be) backed up; the content step's applied location is printed with the summary."""
+    result = record.get("result")
+    found = [item["backup"] for item in (result if isinstance(result, list) else [result])
+             if isinstance(item, dict) and isinstance(item.get("backup"), dict)]
+    lines = []
+    for item in found:
+        if item.get("planned") and not apply:
+            what = _("被替换的文件（{0} 个）").format(len(item["files"])) if "files" in item else _("被替换的 {0} 目录").format(item.get("plugin"))
+            lines.append((_("替换前会把{0}备份到：{1}") if item.get("exact") else _("替换前会把{0}备份到：{1}（时间戳在执行时确定）")).format(what, item["path"]))
+        elif not item.get("planned") and apply and "files" not in item:
+            lines.append(_("已把被替换的 {0} 目录备份到：{1}").format(item.get("plugin"), item["path"]))
+    return lines
 
 
 def _print_steps(results: list[dict], apply: bool) -> None:
@@ -2529,11 +2604,19 @@ def _print_steps(results: list[dict], apply: bool) -> None:
                 line += "\n" + (diff.rstrip("\n") if diff else _("（{0} 与新模板没有差异）").format(path))
             if result.get("hint") and not diffs:
                 line += "\n" + "\n".join(f"      {hint}" for hint in result["hint"].splitlines())
+        line += "".join(f"\n      {text}" for text in backup_lines(record, apply))
         print(line)
     if apply and results:
         print("\n".join(render_outcome(results)))
     if not apply and results:
-        print(_("以上为预览；确认后追加 --apply 执行。"))
+        stuck = [r for r in results if r["status"] == "blocked" or (isinstance(r.get("result"), dict) and r["result"].get("blocked"))]
+        runnable = [r for r in results if r["status"] == "preview" and r not in stuck]
+        if stuck and not runnable:
+            print(_("预览被阻塞：没有可以执行的步骤（见上面的 [阻塞] 项与下一步）。先处理，再重新预览；这时运行 --apply 也不会执行任何步骤。"))
+        elif stuck:
+            print(_("以上为预览；其中有步骤被阻塞（见上），--apply 只执行未被阻塞的步骤，被阻塞的步骤需先按提示处理。"))
+        else:
+            print(_("以上为预览；确认后追加 --apply 执行。"))
 
 
 def run_project(argv: list[str]) -> int:
@@ -2741,7 +2824,7 @@ def main(argv: list[str] | None = None) -> int:
             report["market_sync"] = claude_market_sync(env, report, project, args.only)
             steps = update_steps(env, report, project, args.source, home, args.accept, args.keep,
                                  recovery, args.only, content_flags=flags)
-            results = execute_steps(steps, apply=args.apply, recovery_root=None,
+            results = execute_steps(steps, apply=args.apply, recovery_root=args.recovery_dir,
                                     child_env=env.child_environment(), env=env)
             for record in results:  # Codex "no change": say how to pin its marketplace
                 if record["status"] == "unchanged" and record.get("client") == "codex":
@@ -2762,8 +2845,15 @@ def main(argv: list[str] | None = None) -> int:
                 elif chosen and args.only != "plugins":  # 用户点名了文件，却没有任何待更新内容：不能装作处理过
                     payload["message"] = _("项目没有内容锁（或内容锁里没有可刷新的内容包），--accept / --keep / --append / --diff / --merge 指定的文件没有被处理；没有改动任何文件。"
                                            "没有内容锁的项目用 {0} fix update-content。").format(CLI)
+                elif (lost := missing_region_files(env, project) if args.only != "plugins" else []):
+                    # 区块归属文件被删除：refresh 默认跳过缺失文件，不能说「没有需要更新的内容」
+                    payload["message"] = _("项目里缺少 {0}（接管项目登记了受管区块）。重建带区块标记的文件：{1} update --only content {2} --apply（缺失文件没有本地内容，不需要 --confirm-discard）。").format(
+                        _("、").join(lost), CLI, " ".join(f"--accept {path}" for path in lost))
                 else:
                     payload["message"] = _("没有需要更新的内容。")
+                    drift = (report.get("language") or {}).get("drift") if args.only != "plugins" else None
+                    if drift:  # a language switch changes no version: point at the preview instead of leaving "nothing to do"
+                        payload["message"] += " " + user_settings_module().drift_hint(drift, CLI)
                     differing = baseline_less_differences(env, project) if args.only != "plugins" else []
                     if differing:  # check lists them (no baseline in the lock); update has nothing to render for them
                         payload["message"] += _("有 {0} 项无基线差异（内容与模板不同，内容锁里没有基线），"

@@ -144,7 +144,20 @@ Codex 同步会写入 `~/.agents/plugins/plugins/<name>` 可移植包、`.codex-
 - **stdio 的环境变量引用**：把 `credential_env_file` 设置为项目相对路径的 dotenv 文件，权限必须为 `0600`。生成包只保存 `${VAR}` 引用；本地 launcher 在 MCP 启动时读取值，禁止复制进 Git 或插件 manifest。
 - 使用 `mcp_client_policy.<server>.include` 或 `.exclude` 完成客户端路由（`codex`、`cursor`、`claude` 各自生效）。禁止在 MCP 定义中放入 adapter 专属 `_skip` 字段。
 - 客户端里本机才有的认证值（例如远程 MCP 的 `headers.Authorization`）不进入项目；同步与 bootstrap 默认保留它们，`--reset-overrides` 才丢弃。
-- `${PLUGIN_ROOT}` 用于不可变包文件，`${PLUGIN_DATA}` 用于客户端管理的可写状态。
+- `${PLUGIN_ROOT}` 用于不可变包文件，`${PLUGIN_DATA}` 用于客户端管理的可写状态。项目合并包只含 Skill、`mcp.json` 与 launcher，详见下一节。
+
+## MCP 条目里的路径与变量占位符
+
+| 写法 | 含义 | 何时解析 |
+| --- | --- | --- |
+| `${HOME}`、`${USER}`、`${LOGNAME}`、`${TMPDIR}`、`${XDG_CONFIG_HOME}`、`${XDG_DATA_HOME}`、`${XDG_CACHE_HOME}`、`${XDG_STATE_HOME}` | 系统变量，描述本机而不是凭据。`HOME` 取 `--home`（默认当前用户主目录），XDG 变量取进程环境，未设置时用 `HOME` 下的默认目录 | `sync` / `bootstrap` 生成包时展开为本机值；每台机器各自同步，所以是“用户主目录”的可移植写法，禁止写死绝对路径 |
+| `__PROJECT_DIR__` | 该条目所在 MCP 来源文件的目录 | 生成包时展开 |
+| `__REPO_ROOT__` | 项目根目录 | 生成包时展开 |
+| `${PLUGIN_ROOT}/<路径>` | 该条目所在来源的插件目录（来源文件所在目录）里的文件 | 生成包时按**各自来源**解析；包内本来就有的（`skills/<名称>/…`）保持 `${PLUGIN_ROOT}`，其余指向来源目录里实际存在的文件的绝对路径；两处都没有则 `sync` 与 `doctor` 阻塞并给出条目名、来源文件与路径 |
+| `${PLUGIN_DATA}` | 客户端管理的可写状态目录 | 由客户端在启动时解析 |
+| 其他 `${NAME}` | 凭据键 | 必须在 `credential_env_file` 里存在；缺失时 `sync` 阻塞并只列出键名 |
+
+系统变量不要求出现在 `credential_env_file` 中；真正缺失的凭据键仍会被报告。预览与 `--apply` 使用同一套校验。
 - 客户端原生 adapter 只在安装阶段使用；Agent Plugins 1.0 文件保持权威源地位。
 
 ## 远程 HTTP 认证与更新项目声明

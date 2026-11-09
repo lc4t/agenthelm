@@ -1230,6 +1230,11 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         elif current is None:
             state = "missing"
             action = "create" if relative in accept else "skip"
+            if relative.as_posix() in region_paths:
+                # 区块归属的文件：重建的内容是已登记的区块（不是整份模板），与 adopt 在无用户正文时写出的形态一致。
+                rebuilt, region_ids = _rebuild_region_file(relative, entry, templates, inputs.language)
+                new, new_digest = rebuilt, hashlib.sha256(rebuilt.encode("utf-8")).hexdigest()
+                rendered[relative] = new
         elif new_digest == baseline.get(relative.as_posix()):
             # The new template renders this file exactly as before; the user's edits stay untouched.
             state, action = "local-only", "append" if relative in append else "keep"
@@ -1279,6 +1284,8 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             if decided and relative not in accept:
                 state = "kept-by-decision"
         item = {"path": relative.as_posix(), "state": state, "action": action, "new_sha256": new_digest}
+        if state == "missing" and relative.as_posix() in region_paths:
+            item["regions"] = region_ids
         if reason:
             item["reason"] = reason
         if relative in merge:
@@ -1383,6 +1390,9 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write(target, rendered[relative], 0o755 if relative == Path(inputs.entry_launcher or "\0") else None)
+            for region_id in item.get("regions", []):
+                new_regions.setdefault(item["path"], {})[region_id] = regions.digest(
+                    localized(templates, f"region/{region_id}", inputs.language))
         elif item["action"] == "merge":
             target = root / relative
             _atomic_write(target, merged_texts[relative], os.stat(target).st_mode & 0o7777)
@@ -1439,6 +1449,21 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             result.setdefault("decisions", []).append(f"content:{item['path']}")
     result["applied"] = True
     return 0, result
+
+
+def _rebuild_region_file(relative: Path, entry: dict, templates: dict, language: str) -> tuple[str, list[str]]:
+    """被删除的区块归属文件：按锁里登记的区块 ID，用当前模板正文重建带标记的区块（区块外没有用户正文可恢复）。"""
+    regions = _regions()
+    registered = set((entry.get("regions") or {}).get(relative.as_posix()) or {})
+    order = [region_id for region_id in APPEND_REGIONS.get(relative, ()) if region_id in registered]
+    order += sorted(registered - set(order))
+    text, ids = "", []
+    for region_id in order:
+        if f"region/{region_id}" not in templates:
+            continue
+        text, _state = regions.upsert(text, region_id, localized(templates, f"region/{region_id}", language))
+        ids.append(region_id)
+    return text, ids
 
 
 def _adopt():

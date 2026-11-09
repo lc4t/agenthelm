@@ -61,12 +61,14 @@ MESSAGES: dict[str, dict[str, str]] = {
     "stop_request": {
         "zh": "[Opinion] 本次会话暂存了 {count} 条候选观点，尚未向用户确认。请在不重复已完成工作的前提下，"
               "用下面的编号列表一次性请用户裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃（也可以逐条说明）。"
-              "用户明确表态后运行：python3 {manager} inbox decide <编号…> --project {root} --to trial|formal|held|rejected --confirmed --lang {lang}。"
-              "采纳为正式只改状态，写入 OPINION.md 须走 opinion-manager 的完整预览与确认；未经确认不要写入。\n\n{listing}",
+              "用户明确表态后：试行 / 暂缓 / 丢弃运行 python3 {manager} inbox decide <编号…> --project {root} --to trial|held|rejected --confirmed --lang {lang}；"
+              "用户说“采纳”则不要 decide，直接运行 python3 {manager} inbox adopt <编号…> --project {root} --lang {lang} 预览（零写入），展示结果后经用户确认再加 --apply --confirm <confirmation_sha256> 一次写入并读回。"
+              "「已批准」不等于「已生效」：只有 adopt --apply 成功才写入 OPINION.md；未经确认不要写入。\n\n{listing}",
         "en": "[Opinion] You stashed {count} candidate opinions in this session and have not confirmed them with the user yet. Without repeating finished work, "
               "ask the user once, using the numbered list below: adopt as formal / trial in this project / hold / discard (they may also answer item by item). "
-              "After the user states a decision explicitly, run: python3 {manager} inbox decide <ids...> --project {root} --to trial|formal|held|rejected --confirmed --lang {lang}. "
-              "Adopting as formal only records the decision; writing it into OPINION.md goes through opinion-manager's full preview and confirmation. Do not write anything before the user confirms.\n\n{listing}",
+              "After the user states a decision explicitly: for trial / hold / discard run python3 {manager} inbox decide <ids...> --project {root} --to trial|held|rejected --confirmed --lang {lang}; "
+              "when the user says \"adopt\", do not decide: run python3 {manager} inbox adopt <ids...> --project {root} --lang {lang} to preview (writes nothing), show the result, and once the user confirms add --apply --confirm <confirmation_sha256> to write and read back in one step. "
+              "\"Approved\" is not \"in effect\": OPINION.md is written only when adopt --apply succeeds. Do not write anything before the user confirms.\n\n{listing}",
     },
     "note_cursor": {
         "zh": "Cursor 的 sessionStart 注入是否到达模型取决于 Cursor 版本（社区有未到达的反馈）；"
