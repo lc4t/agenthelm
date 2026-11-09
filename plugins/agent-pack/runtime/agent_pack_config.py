@@ -1636,8 +1636,15 @@ def reconcile_project(
     retire_only: bool = False,
     replace: bool = False,
     reset_overrides: bool = False,
+    only: Iterable[str] | None = None,
+    replace_mcp: bool = False,
+    replace_skills: bool = False,
 ) -> dict[str, Any]:
     """Reconcile one project package and explicitly selected legacy components.
+
+    ``only`` (``plugins`` / ``skills`` / ``mcp``) and ``replace_mcp`` / ``replace_skills`` scope a Claude sync
+    to those types (#68). Codex and Cursor install one package that holds every type, so they accept the full
+    selection only.
 
     ``retire_only`` archives the selected legacy components without installing
     or replacing the project package itself. Claude Code is handled by
@@ -1650,7 +1657,18 @@ def reconcile_project(
         return agent_pack_claude.sync_project(
             project, home=home, apply=apply, replace=replace, reset_overrides=reset_overrides,
             recovery_root=recovery_root, retire_skills=retire_skills, retire_plugins=retire_plugins,
-            retire_only=retire_only)
+            retire_only=retire_only, only=only, replace_mcp=replace_mcp, replace_skills=replace_skills)
+    import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+
+    if agent_pack_claude.normalize_only(only) != frozenset(agent_pack_claude.SYNC_TYPES) and not retire_only:
+        raise AgentPackError(
+            f"--only mcp|skills|plugins is supported for the claude client only: {client} installs one package "
+            "that holds Skills, MCP servers and the manifest together")
+    if replace_skills or (replace_mcp and client != "codex"):
+        raise AgentPackError(
+            "--replace-skills / --replace-mcp are supported for the claude client only"
+            " (codex also accepts --replace-mcp for its native remote MCP entries)")
+    replace = replace or replace_mcp
     layout = load_project_layout(project)
     authority = inventory_project(layout.root)
     package_name = _package_name(layout.root)
@@ -1801,9 +1819,13 @@ def sync_project(
     replace: bool = False,
     reset_overrides: bool = False,
     recovery_root: Path | None = None,
+    only: Iterable[str] | None = None,
+    replace_mcp: bool = False,
+    replace_skills: bool = False,
 ) -> dict[str, Any]:
     return reconcile_project(project, client, home=home, apply=apply, replace=replace,
-                             reset_overrides=reset_overrides, recovery_root=recovery_root)
+                             reset_overrides=reset_overrides, recovery_root=recovery_root,
+                             only=only, replace_mcp=replace_mcp, replace_skills=replace_skills)
 
 
 def _update_personal_marketplace(home: Path, package_name: str) -> None:
@@ -2000,6 +2022,9 @@ def _print(value: dict[str, Any], output: str) -> None:
     counts = value.get("counts")
     if isinstance(counts, dict):
         print("counts: " + ", ".join(f"{key}={number}" for key, number in counts.items()))
+    summary = value.get("conflicts")
+    if isinstance(summary, dict):
+        print("conflicts: " + ", ".join(f"{key}={number}" for key, number in summary.items()))
     for operation in value.get("operations", []):
         target = operation.get("to") or operation.get("from", "")
         print(f"- {operation['action']}: {operation.get('name', '')} -> {target}")
@@ -2009,6 +2034,18 @@ def _print(value: dict[str, Any], output: str) -> None:
         print(f"! {issue}")
     for warning in value.get("warnings", []):
         print(f"~ {warning}")
+
+
+def _add_scope_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--only", action="append", default=[], metavar="TYPE",
+                        help="claude: sync only these types (repeat or comma separate): mcp, skills, plugins; "
+                             "default is all. plugins = the package and its install record. Other types are left untouched")
+    parser.add_argument("--replace-mcp", action="store_true",
+                        help="claude: replace only conflicting user-scope MCP entries this package did not install "
+                             "(--replace covers every type)")
+    parser.add_argument("--replace-skills", action="store_true",
+                        help="claude: replace only conflicting user-level Skills this package did not install; they "
+                             "apply to every project (--replace covers every type)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2046,6 +2083,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync_parser.add_argument("--reset-overrides", action="store_true",
                              help="claude: drop local credential values (headers / env) instead of keeping them")
     sync_parser.add_argument("--recovery-root", type=Path)
+    _add_scope_arguments(sync_parser)
 
     bootstrap_parser = sub.add_parser("bootstrap")
     bootstrap_parser.add_argument("--plugin", type=Path, required=True)
@@ -2075,6 +2113,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="archive the selected legacy components without installing the project package",
     )
     reconcile_parser.add_argument("--apply", action="store_true")
+    _add_scope_arguments(reconcile_parser)
     return parser
 
 
@@ -2102,6 +2141,7 @@ def main(argv: list[str] | None = None) -> int:
             result = sync_project(
                 args.project, args.client, home=args.home, apply=args.apply, replace=args.replace,
                 reset_overrides=args.reset_overrides, recovery_root=args.recovery_root,
+                only=args.only, replace_mcp=args.replace_mcp, replace_skills=args.replace_skills,
             )
         elif args.command == "bootstrap":
             result = install_plugin(
@@ -2127,6 +2167,7 @@ def main(argv: list[str] | None = None) -> int:
                 retire_only=args.retire_only,
                 replace=args.replace,
                 reset_overrides=args.reset_overrides,
+                only=args.only, replace_mcp=args.replace_mcp, replace_skills=args.replace_skills,
             )
         _print(result, args.output)
         return 0 if result.get("ok", True) else 1

@@ -132,6 +132,12 @@ RECOVERY_DIR_FLAG = (
     "agenthelm config language", "agenthelm config language-hint", "agenthelm config ignore-client",
     "agenthelm config unignore-client", "agenthelm config project-language",
 )
+# Commands that scope a sync to one kind of content (#68). Reconciled against ``--help`` below, so a command in this
+# list cannot silently lose a flag, and every name must still be a registered PREVIEW command.
+TYPE_SCOPE_FLAGS = {
+    "agent-pack sync": ("--only", "--replace-mcp", "--replace-skills"),
+    "agent-pack reconcile": ("--only", "--replace-mcp", "--replace-skills"),
+}
 
 
 def tree(env: dict, prefix: list[str], start: list[str], path: list[str], found: dict, label: str) -> None:
@@ -231,6 +237,13 @@ class EveryCommandTests(unittest.TestCase):
         for name in RECOVERY_DIR_FLAG:
             self.assertIn(name, PREVIEW, f"{name} must be a registered write command")
             self.assertRegex(self.help_text(name), r"--recovery-dir\b", f"{name} replaces files but offers no --recovery-dir")
+
+    def test_commands_that_scope_a_sync_by_type_document_the_flags(self) -> None:
+        for name, flags in TYPE_SCOPE_FLAGS.items():
+            self.assertIn(name, PREVIEW, f"{name} must be a registered write command")
+            text = self.help_text(name)
+            for flag in flags:
+                self.assertRegex(text, re.escape(flag) + r"\b", f"{name} --help does not document {flag}")
 
     def test_read_only_cases_change_nothing(self) -> None:
         self.setup_sop()
