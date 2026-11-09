@@ -3,6 +3,8 @@
 收件箱记录的是“待用户裁决的候选”，不是规则。状态只有五种：pending（待确认）、trial（项目内试行）、
 formal（用户已同意转正，正文仍须经 opinion-manager 的完整预览与确认写入）、held（暂缓）、rejected（丢弃）。
 暂存（add）无需确认；任何状态变化（decide）都必须带 ``--confirmed``，表示用户已看过候选全文并明确表态。
+``formal`` 只表示“用户已批准”，尚未写入 OPINION.md；``adopt`` 把“预览 → 用户确认 → 写入 → 读回 → 置 formal”合成一步确认，
+内部只调用 versioned 的 profile / compose / verify（含各自的指纹校验），不另开写入路径。
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+from argparse import Namespace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -219,9 +222,149 @@ def decide(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             candidate["history"].append({"at": stamp(moment), "to": args.to, "note": (args.note or "").strip()})
             changed.append(identity)
         save(root, data)
-    reminder = say("formal_reminder") if args.to == "formal" else ""
-    return {"ok": True, "status": "written", "changed": changed, "to": args.to, "reminder": reminder,
-            "writes_stable_rules": False}
+    result = {"ok": True, "status": "written", "changed": changed, "to": args.to, "reminder": "",
+              "writes_stable_rules": False}
+    if args.to == "formal":
+        result["reminder"] = say("formal_reminder")
+        result["in_opinion"] = False
+        result["next_step"] = say("formal_next", command=adopt_command(root, list(args.ids)))
+    return result
+
+
+def adopt_command(root: Path, ids: list[str], confirm: str | None = None) -> str:
+    tail = f" --apply --confirm {confirm}" if confirm else ""
+    return f"python3 {shlex.quote(str(RUNTIME))} inbox adopt {' '.join(shlex.quote(item) for item in ids)} --project {shlex.quote(str(root))}{tail} --lang {LANGUAGE}"
+
+
+DEFAULT_PROFILE = "private.my-opinion"
+
+
+def candidate_rule(candidate: dict[str, Any]) -> str:
+    return f"- **{candidate['title']}**（适用：{'、'.join(candidate['scopes'])}）：{candidate['text']}"
+
+
+def raw(path: Path) -> bytes | None:
+    versioned.safe_path(path)
+    return path.read_bytes() if path.exists() else None
+
+
+def restore(path: Path, content: bytes | None) -> None:
+    if content is None:
+        path.unlink(missing_ok=True)
+        return
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(name, 0o644)
+        os.replace(name, path)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def adoptable(data: dict[str, Any], ids: list[str]) -> list[dict[str, Any]]:
+    missing = [item for item in ids if item not in data["candidates"]]
+    if missing:
+        fail("err_missing", id=say("sep").join(missing))
+    done = [item for item in ids if data["candidates"][item]["status"] == "formal"]
+    if done:
+        fail("err_adopt_formal", ids=say("sep").join(done))
+    return [data["candidates"][item] for item in ids]
+
+
+def adopt_plan(root: Path, items: list[dict[str, Any]], workdir: Path) -> dict[str, Any]:
+    """只读：与 profile / compose 的预览同一套函数，返回写入所需的全部输入与各自指纹。"""
+    lock_path = root / "opinion.lock.json"
+    current_lock = versioned.file_state(lock_path)
+    previous = versioned.validate_lock(json.loads(current_lock))["profile"] if current_lock is not None else None
+    custom = "\n\n".join(part for part in ((previous or {}).get("custom"), "\n".join(candidate_rule(item) for item in items)) if part)
+    custom_file = workdir / "custom.md"
+    custom_file.write_text(custom + "\n", encoding="utf-8")
+    identity, release = (previous["id"], previous["version"]) if previous else (DEFAULT_PROFILE, "0.0.0")
+    major, minor, patch = versioned.version(release)
+    while True:
+        patch += 1
+        number = f"{major}.{minor}.{patch}" if previous else "1.0.0"
+        target = root / ".opinion" / "profiles" / identity / "versions" / f"{number}.json"
+        if not target.exists():
+            break
+    from_profile = None
+    if previous:
+        from_profile = workdir / "previous-profile.json"
+        from_profile.write_text(versioned.pretty(previous), encoding="utf-8")
+    profile_args = Namespace(project=root, id=identity, version=number, template=[], rule=[], remove_template=[], remove_rule=[],
+                             custom_file=custom_file, from_profile=from_profile, overrides_file=None, resolutions_file=None,
+                             loading_file=None, remove_loading=False, catalog=versioned.PUBLIC_CATALOG, apply=False, confirm=None)
+    drafted = versioned.profile_command(profile_args)
+    if drafted["unresolved"]:
+        fail("err_adopt_unresolved", ids=say("sep").join(drafted["unresolved"]))
+    preview_file = workdir / "profile.json"
+    preview_file.write_text(versioned.pretty(drafted["profile"]), encoding="utf-8")
+    compose_args = Namespace(project=root, profile=preview_file, template=[], rule=[], custom_file=None, replace=False,
+                             accept_current=None, apply=False, confirm=None)
+    composed = versioned.compose_command(compose_args)
+    fingerprint = versioned.digest({"candidates": [[item["id"], versioned.digest([item["title"], item["text"], item["scopes"]])] for item in items],
+                                    "profile": drafted["confirmation_sha256"], "compose": composed["confirmation_sha256"]})
+    return {"profile_args": profile_args, "compose_args": compose_args, "drafted": drafted, "composed": composed,
+            "fingerprint": fingerprint, "target": target, "profile_id": f"{identity}@{number}", "preview_file": preview_file}
+
+
+def adopt(root: Path, args: argparse.Namespace) -> dict[str, Any]:
+    ids = list(dict.fromkeys(args.ids))
+    if not args.apply:
+        with tempfile.TemporaryDirectory(prefix="opinion-adopt-") as workdir:
+            plan = adopt_plan(root, adoptable(load(root), ids), Path(workdir))
+        composed = plan["composed"]
+        return {"ok": True, "status": "preview", "ids": ids, "profile": plan["profile_id"], "profile_path": str(plan["target"]),
+                "path": composed["path"], "content": composed["content"], "blocked": composed["blocked"],
+                "confirmation_sha256": plan["fingerprint"], "writes_stable_rules": False,
+                "next_step": say("adopt_next", command=adopt_command(root, ids, plan["fingerprint"]))}
+    if not args.confirm:
+        fail("err_adopt_confirm")
+    destination, lock_path = root / "OPINION.md", root / "opinion.lock.json"
+    with Locked(root) as data, tempfile.TemporaryDirectory(prefix="opinion-adopt-") as workdir:
+        items = adoptable(data, ids)
+        plan = adopt_plan(root, items, Path(workdir))
+        if plan["fingerprint"] != args.confirm:
+            fail("err_adopt_stale", fingerprint=plan["fingerprint"])
+        if plan["composed"]["blocked"]:
+            raise InboxError(plan["composed"]["blocked"])
+        before = {destination: raw(destination), lock_path: raw(lock_path)}
+        target = plan["target"]
+        created = []
+        for directory in (target.parent, target.parent.parent, target.parent.parent.parent):
+            if not directory.exists():
+                created.append(directory)
+        existed = target.exists()
+        try:
+            versioned.profile_command(Namespace(**{**vars(plan["profile_args"]), "apply": True, "confirm": plan["drafted"]["confirmation_sha256"]}))
+            versioned.compose_command(Namespace(**{**vars(plan["compose_args"]), "profile": target, "apply": True,
+                                                   "confirm": plan["composed"]["confirmation_sha256"]}))
+            verified = versioned.verify_project(root)
+            if destination.read_text(encoding="utf-8") != plan["composed"]["content"]:
+                fail("err_adopt_readback")
+            moment = now()
+            for item in items:
+                item["status"] = "formal"
+                item["updated_at"] = item["last_action_at"] = stamp(moment)
+                item["trial_since"] = None
+                item["history"].append({"at": stamp(moment), "to": "formal", "note": f"adopted:{plan['profile_id']}"})
+            save(root, data)
+        except BaseException:
+            for path, content in before.items():
+                restore(path, content)
+            if not existed:
+                target.unlink(missing_ok=True)
+            for directory in created:
+                try:
+                    directory.rmdir()
+                except OSError:
+                    pass
+            raise
+    return {"ok": True, "status": "written", "ids": ids, "changed": ids, "profile": plan["profile_id"], "path": str(destination),
+            "verified": verified, "writes_stable_rules": True, "message": say("adopt_done", count=len(ids))}
 
 
 def present(root: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -340,9 +483,9 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
 
 
 def add_command(subparsers: Any) -> None:
-    parser = subparsers.add_parser("inbox", help="Project-private candidate inbox: stash, decide and summarize pending items; never writes rules")
-    parser.add_argument("action", choices=("add", "list", "decide", "present", "expire", "pending", "brief", "exposure"))
-    parser.add_argument("ids", nargs="*", help="candidate ids for decide / present")
+    parser = subparsers.add_parser("inbox", help="Project-private candidate inbox: stash, decide and summarize pending items; only adopt --apply writes OPINION.md, through the full preview and fingerprint")
+    parser.add_argument("action", choices=("add", "list", "decide", "adopt", "present", "expire", "pending", "brief", "exposure"))
+    parser.add_argument("ids", nargs="*", help="candidate ids for decide / adopt / present")
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--title")
     parser.add_argument("--text")
@@ -355,6 +498,8 @@ def add_command(subparsers: Any) -> None:
     parser.add_argument("--to", choices=DECIDABLE)
     parser.add_argument("--confirmed", action="store_true", help="the user has seen the full candidate and stated a decision explicitly")
     parser.add_argument("--note")
+    parser.add_argument("--apply", action="store_true", help="adopt: write OPINION.md and the lock (needs --confirm); without it adopt only previews")
+    parser.add_argument("--confirm", help="adopt: the confirmation_sha256 of the preview the user has reviewed")
     parser.add_argument("--days", type=int, help="expire: revert trials older than this many days to pending")
     parser.add_argument("--max-chars", type=int, default=6000, help="brief: size limit of the text")
     parser.add_argument("--output", choices=("json", "markdown"), default="json")
@@ -377,8 +522,10 @@ def run(args: argparse.Namespace) -> dict[str, Any] | str:
         return brief(root, args)
     if args.action == "exposure":
         return exposure(root)
-    if args.action in ("decide", "present") and not args.ids:
+    if args.action in ("decide", "adopt", "present") and not args.ids:
         fail("err_ids")
+    if args.action == "adopt":
+        return adopt(root, args)
     if args.action == "decide":
         if not args.to:
             fail("err_need_to")
