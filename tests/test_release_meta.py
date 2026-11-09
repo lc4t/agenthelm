@@ -21,15 +21,19 @@ class ReleaseMetaTests(unittest.TestCase):
         # A fully materialized candidate still gets the strict digest check.
         if list((ROOT / "release/changes").glob("*.json")):
             import types
-            meta = types.SimpleNamespace(**vars(release_meta))
-            candidate = ROOT / "release/candidate.json"
-            saved = release_meta.read_json(candidate) if candidate.is_file() else None
-            plan = release_meta.release_workflow.make_plan(
-                meta, release_meta.release_workflow.official_base(meta),
-                saved["date"] if saved else "2026-11-04")
-            self.assertTrue(plan["plugins"])
-            if saved == plan:
-                self.assertEqual(release_meta.main([]), 0)
+            # Plan against the tree this test is pointed at (a fixture repository, or the real one). release_meta is a
+            # separately loaded module whose functions read its own ROOT, so patch that too: on a prepared release the
+            # real tree has no pending fragments and planning it raises, while the fixture still has them.
+            with mock.patch.object(release_meta, "ROOT", ROOT):
+                meta = types.SimpleNamespace(**vars(release_meta))
+                candidate = ROOT / "release/candidate.json"
+                saved = release_meta.read_json(candidate) if candidate.is_file() else None
+                plan = release_meta.release_workflow.make_plan(
+                    meta, release_meta.release_workflow.official_base(meta),
+                    saved["date"] if saved else "2026-11-04")
+                self.assertTrue(plan["plugins"])
+                if saved == plan:
+                    self.assertEqual(release_meta.main([]), 0)
         else:
             self.assertEqual(release_meta.main([]), 0)
 
