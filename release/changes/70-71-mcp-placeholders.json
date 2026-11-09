@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agent-pack：MCP 条目里的 ${HOME} 等系统变量不再被当作凭据键，同步时展开为本机路径；合并多个来源时 ${PLUGIN_ROOT} 按各自来源解析，引用的文件找不到时 sync 与 doctor 阻塞并指出条目与路径。",
+    "en": "agent-pack: system variables such as ${HOME} in MCP entries are no longer treated as credential keys and are expanded to this machine's paths at sync; with several mcp_sources, ${PLUGIN_ROOT} resolves per source, and sync and doctor block with the entry and path when the referenced file is missing."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

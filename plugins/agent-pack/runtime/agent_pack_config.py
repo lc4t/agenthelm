@@ -9,6 +9,7 @@ Writes are always opt-in through ``apply=True`` and collisions fail closed.
 from __future__ import annotations
 
 import argparse
+import getpass
 import hashlib
 import json
 import os
@@ -68,6 +69,14 @@ def _safe_env_reference(text: str) -> bool:
 # client-managed writable state). They are never credentials and must not
 # trigger the credential-env-file requirement or env-launcher wrapping.
 RESERVED_ENV_PLACEHOLDERS = {"PLUGIN_ROOT", "PLUGIN_DATA"}
+# Process / system variables. They describe the machine, not a credential, so they are never
+# required in the credential env file. ``sync`` expands them to this machine's values while
+# rendering the package (each machine syncs for itself), so ``${HOME}/tools/x.js`` is portable.
+SYSTEM_ENV_PLACEHOLDERS = frozenset({
+    "HOME", "USER", "LOGNAME", "TMPDIR",
+    "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
+})
+PLUGIN_ROOT_REF_RE = re.compile(r"\$\{PLUGIN_ROOT\}(/[\w./@+-]*)?")
 COPY_IGNORE = {".git", ".venv", "__pycache__", "node_modules", ".DS_Store"}
 PLUGIN_FIELDS = {
     "$schema", "name", "version", "description", "author", "homepage",
@@ -96,6 +105,7 @@ class McpRecord:
     portable: bool
     issues: tuple[str, ...] = ()
     authority: str = "portable"
+    root: str = ""  # directory ``${PLUGIN_ROOT}`` means for this entry (its own source's plugin directory)
 
 
 @dataclass
@@ -466,7 +476,8 @@ def _inventory_plugin(plugin_root: Path, source: str) -> Inventory:
             for name, raw in sorted(servers.items()):
                 record = _portable_mcp(name, raw)
                 inventory.mcps.append(McpRecord(
-                    record.name, record.config, source, record.portable, record.issues, "portable"
+                    record.name, record.config, source, record.portable, record.issues, "portable",
+                    str(plugin_root),
                 ))
         except AgentPackError as exc:
             inventory.issues.append(str(exc))
@@ -531,7 +542,8 @@ def inventory_project(project: Path) -> Inventory:
                 record = _portable_mcp(name, raw)
                 authority = "native" if mcp_source in layout.native_mcp_sources else "portable"
                 inventory.mcps.append(McpRecord(
-                    record.name, record.config, str(mcp_source), record.portable, record.issues, authority
+                    record.name, record.config, str(mcp_source), record.portable, record.issues, authority,
+                    str(mcp_source.parent),
                 ))
                 known_mcp_names.add(name)
         except AgentPackError as exc:
@@ -864,7 +876,7 @@ def _mcp_allowed(layout: ProjectLayout, name: str, client: str) -> bool:
 
 def _env_references(value: Any) -> set[str]:
     if isinstance(value, str):
-        return set(ENV_REFERENCE_RE.findall(value)) - RESERVED_ENV_PLACEHOLDERS
+        return set(ENV_REFERENCE_RE.findall(value)) - RESERVED_ENV_PLACEHOLDERS - SYSTEM_ENV_PLACEHOLDERS
     if isinstance(value, list):
         result: set[str] = set()
         for item in value:
@@ -901,12 +913,95 @@ def _dotenv_keys(path: Path) -> set[str]:
     return keys
 
 
+def _system_env_values(home: Path | None) -> dict[str, str]:
+    """This machine's value for every name in SYSTEM_ENV_PLACEHOLDERS (``home`` is the user's home)."""
+    base = (home or Path.home()).expanduser().resolve()
+    try:
+        user = os.environ.get("USER") or getpass.getuser()
+    except (KeyError, OSError):
+        user = ""
+    values = {
+        "HOME": str(base),
+        "USER": user,
+        "LOGNAME": os.environ.get("LOGNAME") or user,
+        "TMPDIR": os.environ.get("TMPDIR") or tempfile.gettempdir(),
+        "XDG_CONFIG_HOME": os.environ.get("XDG_CONFIG_HOME") or str(base / ".config"),
+        "XDG_DATA_HOME": os.environ.get("XDG_DATA_HOME") or str(base / ".local" / "share"),
+        "XDG_CACHE_HOME": os.environ.get("XDG_CACHE_HOME") or str(base / ".cache"),
+        "XDG_STATE_HOME": os.environ.get("XDG_STATE_HOME") or str(base / ".local" / "state"),
+    }
+    return {name: value for name, value in values.items() if value}
+
+
+def _package_provides(inventory: Inventory, relative: str) -> bool:
+    """Whether the merged project package contains ``relative`` (the files it is built from)."""
+    parts = Path(relative).parts
+    if not parts or ".." in parts:
+        return False
+    if len(parts) == 1:
+        return parts[0] in {"plugin.json", "mcp.json"}
+    if parts[0] == "runtime":
+        return parts[1:] == ("mcp_env_launcher.py",)
+    if parts[0] == "skills":
+        for skill in inventory.skills:
+            if skill.portable and skill.name == parts[1]:
+                return len(parts) == 2 or (Path(skill.path) / Path(*parts[2:])).exists()
+    return False
+
+
+def _resolve_plugin_root(item: McpRecord, text: str, inventory: Inventory) -> str:
+    """Resolve ``${PLUGIN_ROOT}/<path>`` against the entry's own source directory.
+
+    The merged package holds only the Skills, ``mcp.json`` and the launcher, so a path that is
+    not one of those cannot live under the package root. If the entry's source directory has the
+    file, the reference becomes that file's absolute path; otherwise the entry is blocked.
+    """
+    def replace(match: re.Match[str]) -> str:
+        relative = (match.group(1) or "").strip("/")
+        if not relative or _package_provides(inventory, relative):
+            return match.group(0)
+        if not item.root:
+            return match.group(0)  # not a project entry: nothing to resolve against
+        source_dir = Path(item.root)
+        candidate = source_dir / relative
+        if ".." not in Path(relative).parts and candidate.exists():
+            return str(candidate.resolve())
+        raise AgentPackError(
+            f"MCP {item.name} references ${{PLUGIN_ROOT}}/{relative}, which exists "
+            f"neither in the merged package nor in its source directory {source_dir}"
+        )
+
+    return PLUGIN_ROOT_REF_RE.sub(replace, text)
+
+
+def _mcp_plugin_root_problems(item: McpRecord, inventory: Inventory) -> list[str]:
+    """Every unresolvable ``${PLUGIN_ROOT}`` path of one entry (what sync would block on)."""
+    problems: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            try:
+                _resolve_plugin_root(item, value, inventory)
+            except AgentPackError as exc:
+                problems.append(str(exc))
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+        elif isinstance(value, dict):
+            for child in value.values():
+                walk(child)
+
+    walk(item.config)
+    return problems
+
+
 def _portable_package_from_inventory(
     inventory: Inventory,
     package_name: str,
     destination: Path,
     *,
     client: str | None = None,
+    home: Path | None = None,
 ) -> None:
     invalid = [item.name for item in inventory.skills if not item.portable]
     invalid += [
@@ -933,11 +1028,19 @@ def _portable_package_from_inventory(
     for item in inventory.skills:
         _copy_skill(Path(item.path), skills_root / item.name, allowed_root=project_root)
 
+    system_env = _system_env_values(home)
+
     def project_mcp_config(item: McpRecord) -> dict[str, Any]:
         source_path = Path(item.source)
 
         def expand(value: Any) -> Any:
             if isinstance(value, str):
+                value = _resolve_plugin_root(item, value, inventory)
+                value = ENV_REFERENCE_RE.sub(
+                    lambda match: system_env.get(match.group(1), match.group(0))
+                    if match.group(1) in SYSTEM_ENV_PLACEHOLDERS else match.group(0),
+                    value,
+                )
                 if "__PROJECT_DIR__" in value:
                     if not source_path.is_file():
                         raise AgentPackError(f"cannot resolve __PROJECT_DIR__ for MCP {item.name}")
@@ -1145,9 +1248,10 @@ def _source_matches_client_destination(
         return _source_matches_destination(staged, destination)
 
 
-def _build_package(inventory: Inventory, package_name: str, parent: Path, client: str) -> Path:
+def _build_package(inventory: Inventory, package_name: str, parent: Path, client: str,
+                   home: Path | None = None) -> Path:
     package = parent / package_name
-    _portable_package_from_inventory(inventory, package_name, package, client=client)
+    _portable_package_from_inventory(inventory, package_name, package, client=client, home=home)
     if client == "codex":
         _codex_adapter(package, native_remote=True)
     return package
@@ -1521,7 +1625,7 @@ def reconcile_project(
         # portability, secret and credential-key checks run before anything is written and a
         # preview reports exactly what ``--apply`` would (same ok, exit code and message).
         with tempfile.TemporaryDirectory(prefix="agent-pack-plan-") as temporary:
-            expected = _build_package(authority, package_name, Path(temporary), client)
+            expected = _build_package(authority, package_name, Path(temporary), client, home)
             if destination.exists() or destination.is_symlink():
                 if _tree_fingerprint(expected) == _tree_fingerprint(destination):
                     package_action = "keep-plugin"
@@ -1563,7 +1667,7 @@ def reconcile_project(
                 moved.append((archived, destination))
             staging_parent = Path(tempfile.mkdtemp(prefix=".agent-pack-", dir=destination.parent))
             try:
-                staged = _build_package(authority, package_name, staging_parent, client)
+                staged = _build_package(authority, package_name, staging_parent, client, home)
                 os.replace(staged, destination)
                 installed = True
             finally:
@@ -1687,7 +1791,7 @@ def client_drift(project: Path, client: str, home: Path | None = None) -> dict[s
     report["excluded"] = sorted(item.name for item in authority.mcps
                                 if item.portable and not _mcp_allowed(layout, item.name, client))
     with tempfile.TemporaryDirectory(prefix="agent-pack-drift-") as temporary:
-        expected = _build_package(authority, name, Path(temporary), client)
+        expected = _build_package(authority, name, Path(temporary), client, home)
         if destination.is_symlink() and not destination.exists():
             report["dangling"].append(f"package {name}: {destination}")
         elif not destination.is_dir():
@@ -1750,6 +1854,9 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
                 f"plugin {plugin['name']}: Codex adapter version {adapter_version!r} "
                 f"does not match plugin.json version {plugin['version']!r}"
             )
+    for item in inventory.mcps:
+        if item.portable:
+            issues.extend(_mcp_plugin_root_problems(item, inventory))
     required_env: set[str] = set()
     for item in inventory.mcps:
         if item.portable and item.config.get("type") == "stdio":
