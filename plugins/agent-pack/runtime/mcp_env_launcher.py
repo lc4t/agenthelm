@@ -17,6 +17,16 @@ from typing import Any
 
 
 REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+RESERVED = ("PLUGIN_ROOT", "PLUGIN_DATA")
+
+
+def plugin_root() -> Path:
+    """The installed package root: this launcher lives in ``<plugin_root>/runtime/``.
+
+    Deliberately not resolved: keep the path the client itself launched, so a symlinked
+    install (Claude) still refers to the same files the client sees.
+    """
+    return Path(__file__).absolute().parent.parent
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -40,19 +50,24 @@ def load_dotenv(path: Path) -> dict[str, str]:
     return values
 
 
-def expand(value: Any, environment: dict[str, str]) -> Any:
+def expand(value: Any, environment: dict[str, str], reserved: dict[str, str] | None = None) -> Any:
+    reserved = reserved or {}
     if isinstance(value, str):
         def replace(match: re.Match[str]) -> str:
             name = match.group(1)
+            if name in RESERVED and name in reserved:
+                return reserved[name]
+            if name in RESERVED:
+                raise RuntimeError(f"{name} was not provided by the client")
             if name not in environment:
                 raise RuntimeError(f"credential env file missing key: {name}")
             return environment[name]
 
         return REFERENCE.sub(replace, value)
     if isinstance(value, list):
-        return [expand(item, environment) for item in value]
+        return [expand(item, environment, reserved) for item in value]
     if isinstance(value, dict):
-        return {key: expand(item, environment) for key, item in value.items()}
+        return {key: expand(item, environment, reserved) for key, item in value.items()}
     return value
 
 
@@ -60,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
+    # The client expands ${PLUGIN_DATA} in this launcher's own args; the config file it never sees.
+    parser.add_argument("--plugin-data", default=None)
     args = parser.parse_args(argv)
     try:
         config = json.loads(args.config.read_text(encoding="utf-8"))
@@ -67,7 +84,12 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("launcher config must be a stdio MCP object")
         environment = dict(os.environ)
         environment.update(load_dotenv(args.env_file))
-        config = expand(config, environment)
+        reserved = {"PLUGIN_ROOT": str(plugin_root())}
+        data = args.plugin_data
+        if data and not REFERENCE.search(data):
+            reserved["PLUGIN_DATA"] = data
+        # Reserved names are never read from the process or dotenv: a credential file must not redirect the package.
+        config = expand(config, environment, reserved)
         command = config.get("command")
         command_args = config.get("args", [])
         if not isinstance(command, str) or not command:
