@@ -116,6 +116,18 @@ python3 <plugin-root>/runtime/agent_pack_config.py --output json reconcile \
   --project /path/to/project --client cursor --retire-plugin project-runtime --retire-only --apply
 ```
 
+### 退役插件的完整清单（`--retire-plugin`）
+
+退役一个插件会同时处理它在该客户端的所有入口；预览（不带 `--apply`）逐项列出，`--apply` 先归档到 `--recovery-root`（默认 `~/.agent-pack/recovery/`）再移除，失败时整体回滚：
+
+| 客户端 | 自动处理（`operations`） | 不自动处理（`residuals`，每项含 `path` 与 `manual`） |
+| --- | --- | --- |
+| Claude | `archive-plugin`（安装记录）；`archive-skill`（`~/.claude/skills/` 中**仅指向该插件目录**的符号链接，其它链接、真实目录与项目包的链接不动） | 仍指向该插件的 `~/.claude.json` MCP 条目（`claude mcp remove --scope user <名称>`）；由 Claude Code 管理的 `installed_plugins.json` 记录（`claude plugin uninstall`） |
+| Codex | `archive-plugin`（缓存版本）；`archive-plugin-copy`（`~/.agents/plugins/plugins/<名称>/`）；`remove-marketplace-entry`（个人市场 `marketplace.json` 中该插件的条目，其它条目与缩进保持） | 缓存里的其它版本、`~/.codex/config.toml` 里的 `[plugins."<名称>@…"]` 表（用户配置，不自动编辑） |
+| Cursor | `archive-plugin`（本地插件目录） | 无 |
+
+没有残留项时输出不含 `residuals`；有残留项时文本输出以 `! residual …` 逐行列出（不回显文件内容）。
+
 结果把组件分为 `exact`、`conflict`、`missing`、`native_only` 与 `blocked`。替换包和明确退役的组件移动到 `~/.agent-pack/recovery/`；事务失败时自动恢复。
 
 Codex 同步会写入 `~/.agents/plugins/plugins/<name>` 可移植包、`.codex-plugin` adapter 与 `~/.agents/plugins/marketplace.json` 的 `personal` 条目。之后需在 Codex 桌面版的插件设置里启用 / 重新同步 `<name>@personal`（并确认 `~/.codex/config.toml` 有 `[plugins."<name>@personal"] enabled = true`）来激活；同步只更新 marketplace 源，Codex 自身缓存 `~/.codex/plugins/cache/personal/` 要到下次激活或重启才追平。homebrew 版 `codex-cli` 无 `codex plugin` 子命令，`plugin` / `marketplace` 命令与 UI 随 Codex 版本变化，以当前 Codex 文档为准。Cursor 同步会在本地插件根目录安装真实的 Agent Plugin 目录。
