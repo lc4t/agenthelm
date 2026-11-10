@@ -1,5 +1,37 @@
 # 更新记录
 
+<!-- release-plan:start -->
+## 2026-11-10 — agenthelm 6.13.0
+
+### agent-pack 1.13.0
+
+- agent-pack：sync / reconcile 新增 --only mcp|skills|plugins，可只同步 MCP 而不碰用户级 Skill（反之亦然）；--replace 的范围可按类型拆分为 --replace-mcp 与 --replace-skills；预览按类型汇总冲突数量，并提示会影响所有项目的用户级内容。MCP 工具 agent_pack_sync / agent_pack_reconcile 同步增加 only、replaceMcp、replaceSkills。不带这些参数时行为不变。
+- agent-pack：MCP 条目里的 ${HOME} 等系统变量不再被当作凭据键，同步时展开为本机路径；合并多个来源时 ${PLUGIN_ROOT} 按各自来源解析，引用的文件找不到时 sync 与 doctor 阻塞并指出条目与路径。
+- 新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。
+- agent-pack：reconcile --retire-plugin 退役插件时一并清理各客户端的入口：Claude 指向该插件的用户级 Skill 链接，Codex 个人市场条目与插件副本（先归档到 recovery 再移除，预览逐项列出）；出于安全不自动处理的项（Claude MCP 条目与安装记录、Codex 缓存其它版本与 config.toml）在输出的 residuals 中列出并给出手工步骤。
+- agent-pack：不可移植的 MCP 条目在三个客户端的 sync 与 doctor 中一律一行报错、退出码 2；Codex 与 Cursor 的 sync 预览与 --apply 使用同一套校验。
+- 接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。
+- 切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。
+- update 输出措辞与备份位置：--client 选定的客户端不再被称为“其他客户端”；预览被阻塞时不再提示追加 --apply；update 的预览写明被替换文件的备份位置、apply 写出实际路径（内容步骤与 Cursor 都覆盖），--recovery-dir 对 Cursor 步骤同样生效；config 的写子命令（含 project-language）支持 --recovery-dir（#80）。
+- nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。
+- agent-pack：项目或 HOME 的路径里含 credential、secret、token 等字样时，sync --client claude 不再把启动器的 --env-file 路径误判为疑似密钥；令牌形的参数值仍然阻塞且不回显。
+- agent-pack：被启动器包装的 MCP 条目引用 ${PLUGIN_ROOT}（包内 Skill 路径等）或 ${PLUGIN_DATA} 时能正常启动，不再报 credential env file missing key: PLUGIN_ROOT；启动器按自身位置推导包根，PLUGIN_DATA 由客户端展开后经 --plugin-data 传入。
+
+### agents-init 6.9.1
+
+- 接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。
+
+### opinion-manager 0.6.0
+
+- 新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。
+
+### suite 6.13.0
+
+- 切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。
+- nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。
+<!-- release-plan:end -->
+
+
 ## 2026-11-09 — agenthelm 6.12.0
 
 ### agent-pack 1.12.0

@@ -1,0 +1,1272 @@
+{
+  "schema": 1,
+  "baseline": "v6.12.0",
+  "suite": "6.13.0",
+  "plugins": {
+    "agent-pack": {
+      "version": "1.13.0",
+      "source": "./plugins/agent-pack"
+    },
+    "agents-init": {
+      "version": "6.9.1",
+      "source": "./plugins/agents-init",
+      "content": {
+        "agents-init/project-contract": {
+          "version": "1.4.0",
+          "kind": "template"
+        },
+        "agents-init/project-skeleton": {
+          "version": "1.1.0",
+          "kind": "manifest"
+        }
+      }
+    },
+    "opinion-manager": {
+      "version": "0.6.0",
+      "source": "./plugins/opinion-manager",
+      "content": {
+        "opinion-manager/catalog": {
+          "version": "1.0.0",
+          "kind": "catalog"
+        }
+      }
+    },
+    "project-orchestrator": {
+      "version": "1.11.4",
+      "source": "./plugins/project-orchestrator",
+      "content": {
+        "project-orchestrator/asset-synonyms": {
+          "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/case-template": {
+          "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/sop-samples": {
+          "version": "1.0.0",
+          "kind": "sample"
+        }
+      }
+    }
+  },
+  "migrations": [
+    {
+      "plugin": "agent-pack",
+      "from": "1.12.0",
+      "to": "1.13.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-10",
+      "summary": "agent-pack：sync / reconcile 新增 --only mcp|skills|plugins，可只同步 MCP 而不碰用户级 Skill（反之亦然）；--replace 的范围可按类型拆分为 --replace-mcp 与 --replace-skills；预览按类型汇总冲突数量，并提示会影响所有项目的用户级内容。MCP 工具 agent_pack_sync / agent_pack_reconcile 同步增加 only、replaceMcp、replaceSkills。不带这些参数时行为不变。; agent-pack：MCP 条目里的 ${HOME} 等系统变量不再被当作凭据键，同步时展开为本机路径；合并多个来源时 ${PLUGIN_ROOT} 按各自来源解析，引用的文件找不到时 sync 与 doctor 阻塞并指出条目与路径。; 新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。; agent-pack：reconcile --retire-plugin 退役插件时一并清理各客户端的入口：Claude 指向该插件的用户级 Skill 链接，Codex 个人市场条目与插件副本（先归档到 recovery 再移除，预览逐项列出）；出于安全不自动处理的项（Claude MCP 条目与安装记录、Codex 缓存其它版本与 config.toml）在输出的 residuals 中列出并给出手工步骤。; agent-pack：不可移植的 MCP 条目在三个客户端的 sync 与 doctor 中一律一行报错、退出码 2；Codex 与 Cursor 的 sync 预览与 --apply 使用同一套校验。; 接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。; 切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。; update 输出措辞与备份位置：--client 选定的客户端不再被称为“其他客户端”；预览被阻塞时不再提示追加 --apply；update 的预览写明被替换文件的备份位置、apply 写出实际路径（内容步骤与 Cursor 都覆盖），--recovery-dir 对 Cursor 步骤同样生效；config 的写子命令（含 project-language）支持 --recovery-dir（#80）。; nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。; agent-pack：项目或 HOME 的路径里含 credential、secret、token 等字样时，sync --client claude 不再把启动器的 --env-file 路径误判为疑似密钥；令牌形的参数值仍然阻塞且不回显。; agent-pack：被启动器包装的 MCP 条目引用 ${PLUGIN_ROOT}（包内 Skill 路径等）或 ${PLUGIN_DATA} 时能正常启动，不再报 credential env file missing key: PLUGIN_ROOT；启动器按自身位置推导包根，PLUGIN_DATA 由客户端展开后经 --plugin-data 传入。",
+      "summary_en": "agent-pack: sync and reconcile gain --only mcp|skills|plugins, so MCP entries can be synced without touching user-level Skills (and the reverse); --replace can be limited per type with --replace-mcp and --replace-skills; the preview counts conflicts per type and warns about user-level content that affects every project. The MCP tools agent_pack_sync and agent_pack_reconcile gain only, replaceMcp and replaceSkills. Behaviour without these options is unchanged.; agent-pack: system variables such as ${HOME} in MCP entries are no longer treated as credential keys and are expanded to this machine's paths at sync; with several mcp_sources, ${PLUGIN_ROOT} resolves per source, and sync and doctor block with the entry and path when the referenced file is missing.; Add inbox adopt: adopting a candidate and writing it to OPINION.md now takes one preview and one confirmation; decide --to formal now says it is not written yet.; agent-pack: reconcile --retire-plugin now also cleans every client entry of the retired plugin: Claude user-level Skill links pointing into it, and the Codex personal marketplace entry and plugin copy (archived to recovery first; the preview lists each step). Entries that are not cleaned automatically for safety (Claude MCP entries and install record, other Codex cache versions, config.toml) are listed under residuals with a manual step.; agent-pack: a non-portable MCP entry now fails sync and doctor with a one-line error and exit code 2 on all three clients, and the Codex and Cursor sync preview runs the same checks as --apply.; Recreating a deleted AGENTS.md / CLAUDE.md of an adopted project with --accept now restores its registered managed regions; update --only content hints at the missing file.; After switching the project file language, check compares the Profile's language with the language the content lock recorded at the last render and, when they differ, points to fix update-content or init_project.py --mode refresh for a preview of the full replacement (advisory only: no files are rewritten, exit code and fingerprint are unchanged); update --only content adds the same hint after \"nothing to update\"; correct MIGRATION.md and INSTALL.md (#79).; update wording and backup location: a client chosen with --client is no longer called an \"other client\"; a blocked preview no longer tells you to add --apply; update previews name where replaced files will be backed up and --apply prints the actual path (content step and Cursor); --recovery-dir now also applies to Cursor steps; the config write sub-commands (including project-language) accept --recovery-dir (#80).; nudge install-hooks run from a package runner's temporary cache (npx and similar): the hook commands now use an installed stable entry (Cursor's plugin directory, then the runtime install's current); when none exists the preview warns and --apply refuses to write (exit code 2); --remove and existing hook entries are unaffected; INSTALL.md and nudge.md explain this (#81).; agent-pack: paths containing words such as credential, secret or token (project or HOME directory) no longer make sync --client claude reject the launcher's --env-file path as a possible secret; token-shaped argument values are still blocked and never echoed.; agent-pack: launcher-wrapped MCP entries that reference ${PLUGIN_ROOT} (e.g. package Skill paths) or ${PLUGIN_DATA} now start correctly instead of failing with 'credential env file missing key: PLUGIN_ROOT'; the launcher derives the package root from its own location and receives PLUGIN_DATA from the client via --plugin-data.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "template_changes": [],
+      "default_for_existing": "on"
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.9.0",
+      "to": "6.9.1",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-10",
+      "summary": "接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。",
+      "summary_en": "Recreating a deleted AGENTS.md / CLAUDE.md of an adopted project with --accept now restores its registered managed regions; update --only content hints at the missing file.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "template_changes": [],
+      "default_for_existing": "off"
+    },
+    {
+      "plugin": "opinion-manager",
+      "from": "0.5.2",
+      "to": "0.6.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-10",
+      "summary": "新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。",
+      "summary_en": "Add inbox adopt: adopting a candidate and writing it to OPINION.md now takes one preview and one confirmation; decide --to formal now says it is not written yet.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "template_changes": [],
+      "default_for_existing": "on"
+    }
+  ],
+  "changelog": "## 2026-11-10 — agenthelm 6.13.0\n\n### agent-pack 1.13.0\n\n- agent-pack：sync / reconcile 新增 --only mcp|skills|plugins，可只同步 MCP 而不碰用户级 Skill（反之亦然）；--replace 的范围可按类型拆分为 --replace-mcp 与 --replace-skills；预览按类型汇总冲突数量，并提示会影响所有项目的用户级内容。MCP 工具 agent_pack_sync / agent_pack_reconcile 同步增加 only、replaceMcp、replaceSkills。不带这些参数时行为不变。\n- agent-pack：MCP 条目里的 ${HOME} 等系统变量不再被当作凭据键，同步时展开为本机路径；合并多个来源时 ${PLUGIN_ROOT} 按各自来源解析，引用的文件找不到时 sync 与 doctor 阻塞并指出条目与路径。\n- 新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。\n- agent-pack：reconcile --retire-plugin 退役插件时一并清理各客户端的入口：Claude 指向该插件的用户级 Skill 链接，Codex 个人市场条目与插件副本（先归档到 recovery 再移除，预览逐项列出）；出于安全不自动处理的项（Claude MCP 条目与安装记录、Codex 缓存其它版本与 config.toml）在输出的 residuals 中列出并给出手工步骤。\n- agent-pack：不可移植的 MCP 条目在三个客户端的 sync 与 doctor 中一律一行报错、退出码 2；Codex 与 Cursor 的 sync 预览与 --apply 使用同一套校验。\n- 接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。\n- 切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。\n- update 输出措辞与备份位置：--client 选定的客户端不再被称为“其他客户端”；预览被阻塞时不再提示追加 --apply；update 的预览写明被替换文件的备份位置、apply 写出实际路径（内容步骤与 Cursor 都覆盖），--recovery-dir 对 Cursor 步骤同样生效；config 的写子命令（含 project-language）支持 --recovery-dir（#80）。\n- nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。\n- agent-pack：项目或 HOME 的路径里含 credential、secret、token 等字样时，sync --client claude 不再把启动器的 --env-file 路径误判为疑似密钥；令牌形的参数值仍然阻塞且不回显。\n- agent-pack：被启动器包装的 MCP 条目引用 ${PLUGIN_ROOT}（包内 Skill 路径等）或 ${PLUGIN_DATA} 时能正常启动，不再报 credential env file missing key: PLUGIN_ROOT；启动器按自身位置推导包根，PLUGIN_DATA 由客户端展开后经 --plugin-data 传入。\n\n### agents-init 6.9.1\n\n- 接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。\n\n### opinion-manager 0.6.0\n\n- 新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。\n\n### suite 6.13.0\n\n- 切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。\n- nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。\n",
+  "explain": [
+    {
+      "fragment": "68-sync-only.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "70-71-mcp-placeholders.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "74-inbox-adopt.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "74-inbox-adopt.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "75-retire-residuals.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "76-77-sync-preview-validation.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "78-region-restore.json",
+      "scope": "agents-init",
+      "level": "patch"
+    },
+    {
+      "fragment": "78-region-restore.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "79-language-check-hint.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "79-language-check-hint.json",
+      "scope": "suite",
+      "level": "patch"
+    },
+    {
+      "fragment": "80-update-wording-recovery.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "81-nudge-stable-hook.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "81-nudge-stable-hook.json",
+      "scope": "suite",
+      "level": "patch"
+    },
+    {
+      "fragment": "90-secret-heuristic-paths.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "91-launcher-plugin-root.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    }
+  ],
+  "removed": [],
+  "overrides": {},
+  "date": "2026-11-10",
+  "source_files": {
+    ".github/workflows/pages.yml": {
+      "sha256": "5af7d749068cd4ce58970efffed508a9e315587c88c44a890e360b7a8a528603",
+      "kind": "file"
+    },
+    ".github/workflows/release.yml": {
+      "sha256": "b2bf83f9cc1f1eb0dcedda4636eb708fb02c7cdc8970ceed2326cd466097703c",
+      "kind": "file"
+    },
+    ".github/workflows/tests.yml": {
+      "sha256": "dfc810a970716c0ff664cdc909d1d23c1f1ad63b1630f6008297187b45397869",
+      "kind": "file"
+    },
+    ".gitignore": {
+      "sha256": "53f0c100a33a56ebada040287b3d0f5dbab21c6ec6b66209fec5515c508f1144",
+      "kind": "file"
+    },
+    ".nojekyll": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "file"
+    },
+    "CONTRIBUTING.md": {
+      "sha256": "05e94b560f1e2fea08662998de11f354d91203f4fdb5708b6e909801745f7ab6",
+      "kind": "file"
+    },
+    "INSTALL.md": {
+      "sha256": "ec3f9b8fb04b8625cf0f0f17fe5cb095cceab40c7155af8e93bfbda6fef5875e",
+      "kind": "file"
+    },
+    "LICENSE": {
+      "sha256": "430a287aadb76895d8cc8adbc378a6353d1d9fb8405edb338a6f718299fa2593",
+      "kind": "file"
+    },
+    "MIGRATION.md": {
+      "sha256": "43d73e0a4c315c6d449c67f7d81bc207d202aa38304763c10ad9be81337a941b",
+      "kind": "file"
+    },
+    "README.md": {
+      "sha256": "71053ee9bf70ec23f4199f7700bae29196646a404f507c7841474d6405d58e69",
+      "kind": "file"
+    },
+    "archive/README.md": {
+      "sha256": "166e4a791fdd957b115b557426af71671cd7cf650b091232566a89d560a877d3",
+      "kind": "file"
+    },
+    "docs/ci-version-audit.md": {
+      "sha256": "4241ccf6a09e38eb4f56e10c96f078546be054de544a6a7d30928e223dd731c6",
+      "kind": "file"
+    },
+    "docs/i18n-policy.en.md": {
+      "sha256": "bec12a49bff3a6c0a3cf64de1e0767cca0e74c0f7984ccc452a3f58c14eca4b0",
+      "kind": "file"
+    },
+    "docs/i18n-policy.md": {
+      "sha256": "b817232b83c689d249de9def6b9aaee43868e3544171183b232c64c85b4a87c4",
+      "kind": "file"
+    },
+    "docs/release-acceptance.md": {
+      "sha256": "72bf0d3a0022622521d2bed37d8fffaa7fa91def10c118fb583775d7abe9d205",
+      "kind": "file"
+    },
+    "docs/write-commands.md": {
+      "sha256": "2c0898a0318c7defb8fc8666336f2d77fb62727e0a66f02faff861f8e805157c",
+      "kind": "file"
+    },
+    "index.html": {
+      "sha256": "a757638345c525565f691b3c85daf9adfdf3d424dcec610adf805b4631c8487c",
+      "kind": "file"
+    },
+    "index.json": {
+      "sha256": "3b8d56607504a5ab0fe60186467f6d35eebfaf315032b59954e7fc8a4f5857ea",
+      "kind": "file"
+    },
+    "llms.txt": {
+      "sha256": "4c26140f5cb1a3d9481a39217321f4d511f2627386cb1bbb9c8673408dd05b5a",
+      "kind": "file"
+    },
+    "packages/cli/.gitignore": {
+      "sha256": "6aeb32af681a9f4cd292a1fb8393c7d7b815736c1118ba5c3865e92c7e7616d7",
+      "kind": "file"
+    },
+    "packages/cli/README.md": {
+      "sha256": "69883fb98f57f086e47325145a4cc8f2760542b6358e4ead22a997af4ec95579",
+      "kind": "file"
+    },
+    "packages/cli/README.zh-CN.md": {
+      "sha256": "480963974304cecd8aa0f38e687569a0e1287f5af4013f41b3ce659e9fcc6da1",
+      "kind": "file"
+    },
+    "packages/cli/bin/agenthelm.js": {
+      "sha256": "2a5b874d97c4ce4b4f52ea48d0bd6d9f19671420322b145498d546fe0f67e54f",
+      "kind": "executable"
+    },
+    "packages/cli/package.json": {
+      "sha256": "67071e30a726ba5497df616c90317050c763524f24d706323185a7552d742406",
+      "kind": "file"
+    },
+    "packages/cli/scripts/sync-runtime.mjs": {
+      "sha256": "b682f28676b226cacb3cf018f8df1e386d2c19ed8b14edc6ea379280e244c319",
+      "kind": "file"
+    },
+    "plugins/agent-pack/.codex-plugin/plugin.json": {
+      "sha256": "85f6793795f2b94546fd449e5c43e1b645eda7818593f6350dad40e725cbc041",
+      "kind": "file"
+    },
+    "plugins/agent-pack/.mcp.json": {
+      "sha256": "ea7e3368798d7387bba1989b732c47a39d5fad07cd951ad3b0be0ba05a370d46",
+      "kind": "file"
+    },
+    "plugins/agent-pack/hooks/hooks.json": {
+      "sha256": "866f39c2f7447c9dd9b32f654962207bfc87c3ca907f21e5abfa0b292a939cdf",
+      "kind": "file"
+    },
+    "plugins/agent-pack/mcp.json": {
+      "sha256": "b9d6fdc0edaeca21c5b6ecacde6973f23da33da2508f27694a209b0ad475e7e0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/plugin.json": {
+      "sha256": "660da81a61a929be20fdc3af37f1ef264bee624ef24d4ebe6807175da9ab1623",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/capability-config.md": {
+      "sha256": "8348cb35ec5c65b7e1a9991bee4cad8f699bf7a505a03698cce63d4d35e3cb8d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/local-only.md": {
+      "sha256": "8672e4f1809de5b16c8586e3ea0b0ba1ce740b4315f3b1192797da818d55bdfe",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/nudge.en.md": {
+      "sha256": "fa1f5a5ece1d51c39857852e328cf75fa6d24fab417da26eaa1452bc73d94f29",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/nudge.md": {
+      "sha256": "d7afe661bf5e391ec2d9c21c1ad814d7b8cade13d9dc86d465d13b1739878400",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_claude.py": {
+      "sha256": "ddfac97e8bda6d050603547563611c288ee331318420c42c53f7549091575b40",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_codex_mcp.py": {
+      "sha256": "e2f82b1a049545dfd26e82dd6eee754ec88745b8789d139f3664506e59e480a9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_config.py": {
+      "sha256": "396e421845809afcb16014f10ec425b0154715ca06f52a04b215fab5bb178b3b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_nudge.py": {
+      "sha256": "38b0d56ec975409630fef21eb70196afe9a3479439a588d67099b0bb3c9c4278",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agenthelm.py": {
+      "sha256": "6642ffd80eef41dad610a6d06f51bd8db07b6a993d55edd4449f89bd99492ea4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agenthelm_runtime.py": {
+      "sha256": "f6b55f6514005771b6c3cb31093bc7ae0cddf8bd254a57c266dbb1c78b98d8e6",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/i18n_agent_pack.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/local_only.py": {
+      "sha256": "20719347faec39b2420b2afdb60953024e7e4022f5b6a737b6ffe02089e6b5a9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/locale/en.json": {
+      "sha256": "71de46c3f478d62ab5f34f08c5b691bf39c613af481671f0192082bab913ffad",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/mcp_env_launcher.py": {
+      "sha256": "3ee9eca4cca44d82bf83a96f038f8562d10d872d3bd93c2ef89ff6ef19dcb11d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/mcp_server.py": {
+      "sha256": "054b2a998d45c3e46ae5eeaeaa64fee739aa15636e03c55632f7db72caf4b61a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/nudge_text.py": {
+      "sha256": "655c92b1c585f31b86d4ad924d96617ad94d445f049e176945ec02a62becd06e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/user_settings.py": {
+      "sha256": "31bbe87d8ca5024e48513962a0bf4acdc48efe5bc221c4bba2d78e958e2ad11a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/skills/agent-pack/SKILL.md": {
+      "sha256": "df61160f0d210c5aedbcad0d1875224ea439f1bc54f9940c13395ae68387e9a4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_claude.py": {
+      "sha256": "ef3f0c6bd7537239fe9d8fc2a647ae9a1876aab5f139e6737d7c64cb98ac5256",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_config.py": {
+      "sha256": "32871ccd59c60b5a26fa8e9848fd81b038a5e2fc82fb5d8093ba46aeea01c0ab",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_nudge.py": {
+      "sha256": "bb2d839b8c5b45deb57ce07da3b1de6c1ddb2f13ee9d75574c2b66f3a23c0ba2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm.py": {
+      "sha256": "155ee36dd74202e3e302080bb5f92b9c08d497857fd0832212fbb2fefd2a973c",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_check_output.py": {
+      "sha256": "355cd7e3de621d2a13ee46a72799eaaddeed7da19208155b4f3bbbfec2424c16",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_companion.py": {
+      "sha256": "a33eaf61a9b56c7a2681051636c9bd28024df9546726c572a65f34adab1961d2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_lock_errors.py": {
+      "sha256": "c8c6cde5b14c25e7934b6293a4730a65cf1bb5709da5f7811cdf5191374507ca",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_merge.py": {
+      "sha256": "3f05cd318a3d366199cb329b5a685e6c5029c7edc3984bb4c531eed60418f334",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_cursor_release.py": {
+      "sha256": "6f0a2a298671e86a3091d3b6e07ed9f1337b17bb69e80fda6fa1430698a7a521",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_install_state.py": {
+      "sha256": "24d65a7afb78cd3564ff1a7f0a1186c48db751c83b555379be5f375c8f70ee45",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_language_drift.py": {
+      "sha256": "350f5a45415f9ee17c01307d4791a924350cfd4a6a40913cbb87a792267cc74a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_region_restore.py": {
+      "sha256": "bc0b94f43e546c91d15eb8633f821983d41802468c7fb28ffd04679ceb2c03ee",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_reporting.py": {
+      "sha256": "6b43db0895d67f4adfa6a7bb01574006604e2488ef80f5464e57511fadae05ff",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_runtime.py": {
+      "sha256": "92fb92cdcb1aa49a4a150e79f15ddc23c43763b9c6c0b53dbf043116aa2d132a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_scaffold.py": {
+      "sha256": "19e04bb6b12b103cc46572ee7240aff6763a4d677a60d1ccec8321de579b18ec",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_update_path.py": {
+      "sha256": "cbffc0f20d5c0c13e4af69c1af675c82e7e973a09d1f342909260556c4d2753b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_update_wording.py": {
+      "sha256": "66e7b8816d45daff8f0160b7b55cb7e8c2b68effe57bea70a23b37fd69f4e54b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_hook_capability_clients.py": {
+      "sha256": "6cd7ac94e247d73219f7906eaadb6ce7287da03026b88f4abe74f5a23ee925d2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_install_residuals.py": {
+      "sha256": "c4cc457b9601a0885d02a0dcd3622f8cf36e519b61eb1e285a330084e501555d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_launcher_plugin_root.py": {
+      "sha256": "fc72812cd3de695362346919e1da84ca0b3eab99b39f0282c08d7c6e224782b3",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_local_only.py": {
+      "sha256": "7612c56891324e2965d1078e3ebe2baa01963a6524ed95d2b3d12c9920b4fa23",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_mcp_placeholders.py": {
+      "sha256": "d1b45a6359260eff244fc69eb8f5d124d59da35c2eeee3ed44bdb78d4464f574",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_shell_quoting.py": {
+      "sha256": "83de3394ecf30806c12c0829a0f8be0076119de595b0fb277f3081a447cf1aa4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_stable_hook.py": {
+      "sha256": "3de1dac8252dbf976664fc92c5ac77b6b1ee435b8108f15755cb876cdcca34fe",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_rc_acceptance_polish.py": {
+      "sha256": "7c1d7ccd9e70a801f512accc1082d454e083121e3fb560b5b2da4596f562a987",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_remote_mcp.py": {
+      "sha256": "55817a2153460a302131161db67e7e2acf798ec7b5031afbd5ac2cccc75570ed",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_retire_residuals.py": {
+      "sha256": "aa2752d95bcce7d97c634ba71413daaadca5e691d48887e5a4e451848909429d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_only.py": {
+      "sha256": "e950c59d80d6e8a4ce57102146194e6e50e3769d831094fdc47ec612d5653817",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_preview_parity.py": {
+      "sha256": "7d353fca28be8509a220c34299787ffabf6610418edf16646b8ddaee2bdec69a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_user_settings.py": {
+      "sha256": "1256bac96fb5d8a0bbc7ecb6c2a5dfb9b884f935146c2ffd88004269c0054a19",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_w1b_upgrade_path.py": {
+      "sha256": "ad5b47c1bfcbed4d73c32a613393bd39058047c6b7bf50964d52ffbd316d5f08",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_w3g_followups.py": {
+      "sha256": "a554b3343c0f6e679d2ff3264da7ffaa7494f391efa71053f7c1f42bfc2fbb17",
+      "kind": "file"
+    },
+    "plugins/agents-init/.codex-plugin/plugin.json": {
+      "sha256": "4291dda69ad0990db34dc75b81fe1197b89017cbb5a493a1375b1a471baa5f03",
+      "kind": "file"
+    },
+    "plugins/agents-init/content.json": {
+      "sha256": "6729f4ba7f9954df77b4943ff11b600deffca4e25e48a2dde330b14e4b2bcf7d",
+      "kind": "file"
+    },
+    "plugins/agents-init/plugin.json": {
+      "sha256": "7c59c3de2f075e1e3c594f0182d780790a919f66e2ba4b91a4398c9eb329623d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/AGENT.template.md": {
+      "sha256": "4fe1115569c12ab007cd7d388f49c2a4c579864d5c0bf04a3180ea4b0796220d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/SKILL.md": {
+      "sha256": "7fac1ce24d91c7edab27ff0064db8593b998ca6c4bdf6bb9d21b9dab84299ba5",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/index.html": {
+      "sha256": "bb92e5c822332097a54e61bed39eeb4346676e0eb0b9870fb96352fe9ef02620",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/launcher.sh": {
+      "sha256": "cf27d6cca786905a192446ea4eefe5635942914c3358c78d12117af912107cad",
+      "kind": "executable"
+    },
+    "plugins/agents-init/skills/agents-init/project.schema.json": {
+      "sha256": "673c3177fb20fdc394eacafb6b4dc439d7dffd9f330084e3b7d4d144fdca8dbd",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/adopt.py": {
+      "sha256": "c1136f9f36746bba9d4a4ed9303c4cd95257ac041de1421af370418fce5741e0",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/baseline.py": {
+      "sha256": "a64d8b2444fd6f4cdb7f723771d339b1ad8787ff13992debffd0bc9260af7cff",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/i18n_init.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/init_project.py": {
+      "sha256": "94e215b6b59368b3f70cd324b0d0f48aefbb3097f307b649ee9b7e805bba7f32",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/locale/en.json": {
+      "sha256": "759a624a433cc2c94c676f579af71d12a7efcbf2ceab1cbac68e3b3ec9a9b510",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/merge3.py": {
+      "sha256": "85bf4fffa61dce7186904244ea38744ff4c9d345438300d8cd5ca433d6084ae2",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/regions.py": {
+      "sha256": "70cd90d25a96cffdb7705566ed3a2fccf036bff88c4180505993837458e11591",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/scaffold.py": {
+      "sha256": "52c087e2b4f5ff2dbee3816159218449d7138b87bdcd53f15957d10c9f19f641",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_adopt.py": {
+      "sha256": "868e42c3b734fa4398095fd6fdcd42056c607ecb60bdb0183917e67dee9b940b",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_ai_contract.py": {
+      "sha256": "fa9f4aece53a8558da67e16b5dcb3c50c29533d2a36b7378a49093747d522a4c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_fixtures.py": {
+      "sha256": "5348ead601c632264ba2ca9772eaf5d39d4020b5e260b0d9636e43059bd36407",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_init_project.py": {
+      "sha256": "ea118234609079fcbe171b9a459a788e096a297fdadb5139d2da417eb837978d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_merge.py": {
+      "sha256": "940079db6033784251141703272984ebabd700dd03c5fd006cf8265660e47f7b",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_rc1_to_rc2_rehearsal.py": {
+      "sha256": "bc6b686cb14c9a53729fbfaddfd6eaaf8cb773ff070ccbf3c647985618d5ee3c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_scaffold.py": {
+      "sha256": "49331cc57e0f8dceeb58ba7a90502f712c43ac21cc15dbde5ad3f2673ac59b2c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_upgrade_matrix.py": {
+      "sha256": "bb09538abda7ff2c753423d0859be05c0b9f26ebbe87911447480c2591f8266e",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/skeleton.json": {
+      "sha256": "4a7c2ccaed293bc63ae2f3b3e6c8fa5e906292462f81c41a0fc88fcb22a3eeeb",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/skill.json": {
+      "sha256": "0d84645a5e755ae8b59e40e289b4830ee690a52ac13d8d9dd56587d1297a32a4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/.codex-plugin/plugin.json": {
+      "sha256": "1db7c1e901bd077b7d27bb40e2889e88cdba3fdc4a40a81b9c24efd337d102e6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/README.md": {
+      "sha256": "af654d84bdbc22c020dda7fe090d0ee364d5a892e93bdfa5fdd6c3305635ccb7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/.gitkeep": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.align-requirements/versions/1.0.0.json": {
+      "sha256": "26b95f2edce0d4942b3652c624b270a29fd75caa1fc5717debdffca126241091",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.assumptions-authority/versions/1.0.0.json": {
+      "sha256": "85b02b03bbf8447f703820026d9ebe6e9ac1182000c90451dad4c81cd23c23d6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.batch-questions/versions/1.0.0.json": {
+      "sha256": "2cad060df9195bf6f47083b0443fb92a9e1735989991aab34aae0c2651d18337",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.bilingual-terms/versions/1.0.0.json": {
+      "sha256": "420531760d1ab5ffe52395a680597cb652574027e542fd4684b7166e14918c39",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.calculations/versions/1.0.0.json": {
+      "sha256": "e54f87a7993d5908a1adfff07534b85af96a317d90b6eda6b84d3f8701331a18",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.chinese-response/versions/1.0.0.json": {
+      "sha256": "6bd3337a65a81251fad64555a7702016807c64e78aeb9709cb50cdc7325662c5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.clean-deliverable/versions/1.0.0.json": {
+      "sha256": "f0af00b2666ca7146447f17c8e13ca01c9e0d73c01883797787b44c045b06df2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.complete-options/versions/1.0.0.json": {
+      "sha256": "ef9ee103ee35dea554ae5d72735ebdeb7b0e16bf707b2362ef31be004c63110b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.conclusion-first/versions/1.0.0.json": {
+      "sha256": "2c0975c3fba8d4553b69a714fd324a1240c10ba0429904740db853cf10d8f8d3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.concrete-titles/versions/1.0.0.json": {
+      "sha256": "019d017fc9181339f1f969fd3e81323761e28b755c4ef434fb6af4d55925f538",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.consistent-items/versions/1.0.0.json": {
+      "sha256": "dd7030332d69d2eb91a7b1af34a3ac37d49e4018365da1e7a2d10afd71ed66f0",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.device-readable/versions/1.0.0.json": {
+      "sha256": "0afce0068b778ffa8c623cc1ff208192f70e03434f0ace4fd303565ba728a75b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.editable-diagrams/versions/1.0.0.json": {
+      "sha256": "68d293ebd061527d948e892b9f4503a74043ed37ecf2a922cdd9047f508e2ed8",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.evidence-inference/versions/1.0.0.json": {
+      "sha256": "01593b17d08a67ee41b28d96e454b25d752fd5eccc341476a75d2bfb541884f2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-chinese/versions/1.0.0.json": {
+      "sha256": "6a6659917a0bccda3750f79727ea433eb63d40426aa2a212b65499a8160fc181",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-project-language/versions/1.0.0.json": {
+      "sha256": "c29d447ac315533a52a6c242d7cc52b1668d9945c87c1f922dce261872730235",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.markdown-structure/versions/1.0.0.json": {
+      "sha256": "3647daeb2f4e4f532c8f77a033703bd3b36bbdd355a1f1f6ce8ac1e19afb66d7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.portable-files/versions/1.0.0.json": {
+      "sha256": "f638ce7554a11e8f793b63ee01ea0ca65a8df405b3ca34da1ad8865960908057",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-context/versions/1.0.0.json": {
+      "sha256": "c423df33e1ad8dbf7d060b15fb23b35b68ebf924beb76ac129b346e5cf46c917",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-formats/versions/1.0.0.json": {
+      "sha256": "1fa5a40415061366227cdba554bc811bfabdc764b110adfdfedf5935e2239774",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-review/versions/1.0.0.json": {
+      "sha256": "054ebce7547cf7254a0d9d03af8b651daf6ae6361c921e3fa111aea7f9d96d4e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-brief/versions/1.0.0.json": {
+      "sha256": "1d64ac6bedde9fd7205c6e517bb484acebedd08fe82f06aa761cf04bf010414a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-dense/versions/1.0.0.json": {
+      "sha256": "5dda9f066dae841df986a190f00ea0bc56c0d3b0ce42ebffa9b2e1910dc0c4b9",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.rules-tools/versions/1.0.0.json": {
+      "sha256": "6f0657b70bd2e15e0dc68b95a9ef77234cd4af79d40a9a9f8a8158da16323a8d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.semantic-wrap/versions/1.0.0.json": {
+      "sha256": "77890d37d6e21bf0568df250d5ec6398699c595728decf624d2f6ac8887802d7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-proportional/versions/1.0.0.json": {
+      "sha256": "4ba50387659bc4e4593026a2ab253abda0f9d0e8e959063957dc58d72dbd5dac",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-three-level/versions/1.0.0.json": {
+      "sha256": "c9c2c2bad29e79a649ce04c95c9a2cb5a7ba6b92e5318878d7d5a40e50df7b6d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-compact/versions/1.0.0.json": {
+      "sha256": "0822de141431d920e6bf8ae0cc7a07641ad34e4248d252133f5a488fc17610f4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-list-first/versions/1.0.0.json": {
+      "sha256": "8e4d9f8d0382ca9a4a06a31e64bc402bfe1d2f8fd80f576670d28de26565fe15",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.test-evidence/versions/1.0.0.json": {
+      "sha256": "5fb88ea8478601128a5662077beb8180126c3c7529a9e54fa4b324a47e1b9304",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.versioned-files/versions/1.0.0.json": {
+      "sha256": "b5cc996847cf20f4764be135c4a5189a30f16dd26d4eaeda38bf6318820c256c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/.gitkeep": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/compact-tables/versions/1.0.0.json": {
+      "sha256": "b0d988b5e62017ce4784466f590fdc3ac3693412541ab71f788beac0658c25e1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/list-first/versions/1.0.0.json": {
+      "sha256": "3ea2774fb2f3fb5943d83eae3d36c637b4bcc6bbc45c54cf4428de0db1c4240f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/chinese-maintenance/versions/1.0.0.json": {
+      "sha256": "3d268a6a323d4bac1afcd5b8539b65f4019ab112850b223c61ee06615840248d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/project-language/versions/1.0.0.json": {
+      "sha256": "6f2d69873b198ce0cf7fac509cbb8f4702de37c8d98ff3c5ec31578022e0d990",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/brief-chinese/versions/1.0.0.json": {
+      "sha256": "951aacd484989835be5811730510a103d2efe044342f275066f64765d747448b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/dense-chinese/versions/1.0.0.json": {
+      "sha256": "72479e811a3db0a9c50401a60f0c06694e00014a558ad1c20ed78945e99edcfa",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/concise-project/versions/1.0.0.json": {
+      "sha256": "efa1adfed739a206699cd6ae34b620d8c4717343959ffe63fe7ecc0456b16614",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/reviewed-project/versions/1.0.0.json": {
+      "sha256": "4b51fcccb57c237eee3fff56b2a73c86252bb7ee9cb5e71d1aa2cfc0d6062aa1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/proportional/versions/1.0.0.json": {
+      "sha256": "e73ea29f532d09813b00ed161e9beb7ab079eb56dda5ecffda1c30cc630d0bd8",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/three-level/versions/1.0.0.json": {
+      "sha256": "0fa27605f23901f7d120d5d6c4ee63f14dbe12c4da53b1e3287da3d4b68da5ef",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/content.json": {
+      "sha256": "36b7de66c932af3858c4a7e44915785296db8e3e5ed68ffeee846979f6046f7a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/plugin.json": {
+      "sha256": "16959a54d3b05d264e8c495ae0f5fc96cfcd1b8946ae1cce9f3ea967c0b0669a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/inbox.en.md": {
+      "sha256": "39f6023239127ec46f9764909d0e0ce0e502abe102a67959ef9c114303bf7a5b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/inbox.md": {
+      "sha256": "d8f7cf331bfb16dd8265b8ab9ffb36479e89d23af6195529d75ac66199630a62",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/lock.schema.json": {
+      "sha256": "17c317f70cb7f79a2c8e3bbecd89349cca989ab28d9bf63205ba71a7f92d6393",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/onboarding.md": {
+      "sha256": "715f3c6f1854447c89d96a22ba52bc7f069ab24858bbdf0a0509ebec341f35cc",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/profile.schema.json": {
+      "sha256": "11875af7391546f831976f211af489d0275911a649528697adbd8b009850eae5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/rule.schema.json": {
+      "sha256": "be0920e771140f7c4d6150d0f839dbef2c514d69bd97e9dcc5c7d2653b598fa7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/template.schema.json": {
+      "sha256": "e09d817be51125ee766a703fc6c8a6d327ef3974e2d2a63c7cd5c5c64845b7f5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/versioned-template.schema.json": {
+      "sha256": "8a5a9627e2c3d49bf8009540c5d7115bfc097c03acf9177820e628583e7cd1ed",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/versioning.md": {
+      "sha256": "fa3e7d958b59700ca2c6a01d9f2788c730c670e55e9509206f6ed9c6cd32fa85",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/constants.py": {
+      "sha256": "e2cad8fc6a6b5f1163ecbe5cc18f59b1fd21bd09830f3878009399a0678551b6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/context.py": {
+      "sha256": "fc7aa953c013ceb9fd657c18576ef92984ce25e440f48978a2b9600fce348b6a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/i18n_opinion.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox.py": {
+      "sha256": "4e4f7da946a22cae64f1874bc605a9a39ff6aef047fc6c3e032fcb4367eafd53",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox_text.py": {
+      "sha256": "7f24b03e6aefcfd5505fe135e0096c998b48051b1320b218187996c8772e8d97",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/lifecycle.py": {
+      "sha256": "504542a17b4ff59b619cd41edb210786ed5d4cb958bad56a835d570c202ca024",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/locale/en.json": {
+      "sha256": "5bf67075b0c31c40c20b300ee9489fdf7633d0cdf6b1632dd886e9ba1a329e86",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/opinion_manager.py": {
+      "sha256": "2a75c31f3eb91e581e2688de2b98bd2c299d7f236bf263be9a1ec6b2463206d4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/versioned.py": {
+      "sha256": "937984e4a64678ccdfde5bbc5db1893a6c2d0a33b834800ab730ddaad4919bf2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/skills/opinion-manager/SKILL.md": {
+      "sha256": "445408e9b00cfb63d60936cab96545acf0301db35f7ec03be14e75ad88e1a0dd",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/skills/opinion-manager/agents/openai.yaml": {
+      "sha256": "0ee12b199e78e0456d95ea69ede4476eab507360a7f377f366e76b365e557a0e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/templates/.gitkeep": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_context.py": {
+      "sha256": "8b6d72db88a7868d4e75fa86ba4a6acbc907bd63bda52e4127879aadbc1420c3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox.py": {
+      "sha256": "64999b84c88efec030007dcb881ec6c5cb29e94f0a009fabb19e046e06051c1a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_lifecycle.py": {
+      "sha256": "98310be5f758eeacb3b396e18ec3d586e18ccd8c192caa4b80dcaf4051998ef5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_onboarding.py": {
+      "sha256": "699263ac8a49481fb4743bf01f950c481f68018c461e4b637644fefcf2979bfb",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_opinion_manager.py": {
+      "sha256": "51cb89d66aeb5089805c716e9957773816b8955e89903df66b8979326c1cde9b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_shell_quoting.py": {
+      "sha256": "f1ef8998956fc13de877994d8ddf16a679d7b9001a0d1e7152b6809f69442011",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_versioned.py": {
+      "sha256": "37f19044ca953bceeeabc9637244a436408b67bfcb921b30f8b99256c662ad66",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/.codex-plugin/plugin.json": {
+      "sha256": "712714a3bf16baa2bdea2e6b791342744169b024689bfaed04fa35b3f204ab10",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/content.json": {
+      "sha256": "2afd0e96724349adba7804a131de66066721d17fc3df8fe2003d8264eb4d02b7",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/plugin.json": {
+      "sha256": "4e6836fb55958f78b4961746a810779930e90ff075c9a329576329d10f482ab6",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/asset-synonyms.example.json": {
+      "sha256": "a3338b98addd2b0fa386829850e0dd2667dff593ac7aa7f8e70b91372b3439c9",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/case-workspaces.md": {
+      "sha256": "27ba4ff53c6896412112dafe645fdcb448ac97b996c193e36ceec3de910e7527",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/case.schema.json": {
+      "sha256": "ecb37f084b901786bdc878cdc7f1e5d74c2eb31722d6a10fe24f6d88768bcbde",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/sop-interview.md": {
+      "sha256": "de211d3c6466d2f5f83b0e8fea1fc571e7ba2b248f40c1e2346b0da4598904c0",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/sop.md": {
+      "sha256": "a9755250b97677d51d65a21beb4d5c375c1a8d4029cd752d80c4bc1bbd9f9f49",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/assets.py": {
+      "sha256": "75790f302e97137ec97a85f6867590e556e5f14360567641cd710b3a645eb8f5",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case.py": {
+      "sha256": "60eb7768e8479d647665b9808652c6f70065dcfebf7c233fd42ddc9c5555f7bd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case_structure.py": {
+      "sha256": "f03107f3faf3f0e8f843537d1d861638e3cf9999b01796dce462ae67d23351d3",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case_workspace.py": {
+      "sha256": "ac1eb90fe13059f9ef9433f9529c040536eb11ecf77fba1d9298ee2f327ebeea",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/i18n_orchestrator.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/locale/en.json": {
+      "sha256": "cdb205cb4067d55ac9ebf93abbd655ded125b1ddbe469e263e84ff93f24f7c69",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/memory.py": {
+      "sha256": "6a1d12d3dd91135d30f97317f75819948ee5fea1b0c5f858aafe12c9c2ba1a50",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/private_paths.py": {
+      "sha256": "4acd9220b3c8beb6f1b17d738cd6faaf8e56fb49e2e60cc81f0ced26726cdcb3",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_base.py": {
+      "sha256": "14ce5a6d08c86d8aacfd931cc1a538aaa28f37e73a71701bb0733b63b7cc6cd0",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_cli.py": {
+      "sha256": "18fced2999b43fbcb925fd5f18b8c2b8d6225eea3c58022e369f23f07acdc858",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_demo.py": {
+      "sha256": "a3aff8063ba5f2387608786ccaef73233e5c42835ee55b516cb9a601b9f158a6",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_maintain.py": {
+      "sha256": "b1909276707e82c8aea936b275c7ff1a463d0e1135e66969f2709495c9669a63",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_menu.py": {
+      "sha256": "24a25a5c36d90f5a0f0041871f1138e4a2f008e393d12cec83f36b9aeb6f136d",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_real.py": {
+      "sha256": "3824969a4f1a3a4b85a7cfe2977d18e118b5dc43f01daf5d9316a6a28c2b18cf",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_write.py": {
+      "sha256": "55cfcabf352fadea335039d3080786633aac2da577a62cb262bd7d87de62bb01",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/sop.py": {
+      "sha256": "d4e074ef9ef09bd1e9cf7b63b140d91f0ec694f28e4f2f3d66c8c6fa91d3d740",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/sop_structure.py": {
+      "sha256": "7b91baece98838f8a99d50170562a66ec5a3ae76200bd8f81dba0ab59f4368ac",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/wf.py": {
+      "sha256": "8eaf856175e3a59a70b263a385d0d835213a43df429201c86ce274f40dcd63ed",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/skills/project-orchestrator/SKILL.md": {
+      "sha256": "6d1778b648029d0139ae3a131a3e0f4adc8bee568967b08c65a9f6f2bed03e88",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/skills/project-orchestrator/agents/openai.yaml": {
+      "sha256": "8f6f8fa7ff4a6d79ff5b417e19eeef2f83272a4d45df17fcd0764bc1af2c42eb",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/blank/SOP.en.md": {
+      "sha256": "f7929e5840f1a4ea7cb832d949237be43328c662c690fcc2e204bb36233940fa",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/blank/SOP.md": {
+      "sha256": "efec23ad29102590bdd16268c79222eb6f14fa8a1352deb27a5e55d35c413704",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/SOP.en.md": {
+      "sha256": "e30bb6fb0282f23e326e70404ac66e4419c99a53a2e3eb2cabfdffa5c2754e55",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/SOP.md": {
+      "sha256": "eaa8d7eb2338fe71b7a05fec662230a7e0b2e36f4727657558f2b51ed0a98027",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/templates/digest.en.md": {
+      "sha256": "9461e971a40307434d5460b12cf0938038ab6af2b2c98ce5a02260d816bc9d7a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/templates/digest.md": {
+      "sha256": "0741e5a8008119528c5fc71cc9c3c8064dc1173d61465643e8dc5745883ccb9a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/video-to-transcript/SOP.en.md": {
+      "sha256": "5c5797eed4fdadaec4089b43843bc43287d68cc6699e9fafd1803aa8e8e253a4",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/video-to-transcript/SOP.md": {
+      "sha256": "b8dfb1ecb0e2cf2a13d4acad78ee759f6c402776443cf5a70e2d6390a120ba4e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/SOP.en.md": {
+      "sha256": "fd9734078467066463c8005c459a9c3885236545e622b1219c52cf5633045de8",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/SOP.md": {
+      "sha256": "9dee7bcbf351e395a66e042929eede0bb425a92a88db14944b4348f2de656b1b",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/templates/review.en.md": {
+      "sha256": "ba727876879208caad46c6ce9c51411e1f451e72003572ccd18de9ef6f55811e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/templates/review.md": {
+      "sha256": "cf8321a1739cecf6286d591e88a6af86831b01c12e77834a873ea497a5db127c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/templates/CASE.en.md": {
+      "sha256": "4aec0fab19c83bb5c2b72a31bbedb3425c82efb13e5d436f5cee35496d6eab74",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/templates/CASE.md": {
+      "sha256": "a33ffcec5c239cbcf4c0828f08336c578d6d184363b01db1419f74fcdc9e1086",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_assets.py": {
+      "sha256": "e08e18906c08abac45826701760a7b01d79054ebea0f9bbb8a7b69f6c96ae85f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case.py": {
+      "sha256": "1bd82c2a9594c5ecc4d52a71f8cb4f5b2b093e0050fa082cef9b59aed3496eeb",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case_language.py": {
+      "sha256": "9383165cdf7241a55c359949bfe2e96b978db8f7c36dfa41ec99deae04c65a37",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case_workspace.py": {
+      "sha256": "737bfcf11beeebd1621200111eb62ca4efe76d3468dab034c798b469f7266db6",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_content_change_labels.py": {
+      "sha256": "9b3caf6974026a652de3915d5452c65cfd3a5d72d2c14814938adcd808b74565",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_content_merge_fix.py": {
+      "sha256": "fab2054c638d41ba7e96600fa34fc1ea3e26362b0c088ea72f6a596ce8822e5a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_memory.py": {
+      "sha256": "6c8ba9ce14543f50b128f20ac431b4d442b7f6c28d8e2acadc75a58551fa4834",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_private_paths.py": {
+      "sha256": "be2f4f19b54fddc6972406c3ba27f42647fa00b426b6fa6e300d6672e9bdbefe",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_cli.py": {
+      "sha256": "31afb9754705caf19678c7969ae7557c00915e025083c61c3a6c23d466357528",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_health_merge.py": {
+      "sha256": "acb804e2ebac91b4206e92a1b934a04211fe15a4b659403266d6d00f813e7469",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_maintain_clients.py": {
+      "sha256": "009c34fee60e7244954caf3ad6882e0b9e73af1a4c44be4a06cbbfc6ef76ef06",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_maintain_source.py": {
+      "sha256": "c457cddf455892379e596bf4f4776ff1bfa152f30f841dd27d6edcf2dab31b59",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_real.py": {
+      "sha256": "498fb73af412094ab4a63164be9d18b780ff468690e4b2bd8e3a466679fcd03f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_scaffold.py": {
+      "sha256": "b0e75a99729daf7fe015f7d8e4f94d9449054f2a84c846fee40dbaee7dfc49dd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_sop.py": {
+      "sha256": "a6c90be646cdac82a8794f120c6a4f713702992fc8df76ff085f1a9a5266a21c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_sop_language.py": {
+      "sha256": "c35eae551920ba4e780327cb2e47c4930788484bdbfac0e8c41e8cd5f108d391",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_wf.py": {
+      "sha256": "52728951ac69ebf6dd1064e2deb99b621570dd39cf380222fc59026773aebe59",
+      "kind": "file"
+    },
+    "release/ACCEPTANCE.md": {
+      "sha256": "6fbd4e0b1efdf00e840f8ae0d7610f6be72e7e6107eca5399193dfaf371af1b2",
+      "kind": "file"
+    },
+    "release/VERSIONING.md": {
+      "sha256": "277a5f4404acd5ece7c089344df0a2c6ab7694b112c7d37eca5bc1e4abe279ef",
+      "kind": "file"
+    },
+    "scripts/attach_release.py": {
+      "sha256": "2605d94fe6a58ea882c74f7a536179214cdefd1de266c3c95d5206a56f1da935",
+      "kind": "file"
+    },
+    "scripts/bootstrap_and_init.py": {
+      "sha256": "f17bb5fc38810f42cbf0f53b1aaa784cdbbfb1272da2349f6f875c0a8cbd688f",
+      "kind": "file"
+    },
+    "scripts/ci_gate.py": {
+      "sha256": "d8b5d8a9c25144573088f25eed8e057aa9bb682146bd809c6912a3d2d1cd10d2",
+      "kind": "file"
+    },
+    "scripts/release_meta.py": {
+      "sha256": "80da3c920396ee767336351da69d6e6d60c9b877d3f3476d7cd950b4eb45fb36",
+      "kind": "file"
+    },
+    "scripts/release_model.py": {
+      "sha256": "eabb798332f8434b163dabb7a231aa25f569939a00adbf5e53f01b9a83bfceb3",
+      "kind": "file"
+    },
+    "scripts/release_notes.py": {
+      "sha256": "4285cbf1b5c0f3c8c9c87977563856d0a3a9950a388f1936a1302c3ba5a02198",
+      "kind": "file"
+    },
+    "scripts/release_workflow.py": {
+      "sha256": "8bcf102bb4537c45fad3b425b516498b3277097d211ec262dd98882b53b975e6",
+      "kind": "file"
+    },
+    "scripts/validate_release.py": {
+      "sha256": "6324fc7d4d666093d73b99a7be0cc743305cb84949bafae850bf472861d09db1",
+      "kind": "file"
+    },
+    "tests/i18n-policy.json": {
+      "sha256": "4d9e9d54b190772aa2aa929bee0aeb83a0499f6fb3923ba897b0a4a4bfa35c82",
+      "kind": "file"
+    },
+    "tests/test_bootstrap_and_init.py": {
+      "sha256": "2f9ad976ca6da11993294538aa56d8b8fb8de35e4831bebedf67d5a060e6e420",
+      "kind": "file"
+    },
+    "tests/test_ci_gate.py": {
+      "sha256": "c220479d8ae13d736b015713631d4d9d6bf341208b22f52e7176c63cc7a60633",
+      "kind": "file"
+    },
+    "tests/test_cli_package.py": {
+      "sha256": "c0846ae0d35068074dc7a30f1fdc8edb84b9d2b0c397d96847d6f6620cfbe59c",
+      "kind": "file"
+    },
+    "tests/test_i18n.py": {
+      "sha256": "bb6a1a304bb8082497d7353fb18c9a73a9610c81a48325dd9a7caa3d9f9e9680",
+      "kind": "file"
+    },
+    "tests/test_i18n_commands.py": {
+      "sha256": "e6aa35b164e8d3c5d9a48f73cc29af459c1a5c23b7013e27ade85b9634878b7a",
+      "kind": "file"
+    },
+    "tests/test_i18n_lint.py": {
+      "sha256": "04cd70fab07e0136bef7fc7a3d9f92f267f97efd00dc643b62b45631e8613244",
+      "kind": "file"
+    },
+    "tests/test_i18n_plural.py": {
+      "sha256": "0f044bfa76e101f632d8bef1adecfd59a5106247a8bf69c94742b27e7221be86",
+      "kind": "file"
+    },
+    "tests/test_i18n_policy.py": {
+      "sha256": "81a83c43b451e3130b855579f1475dece285a295f82bdbd4a364a5dbc7bc4b08",
+      "kind": "file"
+    },
+    "tests/test_plugin_e2e.py": {
+      "sha256": "626e56b9fc02d7ffbfe866d30ca0231ce1243a11125379cc68ba4c1a463abbbb",
+      "kind": "file"
+    },
+    "tests/test_private_paths_sync.py": {
+      "sha256": "406150477f0a7b54ddebde6d1dfd8e9948bfe9f8aa8e81de2cb788db1b93f982",
+      "kind": "file"
+    },
+    "tests/test_profile_reads_guard.py": {
+      "sha256": "097d5c96264bb652f689164f8d3d626100c416b9033c5bc1eaa6bdab8b460209",
+      "kind": "file"
+    },
+    "tests/test_project_file_language.py": {
+      "sha256": "ce61d34a7ac14869cb3f23df3311e37fe073aa0f81254432680ed15c1de55966",
+      "kind": "file"
+    },
+    "tests/test_project_launcher.py": {
+      "sha256": "ba967f00cf284ff8d07b9dd4e173a154ccaefd78297af149e1bb8ebbf8436d98",
+      "kind": "file"
+    },
+    "tests/test_public_metadata.py": {
+      "sha256": "e2c5b65bb100393dd407cc759af14cc1bce47548f799f352da7df601ba518e5b",
+      "kind": "file"
+    },
+    "tests/test_public_privacy.py": {
+      "sha256": "e83215e2d87105fb99a4af7b799931c0bd4fad789c364f21c720e686ac180899",
+      "kind": "file"
+    },
+    "tests/test_release_meta.py": {
+      "sha256": "8c2f0e97dee3904feea5a9fca84d06e76648b83f39d8b78030fa36c7eb3e1d38",
+      "kind": "file"
+    },
+    "tests/test_release_workflow.py": {
+      "sha256": "b581b4aad62070ca464798e2e85cdd2c23192331e7a37ad6c5affac15f3a0576",
+      "kind": "file"
+    },
+    "tests/test_site_release.py": {
+      "sha256": "60936c5a46b74ff33953939fcf2a148447140003f3f4af4e0cfdc9221ecd089f",
+      "kind": "file"
+    },
+    "tests/test_validate_release.py": {
+      "sha256": "558bae0d2b5219bd72a9169d9a17e6b2ca4a47f76bff2b7a269eefcac68efc41",
+      "kind": "file"
+    }
+  }
+}
