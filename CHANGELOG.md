@@ -1,6 +1,5 @@
 # 更新记录
 
-<!-- release-plan:start -->
 ## 2026-11-10 — agenthelm 6.13.0
 
 ### agent-pack 1.13.0
@@ -29,7 +28,6 @@
 
 - 切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。
 - nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。
-<!-- release-plan:end -->
 
 
 ## 2026-11-09 — agenthelm 6.12.0

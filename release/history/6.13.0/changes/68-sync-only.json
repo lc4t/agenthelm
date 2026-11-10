@@ -4,15 +4,17 @@
     "zh": "agent-pack：sync / reconcile 新增 --only mcp|skills|plugins，可只同步 MCP 而不碰用户级 Skill（反之亦然）；--replace 的范围可按类型拆分为 --replace-mcp 与 --replace-skills；预览按类型汇总冲突数量，并提示会影响所有项目的用户级内容。MCP 工具 agent_pack_sync / agent_pack_reconcile 同步增加 only、replaceMcp、replaceSkills。不带这些参数时行为不变。",
     "en": "agent-pack: sync and reconcile gain --only mcp|skills|plugins, so MCP entries can be synced without touching user-level Skills (and the reverse); --replace can be limited per type with --replace-mcp and --replace-skills; the preview counts conflicts per type and warns about user-level content that affects every project. The MCP tools agent_pack_sync and agent_pack_reconcile gain only, replaceMcp and replaceSkills. Behaviour without these options is unchanged."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "on",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

@@ -10,7 +10,10 @@
       "level": "patch",
       "actions": [],
       "user_action_required": [],
-      "touches": ["AGENTS.md", "CLAUDE.md"],
+      "touches": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
       "default_for_existing": "off",
       "template_changes": [],
       "contracts": []
@@ -20,7 +23,10 @@
       "level": "patch",
       "actions": [],
       "user_action_required": [],
-      "touches": ["AGENTS.md", "CLAUDE.md"],
+      "touches": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
       "default_for_existing": "off",
       "template_changes": [],
       "contracts": []

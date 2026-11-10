@@ -4,15 +4,17 @@
     "zh": "agent-pack：reconcile --retire-plugin 退役插件时一并清理各客户端的入口：Claude 指向该插件的用户级 Skill 链接，Codex 个人市场条目与插件副本（先归档到 recovery 再移除，预览逐项列出）；出于安全不自动处理的项（Claude MCP 条目与安装记录、Codex 缓存其它版本与 config.toml）在输出的 residuals 中列出并给出手工步骤。",
     "en": "agent-pack: reconcile --retire-plugin now also cleans every client entry of the retired plugin: Claude user-level Skill links pointing into it, and the Codex personal marketplace entry and plugin copy (archived to recovery first; the preview lists each step). Entries that are not cleaned automatically for safety (Claude MCP entries and install record, other Codex cache versions, config.toml) are listed under residuals with a manual step."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "patch",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "on",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }
