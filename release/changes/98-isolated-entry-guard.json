@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "恢复 `python3 -I`、`-P` 与 PYTHONSAFEPATH=1 下运行 agent_pack_config.py 的能力（入口自行加入脚本目录并复用同一模块对象）。",
+    "en": "Restore running agent_pack_config.py under `python3 -I`, `-P` and PYTHONSAFEPATH=1 (the entry adds its own directory and keeps a single module object)."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
