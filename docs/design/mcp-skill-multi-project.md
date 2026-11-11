@@ -10,7 +10,7 @@
 3. **能推导的不声明**：`required_env`（来自 `${VAR}` 引用，`_env_references`，`agent_pack_config.py:889`）、`requires_approval`（由客户端与存储位置决定）、stdio 命令是否存在（来自 `command`）均由运行时推导。只有 `auth: oauth`、`requires_cli` 的最低版本与安装提示、作用域和建议等推导不出的信息才需要声明。
 4. **每个观测值带证据等级**：`file`（读文件可判定）、`setting`（读设置键可判定）、`cli`（只能问客户端命令行）、`unknown`（官方文档未给出判定手段）。证据不足时不给出「可删除」类结论，直接避免 #69 描述的误删事故。
 5. **作用域只收窄不放宽**：声明为 `project` 的条目，永不因回退写进用户级。第一阶段只做 Claude Code 的项目级写入；Codex、Cursor 的项目级放第二阶段（它们的项目文件无法承载机器相关的绝对路径，见 §3 存储映射表）。
-6. **Claude desktop 使用新目标 `claude-desktop`，不并入 `claude`**。官方文档规定 `claude_desktop_config.json` 的同名定义优先于 `~/.claude.json` 与 `.mcp.json`，并入会让 `--client claude` 的既有用户悄悄被覆盖。先只读（inventory/doctor），再可选写入。
+6. **Claude desktop 使用新目标 `claude-desktop`，不并入 `claude`**。两点理由：(1) 官方文档说明独立 CLI 不读 `claude_desktop_config.json`，该文件只对 Desktop 应用生效，与 `claude`（CLI）的作用对象不同；(2) 在 Desktop 应用的本地 Code 标签会话中，同名条目使用该文件的定义，并入会改变这些会话的实际生效来源（该优先级仅限 Desktop 本地 Code 标签，不是通用规则，出处见 §2.3）。先只读（inventory/doctor），再可选写入。
 7. **共用密钥用「命名的用户级文件」**（`user:<名称>`，固定在 `~/.config/agenthelm/credentials/` 下，权限 0600），不允许任意绝对路径；同时发现 `mcp_env_launcher` 会把 env 文件的全部键注入子进程（`mcp_env_launcher.py:86`），共享文件必须先收窄为「只注入被引用的键」。
 8. **推荐目录是一份带固定版本与校验的数据，安装等于「写进项目声明」**，之后沿用既有 `sync` 投递；公开仓库只放通用、可再分发的条目，其余只记来源。
 9. **全部新能力对既有项目为 off 或 advisory，本设计没有 major**。会触发 major 的做法（改默认作用域、`--client` 默认包含 desktop、新检查默认阻塞）在各节列为被排除项。
@@ -90,7 +90,7 @@ Claude Code（[MCP 文档](https://code.claude.com/docs/en/mcp)、[Skills 文档
 - 项目级 `.mcp.json` 在交互会话里需要批准（「Claude Code prompts for approval in interactive sessions before using project-scoped servers from `.mcp.json` files」）；`claude mcp reset-project-choices` 重置；`claude -p`、Agent SDK 等场景不询问。批准相关设置键为 `enableAllProjectMcpServers`、`enabledMcpjsonServers`、`disabledMcpjsonServers`；不受信任目录中项目设置文件里的批准键被忽略，用户设置里的有效，任一设置文件里的 `disabledMcpjsonServers` 都会拒绝。
 - `claude mcp list` 输出连接状态（`✔ Connected`、`! Needs authentication`、`✘ Failed to connect`）与配置决策状态（`⏸ Pending approval`、`✘ Rejected`、`⊘ Disabled for this project`、`✘ Blocked by enterprise managed policy`）；后一类「printed without connecting」。OAuth 用 `/mcp` 或 `claude mcp login <name>` / `logout`；令牌「stored securely」，文档不给文件路径。
 - Skill：个人 `~/.claude/skills/`、项目 `.claude/skills/`（从启动目录向上到仓库根）、插件命名空间、企业；**同名优先级 企业 > 个人 > 项目**（「With `deploy` in both `~/.claude/skills/` and the project's `.claude/skills/`, `/deploy` runs the personal one」）。随附的内置 Skill 如 `/doctor`、`/code-review`、`/batch`、`/debug`、`/loop`、`/claude-api`；同名用户 Skill「replaces the bundled command」；`disableBundledSkills`、`skillOverrides` 可调整。
-- Desktop：「Desktop and CLI read the same configuration files」，`~/.claude.json` 与 `.mcp.json` 中的 MCP 两边通用；Desktop 另外把 `claude_desktop_config.json` 的服务器加载进本机 Code 标签会话，**同名时使用 `claude_desktop_config.json` 的定义**；独立 CLI 不读该文件，macOS 与 WSL 上可用 `claude mcp add-from-claude-desktop` 复制。
+- Desktop：「Desktop and CLI read the same configuration files」，`~/.claude.json` 与 `.mcp.json` 中的 MCP 两边通用；Desktop 另外把 `claude_desktop_config.json` 的服务器加载进本机 Code 标签会话，**同名时的优先级只在 Desktop 应用的本地 Code 标签会话中成立**，原文：「If you define the same server name in `claude_desktop_config.json` and in `~/.claude.json` or `.mcp.json`, the Code tab in local sessions connects once and uses the `claude_desktop_config.json` definition」（[Desktop 文档「MCP servers from the Claude Desktop chat app」一节](https://code.claude.com/docs/en/desktop#mcp-servers-from-the-claude-desktop-chat-app)）。同一节还写明：`~/.claude.json` 顶层（用户级）与 `.mcp.json` 同名 stdio 条目时，Code 标签使用 `~/.claude.json` 的定义，与 CLI 的作用域层级不同；独立 CLI 不读该文件，macOS 与 WSL 上可用 `claude mcp add-from-claude-desktop` 复制。
 
 Claude desktop 配置文件（[MCP 官方文档：连接本地服务器](https://modelcontextprotocol.io/docs/develop/connect-local-servers)）：macOS `~/Library/Application Support/Claude/claude_desktop_config.json`，Windows `%APPDATA%\Claude\claude_desktop_config.json`，Linux `~/.config/Claude/claude_desktop_config.json`；结构 `{"mcpServers": {名: {command, args, env}}}`；改后需完全退出并重启；日志在 `~/Library/Logs/Claude`（macOS）下的 `mcp.log` 与 `mcp-server-<名>.log`。文档示例只有 stdio 条目，且路径要求绝对路径。
 
@@ -234,16 +234,16 @@ Cursor（[MCP](https://cursor.com/docs/context/mcp)、[Skills](https://cursor.co
 `inventory`、`doctor`、`sync` 的客户端集合为 `codex`、`cursor`、`claude`（`doctor` 的 `--client` choices，`:2062`）。`claude_desktop_config.json` 不被读取。
 
 ### 官方文档事实
-见 §2.3：位置（三平台）、格式（`mcpServers` + `command/args/env`，文档示例仅 stdio）、改后需完全重启；Code 标签会加载它，同名时**它的定义优先**于 `~/.claude.json` 与 `.mcp.json`；独立 CLI 不读。文档没有说明该文件是否支持 `${VAR}` 展开与远程 `url` 条目（**未确认**）。
+见 §2.3：位置（三平台）、格式（`mcpServers` + `command/args/env`，文档示例仅 stdio）、改后需完全重启；Desktop 应用的本地 Code 标签会加载它，且仅在该场景下同名时它的定义优先于 `~/.claude.json` 与 `.mcp.json`；独立 CLI 不读（出处与原文见 §2.3）。文档没有说明该文件是否支持 `${VAR}` 展开与远程 `url` 条目（**未确认**）。
 
 ### 选项穷举
 - **A. 新增目标 `claude-desktop`**（独立 store、独立 state）。
-- B. 作为 `claude` 的第二个写入位置（`claude` 同时写两处）。排除：(1) 优先级反转：该文件在 Code 标签中压过 `~/.claude.json`，把用户级条目同步进去会改变 Code 标签的实际生效来源；(2) 既有 `--client claude` 用户会悄悄多写一个文件，属不兼容，须 major；(3) 生命周期不同（需重启 Desktop，不是「restart Claude Code」）；(4) Desktop 没有 Skill 目录与项目级，`--only` 的类型轴不适用。
+- B. 作为 `claude` 的第二个写入位置（`claude` 同时写两处）。排除：(1) 独立 CLI 不读该文件，两者作用对象不同；(2) 仅在 Desktop 应用的本地 Code 标签会话中，该文件压过 `~/.claude.json` 与 `.mcp.json`，把条目同步进去会改变这些会话的实际生效来源；(3) 既有 `--client claude` 用户会悄悄多写一个文件，属不兼容，须 major；(4) 生命周期不同（需重启 Desktop，不是「restart Claude Code」）；(5) Desktop 没有 Skill 目录与项目级，`--only` 的类型轴不适用。
 - C. 不管理，仅在 `doctor` 里提示存在。排除：#69 的目的是 CLI 与 Desktop 同机配置漂移，只提示没有解决「多机同步时桌面端要手工维护」。
 - D. 采用官方 `claude mcp add-from-claude-desktop` 的方向（Desktop → CLI）。排除：方向相反（该命令把 Desktop 配置复制进 `~/.claude.json`，仅 macOS 与 WSL），不能承载「项目声明 → Desktop」。
 
 ### 推荐：A，分两期
-- **第一期（只读）**：`inventory --source client:claude-desktop`、`doctor --client claude-desktop`；`doctor --client claude` 增加一条检查：若 `claude_desktop_config.json` 里存在与受管条目同名的服务器，报 `shadowed-by claude_desktop_config.json`（证据 `file`，依据 Desktop 官方「同名使用 claude_desktop_config.json」）。
+- **第一期（只读）**：`inventory --source client:claude-desktop`、`doctor --client claude-desktop`；`doctor --client claude` 增加一条检查：若 `claude_desktop_config.json` 里存在与受管条目同名的服务器，报 `shadowed-by claude_desktop_config.json`，并注明「仅对 Desktop 应用的本地 Code 标签会话成立，独立 CLI 不受影响」（证据 `file`，依据同一官方段落）。
 - **第二期（可选写入）**：`sync --client claude-desktop` 默认预览、`--apply` 写入，**只处理 MCP**（Desktop 没有 Skill 目录），并且：只写与机器无关或经启动器包装的条目；含凭据引用的条目通过既有 `mcp_env_launcher` 间接取值，**文件里不写密钥值**；因文档未说明插值，条目中的 `${VAR}` 在第二期一律不直接写入该文件。写入前后保留文件原有的其他键，旧内容进恢复目录。`--client` 的任何默认集合都**不包含** `claude-desktop`，须显式点名。
 - 路径解析：macOS、Linux 按上述位置；Windows 为 `%APPDATA%\Claude\…`，仓库当前对 Windows 的支持范围**未确认**（决策项 D14）。
 
@@ -586,7 +586,7 @@ agent-pack catalog verify  [--project P]                                        
 4. Codex：**项目受信任记录在 `config.toml` 中的具体键**；`codex mcp list` **是否显示认证状态**；MCP OAuth **令牌位置**；`.codex/config.toml` 是否支持变量插值。
 5. Codex 插件启用键 `[plugins."<名>@<市场>"] enabled` 仅来自本仓库的参考文档，**未对照 Codex 官方文档**。
 6. Cursor：`.cursor/mcp.json` 与 `~/.cursor/mcp.json` **同名优先级**；Skill 同名优先级；MCP 启用/停用开关的**落盘位置**；是否有 `mcp list` 一类命令行。
-7. Claude desktop：`claude_desktop_config.json` 是否支持 **`${VAR}` 展开**与**远程 `url` 条目**；Windows 上经 Desktop 的行为差异。官方 Desktop 文档引用到的版本范围以页面为准，本文未逐版本核对。
+7. Claude desktop：该文件在 Desktop 本地 Code 标签中的同名优先级是否随 Desktop 版本变化（官方页面未标注版本范围，本文取自 2026-11-11 的页面）；`claude_desktop_config.json` 是否支持 **`${VAR}` 展开**与**远程 `url` 条目**；Windows 上经 Desktop 的行为差异。官方 Desktop 文档引用到的版本范围以页面为准，本文未逐版本核对。
 8. #69 所说「Codex 内置文档、表格、演示文稿、PDF 能力」在官方 Skills 文档的内置列表中**未出现**；内置能力表不收。官方列举多用「such as」，表为非穷举。
 9. `agent-bootstrap` 与 `machine-local` 状态不在本仓库，来源**未确认**。
 10. 同步盘（iCloud、Dropbox、OneDrive）对**相对符号链接**的行为未实测；`README.md`「同步盘里的 `.venv`」一节只给出 Python 与 Node 环境的实测。
