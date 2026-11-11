@@ -2613,9 +2613,11 @@ def _print_steps(results: list[dict], apply: bool) -> None:
         broken = [r for r in results if r["status"] in {"unavailable", "failed"}]
         runnable = [r for r in results if r["status"] == "preview" and r not in stuck]
         if broken and not runnable:
-            print(_("预览中没有可以执行的步骤：{0} 个步骤阻塞、{1} 个不可用、{2} 个失败（见上面的各项与下一步）。"
-                    "先处理，再重新预览；这时运行 --apply 也不会执行任何步骤。").format(
-                len(stuck), sum(r["status"] == "unavailable" for r in broken), sum(r["status"] == "failed" for r in broken)))
+            counts = [(len(stuck), _("{0} 个步骤阻塞")),
+                      (sum(r["status"] == "unavailable" for r in broken), _("{0} 个步骤不可用")),
+                      (sum(r["status"] == "failed" for r in broken), _("{0} 个步骤失败"))]
+            print(_("预览中没有可以执行的步骤：{0}（见上面的各项与下一步）。先处理，再重新预览；这时运行 --apply 也不会执行任何步骤。").format(
+                _("、").join(text.format(count) for count, text in counts if count)))
         elif broken:
             print(_("以上为预览；其中有步骤不可用或失败（见上），--apply 只执行其余可以执行的步骤，这些步骤需先按提示处理。"))
         elif stuck and not runnable:
