@@ -2,12 +2,13 @@
 
 - 状态：设计草案，待维护者决策（见第 6 节）。本文不改任何运行时代码、版本、片段或发布载体。
 - 基线：`v6.13.0`（`dev` 与 `main` 同在 `bb84a08`）；目标周期 6.13.1（全 patch）。
+- 排期口径：本周期（6.13.1，全 patch）只出设计；I2、S1–S3 的实现建议排入下一个 minor；I1（layering 文档，agents-init patch，无模板变化）是否提前进 6.13.1 由维护者决定。
 - 读者：仓库维护者。术语首次出现标注中英对照，文末有术语表。
 
 ## 0. 结论
 
 1. **第一层（分层约定）只新增文档，不改 `AGENT.template.md`。** 新增 `plugins/agents-init/references/layering.md`（及 `layering.en.md`），由 `agents-init` 的 `SKILL.md` 与 `AGENT.RULES.md` 之外的入口引用。按 `release/VERSIONING.md` 规则，这不匹配任何内容包来源，不产生 `template_changes`，既有项目无用户动作；插件等级 patch（可论证为 minor，见决策 D1）。模板现状已经是指针式入口（渲染后 `AGENTS.md` 中文 2,810 字节），不需要为遵守分层而改。
-2. **第二层（检查工具指导处置）是本议题的核心价值。** 在 `memory.py check` 的 `startup-too-large` 问题上附加 `detail`（每文件字节数与占比、最大章节、可迁出候选），并让 `health` 的记忆项给出下一步。`project-orchestrator` minor，`default_for_existing=advisory`，无用户动作，`touches` 为空。字段为增量，现有消费者不受影响。
+2. **第二层（检查工具指导处置）是本议题的核心价值。** 在 `memory.py check` 的 `startup-too-large` 问题上附加 `detail`（每文件字节数与占比、最大章节、可迁出候选），并让 `health` 的记忆项给出下一步。`project-orchestrator` minor，`default_for_existing=advisory`，无用户动作，`touches` 为空。字段为增量，现有消费者不受影响。实现排入下一个 minor（不在 6.13.1）。
 3. **第三层（Skill 瘦身）不进 6.13.1。** 只在本文给出候选拆分与测试不变量，另立 issue。理由：每个新增 `references/*.md` 都要登记中英配对或待翻译清单（`tests/test_i18n_policy.py:30-37`），工作量与风险和第一、二层不在一个量级。
 4. **一处需要纠偏的描述：** #64 写“`check_budgets` 约 198–210 行”，当前为 `plugins/project-orchestrator/runtime/memory.py:209-221`；#64 的 opinion-manager 体积 11,914 是 `v6.11.0` 的值，当前为 12,554（见 1.1）。其余数字复核无误。
 
@@ -304,12 +305,16 @@
 
 **I1 文档：渐进式加载分层约定（#64 第一层）**
 
+- 建议排期：下一个 minor / 待维护者决定（仅 I1：是否提前进 6.13.1）。
+
 - 范围：新增 `plugins/agents-init/references/layering.md` 与 `layering.en.md`；`agents-init/SKILL.md` 加一行链接；`tests/i18n-policy.json` 登记配对；新增 `AGENTS.md` 渲染体积与小节行数的守卫测试（见 2.4）。
 - 等级：agents-init patch；`touches: []`；`default_for_existing: off`；无 `template_changes`。
 - 影响既有项目：否。依赖：无。
 - 验收：对照表与三层定义齐全；中英互链且通过 `test_i18n_policy`；守卫测试在 zh/en 渲染下通过；文档明示“分层加载（Opinion）”与本约定的区别；英文稿标注“未经母语者审校”。
 
 **I2 检查工具：启动层超限时输出体积分解与迁出候选（#64 第二层）**
+
+- 建议排期：下一个 minor。
 
 - 范围：`memory.py` 的 `startup-too-large` 增加 `detail`；`health` 记忆项文案；可选 `check --output text`（D4）；测试按 3.8；`references` 中补一小节（如 `references/case-workspaces.md` 旁的记忆说明，位置需确认，**未确认**现有记忆说明文档路径）。
 - 等级：project-orchestrator minor；`default_for_existing: advisory`；无用户动作。
@@ -318,14 +323,20 @@
 
 **I3 候选判定增强（可选）：`detail-dense` 与 `already-pointed`**
 
+- 建议排期：下一个 minor 之后，依赖 I2。
+
 - 范围：低置信规则，默认关闭，开关位置见 D5。等级 patch。依赖：I2。验收：误报率在夹具与至少一个真实项目的试跑上有记录（试跑需维护者提供项目，**未确认**可行）。
 
 **I4 Skill 瘦身（#64 第三层，6.14 后）**
 
+- 建议排期：下一个 minor 之后。
+
 - 范围：按 4.1 逐个 Skill 拆分一个 PR；`tests/test_skill_size_budget.py` 与 `tests/skill-size-budget.json`。
 - 等级：每个被拆插件 patch/minor（见 D3）；`touches: []`；`default_for_existing: off`。依赖：I1。验收：#64 验收第 3 条；每个 PR 有“拆分前后行为对照”的人工核对记录。
 
-**I5（可并入 I2）：把 `memory.py check` 的体积计算抽成可复用函数**，供第二层与将来的 `health` 复用，避免两处各算一次。等级随 I2。
+**I5（可并入 I2）：把 `memory.py check` 的体积计算抽成可复用函数**
+
+- 建议排期：随 I2，下一个 minor。，供第二层与将来的 `health` 复用，避免两处各算一次。等级随 I2。
 
 ---
 
@@ -333,11 +344,11 @@
 
 - **D1 第一层的发布等级。** 倾向：agents-init **patch**（`template_changes: []`，`default_for_existing: off`）。替代：minor，理由是新增对外约定文档值得进发布说明。影响：6.13.1 是否仍为“全 patch”。
 - **D2 分层约定文档放哪个插件。** 倾向：`plugins/agents-init/references/`（与 issue 一致，属项目契约）。替代：`plugins/project-orchestrator/references/`（运行期更常被读到，且第二层同属该插件）。
-- **D3 第二层等级：minor 还是 patch。** 倾向：project-orchestrator **minor**（新增“指导处置”能力）。替代：patch（输出增量、无新命令/字段，可归“小改进”）。若坚持 6.13.1 全 patch，则选 patch，I2 仍可在本周期交付。
+- **D3 第二层等级：minor 还是 patch。** 倾向：project-orchestrator **minor**（新增“指导处置”能力）。替代：patch（输出增量、无新命令/字段，可归“小改进”）。若要求实现版本也保持全 patch，则选 patch。实现排期见文首排期口径。
 - **D4 是否为 `memory.py check` 新增 `--output text`。** 倾向：新增（当前只有 JSON，#64 的“列出每个文件与章节”对人用不友好；`index` 子命令已有同名选项可参照）。替代：只在 `health` 输出文本，`check` 保持纯 JSON，不新增 CLI 面。
 - **D5 `detail-dense`（含数值日期的细则）是否默认启用。** 倾向：默认关闭，只作 `sections` 上的 `hint`，因为在版本表、端口表上误报概率高；替代：默认作为低置信候选展示并标 `confidence: low`。
 - **D6 #64 第三层中“会话开始注入只发索引与指针”是否撤出范围。** 倾向：撤出，实测注入仅约 1.9–2.2 KB（1.5）。替代：保留，待含大量候选的真实项目实测注入长度后再判（该数据**未确认**）。
-- **D7 是否在 6.13.1 就启用 `memory.py check` 的候选扫描 `duplicated-elsewhere`。** 倾向：启用，限额与私有路径保护写死（3.4）；替代：6.13.1 只交付 `files` 与 `sections`（零扫描风险），候选放 I3。
+- **D7 实现时是否同时启用 `memory.py check` 的候选扫描 `duplicated-elsewhere`。** 倾向：启用，限额与私有路径保护写死（3.4）；替代：首个实现版本只交付 `files` 与 `sections`（零扫描风险），候选放 I3。
 - **D8 第一层是否同时给既有项目加指针（方案 B）。** 倾向：不加（2.4）；替代：作为 6.14 的 minor + 用户动作议题。
 - **D9 会话开始是否接线运行启动层体积检查。** 倾向：本周期不接线（3.9），先靠 `health` 与里程碑收尾检查；替代：6.14 之后由 nudge 子进程调用廉价字节求和（≤2 秒、仅超限出一行）。
 

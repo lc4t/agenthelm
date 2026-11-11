@@ -2,6 +2,7 @@
 
 - 状态：设计草案，待维护者决策（见第 8 节）。本文不改任何运行时代码、Schema、版本、片段或发布载体。
 - 基线：`v6.13.0`（`dev` 与 `main` 同在 `bb84a08`）；目标周期 6.13.1（全 patch）。
+- 排期口径：本周期（6.13.1，全 patch）只出设计；S1–S3、I2 的实现建议排入下一个 minor；I1（layering 文档，agents-init patch，无模板变化）是否提前进 6.13.1 由维护者决定。
 - 读者：仓库维护者。术语首次出现标注中英对照，文末有术语表。
 
 > **#65 正文的一处表述与代码不符。** #65 写“AgentHelm 只消费 `work.case.command` 的 `list --all --output json`”。代码里执行 `list --all --output json` 的是 **`entry.items.command`**（`plugins/project-orchestrator/runtime/project_real.py:219-221`）；`work.case.command` 只用于让官方 `case.py` 在写入时让位（`runtime/case.py:183,200`；`references/case-workspaces.md:64`、`:133`）。两者是 Profile 里分开的字段，下文均按代码实际行为写。
@@ -85,7 +86,7 @@
 
 - 片段（一个文件，两条 `changes`）：
   - `agents-init`：`level: patch`，`touches: ["work.case.state"]`，`default_for_existing: "off"`，`user_action_required: []`，`template_changes: []`，`actions: []`。理由：仅声明一个可选字段，不改变任何既有项目的文件或默认行为。
-  - `project-orchestrator`：`level: minor`（新增检测能力；若坚持 6.13.1 全 patch，则 patch，见 D3），`touches: ["work.case.state"]`，`default_for_existing: "advisory"`，`user_action_required: []`，`template_changes: []`。
+  - `project-orchestrator`：`level: minor`（新增检测能力；若要求实现版本全 patch，则 patch，见 D3），`touches: ["work.case.state"]`，`default_for_existing: "advisory"`，`user_action_required: []`，`template_changes: []`。
 - 为什么 `touches` 必须声明：`project.schema.json` 在 `EXPECTATION_FILES`（`release_meta.py:70`），PR 门禁检查“改了期望文件而相关片段没有非空 `touches`”（`release_workflow.py:198`），发布门禁再检一次（`release_meta.py:381-385`）。`touches` 的值写 Profile 字段 `work.case.state`（`VERSIONING.md`：`touches` 为用户项目路径或 Profile 字段）。
 - 不构成语义模板变化：内容包 `agents-init/project-contract` 的 `sources` 只有 `AGENT.template.md` 与 `launcher.sh`；`agents-init/project-skeleton` 的 `sources` 只有 `skeleton.json`（`content.json` 核对）。`project.schema.json` 不是任何内容包的来源，因此不产生 `template_changes`、内容包版本不变（保持 1.4.0 与 1.1.0）。**不应**在 `skeleton.json` 里把 `work.case.state` 加成受检字段：它是可选字段，缺失不是缺陷；若加入就变成内容包 `project-skeleton` 的变化，需 `template_changes`。
 - 对既有项目：无用户动作；既有 Profile 没有这个键，行为不变；声明了该键的项目升级后自动出现 `advisory` 级提示。
@@ -241,12 +242,16 @@
 
 **S1 文档：状态权威与索引契约（#65 第 1 条）**
 
+- 建议排期：下一个 minor（文档与实现同批）；是否提前由维护者决定。
+
 - 范围：`case-workspaces.md` 增写 2.1 节；`SKILL.md:239` 附近加一句指向该节。
 - 等级：project-orchestrator patch；`touches: []`；`default_for_existing: off`；无用户动作。
 - 影响既有项目：否。依赖：无。`case-workspaces.md` 不在任何内容包 `sources` 内（project-orchestrator 的包来源仅 `templates`、`references/case.schema.json`、`references/asset-synonyms.example.json`、`sop-templates`，`content.json` 核对），不产生 `template_changes`。
 - 验收：措辞与 2.1 一致；`case-workspaces.md` 内部锚点有效；不要求英文配对（已登记 deferred）。
 
 **S2 Schema：声明 `work.case.state`（可选字段）（#65 第 2 条）**
+
+- 建议排期：下一个 minor（须先于 S3 合入）。
 
 - 范围：`project.schema.json` 为 `work.case` 增加 `state` 对象（`authority`、`index`、`rebuild`、`verify`，`additionalProperties: true`）并写字段说明；不改 `skeleton.json`、模板、内容包。
 - 等级：agents-init patch；`touches: ["work.case.state"]`；`default_for_existing: off`；`template_changes: []`。
@@ -255,6 +260,8 @@
 
 **S3 检测：`health` 的 Case 状态位置检查（#65 第 3 条）**
 
+- 建议排期：下一个 minor。
+
 - 范围：`private_paths.py` 增补 Git 跟踪与符号链接辅助函数；`project_real.py` 增 `_check_case_state`；zh/en 文案；第 7 节 1–9、11、12 的测试。
 - 等级：project-orchestrator minor（D3 可降 patch）；`default_for_existing: advisory`；无用户动作；`touches: ["work.case.state"]`。
 - 影响既有项目：仅声明了 `work.case.state.authority` 的项目出现提示；其余无变化。依赖：S2。
@@ -262,15 +269,19 @@
 
 **S4 verify 接口（可选，#65 第 4 条）**
 
+- 建议排期：下一个 minor 之后，视使用情况。
+
 - 范围：`work.case.state.verify` 的声明解析、`state verify` 调用与 JSON 校验、`case-state:drift` 与失败降级、测试 10；`case-workspaces.md` 增写契约小节（5.2）。
 - 等级：project-orchestrator minor（与 S3 同一发布可合并）；`default_for_existing: advisory`。依赖：S2、S3。
 - 验收：#65 验收第 2 条；未声明时零子进程；失败路径只出 `info`。
 
 **S5 会话开始接线（另立项，6.14 后）**
 
+- 建议排期：下一个 minor 之后，另立项。
+
 - 范围：health 结果缓存与 SessionStart 读取（5.4）。等级 minor。依赖：S4。验收：hook 总耗时不增加（实测前后对比）；缓存过期丢弃。
 
-建议 6.13.1 交付 S1 + S2（+ 视决策 S3）；S4、S5 视真实项目使用后再定。
+排期：本周期（6.13.1，全 patch）只出设计；S1–S3 的实现建议排入下一个 minor（S1、S2 为文档与 Schema 声明，是否更早由维护者决定）；S4、S5 视真实项目使用后再定。
 
 ---
 
@@ -280,7 +291,7 @@
   - 挂 `work.case.command`：既有项目没有任何变化，因为 AgentHelm 目前从不执行它；只有项目自己声明 `work.case.state.verify: true` 之后才会产生第一次调用。代价是引入一个“被 AgentHelm 执行”的新命令入口，需要 `verify: true` 开关与文档说明。
   - 挂 `entry.items.command`：已声明 `entry.items` 的项目（它们本来就被执行 `list`）一旦工具升级加了 `state verify`，无需任何开关就会被调用，既有项目的行为会在没有用户动作的情况下变化；未声明 `entry.items` 的项目（只有 `work.case.command`）则完全用不上。优点是复用现成的 30 秒超时与错误包装；缺点是语义混杂（事项列表 vs 状态校验）。
 - **D2 契约表述是否允许“项目声明的同步方式”（同步盘）作为 Git 之外的合法同步。** 倾向：允许（2.1 已写），否则同步盘用户会被永久提示。替代：只认 Git，同步盘用户靠记录决定跳过。
-- **D3 S3 的等级。** 倾向：minor（新增检测能力，值得进发布说明）。替代：patch（只在声明字段时出现提示，影响面小），若坚持 6.13.1 全 patch。S2（agents-init）倾向 patch。
+- **D3 S3 的等级。** 倾向：minor（新增检测能力，值得进发布说明）。替代：patch（只在声明字段时出现提示，影响面小），若要求实现版本也保持全 patch。S2（agents-init）倾向 patch。
 - **D4 `verify` 是否“声明才调用”。** 倾向：是（5.1，避免对未知子命令的副作用）。替代：只要声明了 `work.case.command` 就探测一次，未实现则降级为提示（更符合 #65 原文字面，但执行从未授权过的命令，风险由项目工具承担）。
 - **D5 是否跨插件复用同步盘识别。** 倾向：本版不做（`project-orchestrator` 不导入 `agent-pack`，文案用条件句 + 记录决定）。替代：让 agent-pack 的 `local_only` 结果提供“项目在同步盘”事实，在 `ignored` 时区分文案（更准确，但引入跨插件契约，需要接口版本管理）。
 - **D6 Schema 声明后的形状错误（如 `authority: 5`）的报告级别。** 倾向：沿用现有 `profile-invalid`（`must`），与其他字段一致。替代：对 `work.case.state` 专门降为提示（与“新能力仅提示”一致，但要给 `scaffold` 开例外）。
