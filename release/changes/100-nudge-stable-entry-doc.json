@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "文档：说明 nudge install-hooks 选中的稳定入口不含版本号，可能是旧版本；安装 hook 前先更新插件或 runtime use 到目标版本。",
+    "en": "Docs: explain that the stable entry chosen by nudge install-hooks carries no version and may be an old one; update the plugin or runtime use the target version before installing the hooks."
+  },
+  "changes": [
+    {"scope": "agent-pack", "level": "patch", "actions": [], "user_action_required": [], "touches": [],
+     "default_for_existing": "on", "template_changes": [], "contracts": []},
+    {"scope": "suite", "level": "patch", "actions": [], "user_action_required": [], "touches": [],
+     "default_for_existing": "on", "template_changes": [], "contracts": []}
+  ],
+  "suite": null
+}
