@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agenthelm 顶层命令支持 --version，输出套件版本（读自发布内容的 index.json）；插件缓存里没有 index.json 时输出 agent-pack 插件版本并标注套件版本未知。",
+    "en": "The top-level agenthelm command now supports --version and prints the suite version (read from the release content's index.json); in plugin caches without index.json it prints the agent-pack plugin version and says the suite version is unknown."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

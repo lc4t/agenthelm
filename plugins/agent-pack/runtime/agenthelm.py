@@ -2418,8 +2418,34 @@ def doctor(env: Env, report: dict) -> dict:
             "last_hook_error": failure}
 
 
+def version_text(root: Path | None = None, plugin_root: Path | None = None) -> str:
+    """The line ``agenthelm --version`` prints. The suite version comes from the release content's ``index.json``
+    (the same fact as the npm package version), read through ``agenthelm_runtime.running_label`` so a pre-release
+    keeps its ``-rc.N``. Runtimes copied into plugin caches ship without ``index.json``: then the agent-pack
+    plugin's own version is shown and the suite version is said to be unknown."""
+    try:
+        import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
+        suite = agenthelm_runtime.running_label(root if root is not None else RUNTIME_DIR.parents[2])
+    except Exception:  # noqa: BLE001 - a version query must never crash
+        suite = None
+    if suite:
+        return f"agenthelm {suite}"
+    plugin = _manifest_version(plugin_root if plugin_root is not None else PLUGIN_ROOT)
+    return _("agenthelm（套件版本未知：此运行时不含 index.json）；agent-pack 插件 {0}").format(plugin or _("未知"))
+
+
+class _VersionAction(argparse.Action):
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):  # noqa: A002
+        super().__init__(option_strings, dest, nargs=0, default=default, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):  # noqa: ARG002
+        print(version_text())
+        parser.exit()
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="agenthelm", description=_("agenthelm：在 Claude Code、Codex、Cursor 间安装、检查与更新 agenthelm 插件。"))
+    result.add_argument("--version", action=_VersionAction, help=_("输出 agenthelm 套件版本后退出"))
     sub = result.add_subparsers(dest="command", required=True)
 
     def refresh(command: argparse.ArgumentParser) -> None:
