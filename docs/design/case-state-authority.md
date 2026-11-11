@@ -4,6 +4,8 @@
 - 基线：`v6.13.0`（`dev` 与 `main` 同在 `bb84a08`）；目标周期 6.13.1（全 patch）。
 - 读者：仓库维护者。术语首次出现标注中英对照，文末有术语表。
 
+> **#65 正文的一处表述与代码不符。** #65 写“AgentHelm 只消费 `work.case.command` 的 `list --all --output json`”。代码里执行 `list --all --output json` 的是 **`entry.items.command`**（`plugins/project-orchestrator/runtime/project_real.py:219-221`）；`work.case.command` 只用于让官方 `case.py` 在写入时让位（`runtime/case.py:183,200`；`references/case-workspaces.md:64`、`:133`）。两者是 Profile 里分开的字段，下文均按代码实际行为写。
+
 ## 0. 结论
 
 1. **契约先行，检测随后。** 在 `plugins/project-orchestrator/references/case-workspaces.md` 增写“状态权威与索引”一节（草稿见第 2 节）：项目声明的 Case 状态权威必须是能随项目同步的文本记录，数据库只能是可从权威重建的索引。仅此一项就是 project-orchestrator **patch**、无 Schema 变化、无用户动作。
@@ -241,7 +243,7 @@
 
 - 范围：`case-workspaces.md` 增写 2.1 节；`SKILL.md:239` 附近加一句指向该节。
 - 等级：project-orchestrator patch；`touches: []`；`default_for_existing: off`；无用户动作。
-- 影响既有项目：否。依赖：无。
+- 影响既有项目：否。依赖：无。`case-workspaces.md` 不在任何内容包 `sources` 内（project-orchestrator 的包来源仅 `templates`、`references/case.schema.json`、`references/asset-synonyms.example.json`、`sop-templates`，`content.json` 核对），不产生 `template_changes`。
 - 验收：措辞与 2.1 一致；`case-workspaces.md` 内部锚点有效；不要求英文配对（已登记 deferred）。
 
 **S2 Schema：声明 `work.case.state`（可选字段）（#65 第 2 条）**
@@ -274,7 +276,9 @@
 
 ## 9. 决策项（给维护者）
 
-- **D1 `verify` 挂在哪个命令上。** 倾向：`work.case.command`（Case 状态属于 Case 工具）。替代：`entry.items.command`（它是 AgentHelm 已在执行的命令，已有 30 秒超时与错误包装，不需要 `verify: true` 开关；但 `entry.items` 的语义是“事项列表”，状态校验不属于它，且并非所有声明 `work.case.command` 的项目都声明 `entry.items`）。
+- **D1 `verify` 挂在哪个命令上。** 倾向：`work.case.command`（Case 状态属于 Case 工具）。各自对既有项目的影响：
+  - 挂 `work.case.command`：既有项目没有任何变化，因为 AgentHelm 目前从不执行它；只有项目自己声明 `work.case.state.verify: true` 之后才会产生第一次调用。代价是引入一个“被 AgentHelm 执行”的新命令入口，需要 `verify: true` 开关与文档说明。
+  - 挂 `entry.items.command`：已声明 `entry.items` 的项目（它们本来就被执行 `list`）一旦工具升级加了 `state verify`，无需任何开关就会被调用，既有项目的行为会在没有用户动作的情况下变化；未声明 `entry.items` 的项目（只有 `work.case.command`）则完全用不上。优点是复用现成的 30 秒超时与错误包装；缺点是语义混杂（事项列表 vs 状态校验）。
 - **D2 契约表述是否允许“项目声明的同步方式”（同步盘）作为 Git 之外的合法同步。** 倾向：允许（2.1 已写），否则同步盘用户会被永久提示。替代：只认 Git，同步盘用户靠记录决定跳过。
 - **D3 S3 的等级。** 倾向：minor（新增检测能力，值得进发布说明）。替代：patch（只在声明字段时出现提示，影响面小），若坚持 6.13.1 全 patch。S2（agents-init）倾向 patch。
 - **D4 `verify` 是否“声明才调用”。** 倾向：是（5.1，避免对未知子命令的副作用）。替代：只要声明了 `work.case.command` 就探测一次，未实现则降级为提示（更符合 #65 原文字面，但执行从未授权过的命令，风险由项目工具承担）。

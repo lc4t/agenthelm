@@ -111,6 +111,9 @@
 
 **方案 A（推荐）：只新增 `references/layering*.md`，改 `SKILL.md` 一行引用，不触及模板**
 
+- 核对（已执行）：`python3 - <<'E'` 遍历 `plugins/*/content.json` 的 `packs[].sources`，筛出含 `references` 的来源。结果：agents-init 的两个包来源只有 `skills/agents-init/AGENT.template.md`、`skills/agents-init/launcher.sh`、`skills/agents-init/skeleton.json`，**不含任何 `references`**；`plugins/agents-init/references/` 目录当前不存在，新增它不落在任何内容包 `sources` 内，因此不会触发 `template_changes`（PR 门禁 `release_workflow.py:190-196` 只对命中来源的改动要求匹配的 `template_changes`）。全仓库唯一含 `references` 的来源是 project-orchestrator 的 `references/case.schema.json` 与 `references/asset-synonyms.example.json`，与本方案无关（若把分层文档放到 project-orchestrator，也只要避开这两个文件）。
+- 归属：该文档属 **agents-init 插件，等级 patch**（`scope: agents-init`，`level: patch`）。
+
 - `template_changes`：`[]`；内容包 `project-contract` 保持 1.4.0；`launcher.sh` 不动。
 - 插件等级：`agents-init` patch（兼容的小改进；若维护者认为“新增一份对外约定”值得发布说明，可调 minor，决策 D1）。
 - `touches`：`[]`（没有改动用户项目内的路径或 Profile 字段）；`user_action_required`：`[]`；`default_for_existing`：`off`。
@@ -260,6 +263,16 @@
 - **兼容**：既有 `test_project_policy_sets_budgets_and_summary_sections` 不修改仍通过；`detail` 缺失时 `health` 退回旧文案。
 - **健康项**：`test_project_real.py` 增加一例：超限夹具的 `health` 记忆项 `reason` 含最大章节名。
 
+### 3.9 接线成本与超时（会话开始是否运行检查）
+
+现状：SessionStart 两条通道都不运行 `health` 或 `memory.py check`（1.5）；`startup-too-large` 只有用户或 Agent 主动运行 `memory.py check` / `health` 时才会出现。要让超限在开会话时被发现，需要新增接线。评估：
+
+- **成本实测**：在新建的空项目上 `memory.py check --output json` 耗时 **0.041 s**（`time`，临时 HOME，0 条记忆条目；含 Python 启动）。启动文件很大或有大量记忆条目时更长，**未实测**。`detail` 的候选扫描（3.4）上限 2 秒，写死在代码里。
+- **时限**：`hooks.json` 中两条 SessionStart 命令各自 `timeout: 10`（`check --hook`、`nudge hook --event session-start`）；`health` 内的记忆检查子进程上限 60 秒（`project_real.py:446`），不能直接搬进 hook。
+- **与 nudge 的关系**：nudge（agent-pack）已是会话开始向模型注入文本的唯一通道，并通过 `find_manager` / `run_manager` 子进程调用 opinion-manager（`agent_pack_nudge.py:308-322`）。若接线，应沿用这一子进程模式，由 nudge 调用 project-orchestrator 的 `memory.py`，不让 agent-pack 导入 project-orchestrator 代码。注入内容受“几乎静默”约定限制：未超限时不输出任何文字。
+- **推荐（本周期）：不接线。** 第二层先通过 `health` 与 `memory.py check` 交付；会话中里程碑收尾运行记忆检查本来就是 Skill 的既有步骤（`project-orchestrator/SKILL.md:220`）。
+- **如果接线（独立议题，6.14 之后）**：只做廉价路径——只 `stat` 启动文件求和并与 `max_bytes` 比较（不算 `detail`、不扫描），整体限时 2 秒，超时静默；仅超限时在 nudge 输出一行“启动层超出预算 N 字节，运行 `memory.py check` 查看分解”。这是 agent-pack 与 project-orchestrator 的跨插件改动，等级至少各 minor，且 `default_for_existing` 应为 `advisory`；是否并行于另一条 hook **未确认**。决策见 D9。
+
 ---
 
 ## 4. 第三层：随包 Skill 瘦身（仅清单与不变量，建议另立项）
@@ -326,6 +339,7 @@
 - **D6 #64 第三层中“会话开始注入只发索引与指针”是否撤出范围。** 倾向：撤出，实测注入仅约 1.9–2.2 KB（1.5）。替代：保留，待含大量候选的真实项目实测注入长度后再判（该数据**未确认**）。
 - **D7 是否在 6.13.1 就启用 `memory.py check` 的候选扫描 `duplicated-elsewhere`。** 倾向：启用，限额与私有路径保护写死（3.4）；替代：6.13.1 只交付 `files` 与 `sections`（零扫描风险），候选放 I3。
 - **D8 第一层是否同时给既有项目加指针（方案 B）。** 倾向：不加（2.4）；替代：作为 6.14 的 minor + 用户动作议题。
+- **D9 会话开始是否接线运行启动层体积检查。** 倾向：本周期不接线（3.9），先靠 `health` 与里程碑收尾检查；替代：6.14 之后由 nudge 子进程调用廉价字节求和（≤2 秒、仅超限出一行）。
 
 ---
 
