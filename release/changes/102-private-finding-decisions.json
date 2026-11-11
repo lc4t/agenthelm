@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "health 的“私有目录没被 git 忽略 / 下有文件被跟踪”现在可用 fix --skip 登记（项目级，被跟踪文件列表变化后重新提示）；fix --skip 遇到不支持跳过的发现时说明原因。",
+    "en": "health findings for private directories (not git-ignored / tracked files inside) can now be registered with fix --skip (project scope, re-prompted when the tracked file list changes); fix --skip explains when a finding cannot be skipped."
+  },
+  "changes": [{
+    "scope": "project-orchestrator",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

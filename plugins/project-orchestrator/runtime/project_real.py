@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -77,6 +78,7 @@ class RealProvider:
         self._items: dict | None = None
         self.reprompt = False  # health/check：忽略已记录的决定，重新评估
         self._skipped: list[dict] = []
+        self._private_skipped: list[dict] = []  # 已登记跳过的 private-* 发现（与 check_updates 的 _skipped 分开收集）
 
     # -------------------------------------------------------------- shared pieces
 
@@ -344,7 +346,7 @@ class RealProvider:
         project_write.check_tools(self, findings, ok)
         source = project_maintain.check_updates(self, findings, ok)
         self._health = {"findings": findings, "ok": ok, "read_at": now_iso(), "update_source": source,
-                        "skipped": self._skipped}
+                        "skipped": [*self._skipped, *self._private_skipped]}
         return self._health
 
     def _check_environment(self, findings: list[dict], ok: list[str]) -> None:
@@ -487,23 +489,62 @@ class RealProvider:
                              "reason": names[:160], "impact": _("只是提醒：到期不会自动执行"),
                              "next": [{"label": _("让 Agent 按它执行，或运行 sop run <id>"), "action": ""}]})
 
+    def _private_decisions(self) -> tuple[Any, dict | None]:
+        """（脚手架模块, 已记录的决定）；模块太旧或决定文件有问题时决定为 None（发现照常显示，也不提供跳过）。"""
+        module = project_maintain.scaffold_module(self)
+        if module is None or not hasattr(module, "partition") or not hasattr(module, "load_decisions"):
+            return None, None
+        try:
+            decisions = module.load_decisions(self.root, self.host.current_env().state_dir)
+        except Exception:  # noqa: BLE001 - 决定读不出来时不能让 health 失败
+            return None, None
+        return module, (None if decisions["errors"] else decisions)
+
     def _check_private(self, findings: list[dict], ok: list[str]) -> None:
-        """私有目录：内容默认不进 git；用到它的事项应标为 private。"""
+        """私有目录：内容默认不进 git；用到它的事项应标为 private。
+
+        private-ignore / private-tracked 带 decision（项目级），可用 fix --skip 登记；
+        指纹：tracked = 被跟踪文件列表（排序后）的 sha256；ignore = 目录路径 + 其中 .gitignore 是否存在
+        （没被忽略的原因要么没有 .gitignore，要么它没覆盖内容；有无该文件变化时重新提示）。"""
         dirs = private_paths.declared(self.root)
+        self._private_skipped = []
         if not dirs:
             return
+        module, decisions = self._private_decisions()
+
+        def decide(finding: dict, basis: str) -> dict | None:
+            """给发现加 decision；已按当前指纹决定过的返回 None（记入 _private_skipped）。"""
+            if decisions is None:
+                return finding
+            fingerprint = hashlib.sha256(basis.encode("utf-8")).hexdigest()
+            raw = {"id": finding["id"], "fingerprint": fingerprint, "scope": "project"}
+            active, skipped = module.partition([raw], decisions, reprompt=self.reprompt)
+            if skipped:
+                self._private_skipped.append({**finding, "decision": skipped[0]["decision"]})
+                return None
+            if active[0].get("changed_since_decision"):
+                finding["title"] += _("（期望内容已变化）")
+            finding["decision"] = raw
+            return finding
+
         for item in dirs:
             state = private_paths.git_state(self.root, item)
             if state["ignored"] is False:
-                findings.append({"id": f"private-ignore:{item}", "level": "suggest", "area": _("私有目录"),
+                found = decide({"id": f"private-ignore:{item}", "level": "suggest", "area": _("私有目录"),
                                  "title": _("{0}/ 没有被 git 忽略").format(item), "reason": _("私有目录的内容默认不应进入 git"),
                                  "impact": _("git add 时可能把私有内容一起提交"),
-                                 "next": [{"label": _("运行 sop private --apply，在 {0}/ 里创建 .gitignore（先预览）").format(item), "action": ""}]})
+                                 "next": [{"label": _("运行 sop private --apply，在 {0}/ 里创建 .gitignore（先预览）").format(item), "action": ""}]},
+                                f"private-ignore\n{item}\n{(self.root / item / private_paths.IGNORE_FILE).exists()}")
+                if found:
+                    findings.append(found)
             elif state["tracked"]:
-                findings.append({"id": f"private-tracked:{item}", "level": "suggest", "area": _("私有目录"),
+                found = decide({"id": f"private-tracked:{item}", "level": "suggest", "area": _("私有目录"),
                                  "title": _("{0}/ 下有 {1} 个文件已被 git 跟踪").format(item, len(state['tracked'])),
                                  "reason": _("例如 {0}").format(state['tracked'][0]), "impact": _("它们会随提交一起上传；.gitignore 对已跟踪的文件无效"),
-                                 "next": [{"label": _("确认后运行 git rm -r --cached {0} 取消跟踪（历史里的内容仍在）").format(item), "action": ""}]})
+                                 "next": [{"label": _("确认后运行 git rm -r --cached {0} 取消跟踪（历史里的内容仍在）").format(item), "action": ""}]},
+                                "private-tracked\n" + "\n".join(sorted(state["tracked"])))
+                if found:
+                    findings.append(found)
             else:
                 ok.append(_("私有目录 {0}/（").format(item) + (_("已被 git 忽略") if state["ignored"] else _("不在 git 仓库里")) + _("；读取前须经你确认）"))
         loose = []
