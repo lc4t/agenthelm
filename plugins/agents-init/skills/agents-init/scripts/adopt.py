@@ -548,9 +548,14 @@ def run(args: Any, root: Path, inputs: Any) -> tuple[int, dict]:
         "needs_recovery_dir": needs_recovery, "pending_handoff": pending_handoff, "notes": notes,
         "readme": readme["action"] if readme else ("create" if Path("README.md") in create else "untouched"),
     }
+    recovery_dir = getattr(args, "recovery_dir", None)
+    if needs_recovery and not getattr(args, "apply", False):
+        # Same refusal as apply, so a folder inside the project is reported before anyone runs --apply.
+        target, defaulted = init.resolve_recovery_target(root, recovery_dir, "adopt")
+        result.update(recovery_default=defaulted, recovery_plan=str(
+            target.parent / "<UTC time>-agenthelm-adopt" if defaulted else target))
     if not getattr(args, "apply", False):
         return 0, result
-    recovery_dir = getattr(args, "recovery_dir", None)
     recovery: Path | None = None
     defaulted = False
     if needs_recovery:

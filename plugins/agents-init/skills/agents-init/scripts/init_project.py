@@ -115,6 +115,17 @@ def default_recovery_dir(label: str) -> Path:
     return Path.home() / ".agent-pack" / "recovery" / f"{stamp}-agenthelm-{label}"
 
 
+def resolve_recovery_target(root: Path, recovery_dir: Path | None, label: str) -> tuple[Path, bool]:
+    """Where backups would go, rejected when inside the project: ``(path, was_defaulted)``. Touches nothing on disk."""
+    defaulted = recovery_dir is None
+    target = (default_recovery_dir(label) if defaulted else recovery_dir.expanduser()).resolve()
+    if target == root or root in target.parents:
+        if defaulted:
+            raise InitError(_("默认恢复目录 {0} 在项目目录内，请用 --recovery-dir 指定项目外的目录").format(target))
+        raise InitError("--recovery-dir must be outside the project root")
+    return target, defaulted
+
+
 def prepare_recovery_dir(root: Path, recovery_dir: Path | None, label: str) -> tuple[Path, bool]:
     """The folder replaced files are copied to, ready for writing: ``(path, was_defaulted)``.
 
@@ -122,12 +133,7 @@ def prepare_recovery_dir(root: Path, recovery_dir: Path | None, label: str) -> t
     folder first. Either way it must be outside the project and writable. Callers resolve it *before* touching any
     project file, so a backup folder that cannot be used leaves the project unchanged instead of skipping the backup.
     """
-    defaulted = recovery_dir is None
-    target = (default_recovery_dir(label) if defaulted else recovery_dir.expanduser()).resolve()
-    if target == root or root in target.parents:
-        if defaulted:
-            raise InitError(_("默认恢复目录 {0} 在项目目录内，请用 --recovery-dir 指定项目外的目录").format(target))
-        raise InitError("--recovery-dir must be outside the project root")
+    target, defaulted = resolve_recovery_target(root, recovery_dir, label)
     try:
         target.mkdir(parents=True, exist_ok=True, mode=0o700)
         if not target.is_dir():
@@ -1620,7 +1626,11 @@ def _adopt_text(result: dict) -> str:
     for note in result.get("notes", []):
         lines.append(_("  说明：{0}").format(note))
     if result.get("needs_recovery_dir") and not result.get("applied"):
-        lines.append("  " + _("改动已有文件前会先备份到 ~/.agent-pack/recovery/（也可用 --recovery-dir 指定项目外的目录）"))
+        if result.get("recovery_default", True):
+            lines.append("  " + _("改动已有文件前会先备份到默认目录 {0}（<UTC time> 在执行时确定；也可用 --recovery-dir 指定项目外的目录）").format(
+                result.get("recovery_plan") or "~/.agent-pack/recovery/<UTC time>-agenthelm-adopt"))
+        else:
+            lines.append("  " + _("改动已有文件前会先备份到 {0}（--recovery-dir）").format(result["recovery_plan"]))
     if scan.get("recommended_flags"):
         lines.append("  " + _("推荐选项：") + " ".join(scan["recommended_flags"]))
     if result.get("check_after"):
