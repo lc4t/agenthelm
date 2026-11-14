@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agents-init 的 adopt 预览按实际规则写明备份位置：随 --recovery-dir 变化，缺省时写出默认目录；备份目录在项目内时预览阶段就给出与 apply 相同的拒绝提示。",
+    "en": "The agents-init adopt preview now names the backup location that apply will really use: it follows --recovery-dir, shows the default folder otherwise, and rejects a backup folder inside the project at preview time like apply does."
+  },
+  "changes": [{
+    "scope": "agents-init",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
