@@ -43,6 +43,8 @@ python3 <plugin-root>/runtime/agent_pack_config.py --output json doctor --projec
 
 前四类和 `coupled` 计入 `issues`，`overrides` 计入 `warnings`。不加 `--client` 时行为与以前相同。
 
+运行方式：`python3 -I`、`-P` 与 `PYTHONSAFEPATH=1` 只对 `runtime/agent_pack_config.py` 这一个入口受支持（入口自行把脚本所在目录加入 `sys.path`，与普通运行一致）；同目录其他脚本（`agent_pack_claude.py`、`mcp_server.py`、`agenthelm.py` 等）在这些模式下无法导入同目录模块，不受支持。
+
 runtime 尚未安装时，bootstrap 包含本 Skill 的插件：
 
 ```bash

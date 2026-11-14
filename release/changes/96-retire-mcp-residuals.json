@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "退役 Claude 插件时，列出由该插件安装、且内容未被改动的 MCP 条目作为残留（含手工移除步骤），不再静默遗留。",
+    "en": "Retiring a Claude plugin now lists the MCP entries it installed (and the user has not changed) as residuals with a manual removal step, instead of leaving them silently."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

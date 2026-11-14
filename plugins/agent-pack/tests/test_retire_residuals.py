@@ -127,6 +127,68 @@ class RetireResidualTests(SyncPreviewParityTests):
         self.assertIn("claude mcp remove", payload["residuals"][0]["manual"])
         self.assertEqual((home / ".claude.json").read_text(), config, "the user config is not edited")
 
+    def claude_mcp_fixture(self, name: str, servers: dict):
+        base = self.root / name
+        project = make_project(base / "project", "proj")
+        home = base / "home"
+        home.mkdir()
+        plugin = make_plugin(base / "src" / RETIRED, RETIRED, "demo-skill")
+        write_json(plugin / "mcp.json", {"mcpServers": servers})
+        rc, _p, out, err = self.cli(home, "bootstrap", "--plugin", str(plugin), "--client", "claude", "--apply")
+        self.assertEqual(rc, 0, out + err)
+        return project, home, base / "recovery"
+
+    PLAIN = {"type": "stdio", "command": "python3", "args": ["-m", "checker"]}
+
+    def test_claude_mcp_without_plugin_path_is_listed_when_identical_to_what_bootstrap_wrote(self) -> None:
+        # #96: the entry has no path into the plugin and no ownership record, only its content gives it away.
+        project, home, recovery = self.claude_mcp_fixture("claude-mcp-plain", {
+            "local-check": self.PLAIN,
+            "demo-server": {"type": "stdio", "command": "python3", "args": ["${PLUGIN_ROOT}/server.py"]}})
+        config = (home / ".claude.json").read_text()
+        for extra in ((), ("--apply",)):
+            with self.subTest(apply=bool(extra)):
+                rc, payload, out, err = self.retire(project, home, recovery, "claude", *extra)
+                self.assertEqual(rc, 0, out + err)
+                self.assertEqual(sorted((i["kind"], i["name"]) for i in payload["residuals"]),
+                                 [("mcp", "demo-server"), ("mcp", "local-check")], "each entry listed once")
+                item = next(i for i in payload["residuals"] if i["name"] == "local-check")
+                self.assertEqual(Path(item["path"]).resolve(), (home / ".claude.json").resolve())
+                self.assertIn("claude mcp remove --scope user local-check", item["manual"])
+                self.assertEqual((home / ".claude.json").read_text(), config, "the user config is not edited")
+
+    def test_claude_mcp_changed_by_the_user_is_not_claimed_by_the_retired_plugin(self) -> None:
+        project, home, recovery = self.claude_mcp_fixture("claude-mcp-edited", {"local-check": self.PLAIN})
+        path = home / ".claude.json"
+        data = json.loads(path.read_text())
+        data["mcpServers"]["local-check"]["args"] = ["-m", "my-own-checker"]
+        write_json(path, data)
+        for extra in ((), ("--apply",)):
+            with self.subTest(apply=bool(extra)):
+                rc, payload, out, err = self.retire(project, home, recovery, "claude", *extra)
+                self.assertEqual(rc, 0, out + err)
+                self.assertNotIn("local-check", [i["name"] for i in payload.get("residuals", [])])
+                self.assertEqual(json.loads(path.read_text()), data)
+
+    def test_claude_retiring_a_plugin_without_mcp_has_no_mcp_residuals(self) -> None:
+        project, home, recovery, _ = self.fixture("claude")
+        write_json(home / ".claude.json", {"mcpServers": {"mine": self.PLAIN}})
+        rc, payload, out, err = self.retire(project, home, recovery, "claude", "--apply")
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual([i for i in payload.get("residuals", []) if i["kind"] == "mcp"], [])
+
+    def test_claude_text_output_lists_the_mcp_residual(self) -> None:
+        import subprocess
+        project, home, _ = self.claude_mcp_fixture("claude-mcp-text", {"local-check": self.PLAIN})
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        env["HOME"] = str(home)
+        done = subprocess.run(
+            [sys.executable, str(TESTS.parent / "runtime" / "agent_pack_config.py"), "reconcile",
+             "--project", str(project), "--client", "claude", "--retire-plugin", RETIRED, "--retire-only",
+             "--home", str(home)], capture_output=True, text=True, env=env, check=False)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("! residual mcp: local-check", done.stdout)
+
     # ------------------------------------------------------------------ codex
 
     def test_codex_marketplace_entry_and_copy_are_removed(self) -> None:
