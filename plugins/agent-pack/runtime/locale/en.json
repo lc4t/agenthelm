@@ -636,5 +636,7 @@
  "预览中没有可以执行的步骤：{0}（见上面的各项与下一步）。先处理，再重新预览；这时运行 --apply 也不会执行任何步骤。": "The preview has no runnable steps: {0} (see the items and next steps above). Resolve them and preview again; running --apply now would execute nothing.",
  "{0} 个步骤阻塞": "{0} blocked",
  "{0} 个步骤不可用": "{0} unavailable",
- "{0} 个步骤失败": "{0} failed"
+ "{0} 个步骤失败": "{0} failed",
+ "agenthelm（套件版本未知：此运行时不含 index.json）；agent-pack 插件 {0}": "agenthelm (suite version unknown: this runtime ships without index.json); agent-pack plugin {0}",
+ "输出 agenthelm 套件版本后退出": "Print the agenthelm suite version and exit"
 }
