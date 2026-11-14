@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agents-init 的 --agent-cli、--project-type、--stack 现在可重复传参（也可逗号分隔，或混用），不再静默只保留最后一个值；--help 写明两种写法。",
+    "en": "agents-init --agent-cli, --project-type and --stack can now be repeated (or comma-separated, or mixed) instead of silently keeping only the last value; --help documents both spellings."
+  },
+  "changes": [{
+    "scope": "agents-init",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

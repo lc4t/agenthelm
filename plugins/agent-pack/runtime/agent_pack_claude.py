@@ -223,17 +223,48 @@ def _plugin_skill_links(home: Path, plugin_path: Path) -> list[Path]:
     return found
 
 
+def _installed_plugin_mcps(home: Path, plugin: str, plugin_path: Path, config: dict[str, Any]) -> set[str]:
+    """Servers in ``~/.claude.json`` that ``bootstrap`` wrote for this plugin, judged by content.
+
+    Bootstrap leaves no per-server ownership record, so a name counts only when the entry equals what the
+    plugin's ``mcp.json`` renders to today; a same-named entry the user changed may be theirs and is not claimed.
+    """
+    mcp_path = plugin_path / "mcp.json"
+    if not mcp_path.is_file():
+        return set()
+    try:
+        declared = core._read_json(mcp_path).get("mcpServers", {})
+    except (core.AgentPackError, AttributeError):
+        return set()
+    owned: set[str] = set()
+    for server, raw in declared.items():
+        if server not in config:
+            continue
+        parsed = core._portable_mcp(server, raw)
+        if parsed.portable and core._claude_mcp_config(
+                parsed.config, record_path(home, plugin), data_root(home, plugin)) == config[server]:
+            owned.add(server)
+    return owned
+
+
 def _plugin_residuals(home: Path, plugin: str, plugin_path: Path, config: dict[str, Any]) -> list[dict[str, str]]:
     """Entries a retirement leaves on purpose: files Claude Code owns or that may hold local credentials."""
     residuals: list[dict[str, str]] = []
     prefixes = {str(plugin_path), str(plugin_path.resolve())}
     config_path = core._claude_user_config(home)
+    installed = _installed_plugin_mcps(home, plugin, plugin_path, config)
     for server, entry in sorted(config.items()):
         if any(text.startswith(prefix + os.sep) or text == prefix for text in _strings(entry) for prefix in prefixes):
             residuals.append({
                 "client": "claude", "kind": "mcp", "name": server, "path": str(config_path),
                 "manual": f"MCP server {server} still points into the retired plugin; remove it with "
                           f"`claude mcp remove --scope user {server}` (the file may hold local credentials, so it is not edited automatically)"})
+        elif server in installed:
+            residuals.append({
+                "client": "claude", "kind": "mcp", "name": server, "path": str(config_path),
+                "manual": f"MCP server {server} was installed by the retired plugin (identical to what its mcp.json "
+                          f"renders to); remove it with `claude mcp remove --scope user {server}` (the file may hold "
+                          f"local credentials, so it is not edited automatically)"})
     managed = home / ".claude" / "plugins"
     if _inside(plugin_path, managed):
         residuals.append({

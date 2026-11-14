@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "update/migrate 预览里所有步骤都不可用或失败时，不再提示“确认后追加 --apply 执行”，改为说明没有可执行步骤；部分可执行时说明 --apply 只执行其余步骤。",
+    "en": "When every step in an update/migrate preview is unavailable or failed, the preview no longer says to add --apply; it explains that nothing is runnable, and for partial previews states that --apply runs only the remaining steps."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
