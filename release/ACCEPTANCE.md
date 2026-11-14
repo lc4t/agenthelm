@@ -24,6 +24,10 @@ codex plugin marketplace add lc4t/agenthelm --ref vX.Y.Z-rc.N
 
 若提示市场已存在，先记录当前市场来源和每个已装插件的版本、installed、enabled 状态，再评估是否执行 `codex plugin marketplace remove agenthelm`。移除对已装插件的影响仍未确认，不将 remove + add 后的一次读回当成证明。添加后安装/升级目标插件，重启客户端，再读回验证。运行时单独通过带版本的 npx 命令试用；候选运行时安装默认旁置，启用需 `--use` 或 `runtime use <版本> --apply`。
 
+## 验收夹具
+
+验收用的临时项目一律由仓库内的 `release/acceptance/mkfixture.py` 生成，验收提示词不再内嵌生成器。它依赖 `plugins/agent-pack/tests` 里的 `make_project`，该目录不在 npm 包内，因此 `<extracted-package-dir>` 必须是目标 tag 的 **GitHub tarball 解压目录**：`python3 -I release/acceptance/mkfixture.py <kind> <outdir> <extracted-package-dir>`，kind 为 `clean | token | home | multisource | credname | wrapped`，末行打印项目根；参数错误退出码 2。`tests/test_acceptance_fixture.py` 逐个 kind 运行它，防止 `make_project` 接口漂移。各 kind 的用例用途见脚本 docstring。
+
 ## 下一个候选版或正式版的实机补测
 
 以下均为**待验收**，本次的夹具与桩客户端测试不替代实机结果。补测结果应记录到发布跟踪 #44，写明操作系统、客户端版本、目标 tag、命令、前后状态与通过/失败证据。
