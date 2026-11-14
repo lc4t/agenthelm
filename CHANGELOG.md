@@ -1,5 +1,31 @@
 # 更新记录
 
+<!-- release-plan:start -->
+## 2026-11-14 — agenthelm 6.13.1
+
+### agent-pack 1.13.1
+
+- 文档：说明 nudge install-hooks 选中的稳定入口不含版本号，可能是旧版本；安装 hook 前先更新插件或 runtime use 到目标版本。
+- 退役 Claude 插件时，列出由该插件安装、且内容未被改动的 MCP 条目作为残留（含手工移除步骤），不再静默遗留。
+- update/migrate 预览里所有步骤都不可用或失败时，不再提示“确认后追加 --apply 执行”，改为说明没有可执行步骤；部分可执行时说明 --apply 只执行其余步骤。
+- 恢复 `python3 -I`、`-P` 与 PYTHONSAFEPATH=1 下运行 agent_pack_config.py 的能力（入口自行加入脚本目录并复用同一模块对象）。
+- agenthelm 顶层命令支持 --version，输出套件版本（读自发布内容的 index.json）；插件缓存里没有 index.json 时输出 agent-pack 插件版本并标注套件版本未知。
+
+### agents-init 6.9.2
+
+- agents-init 的 adopt 预览按实际规则写明备份位置：随 --recovery-dir 变化，缺省时写出默认目录；备份目录在项目内时预览阶段就给出与 apply 相同的拒绝提示。
+- agents-init 的 --agent-cli、--project-type、--stack 现在可重复传参（也可逗号分隔，或混用），不再静默只保留最后一个值；--help 写明两种写法。
+
+### project-orchestrator 1.11.5
+
+- health 的“私有目录没被 git 忽略 / 下有文件被跟踪”现在可用 fix --skip 登记（项目级，被跟踪文件列表变化后重新提示）；fix --skip 遇到不支持跳过的发现时说明原因。
+
+### suite 6.13.1
+
+- 文档：说明 nudge install-hooks 选中的稳定入口不含版本号，可能是旧版本；安装 hook 前先更新插件或 runtime use 到目标版本。
+<!-- release-plan:end -->
+
+
 ## 2026-11-10 — agenthelm 6.13.0
 
 ### agent-pack 1.13.0
