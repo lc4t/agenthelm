@@ -820,7 +820,10 @@ def decide_ids(provider: Any, skip: list[str], unskip: list[str], reason: str, a
     results = []
     for identifier in skip:
         if identifier not in known:
-            raise EntryError(_("现在没有这个发现：{0}").format(identifier), "usage", [_("可跳过：") + (_("、").join(sorted(known)) or _("（无）"))])
+            hint = [_("可跳过：") + (_("、").join(sorted(known)) or _("（无）"))]
+            if any(f["id"] == identifier for f in health["findings"]):
+                raise EntryError(_("这个发现不支持跳过：{0}（它是需要处理的问题，没有可记录的决定；处理后会自动消失）").format(identifier), "usage", hint)
+            raise EntryError(_("现在没有这个发现：{0}").format(identifier), "usage", hint)
         item = known[identifier]
         try:
             results.append(module.decide(provider.root, identifier, "skip", reason=reason,

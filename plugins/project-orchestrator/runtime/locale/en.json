@@ -1464,5 +1464,6 @@
  "只预览，不写入（省略时保持直接写入）": "Preview without writing (omitting this keeps the existing immediate-write behavior)",
  "（要求了三方合并，但历史模板无法按当前方式重新渲染，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）": " (a three-way merge was requested, but the historical template cannot be re-rendered the current way; no files changed. Choose keep / append / accept the new template instead)",
  "（要求了三方合并，但历史模板渲染结果与内容锁摘要不一致，无法合并；没有改动任何文件，请改选保留 / 追加 / 采用新模板）": " (a three-way merge was requested, but the historical template's render does not match the content-lock digest; no files changed. Choose keep / append / accept the new template instead)",
- "{0}（{1} 项，展开 {2} 项）": "{0} ({1} shown, {2} expanded)"
+ "{0}（{1} 项，展开 {2} 项）": "{0} ({1} shown, {2} expanded)",
+ "这个发现不支持跳过：{0}（它是需要处理的问题，没有可记录的决定；处理后会自动消失）": "This finding cannot be skipped: {0} (it is a problem to fix, with no decision to record; it disappears once fixed)"
 }
