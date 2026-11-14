@@ -2180,10 +2180,16 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    # Run through the importable module, not ``__main__``: ``agent_pack_claude`` and
-    # ``agent_pack_codex_mcp`` do ``import agent_pack_config``, which would otherwise load a
-    # second copy of this file whose ``AgentPackError`` is a different class, so ``main()``'s
-    # ``except AgentPackError`` could not catch what they raise (a stack trace, exit 1).
-    import agent_pack_config as _module  # noqa: PLC0415
+    # ``agent_pack_claude`` and ``agent_pack_codex_mcp`` do ``import agent_pack_config`` (also lazily,
+    # inside bootstrap/reconcile). Without help that loads a second copy of this file whose
+    # ``AgentPackError`` is a different class, so ``main()``'s ``except AgentPackError`` could not catch
+    # what they raise (a stack trace, exit 1). Register this running module under its import name so
+    # they get the very same module object, and put the script's own directory on ``sys.path`` so those
+    # sibling imports resolve even under ``python3 -I`` / ``-P`` / PYTHONSAFEPATH=1, which drop it
+    # (#98). The directory added is the script's own, exactly what a plain ``python3 script.py`` run adds.
+    _here = str(Path(__file__).resolve().parent)
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
+    sys.modules.setdefault("agent_pack_config", sys.modules[__name__])
 
-    raise SystemExit(_module.main())
+    raise SystemExit(main())

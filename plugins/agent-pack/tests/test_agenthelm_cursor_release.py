@@ -183,6 +183,35 @@ class CursorReleaseTests(unittest.TestCase):
         code, again = self.text_cli("--apply")  # same versions now: nothing to replace, so nothing to back up
         self.assertNotIn("replaced", again)
 
+    def test_preview_without_runnable_steps_does_not_tell_the_user_to_apply(self) -> None:
+        """#97：全部不可用/失败的预览不提示追加 --apply；部分可执行时只说明 --apply 跳过的步骤。"""
+        self.fetch.side_effect = OSError("offline")  # no release block reachable: the Cursor step is unavailable
+        code, text = self.text_cli()
+        self.assertIn("The preview has no runnable steps: 1 unavailable (see", text)
+        self.assertNotIn("add --apply to run it", text)
+        self.fetch.side_effect = self.fetch_json
+        self.release["tarball_sha256"] = "0" * 64  # digest mismatch: the action raises, so the step is failed
+        code, text = self.text_cli()
+        self.assertEqual(code, 1)
+        self.assertIn("The preview has no runnable steps: 1 failed (see", text)
+        self.assertNotIn("add --apply to run it", text)
+
+    def test_preview_summary_wording_for_mixed_and_zh_results(self) -> None:
+        def preview(*statuses: str, lang: str = "en") -> str:
+            records = [{"status": status, "description": f"step {index}"} for index, status in enumerate(statuses)]
+            output = io.StringIO()
+            with mock.patch.dict(os.environ, {"AGENTHELM_LANG": lang}), redirect_stdout(output):
+                agenthelm._print_steps(records, False)
+            return output.getvalue().splitlines()[-1]
+        self.assertIn("some steps are unavailable or failed", preview("preview", "unavailable"))
+        self.assertIn("--apply runs only the remaining runnable steps", preview("preview", "failed", "unavailable"))
+        self.assertIn("2 unavailable, 1 failed (see", preview("unavailable", "unavailable", "failed"))
+        self.assertIn("1 blocked, 1 unavailable (see", preview("blocked", "unavailable"))
+        self.assertEqual(preview("preview", "preview"), "The above is a preview; add --apply to run it.")
+        self.assertIn("没有可以执行的步骤：2 个步骤不可用（见上面", preview("unavailable", "unavailable", lang="zh"))
+        self.assertIn("其中有步骤不可用或失败", preview("preview", "failed", lang="zh"))
+        self.assertIn("确认后追加 --apply 执行", preview("preview", lang="zh"))
+
 
 if __name__ == "__main__":
     unittest.main()

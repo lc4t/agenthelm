@@ -184,6 +184,15 @@ def split_csv(value: str) -> tuple[str, ...]:
     return items
 
 
+class ExtendCsvAction(argparse.Action):
+    """Multi-value option: repeat the flag and/or comma-separate; keeps first-seen order and drops duplicates."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        merged = list(getattr(namespace, self.dest, None) or ())
+        merged.extend(item for item in values if item not in merged)
+        setattr(namespace, self.dest, tuple(dict.fromkeys(merged)))
+
+
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     if not slug:
@@ -1634,11 +1643,12 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--project", type=Path, required=True)
     result.add_argument("--name")
     result.add_argument("--slug")
-    result.add_argument("--project-type", type=split_csv)
+    multi_help = _("可多值：重复传参（{0} a {0} b）或逗号分隔（{0} a,b），可混用；保持先后顺序并去重")
+    result.add_argument("--project-type", type=split_csv, action=ExtendCsvAction, help=multi_help.format("--project-type"))
     result.add_argument("--vcs")
-    result.add_argument("--stack", type=split_csv)
+    result.add_argument("--stack", type=split_csv, action=ExtendCsvAction, help=multi_help.format("--stack"))
     result.add_argument("--runtime")
-    result.add_argument("--agent-cli", type=split_csv)
+    result.add_argument("--agent-cli", type=split_csv, action=ExtendCsvAction, help=multi_help.format("--agent-cli"))
     result.add_argument("--mode", choices=("init", "migrate", "refresh", "entry", "check", "add-skeleton", "profile",
                                            "repair-lock", "decide", "case-naming", "scan", "adopt", "region", "language", "accept-current"),
                         default="init",
