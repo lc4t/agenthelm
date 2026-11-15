@@ -1,7 +1,6 @@
 # 更新记录
 
-<!-- release-plan:start -->
-## 2026-11-14 — agenthelm 6.13.1
+## 2026-11-15 — agenthelm 6.13.1
 
 ### agent-pack 1.13.1
 
@@ -23,7 +22,6 @@
 ### suite 6.13.1
 
 - 文档：说明 nudge install-hooks 选中的稳定入口不含版本号，可能是旧版本；安装 hook 前先更新插件或 runtime use 到目标版本。
-<!-- release-plan:end -->
 
 
 ## 2026-11-10 — agenthelm 6.13.0
