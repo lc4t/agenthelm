@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import project_demo  # noqa: E402
+import project_extensions as ext  # noqa: E402
 from project_base import LAUNCHER_API, RUNTIME_API, EntryError  # noqa: E402
 from project_demo import DemoProvider  # noqa: E402
 from wf import S, clip, display_width, term_width  # noqa: E402
@@ -35,6 +36,8 @@ USAGE = N_("""项目入口：不需要 AI Agent 的项目自助菜单与命令�
     agenthelm project tools [工具]      项目自行声明的工具；--run --apply 执行
     agenthelm project sop <子命令>      流程（SOP）：list / index / show / new / interview / defaults / preflight /
                                        activate / run / step / status / due / validate …；写入默认只预览，--apply 执行
+    agenthelm project extensions <list|dups|show|check>  技能与 MCP 清单（只读）：list 按客户端/作用域/重复分组，dups 重复组，
+                                       show <引用|名字|分组> 详情，check 机械体检；MCP 只显示名字、作用域、指纹前缀、变量名
     agenthelm project capabilities     各项能力当前是否可用、为什么
 
 项目根目录的启动器（缺省 ./menu）等同于 agenthelm project --project <项目根目录>。
@@ -646,6 +649,38 @@ def cmd_sop(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, lis
     return code, data, header(provider, _("流程（SOP）")) + lines
 
 
+EXT_HINTS = N_("需要 agent-pack 提供 agenthelm inventory：更新 agent-pack 或运行时后再试；本项目其他功能不受影响")
+
+
+def cmd_extensions(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
+    """技能与 MCP：全部只读。inventory 不可用时是「能力不可用」（退出码 4）并写明原因，不猜测。"""
+    view = getattr(args, "ext_command", None) or "list"
+    title = header(provider, _("技能与 MCP"))
+    if view == "list":
+        data = provider.extensions_list(getattr(args, "kind", None), getattr(args, "client", None),
+                                        getattr(args, "scope", None), getattr(args, "group", None) or "client")
+    elif view == "dups":
+        data = provider.extensions_dups(getattr(args, "kind", None))
+    elif view == "show":
+        data = provider.extensions_show(args.ref)
+    else:
+        data = provider.extensions_check(bool(getattr(args, "include_description", False)))
+    if data["state"] != "available":
+        raise EntryError(data["reason"], "unavailable", [_(EXT_HINTS)])
+    data = {"view": view, **data}
+    if view == "list":
+        lines = ext.render_list(data, data["summary"])
+    elif view == "dups":
+        lines = ext.render_dups(data)[0]
+    elif view == "show":
+        lines = ext.render_show(data["entry"]) if data["view"] == "entry" else ext.render_group(1, data["group"])
+    else:
+        lines = ext.render_check(data)
+    if view in ("list", "dups"):
+        lines += [S.dim(note) for note in data["notes"]]
+    return EXIT_OK, data, title + lines
+
+
 def cmd_capabilities(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
     capabilities = provider.capabilities()
     return EXIT_OK, capabilities, header(provider, _("能力状态")) + render_capabilities(capabilities)
@@ -671,7 +706,7 @@ def cmd_home(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, li
 COMMANDS: dict[str, Callable[[Any, argparse.Namespace], tuple[int, Any, list[str]]]] = {
     "find": cmd_find, "open": cmd_open, "refs": cmd_refs, "progress": cmd_progress, "show": cmd_show,
     "guide": cmd_guide, "health": cmd_health, "fix": cmd_fix, "record": cmd_record, "tools": cmd_tools,
-    "sop": cmd_sop, "capabilities": cmd_capabilities, "scenarios": cmd_scenarios, "home": cmd_home,
+    "sop": cmd_sop, "extensions": cmd_extensions, "capabilities": cmd_capabilities, "scenarios": cmd_scenarios, "home": cmd_home,
 }
 
 
@@ -757,6 +792,23 @@ def parser() -> argparse.ArgumentParser:
     tools.add_argument("--apply", action="store_true")
     sop_parser = add("sop", _("流程（SOP）：用户自己的步骤序列，触发、前置检查、逐步记录"))
     sop_parser.add_argument("sop_args", nargs=argparse.REMAINDER, help=_("子命令与参数，见 agenthelm project sop --help"))
+    extensions = add("extensions", _("技能与 MCP：只读清单、重复、详情与机械体检"))
+    extensions_sub = extensions.add_subparsers(dest="ext_command")
+
+    def add_ext(name: str, help_text: str) -> argparse.ArgumentParser:
+        return extensions_sub.add_parser(name, parents=[shared], help=help_text)
+
+    listing = add_ext("list", _("按客户端、作用域或重复分组列出技能与 MCP"))
+    listing.add_argument("--kind", choices=("skill", "mcp"), help=_("只看技能或只看 MCP"))
+    listing.add_argument("--client", help=_("只看某个客户端，如 claude、codex、cursor"))
+    listing.add_argument("--scope", help=_("只看某个作用域，如 user、project、local"))
+    listing.add_argument("--group", choices=("client", "scope", "dup"), default="client", help=_("分组方式（默认 client）"))
+    add_ext("dups", _("重复组：同名、同指纹、同名不同内容；只在官方文档写明优先级时才说哪份生效")).add_argument(
+        "--kind", choices=("skill", "mcp"), help=_("只看技能或只看 MCP"))
+    add_ext("show", _("条目详情（引用 <kind>:<名>@<客户端>:<作用域>、条目名或分组 id）；MCP 不显示命令参数与任何值")).add_argument("ref")
+    check = add_ext("check", _("技能体检：只列机械事实与阈值，不打分、不排名、不建议删除"))
+    check.add_argument("--include-description", action="store_true", dest="include_description",
+                       help=_("同时比较 description 文本相似度（阈值 0.6，没有外部依据，只作提示）"))
     add("capabilities", _("能力状态"))
     add("scenarios", _("列出演示场景"))
     return result
