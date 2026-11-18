@@ -19,7 +19,7 @@ import shlex
 import subprocess
 import tempfile
 from argparse import Namespace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,8 @@ from rule_lines import (GLOBAL_VALUES, RULE_WORDS, candidate_rule, custom_sectio
 
 
 STORE = Path(".opinion") / "inbox.json"
+ASK_STATE = Path(".opinion") / "ask-state.json"
+MAX_ASK_SESSIONS = 50
 STATUSES = ("pending", "trial", "formal", "held", "rejected")
 DECIDABLE = ("pending", "trial", "formal", "held", "rejected")
 OPEN_STATUSES = ("pending", "trial")
@@ -126,7 +128,10 @@ def load(root: Path) -> dict[str, Any]:
 
 
 def save(root: Path, data: dict[str, Any]) -> None:
-    path = store_path(root)
+    write_json(store_path(root), data)
+
+
+def write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=".inbox-", dir=path.parent)
     try:
@@ -438,10 +443,16 @@ def adopt(root: Path, args: argparse.Namespace) -> dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="opinion-adopt-") as workdir:
             plan = adopt_plan(root, adoptable(load(root), ids), Path(workdir))
         composed = plan["composed"]
+        language = versioned.project_language(root)
+        conflicts = plan["drafted"].get("changes", {}).get("conflicts", [])
+        matches = [shown_match(item, language) for item in plan["items"]]
         return {"ok": True, "status": "preview", "ids": ids, "profile": plan["profile_id"], "profile_path": str(plan["target"]),
                 "path": composed["path"], "content": composed["content"], "blocked": composed["blocked"],
                 "confirmation_sha256": plan["fingerprint"], "writes_stable_rules": False,
                 "candidates": [view(item) for item in plan["items"]],
+                "added_lines": [candidate_rule(item, language) for item in plan["items"]],
+                "shown": {item["id"]: match for item, match in zip(plan["items"], matches)},
+                "shown_matches": bool(matches) and all(matches) and not composed["blocked"] and not conflicts,
                 "next_step": say("adopt_next", command=adopt_command(root, ids, plan["fingerprint"]))}
     if not args.confirm:
         fail("err_adopt_confirm")
@@ -489,7 +500,22 @@ def adopt(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             "verified": verified, "writes_stable_rules": True, "message": say("adopt_done", count=len(ids))}
 
 
+def line_digest(candidate: dict[str, Any], language: str) -> str:
+    return versioned.text_digest(candidate_rule(candidate, language))
+
+
+def shown_snapshot(candidate: dict[str, Any], language: str, moment: datetime) -> dict[str, str]:
+    """展示快照：此刻候选将被渲染成的规则行的摘要。之后候选或项目语言变化，摘要就对不上。"""
+    return {"at": stamp(moment), "language": language, "line_sha256": line_digest(candidate, language)}
+
+
+def shown_match(candidate: dict[str, Any], language: str) -> bool:
+    snapshot = candidate.get("shown")
+    return isinstance(snapshot, dict) and snapshot.get("line_sha256") == line_digest(candidate, language)
+
+
 def present(root: Path, args: argparse.Namespace) -> dict[str, Any]:
+    language = versioned.project_language(root)
     moment = now()
     marked = []
     with Locked(root) as data:
@@ -498,10 +524,62 @@ def present(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             if candidate is not None:
                 candidate["presented"] += 1
                 candidate["presented_at"] = stamp(moment)
+                candidate["shown"] = shown_snapshot(candidate, language, moment)
                 marked.append(identity)
         save(root, data)
     pool = inbox_relations.targets(root, data) if marked else []
     return {"ok": True, "status": "written", "marked": marked, "candidates": [with_relations(data["candidates"][identity], pool) for identity in marked]}
+
+
+def gate(root: Path, args: argparse.Namespace) -> dict[str, Any]:
+    """询问节流（只记账，不决定要不要问）：同项目 cooldown 小时内最多放行一次，同会话最多 max-per-session 次。
+    状态在 .opinion/ask-state.json；--peek 只读。放行且没有 --peek 时才记一次。"""
+    cooldown, limit = args.cooldown_hours, args.max_per_session
+    if cooldown < 0:
+        fail("err_cooldown")
+    if limit < 1:
+        fail("err_max_per_session")
+    for item in (root / ".opinion", root / ASK_STATE):
+        if item.is_symlink():
+            fail("err_symlink", path=item)
+    moment = now()
+    guard_dir = root / ".opinion"
+    if not args.peek:
+        guard_dir.mkdir(parents=True, exist_ok=True)
+    guard = (guard_dir / ".ask.lock").open("a") if guard_dir.is_dir() else None
+    try:
+        if guard:
+            fcntl.flock(guard, fcntl.LOCK_EX)
+        path = root / ASK_STATE
+        state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"schema_version": 1, "last_allowed_at": None, "sessions": {}}
+        if not isinstance(state, dict) or not isinstance(state.get("sessions"), dict):
+            fail("err_format", path=path)
+        last = state.get("last_allowed_at")
+        count = int((state["sessions"].get(args.session) or {}).get("count", 0)) if args.session else 0
+        elapsed = (moment - parse_stamp(last)).total_seconds() / 3600 if last else None
+        reason = "ok"
+        if args.session and count >= limit:
+            reason = "session_limit"
+        elif elapsed is not None and elapsed < cooldown:
+            reason = "cooldown"
+        allowed = reason == "ok"
+        recorded = allowed and not args.peek
+        if recorded:
+            state["last_allowed_at"] = stamp(moment)
+            if args.session:
+                state["sessions"][args.session] = {"count": count + 1, "last_at": stamp(moment)}
+                recent = sorted(state["sessions"].items(), key=lambda pair: pair[1].get("last_at", ""))[-MAX_ASK_SESSIONS:]
+                state["sessions"] = dict(recent)
+            write_json(path, state)
+    finally:
+        if guard:
+            fcntl.flock(guard, fcntl.LOCK_UN)
+            guard.close()
+    next_allowed = stamp(parse_stamp(last) + timedelta(hours=cooldown)) if reason == "cooldown" else None
+    return {"ok": True, "status": "written" if recorded else "read-only", "allowed": allowed, "reason": reason, "peek": bool(args.peek),
+            "recorded": recorded, "cooldown_hours": cooldown, "max_per_session": limit, "session": args.session or "",
+            "session_count": count + (1 if recorded and args.session else 0), "last_allowed_at": state.get("last_allowed_at"),
+            "next_allowed_at": next_allowed, "message": say(f"gate_{reason}")}
 
 
 def expire(root: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -649,7 +727,7 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
 
 def add_command(subparsers: Any) -> None:
     parser = subparsers.add_parser("inbox", help="Project-private candidate inbox: stash, decide and summarize pending items; only adopt --apply writes OPINION.md, through the full preview and fingerprint")
-    parser.add_argument("action", choices=("add", "list", "decide", "adopt", "present", "expire", "pending", "brief", "exposure", "check", "revise"))
+    parser.add_argument("action", choices=("add", "list", "decide", "adopt", "present", "expire", "pending", "brief", "exposure", "check", "revise", "gate"))
     parser.add_argument("ids", nargs="*", help="candidate ids for decide / adopt / present")
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--title")
@@ -670,6 +748,9 @@ def add_command(subparsers: Any) -> None:
     parser.add_argument("--apply", action="store_true", help="adopt: write OPINION.md and the lock (needs --confirm); without it adopt only previews")
     parser.add_argument("--confirm", help="adopt: the confirmation_sha256 of the preview the user has reviewed")
     parser.add_argument("--days", type=int, help="expire: revert trials older than this many days to pending")
+    parser.add_argument("--cooldown-hours", type=float, default=24, help="gate: allow at most one ask per project within this many hours (default 24)")
+    parser.add_argument("--max-per-session", type=int, default=1, help="gate: allow at most this many asks per session (default 1)")
+    parser.add_argument("--peek", action="store_true", help="gate: only report whether an ask would be allowed; record nothing")
     parser.add_argument("--max-chars", type=int, default=6000, help="brief: size limit of the text")
     parser.add_argument("--output", choices=("json", "markdown"), default="json")
     parser.add_argument("--lang", choices=("auto", *words.LANGUAGES), help="message language: zh / en; by default AGENTHELM_LANG, then the system locale, then English")
@@ -693,6 +774,8 @@ def run(args: argparse.Namespace) -> dict[str, Any] | str:
         return exposure(root)
     if args.action == "check":
         return check(root, args)
+    if args.action == "gate":
+        return gate(root, args)
     if args.action in ("decide", "adopt", "present", "revise") and not args.ids:
         fail("err_ids")
     if args.action == "adopt":
