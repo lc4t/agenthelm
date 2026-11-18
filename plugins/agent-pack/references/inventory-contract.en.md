@@ -5,7 +5,7 @@
 A read-only command that answers: which Skills and MCP servers does each client see now, in which store and scope do they live, which are duplicated, and which have a recognizable origin. The output is for people and for later write commands and menus, so the JSON is a contract: **keys are only appended, never removed or redefined**; a breaking change must bump `schema_version`.
 
 ```
-agenthelm inventory [--output json|text] [--client claude|codex|cursor]... [--type skills|mcp|all]
+agenthelm inventory [--output json|text] [--client claude|codex|cursor|claude-desktop|all]... [--type skills|mcp|all]
                     [--scope project|user|all] [--project DIR] [--lang zh|en|auto]
 ```
 
@@ -55,6 +55,16 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor]... [--ty
 ## `unknown[]`
 
 `{store, client, reason}`. `reason`: `invalid-json`, `invalid-toml`, `unreadable`, `too-large`, `unexpected-structure`, `claude-local-structure-unrecognized`.
+
+## Claude Desktop (`claude-desktop`, read-only)
+
+`--client claude-desktop` reads the Claude Desktop app's `claude_desktop_config.json` as a **separate target**, not merged into `claude` (the standalone CLI does not read that file). It is **not in the default client set**: name it with `--client claude-desktop` or use `--client all`; default output is unchanged.
+
+- Location (official documentation, <https://modelcontextprotocol.io/docs/develop/connect-local-servers>, read 2026-11-18): macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Linux `~/.config/Claude/claude_desktop_config.json`; Windows is `%APPDATA%\Claude\claude_desktop_config.json`, which this command does not resolve (it records `platform-unsupported` in `unknown[]`).
+- Entries: `client: claude-desktop`, `scope: user`, same fields as any MCP entry; there is no Skill directory and no project level, so `--type skills` and `--scope project` yield nothing. An entry containing `${...}` carries `notes: ["variable-expansion-unconfirmed"]` (the documentation does not say whether this file expands variables).
+- A missing file is `unknown` with `not-found`; a corrupt one is `invalid-json` or `unexpected-structure`.
+- `doctor --client claude-desktop` is read-only, reports observations and warnings only, never produces `issues`, and never changes `ok` or the exit code.
+- `doctor --client claude`: when a project-managed MCP server also exists under the same name in `claude_desktop_config.json`, `clients.claude.shadowed_by[]` gains an advisory entry (the key appears only when there is a finding): `{name, by, store, applies_to: "desktop-local-code-tab", cli_affected: false, severity: "advisory", evidence: "file", precedence_confirmed: false, source_url}`, and a line is added to `warnings`. The hint concerns the Desktop local Code tab only; the standalone CLI is unaffected. **Precedence is unconfirmed**: design document #82 (read 2026-11-11) quoted "with the same name, the Code tab uses the `claude_desktop_config.json` definition"; re-reading <https://code.claude.com/docs/en/desktop#mcp-servers-from-the-claude-desktop-chat-app> on 2026-11-18, the page says only that Desktop loads that file's servers into local Code tab sessions alongside those from `~/.claude.json` and `.mcp.json`, with no same-name precedence. Hence `precedence_confirmed` is `false` and the wording is "may use".
 
 ## Platforms
 
