@@ -60,5 +60,27 @@ INVENTORY = {
 }
 
 
+SHADOW_SKILL = {"store": "~/.claude/skills", "rule": "claude-skill-personal-over-project", "evidence": "file",
+                "source_url": "https://code.claude.com/docs/en/skills"}
+SHADOW_MCP = {"store": "~/.claude.json[<project>]", "rule": "claude-mcp-local-over-user", "evidence": "file",
+              "source_url": "https://code.claude.com/docs/en/mcp"}
+
+
 def inventory() -> dict:
-    return copy.deepcopy(INVENTORY)
+    """precedence / shadowed_by 与真实 inventory 一致：只在官方文档明确优先级的组合里给出结论。"""
+    data = copy.deepcopy(INVENTORY)
+    for entry in [*data["skills"], *data["mcps"]]:
+        name, client, scope = entry["name"], entry["client"], entry["scope"]
+        if name == "code-review" and client == "claude":
+            entry["precedence"] = "winner" if scope == "user" else "shadowed"
+            if scope == "project":
+                entry["shadowed_by"] = SHADOW_SKILL
+        elif name == "search" and client == "claude":
+            entry["precedence"] = "winner" if scope == "local" else "shadowed"
+            if scope == "user":
+                entry["shadowed_by"] = SHADOW_MCP
+        elif name == "meeting-notes":
+            entry["precedence"] = "both-load"
+        elif name == "fetch":
+            entry["precedence"] = "unknown"
+    return data
