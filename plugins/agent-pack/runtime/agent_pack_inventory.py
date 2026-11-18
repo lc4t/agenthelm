@@ -39,6 +39,13 @@ OVERLAP_MIN_TOKENS = 5
 MAX_SKILL_MD = 4 * 1024 * 1024
 MAX_CONFIG = 32 * 1024 * 1024
 PROJECT = "<project>"
+DESCRIPTION_LIMIT = 1536  # characters of description text shown with --include-description
+MAX_DIR_FILES = 20000
+PRIMARY_SKILL_STORE = {  # refs of entries in any other store carry a ``#agents`` suffix so a ref stays unique
+    ("claude", "user"): "~/.claude/skills", ("claude", "project"): f"{PROJECT}/.claude/skills",
+    ("codex", "user"): "~/.codex/skills", ("codex", "project"): f"{PROJECT}/.agents/skills",
+    ("cursor", "user"): "~/.cursor/skills", ("cursor", "project"): f"{PROJECT}/.cursor/skills",
+}
 
 # Official documentation the precedence conclusions rest on (read 2026-11-11, see references/inventory-contract.md).
 DOC_CLAUDE_MCP = "https://code.claude.com/docs/en/mcp"
@@ -74,6 +81,7 @@ REASON_TEXT = {
     "description-missing": N_("frontmatter 没有 description"),
     "name-mismatch": N_("frontmatter 的 name 与目录名不同"),
     "skill-md-too-large": N_("SKILL.md 过大，未解析"),
+    "dir-too-large": N_("目录文件过多，未统计大小与文件数"),
     "codex-project-requires-trust": N_("Codex 只在受信任的项目里读取项目级配置；本工具读不到信任记录"),
 }
 
@@ -102,6 +110,7 @@ def resolve_store(store: str, home: Path, project: Path | None) -> Path | None:
     return Path(store)
 
 
+ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}")
 _VAR_DEFAULT_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-[^}]*\}")
 REDACTED = "<redacted>"
 
@@ -142,6 +151,21 @@ def _redact_args(args: list[Any]) -> list[str]:
     return result
 
 
+def _credential_query(key: str, value: str) -> bool:
+    return bool(core.SECRET_NAME_RE.search(key) or core.SECRET_VALUE_RE.search(value) or core.looks_like_token(value))
+
+
+def _url_has_credential(url: str | None) -> bool:
+    if not url:
+        return False
+    try:
+        parts = urlsplit(_plain_variables(url))
+        return bool(parts.username or parts.password or any(
+            not _safe_reference(val) and _credential_query(key, val) for key, val in parse_qsl(parts.query)))
+    except ValueError:
+        return False
+
+
 def _redact_url(value: str) -> str:
     text = _plain_variables(value)
     try:
@@ -154,6 +178,13 @@ def _redact_url(value: str) -> str:
         return urlunsplit((parts.scheme, netloc, parts.path, query, ""))
     except ValueError:
         return REDACTED
+
+
+def _host(url: str) -> str | None:
+    try:
+        return urlsplit(url).hostname
+    except ValueError:
+        return None
 
 
 def _digest(*parts: str) -> str:
@@ -295,28 +326,85 @@ def _state_mcp_names(home: Path) -> dict[str, str]:
     return owned
 
 
+def _origin(kind: str, detail: str | None, otype: str, oid: str | None, version: str | None, latest: str,
+            evidence: str = "file") -> dict:
+    """``kind`` / ``detail`` are the first-version keys; ``type`` / ``id`` / ``version`` / ``latest_known`` /
+    ``evidence`` are the structured form (``latest_known`` is the highest version found on this machine, offline)."""
+    return {"kind": kind, "detail": detail, "type": otype, "id": oid, "version": version, "latest_known": latest,
+            "evidence": evidence}
+
+
+def _git_root(real: Path, home: Path) -> Path | None:
+    for parent in real.parents:
+        if parent == home or parent == parent.parent:
+            return None
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
 def _skill_origin(entry: Path, client: str, scope: str, name: str, versions: dict[str, tuple[str, ...]],
-                  state: dict[str, str]) -> tuple[dict, str | None, Any]:
+                  state: dict[str, str], home: Path) -> tuple[dict, str | None, Any]:
     """(origin, version, stale): only an entry whose source and version can be read gets a stale verdict."""
+    unknown = _origin("unknown", None, "unknown", None, None, "unknown", "unknown")
     try:
         real = entry.resolve()
     except OSError:
-        return {"kind": "unknown", "detail": None}, None, "unknown"
+        return unknown, None, "unknown"
     manifest = _plugin_manifest(real.parent.parent) if real.parent.name == "skills" else None
     if (manifest and manifest.get("name") in AGENTHELM_PLUGINS and isinstance(manifest.get("version"), str)
             and AGENTHELM_REPOSITORY in str(manifest.get("repository", ""))):
         plugin, version = manifest["name"], manifest["version"]
-        known = [*versions.get(plugin, ()), version]
-        newest = max(known, key=core._version_tuple)
+        newest = max([*versions.get(plugin, ()), version], key=core._version_tuple)
         stale: Any = core._version_tuple(version) < core._version_tuple(newest)
-        return {"kind": "agenthelm-plugin", "detail": f"{plugin}@{version}"}, version, stale
+        return _origin("agenthelm-plugin", f"{plugin}@{version}", "plugin", plugin, version, newest), version, stale
     if client == "claude" and scope == "user" and name in state and entry.is_symlink():
-        return {"kind": "state-record", "detail": state[name]}, None, "unknown"
-    return {"kind": "unknown", "detail": None}, None, "unknown"
+        return _origin("state-record", state[name], "unknown", state[name], None, "unknown"), None, "unknown"
+    if manifest and isinstance(manifest.get("name"), str) and any(part in real.parts for part in ("cache", "marketplaces")) \
+            and "plugins" in real.parts:
+        version = manifest.get("version") if isinstance(manifest.get("version"), str) else None
+        return _origin("unknown", None, "marketplace", manifest["name"], version, "unknown"), version, "unknown"
+    if entry.is_symlink():
+        root = _git_root(real, home)
+        if root is not None:
+            return _origin("unknown", None, "git", root.name, None, "unknown"), None, "unknown"
+    return unknown, None, "unknown"
+
+
+def _link_kind(entry: Path, home: Path) -> str | None:
+    if not entry.is_symlink():
+        return None
+    try:
+        raw = os.readlink(entry)
+    except OSError:
+        return None
+    if not os.path.isabs(raw):
+        return "relative"
+    return "absolute" if raw == str(home) or raw.startswith(str(home) + os.sep) else "outside-home"
+
+
+def _dir_stats(entry: Path) -> tuple[int | None, int | None]:
+    """(total bytes, file count) of the skill directory; symlinks inside are counted, not followed."""
+    total = count = 0
+    try:
+        for current, dirs, files in os.walk(entry, followlinks=False):
+            dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(current, d))]
+            for file in files:
+                count += 1
+                if count > MAX_DIR_FILES:
+                    return None, None
+                try:
+                    total += os.lstat(os.path.join(current, file)).st_size
+                except OSError:
+                    pass
+    except OSError:
+        return None, None
+    return total, count
 
 
 def observe_skill(entry: Path, client: str, scope: str, store: str, home: Path, project: Path | None,
-                  versions: dict[str, tuple[str, ...]], state: dict[str, str]) -> dict | None:
+                  versions: dict[str, tuple[str, ...]], state: dict[str, str],
+                  include_description: bool = False) -> dict | None:
     """One skill directory entry, or ``None`` when it is not a skill (no ``SKILL.md``)."""
     name = entry.name
     link = entry.is_symlink()
@@ -330,9 +418,13 @@ def observe_skill(entry: Path, client: str, scope: str, store: str, home: Path, 
         "name": name, "client": client, "scope": scope, "store": store,
         "path": f"{store}/{name}",
         "frontmatter": None, "description_bytes": 0, "skill_md_bytes": 0, "content_sha256": None,
-        "origin": {"kind": "unknown", "detail": None},
+        "origin": _origin("unknown", None, "unknown", None, None, "unknown", "unknown"),
         "symlink": {"is_symlink": link, "target": target},
         "version": None, "stale": "unknown", "evidence": "file", "issues": [],
+        "description_chars": 0, "when_to_use_chars": 0, "when_to_use_bytes": 0, "skill_md_lines": 0,
+        "dir_bytes": None, "file_count": None, "is_symlink": link, "link_target_kind": _link_kind(entry, home),
+        "name_matches_dir": None, "frontmatter_ok": False,
+        "loaded": "unknown", "precedence": "unique", "shadowed_by": None,
     }
     skill_md = entry / "SKILL.md"
     try:
@@ -346,7 +438,10 @@ def observe_skill(entry: Path, client: str, scope: str, store: str, home: Path, 
         return record
     if not isdir or not has_md:
         return None
-    record["origin"], record["version"], record["stale"] = _skill_origin(entry, client, scope, name, versions, state)
+    record["origin"], record["version"], record["stale"] = _skill_origin(entry, client, scope, name, versions, state, home)
+    record["dir_bytes"], record["file_count"] = _dir_stats(entry.resolve() if link else entry)
+    if record["file_count"] is None:
+        record["issues"].append("dir-too-large")
     raw, reason = _read_bytes(skill_md, MAX_SKILL_MD)
     if raw is None:
         record["issues"].append("skill-md-too-large" if reason == "too-large" else "frontmatter-missing")
@@ -358,23 +453,35 @@ def observe_skill(entry: Path, client: str, scope: str, store: str, home: Path, 
         return record
     record["skill_md_bytes"] = len(raw)
     record["content_sha256"] = hashlib.sha256(raw).hexdigest()
-    meta = parse_frontmatter(raw.decode("utf-8", errors="replace"))
+    text = raw.decode("utf-8", errors="replace")
+    record["skill_md_lines"] = len(text.splitlines())
+    meta = parse_frontmatter(text)
     if meta is None:
         record["issues"].append("frontmatter-missing")
         return record
-    record["frontmatter"] = {"name": meta.get("name"), "description": meta.get("description")}
+    record["frontmatter"] = {"name": meta.get("name")}
     description = meta.get("description")
     if description is None:
         record["issues"].append("description-missing")
     else:
         record["description_bytes"] = len(description.encode("utf-8"))
+        record["description_chars"] = len(description)
+        record["_description"] = description  # for the overlap hints; removed before output
+        if include_description:
+            record["frontmatter"]["description"] = description[:DESCRIPTION_LIMIT]
+    when = meta.get("when_to_use")
+    if when is not None:
+        record["when_to_use_chars"], record["when_to_use_bytes"] = len(when), len(when.encode("utf-8"))
+    record["name_matches_dir"] = meta.get("name") == name if meta.get("name") is not None else None
     if meta.get("name") is not None and meta["name"] != name:
         record["issues"].append("name-mismatch")
+    record["frontmatter_ok"] = bool(meta.get("name") and description)
     return record
 
 
 def _scan_skill_store(client: str, scope: str, store: str, root: Path, home: Path, project: Path | None,
-                      versions: dict[str, tuple[str, ...]], state: dict[str, str]) -> list[dict]:
+                      versions: dict[str, tuple[str, ...]], state: dict[str, str],
+                      include_description: bool = False) -> list[dict]:
     try:
         if not root.is_dir():
             return []
@@ -385,7 +492,7 @@ def _scan_skill_store(client: str, scope: str, store: str, root: Path, home: Pat
     for child in children:
         if child.name.startswith("."):
             continue
-        record = observe_skill(child, client, scope, store, home, project, versions, state)
+        record = observe_skill(child, client, scope, store, home, project, versions, state, include_description)
         if record is not None:
             found.append(record)
     return found
@@ -431,6 +538,19 @@ def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home
         fingerprint = _digest("url", shown_url)
     else:
         fingerprint = None
+    refs = set(ENV_REF.findall(" ".join(filter(None, [command or "", url or "", *map(str, item["args"] if isinstance(item.get("args"), list) else [])]))))
+    for container in ("env", "headers", "http_headers"):
+        if isinstance(item.get(container), dict):
+            for value in item[container].values():
+                refs.update(ENV_REF.findall(str(value)))
+    secret = any(part == REDACTED or part.endswith("=" + REDACTED) for part in args) or _url_has_credential(url)
+    for container in ("env", "headers", "http_headers"):
+        if isinstance(item.get(container), dict):
+            for key, value in item[container].items():
+                text = str(value)
+                if not _safe_reference(text) and not ENV_REF.fullmatch(text) and (
+                        core.SECRET_NAME_RE.search(str(key)) or core.SECRET_VALUE_RE.search(text) or core.looks_like_token(text)):
+                    secret = True
     record: dict[str, Any] = {
         "name": name, "client": client, "scope": scope, "store": store, "transport": transport,
         "command": shown_command, "args": args,
@@ -438,6 +558,10 @@ def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home
         "fingerprint": fingerprint,
         "origin": {"kind": "unknown", "detail": None},
         "evidence": "file", "notes": [],
+        "env_var_names": sorted(env_names | refs), "has_inline_secret": secret,
+        "fingerprint_fields": ["command", "args"] if fingerprint and transport == "stdio" else (["url"] if fingerprint else []),
+        "url_host": _host(shown_url) if shown_url and transport != "stdio" else None,
+        "loaded": "unknown", "precedence": "unique", "shadowed_by": None,
     }
     if client == "claude" and scope == "user" and name in state:
         record["origin"] = {"kind": "state-record", "detail": state[name]}
@@ -517,7 +641,7 @@ def overlap_hints(skills: list[dict]) -> list[dict]:
     hints = []
     by_client: dict[str, list[dict]] = {}
     for item in skills:
-        description = (item.get("frontmatter") or {}).get("description")
+        description = item.get("_description")
         if description:
             by_client.setdefault(item["client"], []).append({**item, "_t": _tokens(description)})
     for client, items in sorted(by_client.items()):
@@ -618,10 +742,44 @@ def mcp_duplicates(mcps: list[dict]) -> list[dict]:
     return result
 
 
+def entry_ref(item: dict, kind: str) -> str:
+    """``<kind>:<name>@<client>:<scope>``; a skill outside the client's primary store for that scope gets ``#agents``."""
+    ref = f"{kind}:{item['name']}@{item['client']}:{item['scope']}"
+    if kind == "skill" and item["store"] != PRIMARY_SKILL_STORE.get((item["client"], item["scope"]), item["store"]):
+        ref += "#agents"
+    return ref
+
+
+def _annotate(skills: list[dict], mcps: list[dict], duplicates: dict) -> None:
+    """Stable ``ref`` for every entry, and ``precedence`` / ``shadowed_by`` from the duplicate groups' ``effective``."""
+    for kind, items, groups in (("skill", skills, duplicates["skills"]), ("mcp", mcps, duplicates["mcps"])):
+        for item in items:
+            item["ref"] = entry_ref(item, kind)
+        for group in groups:
+            if group.get("kind", "same-name") != "same-name" or group["relation"] == "same-file":
+                continue
+            effective = group.get("effective") or {}
+            for item in items:
+                if item["client"] != group["client"] or item["name"] not in (group.get("names") or [group.get("name")]):
+                    continue
+                if (item["path"] if kind == "skill" else item["store"]) not in group["stores"]:
+                    continue
+                if effective.get("rule") == "both-load":
+                    item["precedence"] = "both-load"
+                elif effective.get("store"):
+                    won = item["store"] == effective["store"]
+                    item["precedence"] = "winner" if won else "shadowed"
+                    if not won:
+                        item["shadowed_by"] = {"store": effective["store"], "rule": effective["rule"],
+                                               "evidence": effective["evidence"], "source_url": effective["source_url"]}
+                else:
+                    item["precedence"] = "unknown"
+
+
 # ------------------------------------------------------------------ entry point
 
 def observe(home: Path, project: Path | None = None, clients: list[str] | None = None, types: str = "all",
-            scope: str = "all") -> dict:
+            scope: str = "all", include_description: bool = False) -> dict:
     """Everything the chosen clients can see, as the ``schema_version`` 1 document. Read-only and never raises on
     bad input files (they become ``unknown`` entries)."""
     home = home.expanduser().resolve()
@@ -645,7 +803,8 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
                 root = resolve_store(store, home, project)
                 if root is None or not wanted(item_scope):
                     continue
-                for record in _scan_skill_store(client, item_scope, store, root, home, project, versions, skill_state):
+                for record in _scan_skill_store(client, item_scope, store, root, home, project, versions, skill_state,
+                                                include_description):
                     skills.append(record)
                     real = _real(root / record["name"])
                     if real:
@@ -657,6 +816,11 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
     order = {client: index for index, client in enumerate(CLIENTS)}
     skills.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
     mcps.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
+    duplicates = {"skills": skill_duplicates(skills, real_paths), "mcps": mcp_duplicates(mcps)}
+    hints = overlap_hints(skills)
+    _annotate(skills, mcps, duplicates)
+    for item in skills:
+        item.pop("_description", None)
     summary: dict[str, dict] = {}
     for client in chosen:
         mine = [item for item in skills if item["client"] == client]
@@ -678,8 +842,8 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
         "skills": skills,
         "mcps": mcps,
         "summary": {"per_client": summary},
-        "duplicates": {"skills": skill_duplicates(skills, real_paths), "mcps": mcp_duplicates(mcps)},
-        "overlap_hints": overlap_hints(skills),
+        "duplicates": duplicates,
+        "overlap_hints": hints,
         "unknown": unknown,
     }
 

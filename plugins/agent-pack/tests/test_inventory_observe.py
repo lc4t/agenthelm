@@ -16,6 +16,9 @@ sys.path.insert(0, str(RUNTIME))
 
 import agent_pack_inventory as inv  # noqa: E402
 
+NEW_SKILL_KEYS = ["description_chars", "when_to_use_chars", "when_to_use_bytes", "skill_md_lines", "dir_bytes", "file_count",
+                  "is_symlink", "link_target_kind", "name_matches_dir", "frontmatter_ok", "loaded", "precedence", "shadowed_by", "ref"]
+NEW_MCP_KEYS = ["env_var_names", "has_inline_secret", "fingerprint_fields", "url_host", "loaded", "precedence", "shadowed_by", "ref"]
 SECRETS = ("sk-abcdefghijklmnopqrstuv", "supersecretvalue", "hunter2token", "Bearer zzzsecret", "qqquerysecret")
 
 
@@ -94,13 +97,17 @@ class SkillTests(Fixture):
         self.assertEqual(item["content_sha256"], hashlib.sha256(raw).hexdigest())
         self.assertEqual((item["client"], item["scope"], item["store"], item["path"]),
                          ("claude", "user", "~/.claude/skills", "~/.claude/skills/alpha"))
-        self.assertEqual(item["frontmatter"], {"name": "alpha", "description": description})
+        self.assertEqual(item["frontmatter"], {"name": "alpha"})  # the text is shown only with include_description
+        self.assertNotIn(description, json.dumps(self.observe()))
+        shown = self.observe(include_description=True)["skills"][0]["frontmatter"]
+        self.assertEqual(shown, {"name": "alpha", "description": description})
+        self.assertEqual(item["description_chars"], len(description))
         self.assertEqual((item["evidence"], item["origin"]["kind"], item["stale"]), ("file", "unknown", "unknown"))
 
     def test_block_scalar_description(self) -> None:
         text = "---\nname: folded\ndescription: >\n  first line\n  second line\n---\n"
         self.skill(self.home / ".claude" / "skills", "folded", text=text)
-        self.assertEqual(self.observe()["skills"][0]["frontmatter"]["description"], "first line second line")
+        self.assertEqual(self.observe(include_description=True)["skills"][0]["frontmatter"]["description"], "first line second line")
 
     def test_summary_counts_description_bytes_per_client(self) -> None:
         self.skill(self.home / ".claude" / "skills", "one", "x" * 10)
@@ -196,7 +203,8 @@ class SkillTests(Fixture):
         (self.home / ".claude" / "skills" / "agent-pack").symlink_to(self.root / "old" / "skills" / "agent-pack")
         self.skill(self.home / ".claude" / "skills", "stranger")
         items = {item["name"]: item for item in self.observe(clients=["claude"])["skills"]}
-        self.assertEqual(items["agent-pack"]["origin"], {"kind": "agenthelm-plugin", "detail": "agent-pack@1.0.0"})
+        self.assertEqual({key: items["agent-pack"]["origin"][key] for key in ("kind", "detail")},
+                         {"kind": "agenthelm-plugin", "detail": "agent-pack@1.0.0"})
         self.assertEqual((items["agent-pack"]["version"], items["agent-pack"]["stale"]), ("1.0.0", True))
         self.assertEqual((items["stranger"]["origin"]["kind"], items["stranger"]["stale"]), ("unknown", "unknown"))
 
@@ -208,7 +216,7 @@ class SkillTests(Fixture):
         (self.home / ".claude" / "skills" / "linked").symlink_to(real)
         self.write(self.home / ".claude.json", {"mcpServers": {"srv": {"command": "node"}}})
         report = self.observe(clients=["claude"])
-        self.assertEqual(report["skills"][0]["origin"], {"kind": "state-record", "detail": "mypkg"})
+        self.assertEqual({key: report["skills"][0]["origin"][key] for key in ("kind", "detail")}, {"kind": "state-record", "detail": "mypkg"})
         self.assertEqual(report["skills"][0]["stale"], "unknown")
         self.assertEqual(report["mcps"][0]["origin"], {"kind": "state-record", "detail": "mypkg"})
 
@@ -223,6 +231,108 @@ class SkillTests(Fixture):
         self.assertEqual([hint["names"] for hint in hints], [["deck-a", "deck-b"]])
         self.assertTrue(hints[0]["hint_only"])
         self.assertGreaterEqual(hints[0]["similarity"], inv.OVERLAP_THRESHOLD)
+
+
+class MenuFieldTests(Fixture):
+    """Fields the menu design (#123) asked for: sizes, link kinds, structured origin, refs, precedence."""
+
+    def test_sizes_lines_and_flags(self) -> None:
+        text = "---\nname: sized\ndescription: abc\nwhen_to_use: when needed\n---\nline\n"
+        directory = self.skill(self.home / ".claude" / "skills", "sized", text=text)
+        (directory / "references").mkdir()
+        (directory / "references" / "a.md").write_text("12345", encoding="utf-8")
+        item = self.observe()["skills"][0]
+        self.assertEqual((item["description_chars"], item["when_to_use_chars"], item["when_to_use_bytes"]), (3, 11, 11))
+        self.assertEqual((item["skill_md_lines"], item["file_count"], item["dir_bytes"]), (6, 2, len(text.encode()) + 5))
+        self.assertEqual((item["name_matches_dir"], item["frontmatter_ok"]), (True, True))
+        self.skill(self.home / ".claude" / "skills", "wrong", text="---\nname: other\ndescription: d\n---\n")
+        bad = next(entry for entry in self.observe()["skills"] if entry["name"] == "wrong")
+        self.assertEqual((bad["name_matches_dir"], bad["frontmatter_ok"]), (False, True))
+        self.skill(self.home / ".claude" / "skills", "plain", text="no frontmatter")
+        plain = next(entry for entry in self.observe()["skills"] if entry["name"] == "plain")
+        self.assertEqual((plain["name_matches_dir"], plain["frontmatter_ok"]), (None, False))
+
+    def test_description_is_truncated_when_included(self) -> None:
+        self.skill(self.home / ".claude" / "skills", "long", "w" * 3000)
+        item = self.observe(include_description=True)["skills"][0]
+        self.assertEqual((len(item["frontmatter"]["description"]), item["description_chars"]), (inv.DESCRIPTION_LIMIT, 3000))
+
+    def test_link_target_kinds(self) -> None:
+        real = self.skill(self.root / "outside", "o")
+        inside = self.skill(self.home / "store", "i")
+        base = self.home / ".claude" / "skills"
+        base.mkdir(parents=True)
+        (base / "o").symlink_to(real)
+        (base / "i").symlink_to(inside)
+        (base / "r").symlink_to(Path("..") / ".." / "store" / "i")
+        (base / "plain-dir").mkdir()
+        self.skill(base, "plain")
+        kinds = {item["name"]: (item["is_symlink"], item["link_target_kind"]) for item in self.observe()["skills"]}
+        self.assertEqual(kinds, {"o": (True, "outside-home"), "i": (True, "absolute"), "r": (True, "relative"),
+                                 "plain": (False, None)})
+
+    def test_structured_origin(self) -> None:
+        base = self.root / "pkg"
+        self.write(base / "plugin.json", {"name": "agent-pack", "version": "1.0.0", "repository": "https://github.com/lc4t/agenthelm"})
+        self.skill(base / "skills", "agent-pack")
+        self.write(self.home / ".agents" / "plugins" / "plugins" / "agent-pack" / "plugin.json",
+                   {"name": "agent-pack", "version": "2.0.0", "repository": "https://github.com/lc4t/agenthelm"})
+        (self.home / ".claude" / "skills").mkdir(parents=True)
+        (self.home / ".claude" / "skills" / "agent-pack").symlink_to(base / "skills" / "agent-pack")
+        self.skill(self.home / ".claude" / "skills", "manual")
+        repo = self.root / "repo"
+        (repo / ".git").mkdir(parents=True)
+        self.skill(repo / "skills", "from-git")
+        (self.home / ".claude" / "skills" / "from-git").symlink_to(repo / "skills" / "from-git")
+        items = {item["name"]: item["origin"] for item in self.observe(clients=["claude"])["skills"]}
+        self.assertEqual({key: items["agent-pack"][key] for key in ("type", "id", "version", "latest_known", "evidence")},
+                         {"type": "plugin", "id": "agent-pack", "version": "1.0.0", "latest_known": "2.0.0", "evidence": "file"})
+        self.assertEqual((items["manual"]["type"], items["manual"]["latest_known"]), ("unknown", "unknown"))
+        self.assertEqual((items["from-git"]["type"], items["from-git"]["id"]), ("git", "repo"))
+
+    def test_refs_are_stable_and_unique(self) -> None:
+        self.skill(self.home / ".codex" / "skills", "s")
+        self.skill(self.home / ".agents" / "skills", "s")
+        self.skill(self.home / ".claude" / "skills", "c")
+        self.write(self.home / ".claude.json", {"mcpServers": {"m": {"command": "x"}}})
+        report = self.observe()
+        refs = [item["ref"] for item in (*report["skills"], *report["mcps"])]
+        self.assertEqual(len(refs), len(set(refs)))
+        self.assertIn("skill:c@claude:user", refs)
+        self.assertIn("skill:s@codex:user", refs)
+        self.assertIn("skill:s@codex:user#agents", refs)
+        self.assertIn("mcp:m@claude:user", refs)
+
+    def test_precedence_and_shadowed_by_follow_the_documented_rules(self) -> None:
+        self.skill(self.home / ".claude" / "skills", "d", "one description for the first copy here")
+        self.skill(self.project / ".claude" / "skills", "d", "other words entirely in the second copy")
+        self.skill(self.home / ".agents" / "skills", "e")
+        self.skill(self.project / ".agents" / "skills", "e", "something else with different words here ok")
+        by = {(item["client"], item["scope"], item["name"]): item for item in self.observe()["skills"]}
+        self.assertEqual(by[("claude", "user", "d")]["precedence"], "winner")
+        shadowed = by[("claude", "project", "d")]
+        self.assertEqual((shadowed["precedence"], shadowed["shadowed_by"]["store"]), ("shadowed", "~/.claude/skills"))
+        self.assertEqual(shadowed["shadowed_by"]["source_url"], inv.DOC_CLAUDE_SKILLS)
+        self.assertEqual(by[("codex", "user", "e")]["precedence"], "both-load")
+        self.assertEqual(by[("cursor", "user", "e")]["precedence"], "unknown")
+        self.assertIsNone(by[("cursor", "user", "e")]["shadowed_by"])
+        self.assertEqual({item["loaded"] for item in by.values()}, {"unknown"})  # settings are not read in this version
+
+    def test_mcp_menu_fields(self) -> None:
+        self.write(self.home / ".claude.json", {"mcpServers": {
+            "stdio": {"command": "npx", "args": ["-y", "pkg", "${TOKEN_A}"], "env": {"KEY_B": "${KEY_B}", "PLAIN": "v"}},
+            "inline": {"command": "x", "env": {"API_TOKEN": "literalvalue"}},
+            "remote": {"type": "http", "url": "https://api.example.com:8443/mcp?x=1", "headers": {"Authorization": "Bearer ${TOK}"}},
+            "clean": {"command": "node"}}})
+        items = {item["name"]: item for item in self.observe(clients=["claude"])["mcps"]}
+        self.assertEqual(items["stdio"]["env_var_names"], ["KEY_B", "PLAIN", "TOKEN_A"])
+        self.assertEqual(items["remote"]["env_var_names"], ["TOK"])
+        self.assertEqual({name: item["has_inline_secret"] for name, item in items.items()},
+                         {"stdio": False, "inline": True, "remote": False, "clean": False})
+        self.assertEqual(items["stdio"]["fingerprint_fields"], ["command", "args"])
+        self.assertEqual(items["remote"]["fingerprint_fields"], ["url"])
+        self.assertEqual((items["remote"]["url_host"], items["stdio"]["url_host"]), ("api.example.com", None))
+        self.assertNotIn("literalvalue", json.dumps(items))
 
 
 class McpTests(Fixture):
@@ -336,10 +446,10 @@ class McpTests(Fixture):
                                         "summary", "duplicates", "overlap_hints", "unknown"])
         self.assertEqual(sorted(report["skills"][0]), sorted([
             "name", "client", "scope", "store", "path", "frontmatter", "description_bytes", "skill_md_bytes", "content_sha256",
-            "origin", "symlink", "version", "stale", "evidence", "issues"]))
+            "origin", "symlink", "version", "stale", "evidence", "issues", *NEW_SKILL_KEYS]))
         self.assertEqual(sorted(report["mcps"][0]), sorted([
             "name", "client", "scope", "store", "transport", "command", "args", "url", "env_names", "header_names",
-            "fingerprint", "origin", "evidence", "notes"]))
+            "fingerprint", "origin", "evidence", "notes", *NEW_MCP_KEYS]))
 
 
 class ExistingInventoryUnchangedTests(Fixture):

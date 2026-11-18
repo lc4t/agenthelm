@@ -6,12 +6,13 @@ English: [inventory-contract.en.md](inventory-contract.en.md)
 
 ```
 agenthelm inventory [--output json|text] [--client claude|codex|cursor]… [--type skills|mcp|all]
-                    [--scope project|user|all] [--project 目录] [--lang zh|en|auto]
+                    [--scope project|user|all] [--project 目录] [--include-description] [--lang zh|en|auto]
 ```
 
 - 默认读全部三个客户端、全部类型与作用域；`--project` 缺省为当前目录。`--scope project` 同时包含 Claude 的 `local` 级。
 - 不写任何文件、不执行客户端命令行、不读设置键、不读令牌存储。退出码 0；参数错误 2。文件缺失视为没有该存储；文件存在但损坏则写入 `unknown[]`，不崩溃。
 - `--output text` 随界面语言（`AGENTHELM_LANG` 或 `--lang`）；JSON 的键与取值（含原因代码）固定为英文标识。
+- 默认不输出 description 文本；`--include-description` 才在 `frontmatter.description` 给出（截断到 1,536 个字符）。
 - 路径用 `~`（家目录）与 `<project>`（项目根）缩写；符号链接目标位于这两处之外时保持绝对路径。
 
 ## 证据等级 `evidence`
@@ -24,20 +25,26 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor]… [--ty
 
 ## Skill 条目
 
-`name`、`client`、`scope`（`user|project`）、`store`、`path`、`frontmatter{name,description}|null`、`description_bytes`（description 的 UTF-8 字节数）、`skill_md_bytes`、`content_sha256`（SKILL.md 全文）、`origin{kind,detail}`、`symlink{is_symlink,target}`、`version`、`stale`、`evidence`、`issues[]`。
+`ref`、`name`、`client`、`scope`（`user|project`）、`store`、`path`、`frontmatter{name[,description]}|null`、`description_bytes`、`description_chars`、`when_to_use_chars`、`when_to_use_bytes`（frontmatter 的 `when_to_use`，没有则 0）、`skill_md_bytes`、`skill_md_lines`、`dir_bytes`、`file_count`（技能目录内文件总字节数与个数，目录内符号链接只计不跟随；超过 20000 个文件时为 `null` 并带 `dir-too-large`）、`content_sha256`（SKILL.md 全文）、`name_matches_dir`（frontmatter 无 name 时为 `null`）、`frontmatter_ok`（有 name 与 description）、`is_symlink`、`link_target_kind`（`relative|absolute|outside-home|null`，`absolute` 指家目录内的绝对路径）、`symlink{is_symlink,target}`、`origin`、`version`、`stale`、`loaded`、`precedence`、`shadowed_by`、`evidence`、`issues[]`。
 
-- `origin.kind`：`agenthelm-plugin`（解析符号链接后位于 `plugin.json` 声明为 agenthelm 仓库的插件内）、`state-record`（Claude 的同步状态记录 `~/.claude/agent-pack/state/*.json` 登记了它）、`unknown`。
+- `origin`：`{kind, detail}` 为第一版键；结构化形式 `{type, id, version, latest_known, evidence}`：`type` 为 `plugin`（可识别的 agenthelm 插件）、`marketplace`（位于客户端市场缓存目录的插件）、`git`（符号链接目标位于某个 git 仓库内）、`unknown`；`latest_known` 是本机各客户端插件目录里找到的同名插件最高版本，**不联网**，找不到为 `"unknown"`。没有 `manual` 值：无法区分「手工放置」与「来源不明」，一律 `unknown`。`kind`：`agenthelm-plugin`（解析符号链接后位于 `plugin.json` 声明为 agenthelm 仓库的插件内）、`state-record`（Claude 的同步状态记录 `~/.claude/agent-pack/state/*.json` 登记了它）、`unknown`。
 - `stale` 只对 `agenthelm-plugin` 给 `true|false`：版本低于本机各客户端插件目录里找到的同名插件最高版本为 `true`；`false` 只表示本机没有更新的副本，不代表云端最新。其余一律 `"unknown"`，不猜。
-- `issues[]`：`broken-symlink`、`frontmatter-missing`、`description-missing`、`name-mismatch`、`skill-md-too-large`。
+- `loaded`：本版本恒为 `"unknown"`（要判定须读 `skillOverrides`、`[[skills.config]]` 等设置键，本版不读，证据等级为 `setting`，保留）。`precedence`：`unique`（无同名）、`winner`、`shadowed`、`both-load`、`unknown`；`shadowed_by{store,rule,evidence,source_url}` 只在官方文档明确优先级且本条目落败时给出。
+- `issues[]`：`broken-symlink`、`frontmatter-missing`、`description-missing`、`name-mismatch`、`skill-md-too-large`、`dir-too-large`。
 - 读取的存储：Claude `~/.claude/skills`、`<project>/.claude/skills`；Codex `~/.codex/skills`、`~/.agents/skills`、`<project>/.agents/skills`；Cursor `~/.cursor/skills`、`~/.agents/skills`、`<project>/.cursor/skills`、`<project>/.agents/skills`。以点开头的条目（如 `.system`）跳过。未覆盖：企业/管理员级目录、从子目录向上逐级扫描、Cursor 对 `.claude/skills` 的兼容加载。
 
 ## MCP 条目
 
-`name`、`client`、`scope`（`user|local|project`）、`store`、`transport`（`stdio|http|sse|unknown`）、`command`、`args[]`、`url`、`env_names[]`、`header_names[]`、`fingerprint`、`origin`、`evidence`、`notes[]`。
+`ref`、`name`、`client`、`scope`（`user|local|project`）、`store`、`transport`（`stdio|http|sse|unknown`）、`command`、`args[]`、`url`、`url_host`（仅远程，只有主机名，不含端口与 query）、`env_names[]`（`env` 的键名）、`env_var_names[]`（涉及的环境变量名：`env` 键名加 `${VAR}` 引用，仅名字）、`header_names[]`、`has_inline_secret`（布尔：是否存在内联的凭据值；不给键名、不给值）、`fingerprint`、`fingerprint_fields[]`（参与指纹的字段名：`["command","args"]` 或 `["url"]`）、`origin`、`loaded`（恒 `"unknown"`）、`precedence`、`shadowed_by`、`evidence`、`notes[]`。
 
 - **绝不输出 `env` 值、`headers` 值、令牌**：只给键名（`env_names`、`header_names`）。`args` 与 `url` 里疑似凭据的值替换为 `<redacted>`，URL 的用户信息与查询值同理；`${VAR:-默认值}` 只保留 `${VAR}`。
 - `fingerprint`：对**已脱敏**的 `command+args` 或 `url` 取 SHA-256，用于判重，不含 `env` 与 `headers`。
 - 读取的存储：Claude `~/.claude.json`（用户级 `mcpServers`）、`~/.claude.json` 内 `projects[<项目绝对路径>].mcpServers`（local 级，按官方文档示例的结构读取，结构不符记 `unknown`）、`<project>/.mcp.json`；Codex `~/.codex/config.toml`（`mcp_servers`）、`<project>/.codex/config.toml`（带 `notes: ["codex-project-requires-trust"]`，信任记录读不到）；Cursor `~/.cursor/mcp.json`、`<project>/.cursor/mcp.json`。
+
+## 条目引用 `ref` 与版本兼容约定
+
+- `ref` = `<kind>:<name>@<客户端>:<作用域>`，`kind` 为 `skill` 或 `mcp`，例如 `skill:pdf-notes@claude:user`、`mcp:github@claude:local`。同一客户端与作用域下，Skill 位于「主存储」之外的条目加后缀 `#agents`（主存储：Claude `~/.claude/skills` 与 `<project>/.claude/skills`；Codex `~/.codex/skills` 与 `<project>/.agents/skills`；Cursor `~/.cursor/skills` 与 `<project>/.cursor/skills`；其余即 `~/.agents/skills`、Cursor 的 `<project>/.agents/skills`），所以 `ref` 在一份输出内唯一，且不随其他条目的出现而变化。
+- 兼容约定：**新增键不升 `schema_version`**；删除键、改变键含义或取值集合的收窄才升主版本。消费方遇到不认识的 `schema_version` 应降级为「不可用」，不要猜测字段含义；遇到不认识的新键应忽略。
 
 ## 汇总与重复
 

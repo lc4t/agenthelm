@@ -672,5 +672,7 @@
  "重复 [{0}] {1}（{2}）：{3}": "Duplicate [{0}] {1} ({2}): {3}",
  "相似提示（仅机械比对，不是语义判断）[{0}] {1}：{2}": "Similarity hint (mechanical comparison only, not a semantic judgement) [{0}] {1}: {2}",
  "无法判定：{0}（{1}）": "Undetermined: {0} ({1})",
- "没有发现任何 Skill 或 MCP 配置。": "No Skill or MCP configuration found."
+ "没有发现任何 Skill 或 MCP 配置。": "No Skill or MCP configuration found.",
+ "在 JSON 里附上 description 文本（截断到 1,536 个字符）；默认不输出": "Include the description text in the JSON (truncated to 1,536 characters); off by default",
+ "目录文件过多，未统计大小与文件数": "Too many files in the directory; size and file count not computed"
 }

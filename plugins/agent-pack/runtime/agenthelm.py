@@ -2540,6 +2540,8 @@ def parser() -> argparse.ArgumentParser:
     inventory.add_argument("--type", choices=("skills", "mcp", "all"), default="all", help=_("只看 Skill 或 MCP；默认全部"))
     inventory.add_argument("--scope", choices=("project", "user", "all"), default="all", help=_("只看项目级或用户级；默认全部"))
     inventory.add_argument("--project", type=Path, default=None, help=_("项目目录；默认当前目录"))
+    inventory.add_argument("--include-description", action="store_true",
+                           help=_("在 JSON 里附上 description 文本（截断到 1,536 个字符）；默认不输出"))
     inventory.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
     inventory.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     locate_parser = sub.add_parser("locate", help=_("输出插件的已安装位置（最新优先），供下游脚本查找"))
@@ -2671,7 +2673,8 @@ def run_inventory(args: argparse.Namespace, env: Env) -> int:
     import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
 
     project = (args.project or Path.cwd()).resolve()
-    report = agent_pack_inventory.observe(env.home, project, args.client, args.type, args.scope)
+    report = agent_pack_inventory.observe(env.home, project, args.client, args.type, args.scope,
+                                          include_description=args.include_description)
     if args.output == "json":
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:

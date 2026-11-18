@@ -6,12 +6,13 @@ A read-only command that answers: which Skills and MCP servers does each client 
 
 ```
 agenthelm inventory [--output json|text] [--client claude|codex|cursor]... [--type skills|mcp|all]
-                    [--scope project|user|all] [--project DIR] [--lang zh|en|auto]
+                    [--scope project|user|all] [--project DIR] [--include-description] [--lang zh|en|auto]
 ```
 
 - By default it reads all three clients, all types and scopes; `--project` defaults to the current directory. `--scope project` also includes Claude's `local` level.
 - It writes no file, runs no client command line, reads no settings key and no token store. Exit code 0; 2 for argument errors. A missing file means the store does not exist; a present but corrupt file is recorded in `unknown[]` and never crashes the command.
 - `--output text` follows the interface language (`AGENTHELM_LANG` or `--lang`); JSON keys and values (including reason codes) are fixed English identifiers.
+- Description text is not printed by default; `--include-description` adds it as `frontmatter.description` (truncated to 1,536 characters).
 - Paths are abbreviated with `~` (home) and `<project>` (project root); a symlink target outside both stays absolute.
 
 ## Evidence level `evidence`
@@ -24,20 +25,26 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor]... [--ty
 
 ## Skill entry
 
-`name`, `client`, `scope` (`user|project`), `store`, `path`, `frontmatter{name,description}|null`, `description_bytes` (UTF-8 bytes of the description), `skill_md_bytes`, `content_sha256` (whole SKILL.md), `origin{kind,detail}`, `symlink{is_symlink,target}`, `version`, `stale`, `evidence`, `issues[]`.
+`ref`, `name`, `client`, `scope` (`user|project`), `store`, `path`, `frontmatter{name[,description]}|null`, `description_bytes`, `description_chars`, `when_to_use_chars`, `when_to_use_bytes` (the frontmatter `when_to_use`, 0 when absent), `skill_md_bytes`, `skill_md_lines`, `dir_bytes`, `file_count` (total bytes and number of files in the skill directory; symlinks inside are counted, not followed; `null` with `dir-too-large` above 20000 files), `content_sha256` (whole SKILL.md), `name_matches_dir` (`null` when the frontmatter has no name), `frontmatter_ok` (has name and description), `is_symlink`, `link_target_kind` (`relative|absolute|outside-home|null`; `absolute` means an absolute path inside the home directory), `symlink{is_symlink,target}`, `origin`, `version`, `stale`, `loaded`, `precedence`, `shadowed_by`, `evidence`, `issues[]`.
 
-- `origin.kind`: `agenthelm-plugin` (after resolving symlinks it lies inside a plugin whose `plugin.json` names the agenthelm repository), `state-record` (listed in Claude's sync state records `~/.claude/agent-pack/state/*.json`), `unknown`.
+- `origin`: `{kind, detail}` are the first-version keys; the structured form is `{type, id, version, latest_known, evidence}`: `type` is `plugin` (a recognized agenthelm plugin), `marketplace` (a plugin in a client marketplace cache directory), `git` (the symlink target lies inside a git repository) or `unknown`; `latest_known` is the highest version of the same plugin found in this machine's client plugin directories, **never fetched online**, `"unknown"` when none is found. There is no `manual` value: placed-by-hand cannot be told from unknown origin, so it is `unknown`. `kind`: `agenthelm-plugin` (after resolving symlinks it lies inside a plugin whose `plugin.json` names the agenthelm repository), `state-record` (listed in Claude's sync state records `~/.claude/agent-pack/state/*.json`), `unknown`.
 - `stale` is `true|false` only for `agenthelm-plugin`: `true` when the version is below the highest version of the same plugin found in this machine's client plugin directories; `false` only means no newer copy exists on this machine, not that it is the newest in the cloud. Everything else is `"unknown"`; nothing is guessed.
-- `issues[]`: `broken-symlink`, `frontmatter-missing`, `description-missing`, `name-mismatch`, `skill-md-too-large`.
+- `loaded` is always `"unknown"` in this version (deciding it needs settings keys such as `skillOverrides` and `[[skills.config]]`, which this version does not read; evidence level `setting` is reserved). `precedence`: `unique` (no same name), `winner`, `shadowed`, `both-load`, `unknown`; `shadowed_by{store,rule,evidence,source_url}` is given only where the official documentation states a precedence and this entry loses.
+- `issues[]`: `broken-symlink`, `frontmatter-missing`, `description-missing`, `name-mismatch`, `skill-md-too-large`, `dir-too-large`.
 - Stores read: Claude `~/.claude/skills`, `<project>/.claude/skills`; Codex `~/.codex/skills`, `~/.agents/skills`, `<project>/.agents/skills`; Cursor `~/.cursor/skills`, `~/.agents/skills`, `<project>/.cursor/skills`, `<project>/.agents/skills`. Entries starting with a dot (such as `.system`) are skipped. Not covered: enterprise/admin directories, scanning from subdirectories up to the repository root, Cursor's compatibility loading of `.claude/skills`.
 
 ## MCP entry
 
-`name`, `client`, `scope` (`user|local|project`), `store`, `transport` (`stdio|http|sse|unknown`), `command`, `args[]`, `url`, `env_names[]`, `header_names[]`, `fingerprint`, `origin`, `evidence`, `notes[]`.
+`ref`, `name`, `client`, `scope` (`user|local|project`), `store`, `transport` (`stdio|http|sse|unknown`), `command`, `args[]`, `url`, `url_host` (remote only; host name only, no port or query), `env_names[]` (keys of `env`), `env_var_names[]` (environment variable names involved: `env` keys plus `${VAR}` references, names only), `header_names[]`, `has_inline_secret` (boolean: whether an inline credential value exists; no key name, no value), `fingerprint`, `fingerprint_fields[]` (fields that went into the fingerprint: `["command","args"]` or `["url"]`), `origin`, `loaded` (always `"unknown"`), `precedence`, `shadowed_by`, `evidence`, `notes[]`.
 
 - **`env` values, `headers` values and tokens are never printed**: only key names (`env_names`, `header_names`). Credential-looking values in `args` and `url` become `<redacted>`, as do URL userinfo and query values; `${VAR:-default}` keeps only `${VAR}`.
 - `fingerprint`: SHA-256 of the **redacted** `command+args` or `url`, used to find duplicates; it excludes `env` and `headers`.
 - Stores read: Claude `~/.claude.json` (user-level `mcpServers`), `projects[<absolute project path>].mcpServers` inside `~/.claude.json` (local level, read in the shape of the official example; any other shape is `unknown`), `<project>/.mcp.json`; Codex `~/.codex/config.toml` (`mcp_servers`), `<project>/.codex/config.toml` (with `notes: ["codex-project-requires-trust"]`, because the trust record cannot be read); Cursor `~/.cursor/mcp.json`, `<project>/.cursor/mcp.json`.
+
+## Entry reference `ref` and version compatibility
+
+- `ref` = `<kind>:<name>@<client>:<scope>`, `kind` being `skill` or `mcp`, for example `skill:pdf-notes@claude:user`, `mcp:github@claude:local`. For one client and scope, a Skill outside the "primary store" gets the suffix `#agents` (primary stores: Claude `~/.claude/skills` and `<project>/.claude/skills`; Codex `~/.codex/skills` and `<project>/.agents/skills`; Cursor `~/.cursor/skills` and `<project>/.cursor/skills`; the rest are `~/.agents/skills` and Cursor's `<project>/.agents/skills`), so a `ref` is unique within one output and does not change when other entries appear.
+- Compatibility: **adding keys does not bump `schema_version`**; removing a key, changing a key's meaning or narrowing its value set does. A consumer that meets an unknown `schema_version` should degrade to "unavailable" and not guess field meanings; it should ignore unknown new keys.
 
 ## Summary and duplicates
 
