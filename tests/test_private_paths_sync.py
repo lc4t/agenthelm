@@ -16,6 +16,11 @@ class PrivateIgnoreTextTests(unittest.TestCase):
     def test_both_plugins_agree_on_the_gitignore_text(self) -> None:
         self.assertEqual(init_project.PRIVATE_IGNORE, private_paths.IGNORE_TEXT)
 
+    def test_english_text_agrees_too_and_has_no_chinese(self) -> None:
+        self.assertEqual(init_project.PRIVATE_IGNORE_EN, private_paths.IGNORE_TEXT_EN)
+        self.assertEqual(init_project.PRIVATE_IGNORE_EN.splitlines()[1:], ["*", "!.gitignore"])
+        self.assertNotRegex(init_project.PRIVATE_IGNORE_EN, r"[\u3000-\u9fff\uff00-\uffef]")
+
     def test_new_projects_get_it_at_the_declared_path(self) -> None:
         self.assertEqual(init_project.PRIVATE_IGNORE.splitlines()[1:], ["*", "!.gitignore"])
 
