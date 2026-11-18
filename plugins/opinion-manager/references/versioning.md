@@ -202,6 +202,14 @@ python3 plugins/opinion-manager/runtime/opinion_manager.py publish \
 
 公开目录发布还需要 `--public-approved`。使用此标志前必须执行 Skill 中的公开准入检查、展示待公开文件的全部内容并取得用户明确同意。标志本身不能代替用户的授权。公开目录只接收逐文件批准的规则、模板及说明；审批记录、私有来源映射、个人 Profile、锁和运行日志不能随目录复制到公开包。
 
+## 双语字段与适用条件
+
+规则的 `title`、`text`、`scopes` 与模板的 `name`、`description`、`scopes` 可以写成旧格式（字符串，`scopes` 为字符串数组，视为 zh），也可以写成 `{"zh": …, "en": …}`（`scopes` 为 `{"zh": […], "en": […]}`；至少一种语言，不允许其他语言键）。规则新增可选的 `trigger`（何时适用）、`purpose`（为什么）、`exclude`（何时不适用），同样可本地化。已发布的版本不可修改：旧 1.0.0 文件保持原样，指纹计算不变；给既有规则补译文或字段属于行为变化，不能作为 patch 发布。
+
+- **渲染**：`profile` 预览与 `compose` 按项目文件语言（Project Profile 的 `language`，缺省 zh）选取文字；`trigger` / `purpose` / `exclude` 有就写进规则头一行（zh：`；条件：…；目的：…；不适用：…`，en：`; When: …; Purpose: …; Not for: …`），没有则与旧输出逐字节相同。分层加载的切片与规则束索引里的模板名同样按项目语言选取。
+- **untranslated 警告**：项目语言不是 zh 时，预览（`profile`、`compose`、`inbox adopt`）里带 `untranslated`（逐条列出缺该语言译文的公开规则 `ref` 与字段）与 `warnings`。不阻断：缺译文的内容按原文写入，`ref` 点名便于逐条处理；个人修订是用户自己的文字，不计入。zh 项目的输出不带这两个键。
+- **发布守卫**：`tests/test_catalog_bilingual.py` 要求公开 catalog 中高于 1.0.0 的规则与模板带三项字段（规则）和 zh / en 两种文字；1.0.0 存量列入显式白名单，改写内容升版时同步从白名单删除。
+
 ## 修订、派生与升级
 
 只读查看当前变体的可用新版本：

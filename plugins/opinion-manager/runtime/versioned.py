@@ -12,6 +12,7 @@ from typing import Any
 
 from constants import KNOWN_PLACEHOLDERS
 from i18n_opinion import _  # noqa: E402
+from rule_lines import RULE_WORDS  # noqa: E402
 
 
 PUBLIC_CATALOG = Path(__file__).resolve().parents[1] / "catalog"
@@ -19,6 +20,7 @@ IDENTIFIER = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*\Z")
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 EDITABLE = {"title", "level", "scopes", "text"}
 RULE_FIELDS = EDITABLE | {"id", "version", "slot"}
+RULE_OPTIONAL_FIELDS = {"trigger", "purpose", "exclude"}  # 可选：何时适用、为什么、何时不适用（可本地化）
 TEMPLATE_FIELDS = {"family", "variant", "version", "name", "description", "scopes", "rules"}
 PROFILE_FIELDS = {"schema_version", "id", "version", "templates", "rules", "sources", "overrides", "custom", "derived_from"}
 PROFILE_OPTIONAL_FIELDS = {"loading"}
@@ -115,11 +117,34 @@ def parse_ref(ref: str, kind: str) -> tuple[str, str]:
     return identity, release
 
 
+def localized(value: Any, label: str, *, many: bool = False) -> None:
+    """发布内容里可本地化的字段：旧格式（字符串，scopes 为字符串数组，视为 zh）或 {"zh": …, "en": …}（至少一种语言）。"""
+    if isinstance(value, dict):
+        if not value or set(value) - set(PROJECT_LANGUAGES):
+            fail(_("{0} 的本地化写法只能包含 zh、en，且至少一种语言").format(label))
+        parts = list(value.values())
+    else:
+        parts = [value]
+    for part in parts:
+        strings(part, label) if many else string(part, label)
+
+
+def pick(value: Any, language: str) -> tuple[Any, bool]:
+    """按项目语言取本地化字段的文字：(文字, 是否有该语言的译文)。旧格式字符串视为 zh；缺少该语言时回退到另一种语言。"""
+    if isinstance(value, dict):
+        if language in value:
+            return value[language], True
+        return value[next(iter(value))], False
+    return value, language == "zh"
+
+
 def validate_edit(value: Any) -> None:
-    fields(value, EDITABLE, _("规则内容"))
-    string(value["title"], "title")
-    string(value["text"], "text")
-    strings(value["scopes"], "scopes")
+    fields(value, EDITABLE, _("规则内容"), optional=RULE_OPTIONAL_FIELDS)
+    localized(value["title"], "title")
+    localized(value["text"], "text")
+    localized(value["scopes"], "scopes", many=True)
+    for name in RULE_OPTIONAL_FIELDS & set(value):
+        localized(value[name], name)
     if value["level"] not in ("required", "preferred"):
         fail(_("level 必须为 required 或 preferred"))
 
@@ -133,18 +158,18 @@ def validate_release(value: Any) -> str:
     if not isinstance(value, dict):
         fail(_("发布内容必须是对象"))
     kind = "rules" if "id" in value else "templates"
-    fields(value, RULE_FIELDS if kind == "rules" else TEMPLATE_FIELDS, _("发布内容"))
+    fields(value, RULE_FIELDS if kind == "rules" else TEMPLATE_FIELDS, _("发布内容"), optional=RULE_OPTIONAL_FIELDS if kind == "rules" else frozenset())
     version(value["version"])
     if kind == "rules":
         identifier(value["id"])
         identifier(value["slot"])
-        validate_edit({key: value[key] for key in EDITABLE})
+        validate_edit({key: value[key] for key in EDITABLE | (RULE_OPTIONAL_FIELDS & set(value))})
     else:
         identifier(value["family"])
         identifier(value["variant"])
-        string(value["name"], "name")
-        string(value["description"], "description")
-        strings(value["scopes"], "scopes")
+        localized(value["name"], "name")
+        localized(value["description"], "description")
+        localized(value["scopes"], "scopes", many=True)
         strings(value["rules"], "rules")
         for ref in value["rules"]:
             parse_ref(ref, "rules")
@@ -336,7 +361,7 @@ def replace_refs(previous: list[str], incoming: list[str], kind: str) -> list[st
 
 
 def behavior(rule: dict[str, Any] | None) -> Any:
-    return None if rule is None else {key: rule[key] for key in RULE_FIELDS - {"version", "title"}}
+    return None if rule is None else {key: rule[key] for key in (RULE_FIELDS - {"version", "title"}) | (RULE_OPTIONAL_FIELDS & set(rule))}
 
 
 def comparison(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
@@ -465,7 +490,8 @@ def profile_command(args: argparse.Namespace) -> dict[str, Any]:
         changes = updated_changes
     path = root / ".opinion" / "profiles" / args.id / "versions" / f"{args.version}.json"
     fingerprint = digest(value)
-    result = {"ok": True, "status": "preview", "path": str(path), "profile": value, "content": render(value, project_language(root)), "effective_rules": list(effective_rules(value).values()), "changes": changes, "unresolved": sorted(unresolved), "confirmation_sha256": fingerprint}
+    result = {"ok": True, "status": "preview", "path": str(path), "profile": value, "content": render(value, project_language(root)), "effective_rules": list(effective_rules(value).values()), "changes": changes, "unresolved": sorted(unresolved), "confirmation_sha256": fingerprint,
+              **untranslated_report(value, project_language(root))}
     if args.apply:
         if unresolved:
             fail(_("升级存在未确认的冲突：{0}").format(sorted(unresolved)))
@@ -541,7 +567,36 @@ def render_rule(profile: dict[str, Any], rule: dict[str, Any], language: str = "
     level = words["required"] if rule["level"] == "required" else words["preferred"]
     label = words["revision"] if rule["id"] in profile["overrides"] else words["rule"]
     origin = f"{label}{words['colon']}`{profile['id']}@{profile['version']}`" if rule["id"] in profile["overrides"] else f"{label}{words['colon']}`{rule['id']}@{rule['version']}`"
-    return "\n".join((f"## {rule['title']}", "", f"{origin}{words['semi']}{level}{words['semi']}{words['applies']}{words['colon']}{words['sep'].join(rule['scopes'])}{words['stop']}", "", rule["text"]))
+    qualifiers = "".join(f"{words['semi']}{RULE_WORDS[language][name]}{words['colon']}{pick(rule[name], language)[0]}" for name in ("trigger", "purpose", "exclude") if name in rule)
+    return "\n".join((f"## {pick(rule['title'], language)[0]}", "", f"{origin}{words['semi']}{level}{words['semi']}{words['applies']}{words['colon']}{words['sep'].join(pick(rule['scopes'], language)[0])}{qualifiers}{words['stop']}", "", pick(rule["text"], language)[0]))
+
+
+def untranslated(profile: dict[str, Any], language: str) -> list[dict[str, Any]]:
+    """项目语言不是 zh 时，列出被选中、却缺少该语言译文的公开规则（及分层加载用到的模板名）；不阻断。
+    个人修订（overrides）是用户自己的文字，不算。"""
+    if language == "zh":
+        return []
+    missing = []
+    for identity, rule in effective_rules(profile).items():
+        if identity in profile["overrides"]:
+            continue
+        fields_ = [name for name in ("title", "text", "scopes", *sorted(RULE_OPTIONAL_FIELDS)) if name in rule and not pick(rule[name], language)[1]]
+        if fields_:
+            missing.append({"ref": f"{rule['id']}@{rule['version']}", "kind": "rule", "fields": fields_})
+    if "loading" in profile:
+        for source in profile["sources"]["templates"]:
+            fields_ = [name for name in ("name",) if not pick(source["value"][name], language)[1]]
+            if fields_:
+                missing.append({"ref": source["ref"], "kind": "template", "fields": fields_})
+    return missing
+
+
+def untranslated_report(profile: dict[str, Any], language: str) -> dict[str, Any]:
+    """预览输出里的 untranslated 警告；zh 项目不带这些键，输出与旧版逐字节相同。"""
+    missing = untranslated(profile, language)
+    if language == "zh":
+        return {}
+    return {"untranslated": missing, "warnings": [_("项目文件语言为 {0}，但这些公开内容没有对应译文，会按原文写入：{1}").format(language, ", ".join(item["ref"] for item in missing))] if missing else []}
 
 
 def render(profile: dict[str, Any], language: str = "zh") -> str:
@@ -630,7 +685,8 @@ def compose_command(args: argparse.Namespace) -> dict[str, Any]:
         if current not in KNOWN_PLACEHOLDERS:
             blocked = _("已有 OPINION.md 需要审阅并使用 --replace")
     fingerprint = digest({"lock": lock, "before": {"opinion": current, "lock": current_lock}, "replace": args.replace, "accept_current": args.accept_current})
-    result = {"ok": True, "status": "preview", "content": content, "lock": lock, "blocked": blocked, "confirmation_sha256": fingerprint, "path": str(destination)}
+    result = {"ok": True, "status": "preview", "content": content, "lock": lock, "blocked": blocked, "confirmation_sha256": fingerprint, "path": str(destination),
+              **untranslated_report(profile, language)}
     if args.apply:
         if blocked:
             fail(blocked)

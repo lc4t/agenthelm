@@ -453,6 +453,7 @@ def adopt(root: Path, args: argparse.Namespace) -> dict[str, Any]:
                 "added_lines": [candidate_rule(item, language) for item in plan["items"]],
                 "shown": {item["id"]: match for item, match in zip(plan["items"], matches)},
                 "shown_matches": bool(matches) and all(matches) and not composed["blocked"] and not conflicts,
+                **{key: composed[key] for key in ("untranslated", "warnings") if key in composed},
                 "next_step": say("adopt_next", command=adopt_command(root, ids, plan["fingerprint"]))}
     if not args.confirm:
         fail("err_adopt_confirm")
