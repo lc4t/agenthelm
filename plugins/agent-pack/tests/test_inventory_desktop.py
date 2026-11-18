@@ -84,13 +84,23 @@ class DesktopTests(unittest.TestCase):
             report = inv.observe(self.home, self.project, clients)
             entries = [item for item in report["mcps"] if item["client"] == "claude-desktop"]
             self.assertEqual([item["name"] for item in entries], ["local-check", "other"])
-            self.assertEqual((entries[0]["scope"], entries[0]["store"]), ("user", inv.desktop_store()))
+            self.assertEqual((entries[0]["scope"], entries[0]["store"], entries[0]["ref"]), ("user", "desktop-config", "mcp:local-check@claude-desktop:user"))
             self.assertEqual(report["summary"]["per_client"]["claude-desktop"]["mcp_count"], 2)
             self.assertEqual(report["summary"]["per_client"]["claude-desktop"]["skill_count"], 0)
         code, out, _err = self.inventory_cli("--client", "claude-desktop", "--output", "json")
         self.assertEqual((code, json.loads(out)["clients"]), (0, ["claude-desktop"]))
         self.assertEqual(json.loads(self.inventory_cli("--client", "all", "--output", "json")[1])["clients"],
                          ["claude", "codex", "cursor", "claude-desktop"])
+
+    def test_desktop_block_reports_path_exists_parse_ok(self) -> None:
+        self.assertNotIn("desktop", inv.observe(self.home, self.project))
+        self.assertEqual(inv.observe(self.home, self.project, ["claude-desktop"])["desktop"]["exists"], False)
+        self.write_config("{ nope")
+        info = inv.observe(self.home, self.project, ["claude-desktop"])["desktop"]
+        self.assertEqual((info["exists"], info["parse_ok"], info["path"]), (True, False, inv.desktop_store()))
+        self.write_config(self.sample())
+        self.assertEqual(inv.observe(self.home, self.project, ["all"])["desktop"]["parse_ok"], True)
+        self.assertIsNone(inv.observe(self.home, self.project, ["claude-desktop"], platform="win32")["desktop"]["path"])
 
     def test_not_merged_into_claude(self) -> None:
         self.write_config({"mcpServers": {"only-desktop": {"command": "node"}}})
@@ -117,7 +127,7 @@ class DesktopTests(unittest.TestCase):
 
     def test_missing_and_corrupt_file_are_unknown(self) -> None:
         report = inv.observe(self.home, self.project, ["claude-desktop"])
-        self.assertEqual([(item["reason"], item["store"]) for item in report["unknown"]], [("not-found", inv.desktop_store())])
+        self.assertEqual([(item["reason"], item["store"]) for item in report["unknown"]], [("not-found", "desktop-config")])
         for text, reason in (("{ nope", "invalid-json"), ("[1]", "unexpected-structure")):
             self.write_config(text)
             report = inv.observe(self.home, self.project, ["claude-desktop"])

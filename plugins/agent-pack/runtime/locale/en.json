@@ -677,5 +677,7 @@
  "本命令只解析 macOS 与 Linux 的路径": "This command resolves only macOS and Linux paths",
  "官方文档没有说明该文件是否展开 ${VAR}": "The official documentation does not say whether this file expands ${VAR}",
  "{0}：{1}（{2}）": "{0}: {1} ({2})",
- "claude：{0} 在 claude_desktop_config.json 里也有定义；Claude Desktop 的本地 Code 标签可能改用那一份（官方文档当前没有明确同名优先级），独立 CLI 不受影响": "claude: {0} is also defined in claude_desktop_config.json; the Claude Desktop local Code tab may use that definition instead (the official documentation currently states no same-name precedence); the standalone CLI is not affected"
+ "claude：{0} 在 claude_desktop_config.json 里也有定义；Claude Desktop 的本地 Code 标签可能改用那一份（官方文档当前没有明确同名优先级），独立 CLI 不受影响": "claude: {0} is also defined in claude_desktop_config.json; the Claude Desktop local Code tab may use that definition instead (the official documentation currently states no same-name precedence); the standalone CLI is not affected",
+ "在 JSON 里附上 description 文本（截断到 1,536 个字符）；默认不输出": "Include the description text in the JSON (truncated to 1,536 characters); off by default",
+ "目录文件过多，未统计大小与文件数": "Too many files in the directory; size and file count not computed"
 }
