@@ -57,7 +57,7 @@ description: Generate, compose, review and maintain behavior rules between the u
 
 收件箱让用户在工作中顺手沉淀观点：先低成本暂存，再由用户集中裁决。agent-pack 的 hook（`agenthelm nudge`）会在会话开始注入下面的协议并提示未决事项；没有 hook 的客户端按本节手动执行。命令与数据格式见 [候选收件箱](../../references/inbox.md)，hook 与阈值见 agent-pack 的 `references/nudge.md`。
 
-- **暂存**：用户在工作中表达长期偏好、对你行为的纠正或规则（“以后都……”“不要再……”“记住……”）时，立即用 `inbox add` 暂存标题、完整规则、适用范围和用户原话。不打断当前任务，不需要确认。一次性的任务要求、项目事实和命令不是候选。宁可多暂存，裁决环节会过滤。
+- **暂存**：用户在工作中表达长期偏好、对你行为的纠正或规则（“以后都……”“不要再……”“记住……”）时，立即用 `inbox add` 暂存标题、完整规则、适用范围、`--trigger`（何时适用）、`--purpose`（为什么）和用户原话，可选 `--exclude`、`--relation`；缺 trigger / purpose 只警告，候选按「不完整」展示。不打断当前任务，不需要确认。一次性的任务要求、项目事实和命令不是候选。暂存阶段宁可多存，展示与裁决阶段要求条件完整，不得用「所有」之类占位词。
 - **匹配**：实施前读取 OPINION.md；用户已同意试行的候选（`inbox list --status trial`，hook 会随协议注入）同样遵循，交付时说明是否适用。
 - **确认**：任务完成或即将完成时，把本次会话新增的候选用编号列表一次性交给用户：正式采纳 / 项目内试行 / 暂缓 / 丢弃。用户明确表态后记录：试行 / 暂缓 / 丢弃用 `inbox decide … --confirmed`；用户说「采纳」时直接用 `inbox adopt`，不先 `decide`。每个会话集中确认一次，不逐条追问。
 - **采纳并写入**：用户说「采纳」后，运行 `inbox adopt <编号…>`（不带 `--apply`，零写入）预览：候选正文作为个人规则输入，走与 `profile` / `compose` 相同的完整流程，一次展示 `content`；用户确认后追加 `--apply --confirm <confirmation_sha256>`，一次写入并 `verify` 读回，成功后候选才记为 `formal`。多条候选一次预览、一次确认，全部成功或都不改。
