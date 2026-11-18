@@ -341,6 +341,8 @@ def _group_lines(number: str, first: dict, members: list[dict]) -> list[str]:
 def command_hint(action: str) -> str:
     """fix:rebuild-index -> （命令：fix rebuild-index）; empty for advice-only steps."""
     verb, _sep, target = action.partition(":")
+    if verb == "ext" and target:
+        return _("（命令：extensions dups）")
     return _("（命令：{0} {1}）").format(verb, target) if verb in ("fix", "open") and target else ""
 
 
