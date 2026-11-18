@@ -40,9 +40,6 @@ SCOPE_LABEL = {"user": N_("用户级"), "project": N_("项目级"), "local": N_(
                "managed": N_("企业级"), "enterprise": N_("企业级"), "desktop": N_("应用级")}
 KIND_LABEL = {"skill": N_("技能"), "mcp": "MCP"}
 BADGE = {"file": "●", "setting": "⚙", "cli": "⌘", "unknown": "?"}
-# 官方文档写明优先级的场景（设计文档 §4.2、§5.2）；数值越大越优先。其余组合一律「未知」。
-MCP_PRECEDENCE = {"claude": {"local": 3, "project": 2, "user": 1}, "codex": {"project": 2, "user": 1}}
-SKILL_PRECEDENCE = {"claude": {"managed": 3, "enterprise": 3, "user": 2, "personal": 2, "project": 1}}
 FORBIDDEN_NAME = re.compile("[<>\\u200b\\u200c\\u200d\\u2060\\ufeff]")
 
 TAG_LABEL = {"no-description": N_("无 description"), "desc-too-long": N_("描述会被截断"), "skill-md-long": N_("体积大"),
@@ -162,6 +159,14 @@ def _referenced(raw: Any) -> list[dict]:
             for item in raw if isinstance(item, dict) and item.get("rule_id")]
 
 
+def _shadowed(raw: Any) -> dict | None:
+    """inventory 给出的「被谁屏蔽」：只取 store、rule、evidence、source_url 四个键。"""
+    if isinstance(raw, dict):
+        return {key: _text(raw.get(key)) for key in ("store", "rule", "evidence", "source_url")}
+    text = _text(raw)
+    return {"store": text, "rule": None, "evidence": None, "source_url": None} if text else None
+
+
 def _ref(kind: str, name: str, client: str, scope: str, given: Any) -> str:
     return given if isinstance(given, str) and given else f"{kind}:{name}@{client}:{scope}"
 
@@ -193,8 +198,8 @@ def _entry(kind: str, raw: Any) -> dict | None:
             "version": _text(raw.get("version")),
             "stale": raw.get("stale") if isinstance(raw.get("stale"), bool) else None,
             "loaded": raw.get("loaded") if isinstance(raw.get("loaded"), bool) else None,
-            "shadowed_by": _text(raw.get("shadowed_by")) or (raw["shadowed_by"] if isinstance(raw.get("shadowed_by"), list)
-                                                              and raw["shadowed_by"] else None),
+            "when_to_use_chars": _int(raw.get("when_to_use_chars")), "when_to_use_bytes": _int(raw.get("when_to_use_bytes")),
+            "precedence": _text(raw.get("precedence")), "shadowed_by": _shadowed(raw.get("shadowed_by")),
             "_description": description})
     else:
         fp = _text(raw.get("fingerprint"))
@@ -206,6 +211,8 @@ def _entry(kind: str, raw: Any) -> dict | None:
             "env_var_names": [item for item in names if isinstance(item, str)] if isinstance(names, list) else None,
             "has_inline_secret": raw.get("has_inline_secret") if isinstance(raw.get("has_inline_secret"), bool) else None,
             "url_host": _text(raw.get("url_host"))})
+    if kind == "mcp":
+        entry.update({"precedence": _text(raw.get("precedence")), "shadowed_by": _shadowed(raw.get("shadowed_by"))})
     referenced = _referenced(raw.get("referenced_by"))
     if referenced:
         entry["referenced_by"] = referenced
@@ -222,7 +229,15 @@ def normalize(inventory: dict) -> dict:
     projects = inventory.get("projects")
     known = [{"name": item["name"], "last_synced": _text(item.get("last_synced"))} for item in projects
              if isinstance(item, dict) and isinstance(item.get("name"), str)] if isinstance(projects, list) else []
-    return {"projects": known, "entries": entries, "clients": sorted({*(name for name in names if isinstance(name, str)),
+    rules: dict[tuple[str, str], str] = {}
+    duplicates = inventory.get("duplicates") if isinstance(inventory.get("duplicates"), dict) else {}
+    for kind_key, kind_name in (("skills", "skill"), ("mcps", "mcp")):
+        for item in duplicates.get(kind_key) or []:
+            effective = item.get("effective") if isinstance(item, dict) else None
+            if isinstance(effective, dict) and _text(effective.get("rule")) and _text(item.get("name")):
+                rules[(kind_name, item["name"])] = effective["rule"]
+    return {"rules": rules, "projects": known, "entries": entries,
+            "clients": sorted({*(name for name in names if isinstance(name, str)),
                                                    *(entry["client"] for entry in entries)}),
             "unknown_extra": len(unknown_extra) if isinstance(unknown_extra, list) else 0}
 
@@ -242,35 +257,26 @@ def _is_desktop(client: str) -> bool:
     return "desktop" in client
 
 
-def _client_effective(kind: str, client: str, members: list[dict]) -> tuple[bool, str]:
-    """同一客户端内、同名多份时哪份生效。(是否已确定, 说明)"""
+def _client_effective(client: str, members: list[dict], rule: str | None) -> tuple[bool, str]:
+    """同一客户端内、同名多份时哪份生效。只用 inventory 给出的 precedence / shadowed_by，工具层不另做判断。"""
     unknown = _("{0}：生效：未知（{1}）")
     if any(member["evidence"] == "unknown" for member in members):
         return False, unknown.format(client, _("有副本的证据为未知"))
-    shadowed = [member for member in members if member.get("shadowed_by")]
-    if shadowed:
-        return True, _("{0}：{1} 被屏蔽（inventory 给出的结论）").format(
-            client, _("、").join(member["ref"] for member in shadowed))
-    if kind == "mcp" and client in MCP_PRECEDENCE:
-        ranks = MCP_PRECEDENCE[client]
-        order = sorted(members, key=lambda member: ranks.get(member["scope"], 0), reverse=True)
-        if all(member["scope"] in ranks for member in members) and ranks[order[0]["scope"]] > ranks[order[1]["scope"]]:
-            rule = "local > project > user" if client == "claude" else _("项目层 > 用户层")
-            doc = _("Claude Code MCP 文档") if client == "claude" else _("Codex MCP 文档")
-            return True, _("{0}：本项目里生效的是 {1} 那份（{2}，{3}）").format(
-                client, _(SCOPE_LABEL.get(order[0]["scope"], order[0]["scope"])), rule, doc)
-    if kind == "skill" and client in SKILL_PRECEDENCE:
-        ranks = SKILL_PRECEDENCE[client]
-        order = sorted(members, key=lambda member: ranks.get(member["scope"], 0), reverse=True)
-        if all(member["scope"] in ranks for member in members) and ranks[order[0]["scope"]] > ranks[order[1]["scope"]]:
-            return True, _("{0}：{1} 优先（企业 > 个人 > 项目，{2}）").format(
-                client, _(SCOPE_LABEL.get(order[0]["scope"], order[0]["scope"])), _(SOURCE_CLAUDE))
-    if kind == "skill" and client == "codex":
-        return True, _("{0}：同名的两份都会出现在技能选择里，不存在屏蔽（Codex 官方说明）").format(client)
-    return False, unknown.format(client, _("优先级未文档化，不下结论"))
+    precedences = [member.get("precedence") for member in members]
+    if all(item == "both-load" for item in precedences):
+        return True, _("{0}：两份都会加载，不存在屏蔽（inventory 给出的结论）").format(client)
+    winners = [member for member in members if member.get("precedence") == "winner"]
+    losers = [member for member in members if member.get("precedence") == "shadowed" and member.get("shadowed_by")]
+    if len(winners) == 1 and len(winners) + len(losers) == len(members):
+        basis = losers[0]["shadowed_by"].get("rule") or _("未给出规则")
+        return True, _("{0}：生效的是 {1}（{2}；inventory 给出的结论）").format(client, winners[0]["ref"], basis)
+    basis = rule or next((member["shadowed_by"]["rule"] for member in members
+                          if member.get("shadowed_by") and member["shadowed_by"].get("rule")), None) \
+        or next((item for item in precedences if item and item != "unknown"), None) or _("inventory 没有给出结论")
+    return False, unknown.format(client, _("依据：{0}").format(basis))
 
 
-def _effective(kind: str, cls: str, members: list[dict]) -> dict:
+def _effective(kind: str, cls: str, name: str, members: list[dict], rules: dict) -> dict:
     clients: dict[str, list[dict]] = {}
     for member in members:
         clients.setdefault(member["client"], []).append(member)
@@ -284,17 +290,12 @@ def _effective(kind: str, cls: str, members: list[dict]) -> dict:
                 "lines": [_("生效：未知（证据不足：{0}）").format(_("、").join(reasons))]}
     for client, group in clients.items():
         if len(group) > 1:
-            ok, text = _client_effective(kind, client, group)
+            ok, text = _client_effective(client, group, rules.get((kind, name)))
             known = known and ok
             lines.append(text)
-    desktop = [name for name in clients if _is_desktop(name)]
-    if kind == "mcp" and desktop and "claude" in clients:
-        lines.append(_("Desktop 配置与 claude 同名：只在 Desktop 应用的本地 Code 标签会话里 Desktop 配置那份优先；独立 CLI 不读它"))
-    elif len(clients) > 1 and not lines:
-        lines.append(_("各客户端独立加载，彼此不冲突"))
-    elif len(clients) > 1:
-        lines.append(_("不同客户端之间各自独立加载，彼此不冲突"))
-    return {"known": known, "basis": "documented" if known else "undocumented", "lines": lines}
+    if len(clients) > 1:
+        lines.append(_("各客户端独立加载，彼此不冲突") if not lines else _("不同客户端之间各自独立加载，彼此不冲突"))
+    return {"known": known, "basis": "inventory" if known else "unknown", "lines": lines}
 
 
 CLASS_LABEL = {
@@ -304,7 +305,8 @@ CLASS_LABEL = {
     ("skill", "same-name-unknown"): N_("同名 · 证据不足")}
 
 
-def build_groups(entries: list[dict]) -> list[dict]:
+def build_groups(entries: list[dict], rules: dict | None = None) -> list[dict]:
+    rules = rules or {}
     groups: list[dict] = []
     for kind in ("mcp", "skill"):
         key = "_fp" if kind == "mcp" else "_sha"
@@ -317,7 +319,7 @@ def build_groups(entries: list[dict]) -> list[dict]:
                 continue
             keys = [member[key] for member in members]
             cls = "same-name-unknown" if None in keys else "same-name-same" if len(set(keys)) == 1 else "same-name-differs"
-            groups.append(_group(kind, cls, name, members))
+            groups.append(_group(kind, cls, name, members, rules))
         if kind == "mcp":
             by_fp: dict[str, list[dict]] = {}
             for entry in scoped:
@@ -325,20 +327,19 @@ def build_groups(entries: list[dict]) -> list[dict]:
                     by_fp.setdefault(entry["_fp"], []).append(entry)
             for fingerprint, members in by_fp.items():
                 if len({member["name"] for member in members}) > 1:
-                    groups.append(_group(kind, "diff-name-same-fp", fingerprint[:8], members))
+                    groups.append(_group(kind, "diff-name-same-fp", fingerprint[:8], members, rules))
     return sorted(groups, key=lambda group: (group["kind"] != "mcp", group["name"], group["class"]))
 
 
-def _group(kind: str, cls: str, name: str, members: list[dict]) -> dict:
+def _group(kind: str, cls: str, name: str, members: list[dict], rules: dict) -> dict:
     clients = [member["client"] for member in members]
-    desktop_pair = kind == "mcp" and any(_is_desktop(client) for client in clients) and "claude" in clients
-    cross = len(set(clients)) == len(clients) and not desktop_pair
+    cross = len(set(clients)) == len(clients)
     ordered = sorted(members, key=lambda member: (member["client"], member["scope"], member["store"] or ""))
     return {"id": _group_id(kind, cls, name), "kind": kind, "class": cls, "name": name,
             "label": CLASS_LABEL[(kind, cls)], "cross_client": cross,
             "evidence": "unknown" if any(member["evidence"] == "unknown" for member in members) else
             min((member["evidence"] for member in members), key=EVIDENCE_LEVELS.index),
-            "members": [member["ref"] for member in ordered], "effective": _effective(kind, cls, ordered),
+            "members": [member["ref"] for member in ordered], "effective": _effective(kind, cls, name, ordered, rules),
             "_members": ordered}
 
 
@@ -372,9 +373,9 @@ def skill_findings(entry: dict) -> tuple[list[dict], list[str]]:
         found.append(_finding(entry, "no-description", _("缺 description"), _("规范要求必填"), _(SOURCE_SPEC)))
     if chars is None:
         missing.append("description_chars")
-    elif chars > CLAUDE_DESCRIPTION_CAP_CHARS:
-        found.append(_finding(entry, "desc-too-long", _("description {0} 字符，超过 Claude Code 技能列表截断上限 {1}，超出部分会被截断").format(
-            chars, CLAUDE_DESCRIPTION_CAP_CHARS), _("{0} 字符").format(CLAUDE_DESCRIPTION_CAP_CHARS), _(SOURCE_CLAUDE)))
+    elif chars + (entry["when_to_use_chars"] or 0) > CLAUDE_DESCRIPTION_CAP_CHARS:
+        found.append(_finding(entry, "desc-too-long", _("description 与 when_to_use 合计 {0} 字符，超过 Claude Code 技能列表截断上限 {1}，超出部分会被截断").format(
+            chars + (entry["when_to_use_chars"] or 0), CLAUDE_DESCRIPTION_CAP_CHARS), _("{0} 字符").format(CLAUDE_DESCRIPTION_CAP_CHARS), _(SOURCE_CLAUDE)))
     elif chars > SPEC_DESCRIPTION_CHARS:
         found.append(_finding(entry, "desc-too-long", _("description {0} 字符，超过规范上限 {1}").format(
             chars, SPEC_DESCRIPTION_CHARS), _("{0} 字符").format(SPEC_DESCRIPTION_CHARS), _(SOURCE_SPEC)))
@@ -413,8 +414,9 @@ def cost_per_client(skills: list[dict]) -> list[dict]:
         if entry["evidence"] == "unknown" or entry["loaded"] is False or entry.get("shadowed_by") or known_bytes is None:
             row["uncounted"] += 1
             continue
-        chars = entry["description_chars"]
-        if chars and chars > CLAUDE_DESCRIPTION_CAP_CHARS and entry["client"] == "claude":
+        known_bytes += entry["when_to_use_bytes"] or 0
+        chars = (entry["description_chars"] or 0) + (entry["when_to_use_chars"] or 0)
+        if chars > CLAUDE_DESCRIPTION_CAP_CHARS and entry["client"] == "claude":
             known_bytes = round(known_bytes * CLAUDE_DESCRIPTION_CAP_CHARS / chars)
             row["capped"] += 1
         row["bytes"] += known_bytes
@@ -453,7 +455,7 @@ def check(norm: dict, include_description: bool) -> dict:
         findings += found
         for field in missing:
             missing_counts[field] = missing_counts.get(field, 0) + 1
-    groups = build_groups(norm["entries"])
+    groups = build_groups(norm["entries"], norm["rules"])
     for group in groups:
         if group["kind"] == "skill" and group["class"] == "same-name-differs":
             for ref in group["members"]:
@@ -517,7 +519,7 @@ def summarize(norm: dict, groups: list[dict], cost: list[dict]) -> dict:
 
 def analyse(inventory: dict) -> dict:
     norm = normalize(inventory)
-    groups = build_groups(norm["entries"])
+    groups = build_groups(norm["entries"], norm["rules"])
     skills = [entry for entry in norm["entries"] if entry["kind"] == "skill"]
     findings = [finding for entry in skills for finding in skill_findings(entry)[0]]
     return {"norm": norm, "groups": groups, "findings": findings,

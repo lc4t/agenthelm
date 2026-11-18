@@ -290,47 +290,65 @@ class DuplicateTests(ExtensionsCase):
         text = self.run_cli("extensions", "dups").stdout
         self.assertIn("跨客户端重复：各客户端加载各自的配置，可保留，不推荐退役", text)
 
-    def test_effective_only_where_the_docs_state_a_precedence(self) -> None:
+    def test_effective_comes_only_from_the_inventory(self) -> None:
         groups = self.groups()
         search = groups["mcp:search:same-name-differs"]["effective"]
         self.assertTrue(search["known"])
-        self.assertIn("生效的是 本机项目级 那份", search["lines"][0])
-        self.assertIn("local > project > user", search["lines"][0])
+        self.assertIn("生效的是 mcp:search@claude:local", search["lines"][0])
+        self.assertIn("claude-mcp-local-over-user", search["lines"][0])
+        skill = groups["skill:code-review:same-name-same"]["effective"]
+        self.assertIn("claude-skill-personal-over-project", skill["lines"][0])
+        both = groups["skill:meeting-notes:same-name-differs"]["effective"]
+        self.assertTrue(both["known"])
+        self.assertIn("两份都会加载", both["lines"][0])
         fetch = groups["mcp:fetch:same-name-same"]["effective"]
         self.assertFalse(fetch["known"])
         self.assertIn("生效：未知", fetch["lines"][0])
+
+    def test_without_precedence_the_tool_draws_no_conclusion_of_its_own(self) -> None:
+        def strip(data: dict) -> None:
+            for entry in [*data["skills"], *data["mcps"]]:
+                entry.pop("precedence", None)
+                entry.pop("shadowed_by", None)
+        self.set_inventory(strip)
+        groups = self.groups()
+        for key in ("mcp:search:same-name-differs", "skill:code-review:same-name-same", "skill:meeting-notes:same-name-differs"):
+            self.assertFalse(groups[key]["effective"]["known"], key)
+            self.assertIn("生效：未知", groups[key]["effective"]["lines"][0])
+            self.assertIn("inventory 没有给出结论", groups[key]["effective"]["lines"][0])
+
+    def test_unknown_precedence_shows_the_basis_from_the_inventory(self) -> None:
+        def undocumented(data: dict) -> None:
+            data["mcps"] += [{"name": "tool", "client": "codex", "scope": "project", "store": ".codex/config.toml", "evidence": "file",
+                              "transport": "stdio", "fingerprint": "aaaa1111bbbb2222", "precedence": "unknown"},
+                             {"name": "tool", "client": "codex", "scope": "user", "store": "~/.codex/config.toml", "evidence": "file",
+                              "transport": "stdio", "fingerprint": "cccc3333dddd4444", "precedence": "unknown"}]
+            data["duplicates"]["mcps"].append({"kind": "same-name", "name": "tool", "effective": {"store": None, "rule": "project-trust-unknown",
+                                                                                                  "evidence": "unknown"}})
+        self.set_inventory(undocumented)
+        effective = self.groups()["mcp:tool:same-name-differs"]["effective"]
+        self.assertFalse(effective["known"])
+        self.assertIn("project-trust-unknown", effective["lines"][0])
 
     def test_cursor_stays_unknown_even_with_file_evidence(self) -> None:
         def known(data: dict) -> None:
             for entry in data["mcps"]:
                 if entry["name"] == "fetch":
                     entry["evidence"] = "file"
+                    entry["precedence"] = "unknown"
         self.set_inventory(known)
         effective = self.groups()["mcp:fetch:same-name-same"]["effective"]
         self.assertFalse(effective["known"])
-        self.assertIn("优先级未文档化", effective["lines"][0])
+        self.assertIn("生效：未知", effective["lines"][0])
 
-    def test_codex_project_over_user_and_claude_skill_precedence(self) -> None:
-        def codex(data: dict) -> None:
-            data["mcps"] += [{"name": "tool", "client": "codex", "scope": "project", "store": ".codex/config.toml", "evidence": "file",
-                              "transport": "stdio", "fingerprint": "aaaa1111bbbb2222"},
-                             {"name": "tool", "client": "codex", "scope": "user", "store": "~/.codex/config.toml", "evidence": "file",
-                              "transport": "stdio", "fingerprint": "cccc3333dddd4444"}]
-        self.set_inventory(codex)
-        effective = self.groups()["mcp:tool:same-name-differs"]["effective"]
-        self.assertTrue(effective["known"])
-        self.assertIn("项目级 那份", effective["lines"][0])
-        skill = self.groups()["skill:code-review:same-name-same"]["effective"]
-        self.assertIn("企业 > 个人 > 项目", skill["lines"][0])
-
-    def test_desktop_pair_carries_the_qualifier(self) -> None:
+    def test_desktop_entries_are_just_another_client(self) -> None:
         def desktop(data: dict) -> None:
             data["mcps"].append({"name": "notes-server", "client": "claude-desktop", "scope": "desktop", "store": "<app-config>",
                                  "evidence": "file", "transport": "stdio", "fingerprint": "a1b2c3d4e5f60718"})
         self.set_inventory(desktop)
         group = self.groups()["mcp:notes-server:same-name-same"]
-        self.assertFalse(group["cross_client"])
-        self.assertTrue(any("Desktop 应用的本地 Code 标签会话" in line for line in group["effective"]["lines"]))
+        self.assertTrue(group["cross_client"])
+        self.assertNotIn("Desktop 应用的本地 Code 标签会话", json.dumps(group, ensure_ascii=False))
 
     def test_different_names_same_fingerprint(self) -> None:
         def rename(data: dict) -> None:
@@ -375,15 +393,26 @@ class CheckTests(ExtensionsCase):
     def test_cost_is_per_client_and_counts_only_what_loads(self) -> None:
         cost = {row["client"]: row for row in self.run_json("extensions", "check")[1]["data"]["cost"]}
         self.assertEqual(cost["codex"]["resident_bytes"], 420)
-        self.assertEqual((cost["claude"]["counted"], cost["claude"]["uncounted"]), (4, 0))
-        # long-guide: 1800 bytes / 1800 chars is capped at 1536 characters -> 1536 bytes; plus 312 + 312 + 0.
-        self.assertEqual(cost["claude"]["resident_bytes"], 312 + 312 + 0 + 1536)
+        self.assertEqual((cost["claude"]["counted"], cost["claude"]["uncounted"]), (3, 1))
+        # long-guide: 1800 bytes / 1800 chars is capped at 1536 characters -> 1536 bytes; plus 312 + 0.
+        # The project-level code-review is shadowed (inventory says so), so it is not counted.
+        self.assertEqual(cost["claude"]["resident_bytes"], 312 + 0 + 1536)
         self.assertEqual((cost["cursor"]["counted"], cost["cursor"]["uncounted"]), (0, 1))
         estimate = cost["claude"]["token_estimate"]
         self.assertEqual((estimate["low"], estimate["high"]), (cost["claude"]["resident_bytes"] // 4, cost["claude"]["resident_bytes"] // 2))
         self.assertIn("估算", estimate["label"])
         text = self.run_cli("extensions", "check").stdout
         self.assertIn("cursor：未知", text)
+
+    def test_when_to_use_counts_towards_the_claude_cut_off(self) -> None:
+        def add(data: dict) -> None:
+            skill = next(s for s in data["skills"] if s["name"] == "pdf-notes")
+            skill.update(description_bytes=1000, description_chars=1000, when_to_use_bytes=600, when_to_use_chars=600, frontmatter_ok=True)
+        self.set_inventory(add)
+        data = self.run_json("extensions", "check")[1]["data"]
+        found = [item for item in data["findings"] if item["ref"] == "skill:pdf-notes@claude:user" and item["code"] == "desc-too-long"]
+        self.assertEqual(len(found), 1)
+        self.assertIn("1600", found[0]["fact"])
 
     def test_shadowed_or_not_loaded_entries_are_not_counted(self) -> None:
         def shadow(data: dict) -> None:
@@ -443,7 +472,7 @@ class SecretTests(ExtensionsCase):
         entry = self.run_json("extensions", "show", "mcp:remote-docs@claude:project")[1]["data"]["entry"]
         self.assertEqual(sorted(entry), sorted(["ref", "kind", "name", "client", "scope", "store", "evidence", "transport",
                                                 "fingerprint8", "fingerprint_fields", "env_var_names", "has_inline_secret",
-                                                "url_host", "tags", "groups", "findings"]))
+                                                "url_host", "tags", "groups", "findings", "precedence", "shadowed_by"]))
         self.assertEqual((entry["url_host"], entry["env_var_names"], entry["fingerprint8"]), ("docs.example.com", ["DOCS_TOKEN"], "11223344"))
         text = self.run_cli("extensions", "show", "mcp:notes-server@claude:user").stdout
         self.assertIn("NOTES_API_KEY", text)
@@ -510,9 +539,10 @@ class FunctionTests(unittest.TestCase):
         self.assertIsNone(ext._entry("skill", {"client": "claude"}))
 
     def test_effective_never_concludes_for_unknown_evidence(self) -> None:
-        members = [ext._entry("mcp", {"name": "n", "client": "claude", "scope": scope, "evidence": evidence, "fingerprint": "x" * 8 + str(i)})
+        members = [ext._entry("mcp", {"name": "n", "client": "claude", "scope": scope, "evidence": evidence, "precedence": "winner",
+                                      "fingerprint": "x" * 8 + str(i)})
                    for i, (scope, evidence) in enumerate((("local", "file"), ("user", "unknown")))]
-        result = ext._effective("mcp", "same-name-differs", members)
+        result = ext._effective("mcp", "same-name-differs", "n", members, {})
         self.assertFalse(result["known"])
 
     def test_listing_is_deterministic(self) -> None:

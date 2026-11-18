@@ -44,7 +44,8 @@
     "version": "1.4",
     "latest_known": "1.5",
     "evidence": "file"
-   }
+   },
+   "precedence": "winner"
   },
   {
    "name": "code-review",
@@ -72,6 +73,13 @@
     "version": null,
     "latest_known": null,
     "evidence": "unknown"
+   },
+   "precedence": "shadowed",
+   "shadowed_by": {
+    "store": "~/.claude/skills",
+    "rule": "claude-skill-personal-over-project",
+    "evidence": "file",
+    "source_url": "https://code.claude.com/docs/en/skills"
    }
   },
   {
@@ -156,7 +164,8 @@
     "version": null,
     "latest_known": null,
     "evidence": "unknown"
-   }
+   },
+   "precedence": "both-load"
   },
   {
    "name": "meeting-notes",
@@ -184,7 +193,8 @@
     "version": null,
     "latest_known": null,
     "evidence": "unknown"
-   }
+   },
+   "precedence": "both-load"
   },
   {
    "name": "search-helper",
@@ -288,7 +298,8 @@
     "env_var_names"
    ],
    "env_var_names": [],
-   "has_inline_secret": false
+   "has_inline_secret": false,
+   "precedence": "winner"
   },
   {
    "name": "search",
@@ -304,7 +315,14 @@
     "env_var_names"
    ],
    "env_var_names": [],
-   "has_inline_secret": false
+   "has_inline_secret": false,
+   "precedence": "shadowed",
+   "shadowed_by": {
+    "store": "~/.claude.json[<project>]",
+    "rule": "claude-mcp-local-over-user",
+    "evidence": "file",
+    "source_url": "https://code.claude.com/docs/en/mcp"
+   }
   },
   {
    "name": "fetch",
@@ -320,7 +338,8 @@
     "env_var_names"
    ],
    "env_var_names": [],
-   "has_inline_secret": false
+   "has_inline_secret": false,
+   "precedence": "unknown"
   },
   {
    "name": "fetch",
@@ -336,7 +355,8 @@
     "env_var_names"
    ],
    "env_var_names": [],
-   "has_inline_secret": false
+   "has_inline_secret": false,
+   "precedence": "unknown"
   },
   {
    "name": "remote-docs",
