@@ -266,8 +266,31 @@ class ScopeAndModeTests(Base):
 
     def test_sync_heuristic(self) -> None:
         self.assertEqual("OneDrive - Corp", ext.sync_folder_hint(Path("/x/OneDrive - Corp/a")))
-        self.assertEqual("Mobile Documents", ext.sync_folder_hint(Path("/Users/u/Library/Mobile Documents/com~apple~CloudDocs/p")))
+        self.assertEqual("Mobile Documents", ext.sync_folder_hint(Path("/x/Library/Mobile Documents/p")))
         self.assertIsNone(ext.sync_folder_hint(Path("/x/dropboxing/a")))
+
+
+class RecoveryLayoutTests(Base):
+    def test_archive_layout_matches_reconcile_retire_skill(self) -> None:
+        """relocate archives with its own small helper; the directory layout must equal `reconcile --retire-skill`."""
+        import re
+        from agent_pack_config import reconcile_project
+        from test_agent_pack_config import make_project
+        legacy = self.make_skill(self.home / ".claude" / "skills", "old-helper")
+        reconciled = reconcile_project(make_project(self.root / "notes-lab", "notes-lab"), "claude", home=self.home,
+                                       retire_skills=["old-helper"], recovery_root=self.root / "recovery-a", apply=True)
+        self.assertFalse(legacy.exists())
+        theirs = Path(reconciled["recovery"])
+        self.apply("skill:demo@claude:user", "cursor:user")
+        mine = next((self.home / ".agent-pack" / "recovery").glob("*-relocate-demo"))
+        stamp = re.compile(r"^\d{8}T\d{6}\.\d{6}Z-")
+        self.assertRegex(theirs.name, stamp)
+        self.assertRegex(mine.name, stamp)
+        self.assertEqual(theirs.stat().st_mode & 0o777, mine.stat().st_mode & 0o777)
+        files = lambda base, name: sorted(str(p.relative_to(base / "skills" / name)) for p in (base / "skills" / name).rglob("*"))
+        self.assertEqual(files(theirs, "old-helper"), files(mine, "demo"))
+        self.assertTrue((theirs / "skills" / "old-helper" / "SKILL.md").is_file())
+        self.assertTrue((mine / "skills" / "demo" / "SKILL.md").is_file())
 
 
 class SecretAndLanguageTests(Base):
