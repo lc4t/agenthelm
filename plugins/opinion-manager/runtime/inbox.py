@@ -760,8 +760,15 @@ def pending(root: Path, args: argparse.Namespace) -> dict[str, Any]:
 def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     data = load(root)
     trial = select(data, ["trial"])
-    protocol = say("protocol", runtime=RUNTIME, project=root, lang=LANGUAGE,
-                   session=words.session_flag(args.session))
+    mode = getattr(args, "mode", None) or "ask"
+    cooldown = getattr(args, "cooldown_hours", 24)
+    limit = getattr(args, "max_per_session", 1)
+    if cooldown < 0:
+        fail("err_cooldown")
+    if limit < 1:
+        fail("err_max_per_session")
+    protocol = words.protocol(LANGUAGE, runtime=RUNTIME, project=root, lang=LANGUAGE, session=args.session or "",
+                              mode=mode, cooldown=cooldown, limit=limit)
     lines = [protocol]
     used = len(protocol)
     shown = []
@@ -778,9 +785,9 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             shown.append(item["id"])
     waiting = len(select(data, ["pending"]))
     if waiting:
-        lines.append(say("brief_pending", count=waiting))
+        lines.append(say("brief_pending" if mode == "ask" else "brief_pending_quiet", count=waiting))
     return {"ok": True, "status": "read-only", "text": "\n".join(lines), "trial_shown": shown,
-            "pending": waiting, "trial": len(trial)}
+            "pending": waiting, "trial": len(trial), "mode": mode}
 
 
 def routes(root: Path, args: argparse.Namespace) -> dict[str, Any] | str:
@@ -819,10 +826,11 @@ def add_command(subparsers: Any) -> None:
     parser.add_argument("--apply", action="store_true", help="adopt: write OPINION.md and the lock (needs --confirm); without it adopt only previews")
     parser.add_argument("--confirm", help="adopt: the confirmation_sha256 of the preview the user has reviewed")
     parser.add_argument("--days", type=int, help="expire: revert trials older than this many days to pending")
-    parser.add_argument("--cooldown-hours", type=float, default=24, help="gate: allow at most one ask per project within this many hours (default 24)")
-    parser.add_argument("--max-per-session", type=int, default=1, help="gate: allow at most this many asks per session (default 1)")
+    parser.add_argument("--cooldown-hours", type=float, default=24, help="gate / brief: allow at most one ask per project within this many hours (default 24)")
+    parser.add_argument("--max-per-session", type=int, default=1, help="gate / brief: allow at most this many asks per session (default 1)")
     parser.add_argument("--peek", action="store_true", help="gate: only report whether an ask would be allowed; record nothing")
     parser.add_argument("--max-chars", type=int, default=6000, help="brief: size limit of the text")
+    parser.add_argument("--mode", choices=("ask", "digest", "quiet"), default="ask", help="brief: how the protocol asks for confirmation (ask: once per cooldown and session, digest: one closing sentence, quiet: only the session-start summary)")
     parser.add_argument("--output", choices=("json", "markdown"), default="json")
     parser.add_argument("--lang", choices=("auto", *words.LANGUAGES), help="message language: zh / en; by default AGENTHELM_LANG, then the system locale, then English")
 

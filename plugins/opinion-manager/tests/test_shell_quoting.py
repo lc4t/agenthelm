@@ -33,8 +33,7 @@ class ShellQuotingTests(unittest.TestCase):
         self.base = Path(self.directory.name).resolve()
 
     def render(self, language: str, runtime: Path, project: Path, session: str = SESSION) -> str:
-        return inbox_text.text("protocol", language, runtime=runtime, project=project, lang=language,
-                               session=inbox_text.session_flag(session))
+        return inbox_text.protocol(language, runtime=runtime, project=project, lang=language, session=session)
 
     def test_split_restores_paths_in_both_languages(self) -> None:
         for name in NASTY:

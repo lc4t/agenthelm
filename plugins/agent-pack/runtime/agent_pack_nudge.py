@@ -32,6 +32,7 @@ ENV_DEBUG = "AGENTHELM_NUDGE_DEBUG"
 CLIENTS = client_registry.default_ids()
 EVENTS = ("session-start", "prompt-submit", "stop")
 STOP_MODES = ("off", "on-completion", "always")
+CONFIRM_MODES = ("ask", "digest", "quiet")
 OURS = re.compile(r"agenthelm\.py['\"]?\s+nudge\s+hook")
 SUBPROCESS_TIMEOUT = 5
 MAX_PROMPT_CHARS = 1500
@@ -53,6 +54,8 @@ DEFAULTS: dict[str, Any] = {
     "pending_threshold": 5,
     "stale_days": 7,
     "max_prompts_per_session": 1,
+    "confirm": "ask",
+    "prompt_cooldown_hours": 24,
     "capture_hints_per_session": 3,
     "trial_expire_days": 30,
     "reminder_repeat_hours": 24,
@@ -104,6 +107,16 @@ def merge_config(*layers: Any) -> tuple[dict[str, Any], list[str]]:
                     config[key] = {**config[key], **modes}
                 else:
                     problems.append(("warn_stop", {"label": label, "modes": "/".join(STOP_MODES)}))
+            elif key == "confirm":
+                if value in CONFIRM_MODES:
+                    config[key] = value
+                else:
+                    problems.append(("warn_confirm", {"label": label, "modes": "/".join(CONFIRM_MODES)}))
+            elif key == "prompt_cooldown_hours":
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    config[key] = value
+                else:
+                    problems.append(("warn_cooldown", {"label": label}))
             elif key in ("keywords", "completion_keywords"):
                 parsed = _words(value, [])
                 if parsed:
@@ -314,7 +327,9 @@ def session_start(host: Any, env: Any, payload: dict, client: str, root: Path, c
     source = str(payload.get("source") or "startup")
     if (root / ".opinion" / "inbox.json").is_file():
         run_manager(manager, "inbox", "expire", "--project", str(root), "--days", str(config["trial_expire_days"]), lang=config["lang"])
-    brief = run_manager(manager, "inbox", "brief", "--project", str(root), *(["--session", session] if session else []), lang=config["lang"])
+    brief = run_manager(manager, "inbox", "brief", "--project", str(root), *(["--session", session] if session else []),
+                        "--mode", config["confirm"], "--cooldown-hours", str(config["prompt_cooldown_hours"]),
+                        "--max-per-session", str(config["max_prompts_per_session"]), lang=config["lang"])
     context = brief["text"] if brief else None
     if source == "compact":
         return render(client, "session-start", context=context)
@@ -374,7 +389,7 @@ def prompt_submit(host: Any, env: Any, payload: dict, client: str, root: Path, c
 
 def stop(host: Any, env: Any, payload: dict, client: str, root: Path, config: dict) -> dict | None:
     mode = config["stop_prompt"].get(client, "off")
-    if mode == "off" or payload.get("stop_hook_active") or payload.get("loop_count"):
+    if mode == "off" or config["confirm"] != "ask" or payload.get("stop_hook_active") or payload.get("loop_count"):
         return None
     if client == "cursor" and payload.get("status") not in (None, "completed"):
         return None
@@ -396,9 +411,17 @@ def stop(host: Any, env: Any, payload: dict, client: str, root: Path, config: di
     identifiers = summary["session_unpresented"]
     if not identifiers:
         return None
+    gate = ["inbox", "gate", "--project", str(root), "--session", session, "--cooldown-hours", str(config["prompt_cooldown_hours"]),
+            "--max-per-session", str(config["max_prompts_per_session"])]
+    peek = run_manager(manager, *gate, "--peek", lang=config["lang"])
+    if not peek or peek.get("allowed") is not True:
+        return None  # 冷却中；gate 状态损坏时 run_manager 返回 None，同样保持静默
     listing = run_manager(manager, "inbox", "list", "--project", str(root), "--session", session, "--unpresented",
                           "--status", "pending", "--output", "markdown", lang=config["lang"])
     if not listing:
+        return None
+    recorded = run_manager(manager, *gate, lang=config["lang"])  # 真要发请求才记账
+    if not recorded or recorded.get("allowed") is not True:
         return None
     run_manager(manager, "inbox", "present", *identifiers, "--project", str(root), lang=config["lang"])
     record["stop_prompts"] += 1
@@ -646,7 +669,8 @@ def main(argv: list[str], host: Any) -> int:
                  say("status_switch", lang, state=state),
                  say("status_thresholds", lang, pending=config["pending_threshold"], stale=config["stale_days"],
                      prompts=config["max_prompts_per_session"], expire=config["trial_expire_days"],
-                     stop=config["stop_prompt"], language=f"{config['language']} ({lang})")]
+                     stop=config["stop_prompt"], language=f"{config['language']} ({lang})"),
+                 say("status_confirm", lang, mode=config["confirm"], hours=config["prompt_cooldown_hours"])]
         if result.get("summary"):
             summary = result["summary"]
             lines.append(say("status_current", lang, pending=summary["pending"], trial=summary["trial"], days=int(summary["oldest_days"])))
