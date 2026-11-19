@@ -781,7 +781,7 @@
  "参数里有被脱敏的值，已换成占位符，请自行填入": "Some arguments were redacted and replaced by placeholders; fill them in yourself",
  "官方文档没有说明 claude_desktop_config.json 是否加载远程 url 条目：未确认": "The official documentation does not say whether claude_desktop_config.json loads remote url entries: unconfirmed",
  "条目里没有 command 或 url，无法生成片段": "The entry has neither command nor url; no snippet can be generated",
- "请求头 {0} 未写入片段：Desktop 是否支持未确认": "Header(s) {0} are not in the snippet: whether Desktop supports them is unconfirmed",
+ "请求头 {0} 未写入片段：Desktop 是否支持未确认": "Request headers left out of the snippet ({0}): whether Desktop supports them is unconfirmed",
  "处置 inventory 报告的一个重复分组：保留一份并归档其余（Skill）、全部保留、忽略（默认预览；--apply --expect-plan <指纹> 才写入）": "Handle one duplicate group reported by inventory: keep one and archive the rest (Skills), keep all, or ignore (preview by default; --apply --expect-plan <digest> writes)",
  "分组 id（用 --list 查看）": "Group id (see --list)",
  "只读：列出重复分组与已记录的决定": "Read-only: list duplicate groups and recorded decisions",
