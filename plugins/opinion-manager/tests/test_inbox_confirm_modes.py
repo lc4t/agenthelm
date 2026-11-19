@@ -29,10 +29,12 @@ class ConfirmModeTests(unittest.TestCase):
     def test_ask_mode_gates_presents_and_adopts_from_the_preview(self) -> None:
         for language in inbox_text.LANGUAGES:
             text = protocol(language, "ask")
-            for needle in ("inbox gate", f"--session {SESSION}", "--cooldown-hours 24", "--max-per-session 1", "inbox present",
+            for needle in ("inbox gate", f"--session {SESSION}", "inbox present",
                            "shown_matches", "--apply --confirm", ".opinion/profiles/", ASK_SENTENCES[language]):
                 self.assertIn(needle, text, (language, needle))
             self.assertNotIn("undo", text)
+            self.assertNotIn("--cooldown-hours", text, "defaults are left out of the command line")
+            self.assertNotIn("--max-per-session", text)
 
     def test_digest_and_quiet_never_ask_at_task_completion(self) -> None:
         for language in inbox_text.LANGUAGES:
@@ -50,6 +52,11 @@ class ConfirmModeTests(unittest.TestCase):
     def test_chinese_protocol_stays_within_the_budget_in_every_mode(self) -> None:
         for mode in ("ask", "digest", "quiet"):
             self.assertLessEqual(len(protocol("zh", mode).encode("utf-8")), 3000, mode)
+
+    def test_budget_holds_with_a_long_checkout_path(self) -> None:
+        runtime = Path("/home/runner/work/agenthelm/agenthelm/plugins/opinion-manager/runtime/opinion_manager.py")
+        text = inbox_text.protocol("zh", runtime=runtime, project="/tmp/project", lang="zh", session=SESSION, mode="ask")
+        self.assertLessEqual(len(text.encode("utf-8")), 3000)
 
     def test_no_command_argument_contains_square_brackets(self) -> None:
         for language in inbox_text.LANGUAGES:

@@ -28,7 +28,7 @@
 - `stale_days`：最久一条待确认候选超过此天数就提示，默认 `7`。
 - `max_prompts_per_session`：每会话回合结束的确认请求上限，默认 `1`。
 - `confirm`：`ask`（默认）/ `digest` / `quiet`。`ask`：任务收尾时询问，受每会话上限与冷却限制；`digest`：对话里不单独询问，只在回复末尾顺带一句，会话开始汇总；`quiet`：只在会话开始汇总。`digest` 与 `quiet` 下 `stop` 不输出。会话开始时按此值调用 `inbox brief --mode`，协议由 opinion-manager 生成，是确认时机的单一来源。
-- `prompt_cooldown_hours`：同项目两次确认请求的最短间隔（小时，非负整数，`0` 为不设冷却），默认 `24`；同时作为 `--cooldown-hours` 写入协议里的 `inbox gate`。
+- `prompt_cooldown_hours`：同项目两次确认请求的最短间隔（小时，非负整数，`0` 为不设冷却），默认 `24`；同时传给 `inbox brief --cooldown-hours`（与缺省不同时写进协议里的 `inbox gate`）。
 - `capture_hints_per_session`：每会话关键词提醒上限，默认 `3`。
 - `trial_expire_days`：试行超过此天数未转正退回待确认，默认 `30`。
 - `reminder_repeat_hours`：会话开始的可见提示最短间隔，默认 `24`。
