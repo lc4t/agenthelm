@@ -45,8 +45,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "\n[A notice for the user, who may not have seen it. Pass it on in one sentence in your first reply, as written; what to do about it is the user's decision, and do not edit .gitignore yourself]\n{notice}",
     },
     "add_command": {
-        "zh": 'python3 {manager} inbox add --project {root} --title "<标题>" --text "<完整规则>" --scope "<适用范围>" --quote "<用户原话>"{session} --lang {lang}',
-        "en": 'python3 {manager} inbox add --project {root} --title "<title>" --text "<the full rule>" --scope "<where it applies>" --quote "<the user\'s own words>"{session} --lang {lang}',
+        "zh": 'python3 {manager} inbox add --project {root} --title "<标题>" --text "<完整规则>" --scope "<适用范围>" --trigger "<何时适用>" --purpose "<为什么>" --quote "<用户原话>"{session} --lang {lang}',
+        "en": 'python3 {manager} inbox add --project {root} --title "<title>" --text "<the full rule>" --scope "<where it applies>" --trigger "<when it applies>" --purpose "<why>" --quote "<the user\'s own words>"{session} --lang {lang}',
     },
     "add_command_fallback": {"zh": "opinion-manager 的 inbox add", "en": "opinion-manager's inbox add"},
     "sep": {"zh": "、", "en": ", "},

@@ -2055,8 +2055,23 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
                 issues.append(str(exc))
     reports: dict[str, Any] = {}
     for client in dict.fromkeys(clients):
+        if client == "claude-desktop":  # read-only observation of claude_desktop_config.json; never a drift issue
+            import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
+
+            report = agent_pack_inventory.desktop_report(home or Path.home())
+            warnings.extend(report.pop("warnings"))
+            reports[client] = report
+            continue
         report = client_drift(layout.root, client, home)
         reports[client] = report
+        if client == "claude":  # advisory only: it never changes ``ok`` or the exit code
+            import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
+
+            shadows = agent_pack_inventory.desktop_shadow_findings(
+                home or Path.home(), [item.name for item in inventory.mcps if _mcp_allowed(layout, item.name, "claude")])
+            if shadows:
+                report["shadowed_by"] = shadows
+                warnings.extend(agent_pack_inventory.shadow_warning(item) for item in shadows)
         for kind in ("missing", "different", "stale", "dangling", "missing_env"):
             issues.extend(f"{client}: {kind} {item}" for item in report[kind])
         if report["coupled"]:
@@ -2141,8 +2156,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = sub.add_parser("doctor")
     doctor_parser.add_argument("--project", type=Path, default=Path.cwd())
-    doctor_parser.add_argument("--client", action="append", default=[], choices=("codex", "cursor", "claude"),
-                               help="also compare this client's installed capabilities with the project (repeatable)")
+    doctor_parser.add_argument("--client", action="append", default=[], choices=("codex", "cursor", "claude", "claude-desktop"),
+                               help="also compare this client's installed capabilities with the project (repeatable); "
+                                    "claude-desktop only reads claude_desktop_config.json and must be named")
     doctor_parser.add_argument("--home", type=Path)
 
     transfer_parser = sub.add_parser("transfer")

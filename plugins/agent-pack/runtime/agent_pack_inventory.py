@@ -29,6 +29,8 @@ from i18n_agent_pack import _, N_  # noqa: E402
 
 SCHEMA_VERSION = 1
 CLIENTS = ("claude", "codex", "cursor")
+DESKTOP = "claude-desktop"  # a separate target: the standalone CLI does not read claude_desktop_config.json
+ALL_CLIENTS = (*CLIENTS, DESKTOP)  # the default set is CLIENTS; claude-desktop must be named (or ``all``)
 TYPES = ("skills", "mcp", "all")
 SCOPES = ("project", "user", "all")
 EVIDENCE = ("file", "setting", "cli", "unknown")  # setting / cli are reserved: this version never reads them
@@ -52,6 +54,14 @@ DOC_CLAUDE_MCP = "https://code.claude.com/docs/en/mcp"
 DOC_CLAUDE_SKILLS = "https://code.claude.com/docs/en/skills"
 DOC_CODEX_SKILLS = "https://learn.chatgpt.com/docs/build-skills"
 DOC_CODEX_MCP = "https://learn.chatgpt.com/docs/extend/mcp?surface=cli"
+DOC_DESKTOP_PATHS = "https://modelcontextprotocol.io/docs/develop/connect-local-servers"
+DOC_DESKTOP_MCP = "https://code.claude.com/docs/en/desktop#mcp-servers-from-the-claude-desktop-chat-app"
+DESKTOP_FILE = "claude_desktop_config.json"
+DESKTOP_STORE_NAME = "desktop-config"  # the ``store`` label of Desktop entries; the real path is in ``desktop.path``
+DESKTOP_STORES = {  # official documentation (MCP site, read 2026-11-18); Windows (%APPDATA%\\Claude) is documentation only
+    "darwin": f"~/Library/Application Support/Claude/{DESKTOP_FILE}",
+    "linux": f"~/.config/Claude/{DESKTOP_FILE}",
+}
 
 # (scope, store) per client, in listing order. ``~`` is the home directory, ``<project>`` the project root.
 SKILL_STORES = {
@@ -75,12 +85,15 @@ REASON_TEXT = {
     "unreadable": N_("无法读取"),
     "too-large": N_("文件过大，未读取"),
     "unexpected-structure": N_("结构不是预期的对象"),
+    "not-found": N_("文件不存在"),
+    "platform-unsupported": N_("本命令只解析 macOS 与 Linux 的路径"),
     "claude-local-structure-unrecognized": N_("~/.claude.json 里按项目路径存放的条目结构无法识别"),
     "broken-symlink": N_("符号链接已失效"),
     "frontmatter-missing": N_("SKILL.md 没有可读的 frontmatter"),
     "description-missing": N_("frontmatter 没有 description"),
     "name-mismatch": N_("frontmatter 的 name 与目录名不同"),
     "skill-md-too-large": N_("SKILL.md 过大，未解析"),
+    "variable-expansion-unconfirmed": N_("官方文档没有说明该文件是否展开 ${VAR}"),
     "dir-too-large": N_("目录文件过多，未统计大小与文件数"),
     "codex-project-requires-trust": N_("Codex 只在受信任的项目里读取项目级配置；本工具读不到信任记录"),
 }
@@ -627,6 +640,79 @@ def _observe_mcp_store(client: str, scope: str, store: str, home: Path, project:
     return [normalize_mcp(str(name), raw, client, scope, store, home, state) for name, raw in sorted(servers.items())]
 
 
+# ------------------------------------------------------------------ Claude Desktop (claude_desktop_config.json)
+
+def desktop_store(platform: str | None = None) -> str | None:
+    """The documented ``claude_desktop_config.json`` location for this platform (``None`` where it is not resolved)."""
+    name = sys.platform if platform is None else platform
+    return DESKTOP_STORES.get("darwin" if name == "darwin" else "linux" if name.startswith("linux") else "")
+
+
+def desktop_info(home: Path, platform: str | None = None) -> dict:
+    """``{path, exists, parse_ok}`` of ``claude_desktop_config.json`` (``parse_ok`` is ``null`` when absent)."""
+    store = desktop_store(platform)
+    path = resolve_store(store, home, None) if store else None
+    if path is None:
+        return {"path": None, "exists": False, "parse_ok": None}
+    exists = path.exists()
+    data, reason = read_json_object(path) if exists else (None, None)
+    return {"path": display_path(path, home, None), "exists": exists,
+            "parse_ok": (reason is None and data is not None) if exists else None}
+
+
+def observe_desktop(home: Path, platform: str | None = None) -> tuple[list[dict], list[dict]]:
+    """(entries, unknown) of ``claude_desktop_config.json``; a missing or corrupt file is ``unknown``, never an error."""
+    store = desktop_store(platform)
+    label = DESKTOP_STORE_NAME
+    if store is None:
+        return [], [{"store": label, "client": DESKTOP, "reason": "platform-unsupported"}]
+    path = resolve_store(store, home, None)
+    data, reason = read_json_object(path) if path is not None else (None, "unreadable")
+    if reason is None and data is None:
+        reason = "not-found"
+    if reason:
+        return [], [{"store": label, "client": DESKTOP, "reason": reason}]
+    servers = _servers(data)
+    if servers is None:
+        return [], ([{"store": label, "client": DESKTOP, "reason": "unexpected-structure"}] if "mcpServers" in data else [])
+    entries = [normalize_mcp(str(name), raw, DESKTOP, "user", label, home, {}) for name, raw in sorted(servers.items())]
+    for entry in entries:
+        if any("${" in str(value) for value in (entry["command"], entry["url"], *entry["args"])):
+            entry["notes"].append("variable-expansion-unconfirmed")
+    return entries, []
+
+
+def desktop_report(home: Path, platform: str | None = None) -> dict:
+    """What ``doctor --client claude-desktop`` shows: read-only, nothing here is a drift issue."""
+    entries, unknown = observe_desktop(home.expanduser().resolve(), platform)
+    report = {"client": DESKTOP, "store": DESKTOP_STORE_NAME, "path": desktop_info(home.expanduser().resolve(), platform)["path"],
+              "evidence": "unknown" if unknown else "file",
+              "servers": [entry["name"] for entry in entries], "unknown": unknown, "source_url": DOC_DESKTOP_PATHS}
+    report["warnings"] = [_("{0}：{1}（{2}）").format(DESKTOP, item["store"], _(REASON_TEXT.get(item["reason"], item["reason"])))
+                          for item in unknown if item["reason"] != "not-found"]
+    return report
+
+
+def desktop_shadow_findings(home: Path, names: list[str], platform: str | None = None) -> list[dict]:
+    """Advisory: servers the project manages (``names``) that ``claude_desktop_config.json`` also defines.
+
+    The Desktop app loads that file's servers into local Code tab sessions alongside ``~/.claude.json`` and ``.mcp.json``
+    (https://code.claude.com/docs/en/desktop, read 2026-11-18). An earlier reading (design #82, 2026-11-11) quoted a
+    sentence that the Code tab then uses the ``claude_desktop_config.json`` definition; the page read on 2026-11-18 no
+    longer contains it, so the precedence is reported as unconfirmed. Applies to the Desktop local Code tab only; the
+    standalone CLI is unaffected.
+    """
+    entries, _unknown = observe_desktop(home.expanduser().resolve(), platform)
+    wanted = set(names)
+    return [{"name": entry["name"], "by": DESKTOP_FILE, "store": entry["store"], "applies_to": "desktop-local-code-tab",
+             "cli_affected": False, "severity": "advisory", "evidence": "file", "precedence_confirmed": False,
+             "source_url": DOC_DESKTOP_MCP} for entry in entries if entry["name"] in wanted]
+
+
+def shadow_warning(item: dict) -> str:
+    return _("claude：{0} 在 claude_desktop_config.json 里也有定义；Claude Desktop 的本地 Code 标签可能改用那一份（官方文档当前没有明确同名优先级），独立 CLI 不受影响").format(item["name"])
+
+
 # ------------------------------------------------------------------ duplicates
 
 def _tokens(text: str) -> set[str]:
@@ -779,12 +865,13 @@ def _annotate(skills: list[dict], mcps: list[dict], duplicates: dict) -> None:
 # ------------------------------------------------------------------ entry point
 
 def observe(home: Path, project: Path | None = None, clients: list[str] | None = None, types: str = "all",
-            scope: str = "all", include_description: bool = False) -> dict:
+            scope: str = "all", platform: str | None = None, include_description: bool = False) -> dict:
     """Everything the chosen clients can see, as the ``schema_version`` 1 document. Read-only and never raises on
     bad input files (they become ``unknown`` entries)."""
     home = home.expanduser().resolve()
     project = project.expanduser().resolve() if project is not None else None
-    chosen = [client for client in CLIENTS if client in (clients or CLIENTS)]
+    requested = list(ALL_CLIENTS) if clients and "all" in clients else (clients or list(CLIENTS))
+    chosen = [client for client in ALL_CLIENTS if client in requested]
     want_skills, want_mcp = types in ("skills", "all"), types in ("mcp", "all")
 
     def wanted(item_scope: str) -> bool:
@@ -798,6 +885,12 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
     unknown: list[dict] = []
     real_paths: dict[str, str] = {}
     for client in chosen:
+        if client == DESKTOP:
+            if want_mcp and wanted("user"):  # Desktop has no Skill directory and no project level
+                found, missing = observe_desktop(home, platform)
+                mcps.extend(found)
+                unknown.extend(missing)
+            continue
         if want_skills:
             for item_scope, store in SKILL_STORES[client]:
                 root = resolve_store(store, home, project)
@@ -813,7 +906,7 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
             for item_scope, store in MCP_STORES[client]:
                 if wanted(item_scope):
                     mcps.extend(_observe_mcp_store(client, item_scope, store, home, project, mcp_state, unknown))
-    order = {client: index for index, client in enumerate(CLIENTS)}
+    order = {client: index for index, client in enumerate(ALL_CLIENTS)}
     skills.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
     mcps.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
     duplicates = {"skills": skill_duplicates(skills, real_paths), "mcps": mcp_duplicates(mcps)}
@@ -833,7 +926,7 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
             "description_bytes_distinct_files": sum(distinct.values()),
             "mcp_count": sum(1 for item in mcps if item["client"] == client),
         }
-    return {
+    report = {
         "schema_version": SCHEMA_VERSION,
         "generated_by": "agenthelm inventory",
         "project": display_path(project, home, None) if project else None,
@@ -846,6 +939,9 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
         "overlap_hints": hints,
         "unknown": unknown,
     }
+    if DESKTOP in chosen:
+        report["desktop"] = desktop_info(home, platform)
+    return report
 
 
 # ------------------------------------------------------------------ text rendering

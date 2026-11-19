@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "收件箱记录展示快照，采纳预览返回 shown_matches 与 added_lines；新增询问节流 gate（只记账，状态在 .opinion/ask-state.json）。",
+    "en": "The inbox records a shown snapshot, the adopt preview returns shown_matches and added_lines, and a new ask-throttling gate command keeps its bookkeeping in .opinion/ask-state.json."
+  },
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

@@ -23,15 +23,25 @@
 
 以下命令都在 `opinion_manager.py inbox <动作>` 下，`--project` 必填；`--lang zh|en` 指定提示语言（缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用英文）；输出为 JSON，`list` 可用 `--output markdown` 得到给用户看的编号列表。
 
-- `add --title --text --scope [--quote] [--client] [--session]`：暂存。标题 ≤120、正文 ≤1200、原话 ≤600 个字符；至少一个 `--scope`。内容相同（忽略空白与大小写）的候选合并，新原话追加为证据。
-- `list [--status a,b] [--session ID] [--unpresented]`：列出候选。
+- `add --title --text --scope --trigger --purpose [--exclude] [--relation] [--quote] [--client] [--session]`：暂存。标题 ≤120、正文 ≤1200、原话 ≤600、各字段 ≤300 个字符；至少一个 `--scope`。内容相同（忽略空白与大小写）的候选合并，新原话追加为证据。
+  - `--trigger`（何时适用）与 `--purpose`（为什么）由 Agent 暂存时填写，用户在集中裁决时一次看到。本版为**软必填**：缺失时仍暂存成功，返回 `warnings` 且 `complete: false`，列表按「不完整」展示；严格拒绝缺失项留给之后的 major（代码里集中开关 `STRICT_REQUIRED`）。
+  - 传入了但无效的值一律拒绝：空白，以及「所有」「全部」「相关」「一切」「any」「all」「everything」「relevant」「n/a」等占位词。
+  - 全局声明：用户明确要求全局时，`--trigger` 必须用固定标准值「全部场景，用户要求全局」/ "All scenarios; the user asked for this to apply globally"，并同时带非空 `--quote`；列表标注「全局（请用户确认）」。**工具只做形式校验，无法验证是谁提出的全局**，需由用户在裁决时确认。
+  - `--exclude` 写不适用情形；`--relation` 是 Agent 对与现有规则关系的备注，工具原样保存和展示，不解释。
+  - 采纳写入时，自定义行为 `- **标题**（适用：…；条件：…；目的：…；不适用：…）：正文`（没有这些字段的旧候选与此前渲染逐字节相同）。行内标签与 `OPINION.md` 的框架文字随**项目文件语言**（Project Profile 的 `language`，缺省 zh），不随界面语言；`en` 项目的文件里不出现中文（用户自己写的内容除外）。`language` 非 zh 的项目，`opinion.lock.json` 带可选键 `"language": "en"` 供 `verify` 复现渲染；zh 项目的锁格式不变。旧版运行时读不了带 `language` 的锁，需先升级。
+- `list [--status a,b] [--session ID] [--unpresented]`：列出候选。json 里每项带 `relations`（机械关系提示，没有则为空列表），markdown 里以「可能相关」行展示。
+  - 关系提示的对象：其他候选（不含已丢弃）、`OPINION.md` 自定义行（按本工具自己的两种渲染格式解析）、Profile 里已选的公开规则文本。三种提示：规范化文本相同（`same_text`）、字符二元组 Jaccard 重合度 ≥ 0.5（`text_overlap`，两边规范化后都至少 6 个字符）、触发条件重合度 ≥ 0.4（`condition_overlap`，不含全局声明）。每条带证据片段与「机械比对，仅供参考」，最多 5 条，永不阻断；阈值保守，宁可漏报。冲突、合并、放大缩小、拆分等语义判断由 Agent 做，写入 `--relation` 备注，工具原样保存和展示，不解释。
+- `check`：只读，不写任何文件。列出缺 trigger / purpose 的候选（`pending`、`trial`）与 `OPINION.md` 自定义行；认不出格式的行标 `unstructured`（未结构化），只报告。输出带每个候选的 `revise_command`，供 Agent 逐条提出建议值。`OPINION.md` 里的行补全走 `adopt` 的完整预览流程，由用户一次批量确认，不新增写入命令。
+- `revise <编号> [--title --text --scope --trigger --purpose --exclude --relation --quote]`：修订候选。状态为 `pending` 且从未展示（`presented` 为 0）时无需 `--confirmed`；其他状态必须带 `--confirmed`。`history` 追加 `{to: 原状态, note: revised, previous: 被改字段的旧值}`，状态不变；重算摘要，与其他候选撞摘要时报错；`--scope` 整体替换，`--quote` 追加。`formal` 候选的修订不改 `OPINION.md`（返回警告）。
 - `decide <编号…> --to pending|trial|formal|held|rejected --confirmed [--note]`：裁决。没有 `--confirmed` 一律拒绝；多个编号要么全部成功，要么都不改。
 - `adopt <编号…> [--apply --confirm SHA256]`：从采纳到写入的一步确认入口。用户在对话里明确说「采纳」时用它，不再单独 `decide`。
   - 不带 `--apply`：只预览，零写入。把候选正文作为个人规则追加到项目现有 Profile 的自定义段（没有 Profile 时新建 `private.my-opinion@1.0.0`），经 `profile` 与 `compose` 同一套预览，返回完整 `content`（将成为 `OPINION.md` 的全文）、`blocked`（已有人工内容等需先处理的情况）和 `confirmation_sha256`。
+  - 预览还返回 `added_lines`（采纳后将追加到自定义段的行，与 `content` 里的一致）和 `shown_matches`：全部候选都有展示快照、快照与此刻渲染行一致、没有 `blocked`、没有冲突时为 `true`；`shown` 逐个候选列出是否一致。它只是事实记录，不改变保护：写入仍必须带预览指纹，不因 `shown_matches` 放宽。
   - 带 `--apply --confirm <预览的 confirmation_sha256>`：用户确认后一次写入新 Profile 版本、`OPINION.md` 与 `opinion.lock.json`，用 `verify` 读回核对，最后才把候选置为 `formal`。预览之后候选、Profile 或 `OPINION.md` 有变化则指纹不符，拒绝并零写入。不使用 `--confirmed`：确认凭据是预览指纹。
   - 多个编号一次预览、一次确认，全部成功或都不改；不存在的编号、已是 `formal` 的编号整体报错并点名。写入或读回失败时，`OPINION.md`、锁、本次新建的 Profile 文件恢复原状，候选状态不变。
   - 已被 `decide --to formal` 记录、但尚未写入的候选：先 `decide --to pending --confirmed` 退回，再 `adopt`。
-- `present <编号…>`：记录已向用户展示过（hook 在发出确认请求时调用，避免同一候选反复提示）。
+- `present <编号…>`：记录已向用户展示过（hook 在发出确认请求时调用，避免同一候选反复提示），同时记录**展示快照**：此刻候选将被渲染成的规则行的摘要（`shown`：`at`、`language`、`line_sha256`）。之后候选被修订或项目语言改变，摘要就对不上。输出带这些候选（含 `relations`）。
+- `gate [--session ID] [--cooldown-hours N] [--max-per-session N] [--peek]`：询问节流，只记账，不决定要不要问。同项目 N 小时内（默认 24）最多放行一次，同会话最多放行 `--max-per-session` 次（默认 1）；返回 `allowed`、`reason`（`ok` / `cooldown` / `session_limit`）、`next_allowed_at`。放行且没有 `--peek` 时才记一次；`--peek` 只读，不创建任何文件。没有 `--session` 时只看冷却。状态在项目私有的 `.opinion/ask-state.json`（保留最近 50 个会话），拒绝符号链接，读改写持有 `.opinion/.ask.lock`；状态文件格式不对时报错，不当作放行。本命令只提供计数；何时调用、询问的措辞由协议和 hook 决定。
 - `expire --days N`：把试行超过 N 天的候选退回 `pending`。退回保留 `last_action_at`，因此仍计入“久未处理”。
 - `pending [--session ID]`：待确认项提供者，见下。
 - `exposure`：只读，报告 `.opinion/inbox.json` 在 Git 里的状态与提醒文字。

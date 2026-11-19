@@ -26,6 +26,7 @@ REPOSITORY = "lc4t/agenthelm"
 PLUGIN = "agents-init"
 TEMPLATE_NAME = "AGENT.template.md"
 LAUNCHER_NAME = "launcher.sh"
+LAUNCHER_EN_NAME = "launcher.en.sh"  # 英文版启动器；早期发布没有
 MAX_RELEASES = 20  # 联网最多看最近这么多个发布
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
@@ -39,6 +40,7 @@ class PackSource:
     version: str  # 内容包版本（content.json 里的 version）
     template: str
     launcher: str | None
+    launcher_en: str | None = None
 
 
 def sha256(data: bytes) -> str:
@@ -63,7 +65,8 @@ def _verified(content: object, pack_id: str, read: Callable[[str], bytes | None]
         return None
     try:
         launcher = texts[LAUNCHER_NAME].decode("utf-8") if LAUNCHER_NAME in texts else None
-        return PackSource(label, kind, str(pack["version"]), texts[TEMPLATE_NAME].decode("utf-8"), launcher)
+        launcher_en = texts[LAUNCHER_EN_NAME].decode("utf-8") if LAUNCHER_EN_NAME in texts else None
+        return PackSource(label, kind, str(pack["version"]), texts[TEMPLATE_NAME].decode("utf-8"), launcher, launcher_en)
     except UnicodeDecodeError:
         return None
 

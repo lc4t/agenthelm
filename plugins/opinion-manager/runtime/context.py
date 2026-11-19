@@ -49,7 +49,7 @@ def load(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | Non
     return profile, lock
 
 
-def partition(profile: dict[str, Any]) -> dict[str, Any]:
+def partition(profile: dict[str, Any], language: str = "zh") -> dict[str, Any]:
     """把每条有效规则分到唯一的模板系列；常驻系列优先，未登记的系列按常驻处理。"""
     loading = profile["loading"]
     rules = versioned.effective_rules(profile)
@@ -72,18 +72,18 @@ def partition(profile: dict[str, Any]) -> dict[str, Any]:
     return {
         "rules": rules, "groups": groups, "unlisted": unlisted,
         "refs": {family: ref for ref, family, _ in templates},
-        "names": {family: value["name"] for _, family, value in templates},
+        "names": {family: versioned.pick(value["name"], language)[0] for _, family, value in templates},
         "always": [family for family in (*loading["core"], *unlisted, DIRECT) if family in groups],
         "bundles": [bundle for bundle in loading["bundles"] if bundle["family"] in groups],
     }
 
 
-def group_text(profile: dict[str, Any], parts: dict[str, Any], family: str) -> str:
-    return "\n\n".join(versioned.render_rule(profile, parts["rules"][identity]) for identity in parts["groups"].get(family, []))
+def group_text(profile: dict[str, Any], parts: dict[str, Any], family: str, language: str = "zh") -> str:
+    return "\n\n".join(versioned.render_rule(profile, parts["rules"][identity], language) for identity in parts["groups"].get(family, []))
 
 
-def core_text(profile: dict[str, Any], lock: dict[str, Any] | None) -> str:
-    parts = partition(profile)
+def core_text(profile: dict[str, Any], lock: dict[str, Any] | None, language: str = "zh") -> str:
+    parts = partition(profile, language)
     if lock:
         origin = _("正文指纹：`{0}`").format(lock["opinion_sha256"])
     else:
@@ -92,8 +92,8 @@ def core_text(profile: dict[str, Any], lock: dict[str, Any] | None) -> str:
              _("Profile：`{0}@{1}`；{2}。").format(profile["id"], profile["version"], origin),
              _("本输出是完整正文的只读切片，始终适用。场景规则束见文末索引，命中时再读取。")]
     for family in parts["always"]:
-        lines.extend(("", group_text(profile, parts, family)))
-    lines.extend(versioned.custom_section(profile))
+        lines.extend(("", group_text(profile, parts, family, language)))
+    lines.extend(versioned.custom_section(profile, language))
     lines.extend(("", _("## 规则束索引"), "", _("任务命中触发条件时用 `context bundle <系列>` 读取对应规则束；判断不清时一并读取。")))
     for bundle in parts["bundles"]:
         family = bundle["family"]
@@ -109,23 +109,23 @@ def resolve_bundle(parts: dict[str, Any], name: str) -> str:
     return family
 
 
-def bundle_text(profile: dict[str, Any], names: list[str]) -> str:
+def bundle_text(profile: dict[str, Any], names: list[str], language: str = "zh") -> str:
     if not names:
         versioned.fail(_("bundle 需要至少一个模板系列或精确模板引用"))
-    parts = partition(profile)
+    parts = partition(profile, language)
     lines: list[str] = []
     for name in names:
         family = resolve_bundle(parts, name)
-        lines.extend((_("# 规则束 `{0}`").format(parts["refs"][family]), "", group_text(profile, parts, family), ""))
+        lines.extend((_("# 规则束 `{0}`").format(parts["refs"][family]), "", group_text(profile, parts, family, language), ""))
     return "\n".join(lines).rstrip() + "\n"
 
 
-def index_view(profile: dict[str, Any], lock: dict[str, Any] | None) -> dict[str, Any]:
-    parts = partition(profile)
+def index_view(profile: dict[str, Any], lock: dict[str, Any] | None, language: str = "zh") -> dict[str, Any]:
+    parts = partition(profile, language)
 
     def entry(family: str) -> dict[str, Any]:
         return {"family": family, "ref": parts["refs"].get(family), "name": parts["names"].get(family),
-                "rules": len(parts["groups"][family]), "bytes": len(group_text(profile, parts, family).encode("utf-8"))}
+                "rules": len(parts["groups"][family]), "bytes": len(group_text(profile, parts, family, language).encode("utf-8"))}
 
     return {
         "ok": True, "profile": f"{profile['id']}@{profile['version']}", "profile_sha256": versioned.digest(profile),
@@ -134,7 +134,7 @@ def index_view(profile: dict[str, Any], lock: dict[str, Any] | None) -> dict[str
         "custom_bytes": len((profile["custom"] or "").encode("utf-8")),
         "bundles": [{**entry(bundle["family"]), "trigger": bundle["trigger"], "exclude": bundle["exclude"], "routes": bundle["routes"]} for bundle in parts["bundles"]],
         "unlisted": parts["unlisted"], "signals": profile["loading"]["signals"],
-        "core_bytes": len(core_text(profile, lock).encode("utf-8")), "complete_bytes": len(versioned.render(profile).encode("utf-8")),
+        "core_bytes": len(core_text(profile, lock, language).encode("utf-8")), "complete_bytes": len(versioned.render(profile, language).encode("utf-8")),
     }
 
 
@@ -171,12 +171,13 @@ def add_command(subparsers: Any) -> None:
 def execute(args: argparse.Namespace) -> tuple[int, str]:
     try:
         profile, lock = load(args)
+        language = lock.get("language", "zh") if lock else (versioned.project_language(versioned.safe_path(args.project)) if args.project else "zh")
         if args.action == "core":
-            return EXIT_OK, core_text(profile, lock)
+            return EXIT_OK, core_text(profile, lock, language)
         if args.action == "bundle":
-            return EXIT_OK, bundle_text(profile, args.names)
+            return EXIT_OK, bundle_text(profile, args.names, language)
         if args.action == "index":
-            return EXIT_OK, versioned.pretty(index_view(profile, lock))
+            return EXIT_OK, versioned.pretty(index_view(profile, lock, language))
         result = check(profile, args.signal, args.loaded)
         return (EXIT_OK if result["ok"] else EXIT_MISSING), versioned.pretty(result)
     except FullReading as exc:

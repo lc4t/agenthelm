@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "收件箱新增只读 check（报告缺条件/目的的候选与 OPINION.md 行）、revise（修订候选并留痕）和机械关系提示（relations，仅供参考）。",
+    "en": "The inbox gains a read-only check (reports candidates and OPINION.md lines missing a trigger or purpose), revise (edit a candidate with history) and mechanical relation hints (relations, for reference only)."
+  },
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

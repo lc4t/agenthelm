@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 
 import project_cli as cli
+import project_extensions as ext
 from project_cli import S, EntryError
 from i18n_orchestrator import _, N_  # noqa: E402
 
@@ -20,6 +21,16 @@ MENU = (
     ("6", N_("记录事项"), N_("新建、追加记录、更新状态"), "record"),
     ("7", N_("项目工具"), N_("项目自行声明的操作"), "tools"),
     ("8", N_("流程（SOP）"), N_("自己定义的步骤序列：查看、检查所需工具、按它执行"), "sop"),
+    ("9", N_("技能与 MCP"), N_("技能、MCP 的清单、重复与体检（只读）"), "extensions"),
+)
+# 第 9 屏的入口；最后一项为 False 表示本版尚未提供，只显示、不进入（不做成假入口）。
+EXTENSION_ENTRIES = (
+    ("1", N_("按客户端看"), N_("客户端 → 作用域 → 条目"), True),
+    ("2", N_("按项目看"), N_("本项目 / 所有项目共用（只列本机已知存储）"), True),
+    ("3", N_("按重复看"), N_("同名 · 同指纹 · 同名不同内容"), True),
+    ("4", N_("技能体检"), N_("缺 description · 体积 · 加载成本 · 过期"), True),
+    ("5", N_("移动或复制"), N_("在作用域、客户端之间迁移（先预览）"), False),
+    ("6", N_("设置生效范围"), N_("全局 / 仅此项目（先预览）"), False),
 )
 ACTION_RE = re.compile(r"^([ofcvr])\s*(\d+)$")
 RECORD_ACTIONS = (("1", N_("追加一条记录"), "log"), ("2", N_("更新下一动作"), "next_action"),
@@ -219,6 +230,8 @@ def health_screen(provider) -> None:
             sub(fix_screen, provider, [target])
         elif verb == "open":
             print(provider.act("open", target)["message"])
+        elif verb == "ext":
+            sub(extensions_dups_screen, provider, target)
 
 
 def fix_screen(provider, preset: list[str] | None = None) -> None:
@@ -444,6 +457,108 @@ def sop_detail_screen(provider, sop_id: str) -> None:
             print(S.yellow(_("没有这个操作。")))
 
 
+# ---------------------------------------------------------------- 第 9 屏：技能与 MCP（只读）
+
+def extensions_screen(provider) -> None:
+    while True:
+        show(cli.header(provider, _("技能与 MCP")))
+        state = provider.extensions_summary()
+        if state["state"] != "available":
+            show(ext.render_unavailable(state["reason"]))
+            ask(_("回车返回"))
+            return
+        show(ext.render_summary(state["summary"]))
+        print()
+        for key, title, hint, ready in EXTENSION_ENTRIES:
+            note = "" if ready else "  " + S.yellow(_("本版尚未提供"))
+            print(f"  {S.bold(S.cyan(key))}  {cli.pad(_(title), 16)}{S.dim(_(hint))}{note}")
+        print(S.dim(_("\n  输入序号；或输入条目名直接看详情。 ? 帮助 · 回车返回")))
+        line = ask(_("技能与 MCP"))
+        screens = {"1": extensions_clients_screen, "2": extensions_projects_screen, "3": extensions_dups_screen,
+                   "4": extensions_check_screen}
+        if line in screens:
+            sub(screens[line], provider)
+        elif line in {entry[0] for entry in EXTENSION_ENTRIES}:
+            print(S.yellow(_("这一项本版尚未提供；现在只能看，不能改。")))
+        elif line in ("?", "help", "帮助"):
+            print(extensions_help())
+        else:
+            sub(extensions_show_screen, provider, line)
+
+
+def extensions_help() -> str:
+    return (S.bold(_("怎么用")) + "\n"
+            + _("  1–4 进入只读的清单；输入条目名（或 kind:名@客户端:作用域）看详情；回车返回，q 退出。") + "\n"
+            + _("  这一屏全程只读：不会改任何文件。MCP 只显示名字、作用域、指纹前缀与变量名，不显示命令参数或任何值。") + "\n"
+            + _("  「未知」表示证据不足，不做结论。命令行：extensions list / dups / show / check（--output json）。"))
+
+
+def _extensions_view(provider, title: str, fetch, render) -> None:
+    while True:
+        data = fetch()
+        show(cli.header(provider, title))
+        show(render(data))
+        print(S.dim(_("输入条目名看详情 · 回车返回")))
+        sub(extensions_show_screen, provider, ask(_("条目")))
+
+
+def extensions_clients_screen(provider) -> None:
+    _extensions_view(provider, _("技能与 MCP · 按客户端看"), provider.extensions_list,
+                     lambda data: ext.render_list(data, data["summary"]))
+
+
+def extensions_projects_screen(provider) -> None:
+    _extensions_view(provider, _("技能与 MCP · 按项目看"), provider.extensions_projects,
+                     lambda data: ext.render_projects(data, data["summary"]))
+
+
+def extensions_show_screen(provider, token: str) -> None:
+    try:
+        data = provider.extensions_show(token)
+    except EntryError as exc:
+        fail(exc)
+        return
+    show(ext.render_show(data["entry"]) if data["view"] == "entry" else ext.render_group(1, data["group"]))
+    ask(_("回车返回"))
+
+
+def extensions_dups_screen(provider, focus: str | None = None) -> None:
+    show(cli.header(provider, _("技能与 MCP · 按重复看")))
+    lines, numbered = ext.render_dups(provider.extensions_dups())
+    show(lines)
+    if focus and any(group["id"] == focus for group in numbered):
+        sub(extensions_group_screen, provider, next(group for group in numbered if group["id"] == focus))
+    while numbered:
+        print(S.dim(_("序号看这一组的成员详情 · 回车返回")))
+        line = ask(_("重复"))
+        if line.isdigit() and 1 <= int(line) <= len(numbered):
+            sub(extensions_group_screen, provider, numbered[int(line) - 1])
+        else:
+            print(S.yellow(_("没有这一项。")))
+    if not numbered:
+        ask(_("回车返回"))
+
+
+def extensions_group_screen(provider, group: dict) -> None:
+    show(ext.render_group(1, group))
+    for ref in group["members"]:
+        print()
+        show(ext.render_show(provider.extensions_show(ref)["entry"]))
+    ask(_("回车返回"))
+
+
+def extensions_check_screen(provider) -> None:
+    similar = False
+    while True:
+        show(cli.header(provider, _("技能与 MCP · 技能体检")))
+        show(ext.render_check(provider.extensions_check(similar)))
+        print(S.dim(_("d 同时比较 description 相似度（只作提示）· 回车返回")))
+        if ask(_("体检")) == "d":
+            similar = True
+        else:
+            print(S.yellow(_("没有这个操作。")))
+
+
 def help_text() -> str:
     bold, cyan = S.bold, S.cyan
     return (bold(_("怎么用")) + "\n"
@@ -457,7 +572,7 @@ def help_text() -> str:
 
 
 SCREENS = {"1": find_screen, "2": progress_screen, "3": guide_screen, "4": health_screen,
-           "5": fix_screen, "6": record_screen, "7": tools_screen, "8": sop_screen}
+           "5": fix_screen, "6": record_screen, "7": tools_screen, "8": sop_screen, "9": extensions_screen}
 
 
 def run(provider) -> int:

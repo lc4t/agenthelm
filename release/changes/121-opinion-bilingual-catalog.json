@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "公开规则与模板支持 {zh, en} 双语字段与可选的 trigger / purpose / exclude；profile、compose 按项目语言选取文字，en 项目选用缺译文的公开规则时预览给出 untranslated 警告（不阻断）。",
+    "en": "Public rules and templates accept {zh, en} localized fields and optional trigger / purpose / exclude; profile and compose pick text by the project language, and an en project that selects a public rule without a translation gets an untranslated warning in the preview (not blocking)."
+  },
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

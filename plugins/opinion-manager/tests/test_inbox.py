@@ -39,6 +39,7 @@ class InboxBase(unittest.TestCase):
 
     def run_action(self, action: str, *ids: str, **options):
         defaults = dict(project=self.root, title=None, text=None, scope=[], quote=None, client=None, session=None,
+                        trigger=None, purpose=None, exclude=None, relation=None,
                         status=None, unpresented=False, to=None, confirmed=False, note=None, days=None,
                         max_chars=6000, output="json", lang="zh", apply=False, confirm=None)
         defaults.update(options)
@@ -135,7 +136,7 @@ class InboxTests(InboxBase):
         self.assertEqual(result["oldest_pending_days"], 9.0)
         for item in result["items"]:
             self.assertEqual(set(item), {"id", "source", "kind", "title", "status", "created_at", "last_action_at",
-                                          "age_days", "hint_command"})
+                                          "age_days", "hint_command", "trigger", "purpose", "exclude", "relation", "complete"})
         self.assertEqual(len(result["items"]), 2)
 
     def test_presented_candidates_leave_the_unpresented_list(self) -> None:
@@ -462,7 +463,7 @@ class AdoptTests(InboxBase):
         identity = next(iter(inbox.load(self.root)["candidates"]))
         code, preview = cli("adopt", identity, *arguments)
         self.assertEqual(code, 0)
-        outside = {key: value for key, value in preview.items() if key != "content"}
+        outside = {key: value for key, value in preview.items() if key not in ("content", "added_lines")}  # file text, in the project file language
         self.assertFalse(CatalogTests.CJK.search(json.dumps(outside, ensure_ascii=False)), outside)
         self.assertIn("inbox adopt", preview["next_step"])
         code, result = cli("adopt", identity, *arguments, "--apply", "--confirm", preview["confirmation_sha256"])

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "项目菜单新增第 9 屏「技能与 MCP」（只读）：按客户端、按项目、按重复查看与技能体检；检查屏对重复发现增加跳转；原有 1–8 号不变。",
+    "en": "The project menu gains screen 9, Skills & MCP (read-only): view by client, by project and by duplicate, plus a skill check; the health screen links duplicate findings to it. Entries 1-8 are unchanged."
+  },
+  "changes": [{
+    "scope": "project-orchestrator",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
