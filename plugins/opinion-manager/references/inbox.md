@@ -47,6 +47,16 @@
 - `exposure`：只读，报告 `.opinion/inbox.json` 在 Git 里的状态与提醒文字。
 - `brief [--session ID] [--max-chars N]`：生成会话开始时注入的协议与试行候选全文，默认上限 6000 字符。
 
+## 路由规则（把某类任务路由到某个 skill）
+
+规则可以指定「做某类事时使用某个 skill」，例如「所有文字成果最终都用去 AI 味的 skill 处理」。**路由只是规则里的一段文字：它能提高模型调用该 skill 的概率，不能保证模型照做**，不要在对用户的说明里写成「保证」「强制」。它与 skill 自己的 `description` 触发叠加，不互斥。
+
+- `add` / `revise` 的路由参数（都可选）：`--route-skill NAME`（skill 名：小写字母、数字、连字符，≤64；不接受 `plugin:skill`）、`--route-when before|after|instead`（缺省 `before`）、`--route-final`（收尾：只与 `after` 合用，不给 `--route-when` 时隐含 `after`）、`--route-on TAG`（短标签：小写字母、数字、连字符，≤32，供机械比较）。没有 `--route-skill` 时其余路由参数无效；`revise` 在候选已有路由上合并，`--route-clear` 清除整条路由（与其他 `--route-*` 互斥，旧路由记入 `history` 的 `previous`，确认规则同其他修订）。适用条件、目的、不适用仍用 `--trigger` / `--purpose` / `--exclude`；写「所有文字工作」时 `--trigger` 写成「产出面向人的文字成果」，`--exclude` 写代码、配置、命令输出、保持原文等，不要写成全局。
+- 采纳写入的行末带纯 ASCII 标记 `[route skill=… when=… final=1 on=…]`（`final`、`on` 缺省则省略），与项目语言无关；渲染器按**项目文件语言**自动追加两条约束：不适用里加入「skill 自身的执行过程」，正文后加入「该 skill 执行期间不再触发本规则」与「该 skill 不可用时告知用户并按目的自行完成」。没有路由的规则行逐字节不变；`language=en` 的项目不出现中文。不改 Profile schema 与锁格式。
+- 候选记录里的 `route` 对象含 `skill`、`when`、`final`、`on`；旧记录没有该键。`list`、`present`、`pending`、`brief` 的试行条目、`adopt` 预览都带出路由；采纳指纹与展示快照随渲染行一起变化。
+- `routes list [--output markdown]`：只读。列出候选（`pending`、`trial`，以及已批准但尚未写入的 `formal`）与 `OPINION.md` 自定义段里的路由，认不出的行标 `unstructured`（未结构化，只报告）。附**机械检查，仅供参考**（只警告，不阻断）：同一 `--route-on` 标签、同一时机路由到不同 skill；重复路由（同 skill、同标签、同时机）；全项目多于一条 `--route-final`；超过 6 条；单条超过 500 字节。**不检查 skill 是否存在**（需要 `agenthelm inventory`，下一版提供），也不判断语义重叠与间接循环（输出的 `unchecked` 如实列出）。
+- 验证办法（本版）：任务结束提交 lifecycle 的 `use` 事件时，对每条适用的路由规则在现有 `results` 字段自报 `passed`（确实调用并采用）、`not-applicable` 或 `violated`（应调用而未调用）。自报依赖 Agent 如实记录，路由遵从率的阈值没有经过验证；不改 lifecycle。
+
 ## 待确认项提供者契约
 
 agent-pack 的会话开始检测按同一结构汇总各来源（opinion 候选，以及将来的 SOP 待办等）。一个提供者返回：

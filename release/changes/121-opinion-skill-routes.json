@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "opinion 规则可以路由到某个 skill：inbox add / revise 新增 --route-skill、--route-when、--route-final、--route-on，渲染成 OPINION.md 自定义段里带机器可读标记的一行，并自动追加「skill 自身执行时不再触发」与「skill 不可用时降级」两条约束；新增只读 inbox routes list 列出路由并做机械检查。路由只能提高调用概率，不能保证。",
+    "en": "Opinion rules can route to a skill: inbox add / revise gain --route-skill, --route-when, --route-final and --route-on, rendered as a line in the custom section of OPINION.md with a machine-readable marker plus two automatic constraints (no re-trigger while the skill runs, fallback when it is unavailable); a new read-only inbox routes list shows the routes and runs mechanical checks. A route raises the chance of the skill being called but cannot guarantee it."
+  },
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
