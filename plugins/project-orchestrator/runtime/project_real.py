@@ -24,6 +24,7 @@ from typing import Any
 import assets
 import case_structure as structure
 import case as case_tool
+import project_extensions
 import project_maintain
 import private_paths
 import project_write
@@ -57,7 +58,7 @@ def last_record(body: str) -> dict | None:
     return {"at": match.group(1), "text": match.group(2)} if match else {"at": "", "text": lines[-1]}
 
 
-class RealProvider:
+class RealProvider(project_extensions.ExtensionsMixin):
     simulated = False
 
     def __init__(self, start: Path | None, explicit: bool, *, offline: bool = False, host: Any = None,
@@ -299,6 +300,16 @@ class RealProvider:
                              (_("不进菜单、给脚本用"), "—", "progress --output json")],
                 "capabilities": self.capabilities(), "readme_mentions_entry": _readme_mentions(self)}
 
+    def _ext_load(self, include_description: bool) -> dict:
+        return project_extensions.load(self.host, self.root, include_description=include_description)
+
+    def extensions_capability(self) -> tuple[str, str]:
+        """能力探测只做一次：找得到 agenthelm 且它有 inventory 命令才算可用（不读取清单，不联网）。"""
+        if "_ext_probe" not in self.__dict__:
+            ok, reason = project_extensions.probe(self.host)
+            self.__dict__["_ext_probe"] = ("available" if ok else "unavailable", reason)
+        return self.__dict__["_ext_probe"]
+
     def capabilities(self) -> list[dict]:
         index = self.index_state()["status"]
         try:
@@ -329,6 +340,8 @@ class RealProvider:
             {"id": "record", "title": _("记录事项"), "state": record[0], "reason": record[1], "offline": True},
             {"id": "tools", "title": _("项目工具"), "state": tools_state[0], "reason": tools_state[1], "offline": True},
             sops,
+            {"id": "extensions", "title": _("技能与 MCP"), "state": self.extensions_capability()[0],
+             "reason": self.extensions_capability()[1], "offline": True},
         ]
 
     # -------------------------------------------------------------- health

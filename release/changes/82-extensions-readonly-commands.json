@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "新增 agenthelm project extensions list / dups / show / check：只读地列出技能与 MCP、重复组、条目详情与机械体检；数据来自 agenthelm inventory，能力状态里增加 extensions 一项。",
+    "en": "Add agenthelm project extensions list / dups / show / check: a read-only view of skills and MCP servers, duplicate groups, entry details and mechanical checks, fed by agenthelm inventory; capabilities gains an extensions item."
+  },
+  "changes": [{
+    "scope": "project-orchestrator",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

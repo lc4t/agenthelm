@@ -21,6 +21,8 @@ import weakref
 from pathlib import Path
 from typing import Any
 
+import project_extensions  # noqa: E402
+import project_extensions_demo  # noqa: E402
 import sop_structure  # noqa: E402
 from project_base import EntryError, sop_call
 from i18n_orchestrator import _, resolve_language  # noqa: E402
@@ -305,7 +307,7 @@ def _sop_home(root: Path):
             os.environ["AGENTHELM_SOP_HOME"] = previous
 
 
-class DemoProvider:
+class DemoProvider(project_extensions.ExtensionsMixin):
     """内存里的虚构项目；所有结果带 demo 标记，所有写入只模拟。"""
 
     simulated = True
@@ -325,6 +327,14 @@ class DemoProvider:
         self.entry_api = 2 if fault == "runtime-old" else 1
         self.resolved: set[str] = set()  # fixes simulated in this session
         self._sandbox: Path | None = None
+
+    # -------------------------------------------------------------- 技能与 MCP：固定夹具
+
+    def _ext_load(self, include_description: bool) -> dict:
+        return project_extensions.validate(project_extensions_demo.inventory())
+
+    def extensions_capability(self) -> tuple[str, str]:
+        return "available", _("演示：使用固定的示例清单，不读取这台机器")
 
     # -------------------------------------------------------------- 流程（SOP）：临时目录里的真实代码
 
@@ -467,6 +477,8 @@ class DemoProvider:
              "reason": "" if self.data["tools"] else _("项目没有声明专用工具"), "offline": True},
             {"id": "sop", "title": _("流程（SOP）"), "state": "available", "offline": True,
              "reason": _("演示：在临时目录里运行，结束后自动清理")},
+            {"id": "extensions", "title": _("技能与 MCP"), "state": self.extensions_capability()[0],
+             "reason": self.extensions_capability()[1], "offline": True},
         ]
 
     def health(self) -> dict:
