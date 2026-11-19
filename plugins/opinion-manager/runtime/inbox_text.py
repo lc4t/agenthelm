@@ -25,9 +25,7 @@ MESSAGES: dict[str, dict[str, str]] = {
 2. 用户在对话里表达长期偏好、纠正或规则（如“以后都…”“不要再…”“必须…”“记住…”）时，先静默暂存为候选，不打断当前工作：
    python3 {runtime} inbox add --project {project} --title "<标题>" --text "<完整规则>" --scope "<适用范围>" --trigger "<何时适用>" --purpose "<为什么>" --quote "<用户原话>"{session} --lang {lang}
    暂存时就填好 trigger 与 purpose（缺失仅警告，展示与裁决时按「不完整」处理；可选 --exclude 写不适用情形）；不得写「所有」之类占位词，确需全局须用户明确要求并带 --quote。一次性的任务要求、项目事实和命令不是候选。暂存不需要确认，也不会改变任何规则。
-3. 任务完成或即将完成时，若本次暂存了候选，用编号列表一次性请用户裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃。
-   用户明确表态后记录：python3 {runtime} inbox decide <编号…> --project {project} --to trial|held|rejected --confirmed --lang {lang}
-   用户说“采纳”时不要 decide：直接 python3 {runtime} inbox adopt <编号…> --project {project} --lang {lang} 预览（零写入），展示 content，用户确认后加 --apply --confirm <confirmation_sha256> 一次写入并读回。「已批准」不等于「已生效」：只有 adopt --apply 成功才写入 OPINION.md。
+3. {confirm}
 4. 未经用户确认，不得把候选写入 OPINION.md，也不得把一次出现当作确认。
 5. inbox add 的结果带 notice（首次暂存时出现）时，用一句话如实转告用户。收件箱保存用户原话，可能含敏感信息；
    是否公开仓库、是否排除 .opinion/ 由用户决定，不要自行修改 .gitignore、删除或改写内容。
@@ -37,12 +35,26 @@ MESSAGES: dict[str, dict[str, str]] = {
 2. When the user states a lasting preference, a correction of your behavior or a rule during the conversation (e.g. "from now on...", "never again...", "must...", "remember..."), stash it as a candidate silently, without interrupting the current work:
    python3 {runtime} inbox add --project {project} --title "<title>" --text "<the full rule>" --scope "<where it applies>" --trigger "<when it applies>" --purpose "<why>" --quote "<the user's own words>"{session} --lang {lang}
    Fill trigger and purpose at stash time (missing ones only warn, and the candidate is shown as incomplete when deciding; optional --exclude states when it does not apply); no placeholders like "all"; global only when the user explicitly asked, with --quote. One-off task requirements, project facts and commands are not candidates. Stashing needs no confirmation and changes no rule.
-3. When the task is done or nearly done and you stashed candidates in this session, ask the user once, as a numbered list: adopt as formal / trial in this project / hold / discard.
-   After the user states a decision explicitly, record it: python3 {runtime} inbox decide <ids...> --project {project} --to trial|held|rejected --confirmed --lang {lang}
-   When the user says "adopt", do not decide: run python3 {runtime} inbox adopt <ids...> --project {project} --lang {lang} to preview (writes nothing), show the content, and once the user confirms add --apply --confirm <confirmation_sha256> to write and read back in one step. "Approved" is not "in effect": OPINION.md is written only when adopt --apply succeeds.
+3. {confirm}
 4. Never write a candidate into OPINION.md without the user's confirmation, and never treat a single occurrence as confirmation.
 5. When the result of inbox add carries a notice (shown on the first stash), pass it on to the user in one sentence, as written. The inbox stores the user's own words, which may contain sensitive information; whether to make the repository public or to exclude .opinion/ is the user's decision. Do not edit .gitignore, delete or rewrite anything yourself.
 6. Relay and confirm in the language the user is using.""",
+    },
+    "protocol_ask": {
+        "zh": "确认（ask）：下文 inbox 命令的 python3 前缀与 --project 同第 2 条，只换子命令与参数。本会话暂存了候选、任务完成或即将完成、要向用户确认前，先运行 inbox gate{session}{gate_options}；allowed 为 false 则不问，继续工作。可以问时，用编号列表请用户裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃；展示时运行 inbox present <编号…> 记录快照。用户之后更新需求本身不触发确认。\n   {handle}",
+        "en": "Confirmation (ask): the inbox commands below use the same python3 prefix and --project as the one in item 2, with only the subcommand and arguments changed. When you stashed candidates in this session, the task is done or nearly done and you are about to confirm with the user, first run inbox gate{session}{gate_options}; if allowed is false, do not ask and keep working. When allowed, ask as a numbered list: adopt as formal / trial in this project / hold / discard; while showing it, run inbox present <ids...> to record the snapshot. The user later updating a requirement is not itself a reason to confirm.\n   {handle}",
+    },
+    "protocol_digest": {
+        "zh": "确认（digest）：下文 inbox 命令的 python3 前缀与 --project 同第 2 条，只换子命令与参数。对话里不单独询问。本会话暂存了候选时，只在任务回复末尾顺带一句说明有几条待处理，每会话至多一次；用户想处理时，用编号列表展示全文并运行 inbox present <编号…>。其余由会话开始的汇总提示。\n   {handle}",
+        "en": "Confirmation (digest): the inbox commands below use the same python3 prefix and --project as the one in item 2, with only the subcommand and arguments changed. Do not interrupt the conversation with a separate ask. When you stashed candidates in this session, add one closing sentence to a task reply saying how many are waiting, at most once per session; when the user wants to handle them, show the full numbered list and run inbox present <ids...>. The rest is covered by the summary at session start.\n   {handle}",
+    },
+    "protocol_quiet": {
+        "zh": "确认（quiet）：下文 inbox 命令的 python3 前缀与 --project 同第 2 条，只换子命令与参数。不要在对话里主动提起候选，只由会话开始的汇总提示。用户主动询问或要求处理时，用编号列表展示全文并运行 inbox present <编号…>。\n   {handle}",
+        "en": "Confirmation (quiet): the inbox commands below use the same python3 prefix and --project as the one in item 2, with only the subcommand and arguments changed. Do not bring candidates up in the conversation; the summary at session start covers them. When the user asks about them or wants to handle them, show the full numbered list and run inbox present <ids...>.\n   {handle}",
+    },
+    "protocol_handle": {
+        "zh": "表态后记录：inbox decide <编号…> --to trial|held|rejected --confirmed\n   用户说“采纳”时不要 decide：运行 inbox adopt <编号…> --lang {lang} 预览（零写入）。shown_matches 为真、无 blocked、无冲突时，视为已确认，直接加 --apply --confirm <confirmation_sha256> 写入并读回，告知结果与回退方式（上一个 Profile 版本仍在 .opinion/profiles/ 下）；否则展示预览差异后再问一次。「已批准」不等于「已生效」：只有 adopt --apply 成功才写入 OPINION.md。",
+        "en": "After a decision, record it: inbox decide <ids...> --to trial|held|rejected --confirmed\n   When the user says \"adopt\", do not decide: run inbox adopt <ids...> --lang {lang} to preview (writes nothing). If shown_matches is true with no blocked and no conflicts, treat it as confirmed and add --apply --confirm <confirmation_sha256> to write and read back, then tell the user the result and how to go back (the previous Profile version is still under .opinion/profiles/); otherwise show the preview differences and ask once more. \"Approved\" is not \"in effect\": OPINION.md is written only when adopt --apply succeeds.",
     },
     "exposure_notice": {
         "zh": "收件箱会把你的原话保存在 .opinion/inbox.json，其中可能含敏感信息。启用本功能的项目建议保持私有；"
@@ -180,6 +192,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "brief_trial_entry": {"zh": "- {id} {title}：{text}（适用：{scopes}）", "en": "- {id} {title}: {text} (applies to: {scopes})"},
     "brief_trial_more": {"zh": "- …另有 {count} 条试行候选未展示：运行 inbox list --status trial 查看",
                          "en": "- ...{count} more trial candidates not shown: run inbox list --status trial"},
+    "brief_pending_quiet": {"zh": "\n[待确认候选 {count} 条，尚未生效；不要在对话里单独询问，由会话开始的汇总提示]",
+                            "en": "\n[{count} candidates await confirmation and are not in effect yet; do not ask about them separately in the conversation]"},
     "brief_pending": {"zh": "\n[待确认候选 {count} 条，尚未生效；任务结束前可向用户集中确认]",
                       "en": "\n[{count} candidates await confirmation and are not in effect yet; ask the user to decide them together before the task ends]"},
 }
@@ -188,7 +202,7 @@ PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
 # protocol 里的 {runtime} {project} 会被模型原样当作命令行执行，代入的路径必须经 shell 引用（POSIX）。
-COMMAND_MESSAGES = {"protocol"}
+COMMAND_MESSAGES = {"protocol", "protocol_ask", "protocol_digest", "protocol_quiet", "protocol_handle"}
 PATH_FIELDS = ("runtime", "project")
 
 
@@ -201,3 +215,14 @@ def text(message_id: str, language: str, /, **fields: Any) -> str:
     if message_id in COMMAND_MESSAGES:
         fields = {key: shlex.quote(str(value)) if key in PATH_FIELDS else value for key, value in fields.items()}
     return MESSAGES[message_id][language].format(**fields)
+
+
+def protocol(language: str, *, runtime: Any, project: Any, lang: str, session: str = "", mode: str = "ask",
+             cooldown: float = 24, limit: int = 1) -> str:
+    """注入协议：公共部分加按确认模式（ask / digest / quiet）生成的第 3 条。session 是会话 ID（空串表示未知）。"""
+    flag = session_flag(session)
+    handle = text("protocol_handle", language, runtime=runtime, project=project, lang=lang)
+    options = (f" --cooldown-hours {cooldown:g}" if cooldown != 24 else "") + (f" --max-per-session {limit}" if limit != 1 else "")
+    confirm = text(f"protocol_{mode}", language, runtime=runtime, project=project, lang=lang, session=flag,
+                   gate_options=options, handle=handle)
+    return text("protocol", language, runtime=runtime, project=project, lang=lang, session=flag, confirm=confirm)

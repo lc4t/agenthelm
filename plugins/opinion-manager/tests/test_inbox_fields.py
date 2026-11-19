@@ -194,8 +194,8 @@ class RenderTests(InboxBase):
 
 class ProtocolSizeTests(unittest.TestCase):
     def test_protocol_stays_within_the_injection_budget(self) -> None:
-        text = inbox_text.text("protocol", "zh", runtime=RUNTIME / "opinion_manager.py", project="/tmp/project", lang="zh",
-                               session=inbox_text.session_flag("session-0123456789abcdef"))
+        text = inbox_text.protocol("zh", runtime=Path("/" + "r" * 119 + "/opinion_manager.py"), project="/" + "p" * 79, lang="zh",
+                               session="session-0123456789abcdef")
         self.assertLessEqual(len(text.encode("utf-8")), 3000)
         self.assertIn("--trigger", text)
         self.assertIn("--purpose", text)

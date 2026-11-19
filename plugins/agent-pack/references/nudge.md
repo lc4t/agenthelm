@@ -8,7 +8,7 @@
 
 - **Claude Code**：插件随附 `hooks/hooks.json`，安装后自动生效。SessionStart（`startup|resume|clear|compact`）注入协议；UserPromptSubmit 在命中关键词时提醒；Stop 在满足条件时用 `additionalContext` 让 Agent 向用户确认。
 - **Codex**：读取同一个 `hooks/hooks.json`（Codex 同时提供 `CLAUDE_PLUGIN_ROOT`）。按 Codex 的规则，插件 hook 需要用户在 `/hooks` 中审阅并信任后才会运行。Stop 使用 `decision: "block"` 加 `reason`，原因文本成为下一轮的续写提示。
-- **Cursor**：没有 prompt 级注入（`beforeSubmitPrompt` 只能放行或拦截）。运行 `agenthelm nudge install-hooks --client cursor` 预览，加 `--apply` 把 sessionStart 与 stop 写入 `~/.cursor/hooks.json`（`--scope project` 写项目的 `.cursor/hooks.json`；`--remove` 撤销，只删除 agenthelm 写入的条目）。经 `npx` 运行时，hook 命令不会指向 npx 的临时缓存（`…/_npx/<哈希>/…`，缓存被清理后 hook 会失效）：改用已安装的稳定入口，先找 `~/.cursor/plugins/local/agent-pack/runtime/agenthelm.py`，再找 `agenthelm runtime install` 之后的 `<数据目录>/agenthelm/current/plugins/agent-pack/runtime/agenthelm.py`（pnpm dlx、yarn dlx、bunx 的临时目录同样识别）；两处都没有时预览给出警告，`--apply` 拒绝写入并以退出码 2 退出，请先运行 `agenthelm install --client cursor --apply` 或 `agenthelm runtime install --apply`。`--remove` 不受影响。稳定入口的路径刻意不含版本号，选中的入口可能是旧版本（Cursor 插件目录里是旧的 agent-pack，或 `current` 仍指向旧的 `runtimes/<版本>`），生成的 hook 会调用该旧版本的 nudge：安装 hook 前先更新插件（`agenthelm update --client cursor --apply`），或用 `agenthelm runtime use <目标版本> --apply` 切到目标版本，再运行 `install-hooks`。Cursor 的 `stop` 提示以“用户消息”的形式出现，默认关闭。社区有 sessionStart 的 `additional_context` 未到达模型的反馈（见 Cursor 论坛），所以协议同时写在 opinion-manager 的 Skill 里，不依赖 hook 也能按需触发。
+- **Cursor**：没有 prompt 级注入（`beforeSubmitPrompt` 只能放行或拦截）。运行 `agenthelm nudge install-hooks --client cursor` 预览，加 `--apply` 把 sessionStart 与 stop 写入 `~/.cursor/hooks.json`（`--scope project` 写项目的 `.cursor/hooks.json`；`--remove` 撤销，只删除 agenthelm 写入的条目）。经 `npx` 运行时，hook 命令不会指向 npx 的临时缓存（`…/_npx/<哈希>/…`，缓存被清理后 hook 会失效）：改用已安装的稳定入口，先找 `~/.cursor/plugins/local/agent-pack/runtime/agenthelm.py`，再找 `agenthelm runtime install` 之后的 `<数据目录>/agenthelm/current/plugins/agent-pack/runtime/agenthelm.py`（pnpm dlx、yarn dlx、bunx 的临时目录同样识别）；两处都没有时预览给出警告，`--apply` 拒绝写入并以退出码 2 退出，请先运行 `agenthelm install --client cursor --apply` 或 `agenthelm runtime install --apply`。`--remove` 不受影响。稳定入口的路径刻意不含版本号，选中的入口可能是旧版本（Cursor 插件目录里是旧的 agent-pack，或 `current` 仍指向旧的 `runtimes/<版本>`），生成的 hook 会调用该旧版本的 nudge：安装 hook 前先更新插件（`agenthelm update --client cursor --apply`），或用 `agenthelm runtime use <目标版本> --apply` 切到目标版本，再运行 `install-hooks`。从临时解压目录运行 `nudge install-hooks` 会让 hook 指向该目录；长期使用请先 `agenthelm install --client cursor --apply` 或 `agenthelm runtime install --apply`。Cursor 的 `stop` 提示以“用户消息”的形式出现，默认关闭。社区有 sessionStart 的 `additional_context` 未到达模型的反馈（见 Cursor 论坛），所以协议同时写在 opinion-manager 的 Skill 里，不依赖 hook 也能按需触发。
 
 三个客户端的共同点：hook 永远退出 0，任何异常都静默；只在项目启用了 opinion-manager（Project Profile 的 `opinion.provider` 为 `opinion-manager`，或存在 `.opinion/`、`opinion.lock.json`）时才有输出，其他目录完全无感。
 
@@ -16,7 +16,7 @@
 
 - **会话开始**：总是注入协议与试行候选全文（上限 6000 字符）；`compact` 后只重新注入。待确认候选数 ≥ `pending_threshold`，或最久一条超过 `stale_days`，且距上次提示超过 `reminder_repeat_hours` 时，另给用户一行可见提示。
 - **用户消息**：消息 ≤1500 字符且包含 `keywords` 中任一词（不区分大小写），每个会话最多提醒 `capture_hints_per_session` 次。关键词只是提高命中率的辅助，语义判断仍由 Agent 做；长消息多为粘贴内容，跳过。
-- **回合结束**：本会话暂存且没展示过的候选存在、`stop_prompt` 允许、未超过 `max_prompts_per_session`，且（`on-completion` 时）最后一条回复含 `completion_keywords` 之一。续写回合（`stop_hook_active` 或 Cursor 的 `loop_count`）不再触发。发出请求时把这些候选标记为已展示。
+- **回合结束**：`confirm` 为 `ask`，本会话暂存且没展示过的候选存在、`stop_prompt` 允许、未超过 `max_prompts_per_session`、`inbox gate` 放行（同项目 `prompt_cooldown_hours` 小时内最多一次，跨会话；先用 `--peek` 判断，真要发请求时才记账；gate 状态损坏时 hook 静默），且（`on-completion` 时）最后一条回复含 `completion_keywords` 之一。续写回合（`stop_hook_active` 或 Cursor 的 `loop_count`）不再触发。发出请求时把这些候选标记为已展示。
 
 ## 配置
 
@@ -27,6 +27,8 @@
 - `pending_threshold`：待确认候选 ≥ 此数就提示，默认 `5`。
 - `stale_days`：最久一条待确认候选超过此天数就提示，默认 `7`。
 - `max_prompts_per_session`：每会话回合结束的确认请求上限，默认 `1`。
+- `confirm`：`ask`（默认）/ `digest` / `quiet`。`ask`：任务收尾时询问，受每会话上限与冷却限制；`digest`：对话里不单独询问，只在回复末尾顺带一句，会话开始汇总；`quiet`：只在会话开始汇总。`digest` 与 `quiet` 下 `stop` 不输出。会话开始时按此值调用 `inbox brief --mode`，协议由 opinion-manager 生成，是确认时机的单一来源。
+- `prompt_cooldown_hours`：同项目两次确认请求的最短间隔（小时，非负整数，`0` 为不设冷却），默认 `24`；同时传给 `inbox brief --cooldown-hours`（与缺省不同时写进协议里的 `inbox gate`）。
 - `capture_hints_per_session`：每会话关键词提醒上限，默认 `3`。
 - `trial_expire_days`：试行超过此天数未转正退回待确认，默认 `30`。
 - `reminder_repeat_hours`：会话开始的可见提示最短间隔，默认 `24`。
@@ -34,6 +36,12 @@
 - `keywords`、`completion_keywords`：字符串数组，替换内置列表。
 
 环境变量 `AGENTHELM_NO_NUDGE=1` 临时关闭全部输出；`AGENTHELM_NUDGE_DEBUG=1` 把 hook 内部异常打印到 stderr。`agenthelm nudge status [--project P]` 显示生效配置、当前汇总以及开新会话是否会提示。hook 内部的异常（含 opinion-manager 调用失败）仍然静默、退出码为 0，但会把最近 5 次的摘要（时间、钩子名、异常类型、一行截断消息，不含用户原话）记到用户状态目录的 `agenthelm/hook-errors.json`；`nudge status`（JSON 字段 `last_hook_error`）与 `agenthelm doctor` 会显示最近一次，`nudge status --clear-errors` 清除。
+
+## 硬限制与已知边界
+
+- **hook 路径有硬限制**：`stop` 每会话最多一次（`max_prompts_per_session`），跨会话还受 `prompt_cooldown_hours` 约束，状态在项目的 `.opinion/ask-state.json`。Cursor 的 `stop_prompt` 默认 `off`。
+- **模型自判路径无法硬限制**：无 hook 的客户端，或模型自己决定何时询问，只能靠协议措辞（`ask` 协议要求先运行 `inbox gate`，`digest` / `quiet` 不含任务完成时询问），不保证。
+- **未验证**：Cursor 的 sessionStart 注入、Codex `/hooks` 信任、Claude Stop 的 `additionalContext` 在各版本的表现，均未在真实客户端验证，列入实机验收。
 
 ## 提示语言
 

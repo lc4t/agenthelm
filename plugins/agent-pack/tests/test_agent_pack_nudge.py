@@ -335,7 +335,7 @@ class NudgeTests(unittest.TestCase):
         self.assertIsNotNone(self.stop("还在进行中", config=always))
 
     def test_stop_budget_is_per_session(self) -> None:
-        config, _ = nudge.merge_config({"max_prompts_per_session": 2}, None)
+        config, _ = nudge.merge_config({"max_prompts_per_session": 2, "prompt_cooldown_hours": 0}, None)
         self.capture("规则一")
         self.assertIsNotNone(self.stop(config=config))
         self.capture("规则二")

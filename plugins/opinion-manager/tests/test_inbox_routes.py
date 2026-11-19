@@ -375,8 +375,8 @@ class EnglishInterfaceTests(RouteBase):
                 self.assertEqual(set(inbox_text.PLACEHOLDER.findall(value["zh"])), set(inbox_text.PLACEHOLDER.findall(value["en"])), key)
 
     def test_protocol_and_skill_budgets_still_hold(self) -> None:
-        text = inbox_text.text("protocol", "zh", runtime=RUNTIME / "opinion_manager.py", project="/tmp/project", lang="zh",
-                               session=inbox_text.session_flag("session-0123456789abcdef"))
+        text = inbox_text.protocol("zh", runtime=Path("/" + "r" * 119 + "/opinion_manager.py"), project="/" + "p" * 79, lang="zh",
+                               session="session-0123456789abcdef")
         self.assertLessEqual(len(text.encode("utf-8")), 3000)
         self.assertLessEqual((RUNTIME.parent / "skills" / "opinion-manager" / "SKILL.md").stat().st_size, 12554 + 400)
 

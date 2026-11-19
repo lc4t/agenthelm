@@ -33,18 +33,18 @@ class ShellQuotingTests(unittest.TestCase):
         self.base = Path(self.directory.name).resolve()
 
     def render(self, language: str, runtime: Path, project: Path, session: str = SESSION) -> str:
-        return inbox_text.text("protocol", language, runtime=runtime, project=project, lang=language,
-                               session=inbox_text.session_flag(session))
+        return inbox_text.protocol(language, runtime=runtime, project=project, lang=language, session=session)
 
     def test_split_restores_paths_in_both_languages(self) -> None:
         for name in NASTY:
             runtime, project = Path("/r/") / name / "opinion_manager.py", Path("/p") / name
             for language in inbox_text.LANGUAGES:
                 protocol = self.render(language, runtime, project)
-                for verb in ("add", "decide"):
+                for verb in ("add",):
                     argv = shlex.split(_extract(protocol, verb))
                     self.assertEqual(argv[1], str(runtime), (name, language, verb))
                     self.assertEqual(argv[argv.index("--project") + 1], str(project), (name, language, verb))
+                self.assertEqual(protocol.count(shlex.quote(str(runtime))), 1, "the path appears once; other commands refer to it")
                 argv = shlex.split(_extract(protocol, "add"))
                 self.assertEqual(argv[argv.index("--session") + 1], SESSION)
 

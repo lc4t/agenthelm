@@ -45,7 +45,8 @@
 - `expire --days N`：把试行超过 N 天的候选退回 `pending`。退回保留 `last_action_at`，因此仍计入“久未处理”。
 - `pending [--session ID]`：待确认项提供者，见下。
 - `exposure`：只读，报告 `.opinion/inbox.json` 在 Git 里的状态与提醒文字。
-- `brief [--session ID] [--max-chars N]`：生成会话开始时注入的协议与试行候选全文，默认上限 6000 字符。
+- `brief [--session ID] [--max-chars N] [--mode ask|digest|quiet] [--cooldown-hours N] [--max-per-session N]`：生成会话开始时注入的协议与试行候选全文，默认上限 6000 字符。**确认时机的单一来源是这份协议**（SKILL.md 只指向它）。`--mode`：`ask`（默认）要求任务收尾前先运行 `gate`，放行才询问，询问时同步 `present`；`digest` 不单独询问，只在回复末尾顺带一句；`quiet` 只靠会话开始的汇总。`--cooldown-hours` 默认 24，`--max-per-session` 默认 1，与缺省值不同时才写入 `ask` 协议里的 `gate` 命令行（与 gate 自身缺省一致，省略即等价）。三种模式的协议都规定：`adopt` 预览的 `shown_matches` 为真、无 `blocked`、无冲突时，Agent 可视为用户已确认展示过的内容，直接 `--apply --confirm`（指纹保护不变），并告知结果与回退方式（上一个 Profile 版本仍在 `.opinion/profiles/` 下，没有一步撤销命令）；否则展示预览差异后再问一次。用户之后更新需求本身不触发确认。
+  - **限制**：hook 路径（agent-pack 的 `nudge`）有硬限制——`stop` 每会话最多一次，并先问 `gate`。模型自判路径（无 hook 的客户端，或模型自己决定何时问）没有任何硬限制，只能靠协议措辞，本工具不保证。各客户端真实行为（Cursor 的 sessionStart 注入、Codex `/hooks` 信任、Claude Stop 的 `additionalContext` 在各版本的表现）未经实机验证。
 
 ## 路由规则（把某类任务路由到某个 skill）
 

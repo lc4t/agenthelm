@@ -27,6 +27,9 @@ MESSAGES: dict[str, dict[str, str]] = {
     "warn_bool": {"zh": "{label}.{key} 必须是布尔值，已忽略", "en": "{label}.{key} must be a boolean; ignored"},
     "warn_stop": {"zh": "{label}.stop_prompt 须为 {modes} 或 {{客户端: 模式}}，已忽略",
                   "en": "{label}.stop_prompt must be {modes} or {{client: mode}}; ignored"},
+    "warn_confirm": {"zh": "{label}.confirm 须为 {modes}，已忽略", "en": "{label}.confirm must be {modes}; ignored"},
+    "warn_cooldown": {"zh": "{label}.prompt_cooldown_hours 须为非负整数（0 表示不设冷却），已忽略",
+                      "en": "{label}.prompt_cooldown_hours must be a non-negative integer (0 means no cooldown); ignored"},
     "warn_words": {"zh": "{label}.{key} 须为非空的字符串数组，已忽略", "en": "{label}.{key} must be a non-empty array of strings; ignored"},
     "warn_int": {"zh": "{label}.{key} 须为正整数，已忽略", "en": "{label}.{key} must be a positive integer; ignored"},
     "warn_language": {"zh": "{label}.language 须为 auto、zh 或 en，已忽略", "en": "{label}.language must be auto, zh or en; ignored"},
@@ -107,6 +110,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "zh": "阈值：待确认 ≥{pending} 条或最久 ≥{stale} 天；每会话确认 ≤{prompts} 次；试行 {expire} 天未转正回退；任务结束提示 {stop}；语言 {language}",
         "en": "Thresholds: pending ≥ {pending} or oldest age (days) ≥ {stale}; confirmation requests per session ≤ {prompts}; trial expiry (days): {expire}; end-of-task prompt {stop}; language {language}",
     },
+    "status_confirm": {
+        "zh": "确认方式：{mode}（ask：每项目冷却 {hours} 小时内最多问一次；digest：回复末尾顺带一句；quiet：只在会话开始汇总）",
+        "en": "Confirmation mode: {mode} (ask: at most one ask per project within {hours} hours; digest: one closing sentence in a reply; quiet: session-start summary only)"},
     "status_current": {
         "zh": "当前：待确认 {pending} 条，试行 {trial} 条，最久 {days} 天", "en": "Now: {pending} pending, {trial} on trial, the oldest {days} days old"},
     "status_quiet": {"zh": "按当前阈值，开新会话不会提示。", "en": "With the current thresholds, a new session shows no reminder."},
