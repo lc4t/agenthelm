@@ -27,7 +27,7 @@
 
 ### 与 W-a「作用域能力」的衔接
 
-`capabilities.project_mcp_write` 是 W-a 判断「某客户端是否支持项目级写入」的**唯一来源**；注册表提供查询函数 `supports(client, capability)`。目前取值与 W-a 现状一致（仅 `claude` 为真），W-a 仍以 Claude 硬编码判断，后续由 W-a 的维护者把判断切换为 `supports(...)`；本版不替它切换，也不重构它的文件。
+`capabilities.project_mcp_write` 是「某客户端是否支持项目级写入」的**唯一来源**；注册表提供查询函数 `supports(client, capability)`。#135 引入的 `agent_pack_config.project_write_supported(client)` 现在读这个标志（取值 claude 为真，codex、cursor、claude-desktop 为假，与改前一致，并由测试对账），不再按客户端名字判断。
 
 ## 2. 选项与排除理由
 

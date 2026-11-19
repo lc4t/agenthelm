@@ -53,6 +53,14 @@ class RegistryTests(unittest.TestCase):
         self.assertFalse(registry.supports("nope", "project_mcp_write"))
         self.assertFalse(registry.supports("claude", "nope"))
 
+    def test_project_write_support_comes_from_the_driver_capability(self) -> None:
+        import agent_pack_config as config
+        self.assertEqual({client: config.project_write_supported(client) for client in registry.all_ids()},
+                         {"claude": True, "codex": False, "cursor": False, "claude-desktop": False})
+        for client in registry.all_ids():
+            self.assertEqual(config.project_write_supported(client), registry.supports(client, "project_mcp_write"))
+        self.assertFalse(config.project_write_supported("unknown-client"))
+
     def test_declared_stores_match_the_inventory_tables(self) -> None:
         for driver in registry.BUILTIN:
             if driver["id"] not in inv.SKILL_STORES:
