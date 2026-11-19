@@ -296,6 +296,33 @@
             }
           }
         },
+        "default_scope": {
+          "enum": [
+            "user",
+            "project"
+          ],
+          "description": "条目的默认作用域：user 对本机所有项目生效，project 只对本项目生效；缺省 user。旧版 agent-pack 会忽略该键。"
+        },
+        "mcp_scope": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "user",
+              "project"
+            ]
+          },
+          "description": "MCP 服务器名到作用域的映射，覆盖 default_scope。"
+        },
+        "skill_scope": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "user",
+              "project"
+            ]
+          },
+          "description": "Skill 名到作用域的映射，覆盖 default_scope。"
+        },
         "destination_skill_root": {
           "$ref": "#/$defs/relativePath"
         },
