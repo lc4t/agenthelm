@@ -213,6 +213,18 @@ def readback_dedupe(host: Any, root: Path, group_id: str, result: dict) -> dict:
     return {"ok": True, "checks": []}
 
 
+def finish(provider: Any, view: str, result: dict, group_id: str | None = None) -> bool:
+    """应用之后读回并写进 result["readback"]；返回是否需要关注（blocked、拒绝、回滚、失败、读回不一致）。"""
+    attention = bool(result.get("blocked")) or bool(result.get("refused"))
+    if result["mode"] != "apply" or result.get("refused") or result.get("unsupported"):
+        return attention
+    status = (result.get("applied") or {}).get("status")
+    if view != "scope" and status in ("applied", "recorded"):
+        result["readback"] = provider.extensions_readback(view, result, group_id)
+        attention = attention or not result["readback"]["ok"]
+    return attention or status in ("rolled-back", "failed", "refused")
+
+
 # ---------------------------------------------------------------- scope：写 Project Profile 的声明
 
 def _profile_text(profile: dict) -> str:

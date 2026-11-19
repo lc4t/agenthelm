@@ -698,15 +698,7 @@ def _cmd_extensions_write(provider: Provider, args: argparse.Namespace, view: st
                                             note=args.note, ignore=args.ignore, unignore=args.unignore, apply=apply, expect=expect)
     else:
         result = provider.extensions_scope(args.ref, args.effective, allow_widen=args.allow_widen, apply=apply, expect=expect)
-    attention = bool(result.get("blocked")) or bool(result.get("refused"))
-    if apply and not result.get("refused") and view != "scope" and not result.get("unsupported"):
-        status = (result.get("applied") or {}).get("status")
-        if status in ("applied", "recorded") and not (view == "dedupe" and not result["plan"].get("disposition")):
-            result["readback"] = provider.extensions_readback(view, result, getattr(args, "group", None))
-            attention = attention or not result["readback"]["ok"]
-        attention = attention or status in ("rolled-back", "failed", "refused")
-    if apply and view == "scope" and (result.get("applied") or {}).get("status") == "failed":
-        attention = True
+    attention = actions.finish(provider, view, result, getattr(args, "group", None))
     data = {"view": view, **result}
     return (EXIT_ATTENTION if attention else EXIT_OK), data, title + actions.render_action(result)
 
