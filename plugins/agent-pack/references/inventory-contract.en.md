@@ -5,7 +5,7 @@
 A read-only command that answers: which Skills and MCP servers does each client see now, in which store and scope do they live, which are duplicated, and which have a recognizable origin. The output is for people and for later write commands and menus, so the JSON is a contract: **keys are only appended, never removed or redefined**; a breaking change must bump `schema_version`.
 
 ```
-agenthelm inventory [--output json|text] [--client claude|codex|cursor]... [--type skills|mcp|all]
+agenthelm inventory [--output json|text] [--client claude|codex|cursor|claude-desktop|all]... [--type skills|mcp|all]
                     [--scope project|user|all] [--project DIR] [--include-description] [--lang zh|en|auto]
 ```
 
@@ -59,9 +59,24 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor]... [--ty
   - Cursor: same-name precedence is not documented (design document #82 §2.3; **not re-read this time, unconfirmed**), recorded as `precedence-undocumented`.
 - `overlap_hints[]`: different names, same client, token-set Jaccard similarity of the descriptions >= 0.8 (at least 5 tokens each side; English words, Chinese adjacent character pairs). `hint_only: true`; a mechanical hint that does not claim the two mean the same.
 
+## Known trade-offs and limits
+
+- **Cursor's compatibility loading is deliberately not modelled**: design document #82 §2.3 records that Cursor also reads `~/.claude/skills` and `~/.codex/skills` (and the project's `.claude/skills` and `.codex/skills`). This version lists only Cursor's own stores (`~/.cursor/skills`, `~/.agents/skills`, `<project>/.cursor/skills`, `<project>/.agents/skills`). Reasons: the behaviour rests on one reading in #82 that was not re-read this time (**unconfirmed**); the official documentation states neither same-name precedence nor where the disable switch is stored; and modelling it would list one file under both `claude` and `cursor`, distorting the duplicate and byte-total figures. It can be added later as new keys or stores without changing existing keys. Cursor's Skill list and description-byte total may therefore be lower than what it actually loads.
+- **The fingerprint is computed from redacted arguments**: `fingerprint` hashes `command+args` or `url` after credential values became `<redacted>`, so two entries that differ only in a redacted position (for example two different secrets in `args`, or different tokens in a URL query) get the same fingerprint and count as identical. This is the accepted price of a digest that cannot leak credentials; `has_inline_secret` flags such entries, and a duplicate verdict for them is a hint only.
+
 ## `unknown[]`
 
 `{store, client, reason}`. `reason`: `invalid-json`, `invalid-toml`, `unreadable`, `too-large`, `unexpected-structure`, `claude-local-structure-unrecognized`.
+
+## Claude Desktop (`claude-desktop`, read-only)
+
+`--client claude-desktop` reads the Claude Desktop app's `claude_desktop_config.json` as a **separate target**, not merged into `claude` (the standalone CLI does not read that file). It is **not in the default client set**: name it with `--client claude-desktop` or use `--client all`; default output is unchanged.
+
+- Location (official documentation, <https://modelcontextprotocol.io/docs/develop/connect-local-servers>, read 2026-11-18): macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Linux `~/.config/Claude/claude_desktop_config.json`; Windows is `%APPDATA%\Claude\claude_desktop_config.json`, which this command does not resolve (it records `platform-unsupported` in `unknown[]`).
+- Entries: `client: claude-desktop`, `scope: user`, `store: "desktop-config"` (a symbolic name; the real path is in the top-level `desktop.path`), same fields as any MCP entry; a top-level `desktop{path, exists, parse_ok}` is appended (only when `claude-desktop` is selected; `parse_ok` is `null` when the file does not exist). The file's `store` in `unknown[]` is likewise `desktop-config`; there is no Skill directory and no project level, so `--type skills` and `--scope project` yield nothing. An entry containing `${...}` carries `notes: ["variable-expansion-unconfirmed"]` (the documentation does not say whether this file expands variables).
+- A missing file is `unknown` with `not-found`; a corrupt one is `invalid-json` or `unexpected-structure`.
+- `doctor --client claude-desktop` is read-only, reports observations and warnings only, never produces `issues`, and never changes `ok` or the exit code.
+- `doctor --client claude`: when a project-managed MCP server also exists under the same name in `claude_desktop_config.json`, `clients.claude.shadowed_by[]` gains an advisory entry (the key appears only when there is a finding): `{name, by, store, applies_to: "desktop-local-code-tab", cli_affected: false, severity: "advisory", evidence: "file", precedence_confirmed: false, source_url}`, and a line is added to `warnings`. The hint concerns the Desktop local Code tab only; the standalone CLI is unaffected. **Precedence is unconfirmed**: design document #82 (read 2026-11-11) quoted "with the same name, the Code tab uses the `claude_desktop_config.json` definition"; re-reading <https://code.claude.com/docs/en/desktop#mcp-servers-from-the-claude-desktop-chat-app> on 2026-11-18, the page says only that Desktop loads that file's servers into local Code tab sessions alongside those from `~/.claude.json` and `.mcp.json`, with no same-name precedence. Hence `precedence_confirmed` is `false` and the wording is "may use".
 
 ## Platforms
 

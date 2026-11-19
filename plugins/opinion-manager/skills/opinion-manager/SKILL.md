@@ -49,21 +49,22 @@ description: Generate, compose, review and maintain behavior rules between the u
 
 ## 交付物审查与旧格式
 
-实施前完整读取当前项目 `OPINION.md`，按条件选择适用条款；交付前逐条检查并修正明确问题。Profile 声明了分层加载时，改为先运行 `context core` 读取核心规则与规则束索引，任务命中触发条件或判断不清时用 `context bundle` 读取对应规则束，交付前用 `context check` 核对；命令返回 `fallback` 时完整读取正文。维护规则本身时始终完整读取。冲突改变交付时集中请用户裁决。用户反馈只形成候选，经确认才能发布新版本。项目需要记录候选发生次数、灰度使用与规则覆盖时，使用 `lifecycle` 命令在项目私有目录记账：任务结束后提交 `use` 事件，如实记录适用规则、逐条结果、读取的规则束和漏读；测试与演示标为 `fixture`。工具只记账，不在后台学习，也不自动晋升候选或把灰度版本转为正式，这些裁决来自用户。工作中的低成本暂存使用 `inbox`（见下文），`lifecycle` 保留给带证据的灰度与覆盖记账。
+实施前完整读取当前项目 `OPINION.md`，按条件选择适用条款；交付前逐条检查并修正明确问题。Profile 声明了分层加载时，改为先运行 `context core` 读取核心规则与规则束索引，任务命中触发条件或判断不清时用 `context bundle` 读取对应规则束，交付前用 `context check` 核对；命令返回 `fallback` 时完整读取正文。维护规则本身时始终完整读取。冲突改变交付时集中请用户裁决。用户反馈只形成候选，经确认才能发布新版本。项目需记录候选发生次数、灰度使用与规则覆盖时，用 `lifecycle` 命令在项目私有目录记账：任务结束后提交 `use` 事件，如实记录适用规则、逐条结果、读取的规则束和漏读；测试与演示标为 `fixture`。工具只记账，不后台学习，不自动晋升候选或转正，这些裁决来自用户。工作中的低成本暂存使用 `inbox`（见下文），`lifecycle` 保留给带证据的灰度与覆盖记账。
 
 旧格式 `templates/*.json`、`compose --template`、`compose --rule` 与 `compose --custom-file` 保持兼容。有锁项目必须使用版本化 Profile 流程，禁止用旧格式写入绕过核验；新项目优先使用版本化 catalog。
 
 ## 候选收件箱与自动采集
 
-收件箱让用户在工作中顺手沉淀观点：先低成本暂存，再由用户集中裁决。agent-pack 的 hook（`agenthelm nudge`）会在会话开始注入下面的协议并提示未决事项；没有 hook 的客户端按本节手动执行。命令与数据格式见 [候选收件箱](../../references/inbox.md)，hook 与阈值见 agent-pack 的 `references/nudge.md`。
+收件箱让用户在工作中顺手沉淀观点：先低成本暂存，再由用户集中裁决。agent-pack 的 hook（`agenthelm nudge`）会在会话开始注入下面的协议并提示未决事项；无 hook 的客户端按本节手动执行。命令与格式见 [候选收件箱](../../references/inbox.md)，hook 与阈值见 agent-pack 的 `references/nudge.md`。
 
-- **暂存**：用户在工作中表达长期偏好、对你行为的纠正或规则（“以后都……”“不要再……”“记住……”）时，立即用 `inbox add` 暂存标题、完整规则、适用范围和用户原话。不打断当前任务，不需要确认。一次性的任务要求、项目事实和命令不是候选。宁可多暂存，裁决环节会过滤。
+- **暂存**：用户在工作中表达长期偏好、对你行为的纠正或规则（“以后都……”“不要再……”“记住……”）时，立即用 `inbox add` 暂存标题、完整规则、适用范围、`--trigger`（何时适用）、`--purpose`（为什么）和用户原话，可选 `--exclude`、`--relation`；缺 trigger / purpose 只警告，按「不完整」展示。不打断当前任务，不需确认。一次性的任务要求、项目事实和命令不是候选。暂存阶段宁可多存，展示与裁决阶段要求条件完整，不得用「所有」等占位词。
 - **匹配**：实施前读取 OPINION.md；用户已同意试行的候选（`inbox list --status trial`，hook 会随协议注入）同样遵循，交付时说明是否适用。
-- **确认**：任务完成或即将完成时，把本次会话新增的候选用编号列表一次性交给用户：正式采纳 / 项目内试行 / 暂缓 / 丢弃。用户明确表态后记录：试行 / 暂缓 / 丢弃用 `inbox decide … --confirmed`；用户说「采纳」时直接用 `inbox adopt`，不先 `decide`。每个会话集中确认一次，不逐条追问。
+- **确认**：任务完成或即将完成时，把本次会话新增的候选用编号列表一次性交给用户：正式采纳 / 项目内试行 / 暂缓 / 丢弃。用户明确表态后记录：试行 / 暂缓 / 丢弃用 `inbox decide … --confirmed`；用户说「采纳」时直接用 `inbox adopt`，不先 `decide`。每个会话集中确认一次。
 - **采纳并写入**：用户说「采纳」后，运行 `inbox adopt <编号…>`（不带 `--apply`，零写入）预览：候选正文作为个人规则输入，走与 `profile` / `compose` 相同的完整流程，一次展示 `content`；用户确认后追加 `--apply --confirm <confirmation_sha256>`，一次写入并 `verify` 读回，成功后候选才记为 `formal`。多条候选一次预览、一次确认，全部成功或都不改。
 - **已批准不等于已生效**：`decide --to formal` 只记录状态，输出 `in_opinion: false` 与 `next_step`，`OPINION.md` 未写入，后续会话不会加载；必须继续 `inbox adopt`。
-- **边界**：除 `adopt --apply`（须带预览指纹）外，`inbox` 不写 OPINION.md、Profile 或锁；重复出现不等于确认。试行超过设定天数未转正会回到待确认。
-- **隐私**：收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议项目保持私有。`inbox add` 返回 `notice` 时如实转告用户；是否公开仓库、是否排除 `.opinion/` 由用户决定，不要替用户决定，也不要自行修改 `.gitignore`。
+- **补全与修订**：`inbox check` 只读，列出缺条件/目的的候选与 OPINION.md 行，由你给建议值；候选用 `inbox revise` 补全（已展示或非 pending 须 `--confirmed`）；`relations` 只是机械提示，语义判断由你做，写入 `--relation`。
+- **边界**：除 `adopt --apply`（须带预览指纹）外，`inbox` 不写 OPINION.md、Profile 或锁；重复出现不等于确认。试行超期未转正回到待确认。
+- **隐私**：收件箱 `.opinion/inbox.json` 保存用户原话，可能含敏感信息，建议项目保持私有。`inbox add` 返回 `notice` 时如实转告用户；是否公开仓库、是否排除 `.opinion/` 由用户决定，不要自行修改 `.gitignore`。
 - **语言**：提示与协议有中文、英文两种，命令带 `--lang zh|en`；向用户转告和确认时使用用户正在使用的语言。候选内容是用户自己的话，不翻译。
 - **未决汇总**：开新会话时 agent-pack 按阈值提示待确认数量与久未处理的天数；用户可在 Project Profile 的 `opinion.nudge` 或 `~/.config/agenthelm/config.json` 的 `nudge` 调整，或用 `AGENTHELM_NO_NUDGE=1` 关闭。
 

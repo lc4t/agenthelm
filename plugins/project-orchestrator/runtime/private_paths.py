@@ -21,6 +21,7 @@ CONVENTION = "private"
 IGNORE_FILE = ".gitignore"
 # 与 agents-init 新项目生成的 private/.gitignore 相同（tests/test_private_paths_sync.py 核对两处一致）。
 IGNORE_TEXT = "# agenthelm: 本目录内容默认不进入 git；读取前须经用户确认。\n*\n!.gitignore\n"
+IGNORE_TEXT_EN = "# agenthelm: this directory is kept out of git by default; get the user's confirmation before reading it.\n*\n!.gitignore\n"
 GIT_TIMEOUT = 10
 
 
@@ -110,10 +111,19 @@ def git_state(project: Path, directory: str) -> dict:
     return result
 
 
+def ignore_text(project: Path) -> str:
+    """The .gitignore text in the project's file language (Profile ``language``; zh when missing)."""
+    try:
+        data = json.loads((project / PROFILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    return IGNORE_TEXT_EN if isinstance(data, dict) and data.get("language") == "en" else IGNORE_TEXT
+
+
 def plan_ignore(project: Path, directory: str) -> list[dict]:
     """需要写入的 .gitignore（只在它不存在时创建；已有的从不修改）。"""
     target = project / directory
     if target.exists() and not target.is_dir():
         return []
     path = target / IGNORE_FILE
-    return [] if path.exists() else [{"path": path, "content": IGNORE_TEXT, "expect": None}]
+    return [] if path.exists() else [{"path": path, "content": ignore_text(project), "expect": None}]

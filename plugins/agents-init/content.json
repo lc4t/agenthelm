@@ -9,7 +9,8 @@
       "description": "初始化时渲染为项目入口文件的中文模板与根目录启动器；更新后由用户逐文件选择是否重新渲染。",
       "sources": [
         "skills/agents-init/AGENT.template.md",
-        "skills/agents-init/launcher.sh"
+        "skills/agents-init/launcher.sh",
+        "skills/agents-init/launcher.en.sh"
       ],
       "materializes": [
         "AGENTS.md",
