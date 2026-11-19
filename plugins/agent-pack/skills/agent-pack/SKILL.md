@@ -21,6 +21,19 @@ description: Deterministically inventory, verify, install, sync, migrate and rec
 
 `agenthelm inventory`（只读）列出各客户端能看到的 Skill 与 MCP：存放位置、重复、description 字节数、可识别的来源；输出带 `schema_version` 的稳定 JSON，契约见 [references/inventory-contract.md](../../references/inventory-contract.md)。
 
+## 技能与 MCP 管理（命令清单）
+
+读命令零写入；写命令默认预览，`--apply` 必须带预览给出的 `--expect-plan <plan_digest>`（指纹不一致拒绝、退出码 1），本版只支持 macOS 与 Linux。Agent 先向用户展示预览，经同意才加 `--apply`；只有证据等级为 `file` 的条目才可能被处置，`unknown` 一律只读，不下结论。
+
+- `agenthelm inventory [--client claude|codex|cursor|claude-desktop|all] [--scope project|user|all]`：技能与 MCP 的作用域、重复、description 加载成本、证据等级。`claude-desktop` 只读，不在默认客户端集合内，须点名或用 `--client all`。契约：[inventory-contract.md](../../references/inventory-contract.md)。
+- `agenthelm clients`：只读，列出客户端驱动（内置与用户声明）及其能力。用户声明文件放在 `~/.config/agenthelm/clients.d/*.json`，本版**只校验、不执行**，不支持用新声明安装新客户端（#134 Phase 1）。
+- `agenthelm relocate <ref> --to <客户端>:<作用域>`：迁移 Skill（复制或同作用域内相对符号链接，默认归档源、不删除）与 Claude 的 MCP 条目（`user|local|project`）。绝不覆盖同名目标；放宽须 `--allow-widen`，进入项目目录须 `--confirm-project-content`。契约：[relocate-contract.md](../../references/relocate-contract.md)。
+- `agenthelm dedupe <分组id> …`：重复分组的处置（`--keep <ref> --retire-others`、`--keep-all --note`、`--ignore|--unignore`，决定写入 `~/.config/agenthelm/ext-decisions.json`），`--desktop-snippet` 只生成可粘贴到 Claude Desktop 配置的片段，不读写 Desktop 配置。契约：[dedupe-contract.md](../../references/dedupe-contract.md)。
+- 受管与手工的区别（MCP）：state 里记录了本项目包归属的条目由工具退役（原片段与整份配置先备份、失败回滚）；手工装的或属于别的包的条目工具**不编辑**，只给 `claude mcp remove --scope <作用域> <名>` 与备份提示。Skill 副本只归档、不删除，本版没有 `restore` 命令，结果给出手工恢复的 `mv`。
+- 作用域：Project Profile 的 `capabilities.default_scope` / `mcp_scope` / `skill_scope`（可选，不写则行为不变）与 `sync` / `reconcile --scope user|project|all`、`--project-store local|file`，细节与迁移预览、屏蔽检测见 [capability-config.md](../../references/capability-config.md)。
+- 项目里的人用入口：`agenthelm project extensions list|dups|show|check|move|dedupe|scope`（菜单第 9 屏「技能与 MCP」），属于 project-orchestrator，写入类子命令转发到上面的命令。
+- **未确认，须真机验证**：Claude local 级 MCP 条目是否弹批准；Claude Desktop 是否加载某条目（远程 url、请求头、SSE 官方文档未说明）；同步盘里相对符号链接是否可用（同步盘路径下改为复制）。这些工具都以 `promise: cannot-promise` 或 `best-effort` 标注，不写成已验证。
+
 `agenthelm config` 管理用户级设置（`~/.config/agenthelm/config.json`），默认只预览，`--apply` 才写入，只改要改的键，替换前备份原文件：`config show` 显示生效的设置；`config language zh|en|auto` 设置界面语言（命令行输出用哪种语言，不改动项目文件）；`config language-hint on|off` 开关“界面语言未设置”的提示；`config project-language zh|en [--project <目录>]` 设置当前项目的文件语言（Profile 的 `language`，写进项目的文件用哪种语言；只改 Profile）。只有界面实际显示英文、且没有任何地方指定界面语言时，`agenthelm check` 与会话开始的提示才会说明当前语言从哪来并给出命令（中文界面不提示）；界面显示英文、已有项目没有 `language` 时 `check` 也会说明。两种语言的区别要向用户讲清楚：界面语言只影响屏幕上的文字，项目文件语言随项目同步。
 
 ## 执行顺序

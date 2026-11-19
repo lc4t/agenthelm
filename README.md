@@ -51,7 +51,7 @@ codex plugin add opinion-manager@agenthelm
 ## 不需要 AI Agent 的项目入口
 
 ```bash
-./menu                      # 交互菜单：找资料 / 看进展 / 项目指南 / 检查项目与环境 / 修复与更新 / 记录事项 / 项目工具 / 流程（SOP）
+./menu                      # 交互菜单：找资料 / 看进展 / 项目指南 / 检查项目与环境 / 修复与更新 / 记录事项 / 项目工具 / 流程（SOP） / 技能与 MCP
 ./menu find 读后感 2026-10    # 不进菜单：直接查；--output json 给脚本用
 ./menu progress             # 按 进行中 / 等待 / 待澄清 / 挂起 分组看事项
 ./menu health               # 检查依赖、插件、模板、索引、事项记录与运行时，每条都写原因、影响和下一步
@@ -66,6 +66,25 @@ codex plugin add opinion-manager@agenthelm
 - **先看看**：`agenthelm project --demo study`（另有 `personal`、`research`、`blank`）用内置的虚构项目体验，不读写真实文件。
 - **项目适配**：项目可在 Profile 的 `entry` 段声明简介、资料位置、自有事项工具与项目专用工具，约定见 [case-workspaces.md「项目入口」](plugins/project-orchestrator/references/case-workspaces.md#项目入口不需要-ai-agent)。
 - 只在 macOS 与 Linux 上验证过。
+
+## 技能与 MCP 管理
+
+回答「这台机器上各客户端能看到哪些 Skill 与 MCP、装在哪个作用域、哪些重复、占多少常驻上下文」，并提供受控的移动与去重。读命令零写入；写命令默认预览，确认后 `--apply --expect-plan <预览指纹>` 才执行，被替换或移走的内容进 `~/.agent-pack/recovery/`，本版没有 `restore` 命令，结果给出手工恢复步骤。只在 macOS 与 Linux 上验证过。
+
+```bash
+agenthelm inventory --client all                         # 只读：Skill 与 MCP 的作用域、重复、description 字节数、证据等级（含 claude-desktop，只读）
+agenthelm clients                                        # 只读：客户端驱动清单
+agenthelm project extensions list                        # 人用入口，等同菜单第 9 屏「技能与 MCP」；另有 dups / show / check
+agenthelm relocate skill:<名>@claude:user --to claude:project   # 预览迁移；MCP 用 mcp:<名>@claude:user --to claude:local
+agenthelm dedupe --list                                  # 重复分组；处置见 dedupe <分组id> --keep … --retire-others
+```
+
+- **项目级声明**：Project Profile 的 `capabilities.default_scope`、`mcp_scope`、`skill_scope`（都可选，不写则行为不变）声明条目只对本项目生效；`sync` / `reconcile` 加 `--scope user|project|all` 控制本次规划的范围。Claude 的项目级 MCP 写入 `~/.claude.json` 的 local 级或项目 `.mcp.json`，项目级 Skill 是 `.claude/skills` 下的相对符号链接。
+- **只读不下结论**：证据等级为 `unknown` 的条目只展示，不处置；「哪份生效」只在官方文档给出优先级时回答；不打分、不排序、不建议删除。
+- **MCP 的边界**：state 里记录了本项目包归属的条目由工具迁移或退役（原片段与整份配置先备份，失败回滚）；手工装的条目工具不编辑，只给 `claude mcp remove --scope <作用域> <名>`。Claude Desktop 本版只读，去重只生成可粘贴片段。
+- **客户端驱动**（`agenthelm clients`，#134 第一阶段）：用户声明文件放 `~/.config/agenthelm/clients.d/*.json`，本版只校验、不执行，不支持用它安装新客户端。
+- **未确认（需真机验证）**：Claude local 级条目是否弹批准、Desktop 是否加载某条 MCP、同步盘里符号链接的行为。
+- 契约与细节：[inventory](plugins/agent-pack/references/inventory-contract.md)、[relocate](plugins/agent-pack/references/relocate-contract.md)、[dedupe](plugins/agent-pack/references/dedupe-contract.md)、[能力配置与作用域](plugins/agent-pack/references/capability-config.md)。
 
 ## 流程（SOP）
 
@@ -252,3 +271,5 @@ npx @sakanano-moe/agenthelm migrate --install --apply
 - 采集是自动的，生效不是：候选未经你确认不会进入 `OPINION.md`；`formal` 也只记录意愿，写入仍走完整预览与确认。
 
 Claude Code 与 Codex 随插件生效（Codex 需在 `/hooks` 中信任）；Cursor 运行 `agenthelm nudge install-hooks --client cursor` 预览，`--apply` 写入。提示按你的语言显示（中文 / 英文；`nudge.language`、`AGENTHELM_LANG`、系统 locale，最后用英文），协议也同步，要求 Agent 用你正在使用的语言转告和确认。阈值在 Project Profile 的 `opinion.nudge` 或 `~/.config/agenthelm/config.json` 的 `nudge` 调整，`agenthelm nudge status` 查看生效配置，`AGENTHELM_NO_NUDGE=1` 关闭。候选保存在项目内的 `.opinion/inbox.json`，**其中有你的原话，可能含敏感信息**：启用这个功能的项目建议保持私有，至少不要放进公开渠道。若要公开仓库或让他人看到，是否排除 `.opinion/` 由你决定；工具会在第一次暂存和第一次开会话时各提醒一次，`agenthelm nudge status` 随时可查，但不会替你决定，也不会自动改 `.gitignore`。详见 [nudge 说明](plugins/agent-pack/references/nudge.md)（[English](plugins/agent-pack/references/nudge.en.md)） 与 [候选收件箱](plugins/opinion-manager/references/inbox.md)（[English](plugins/opinion-manager/references/inbox.en.md)）。
+
+候选与规则带「适用条件 / 目的 / 不适用于 / 关系备注」（`inbox add --trigger --purpose --exclude --relation`；本版缺失只警告，占位词拒绝）；`inbox check` / `inbox revise` 补全旧候选，`inbox routes list` 查看把某类任务路由到某个 skill 的规则（软约束：只提高调用概率，不保证）。写进项目文件的文字与 `OPINION.md` 框架按项目文件语言（Profile 的 `language`）生成；`en` 项目的 `opinion.lock.json` 带 `language: en`，**旧运行时读不了这样的锁**，多台机器使用同一项目时先升级所有机器的运行时。公开模板的中英双语内容由维护者另行改写，尚未完成。字段、命令与展示节流见 [候选收件箱](plugins/opinion-manager/references/inbox.md)。

@@ -53,6 +53,8 @@ python3 scripts/init_project.py --project /path/to/project \
 
 **项目文件语言**：初始化前先问用户项目里的文件用中文还是英文（用户没有特别要求时取当前对话的语言），用 `--language zh|en` 传入；不传时取当前界面语言（`AGENTHELM_LANG`、系统 locale，最后英文）。它写进 Profile 的 `language`，决定新建 Case 的小节名与默认文字、README 追加的使用说明用哪种语言，随项目同步，与各人的命令行界面语言无关；缺省的旧项目保持中文。`--mode migrate` 缺省保持中文，要改传 `--language en`。
 
+`language=en` 的项目不再生成含中文的文件：根目录启动器（头部注释与报错、指引文案）与 `private/.gitignore` 随项目文件语言生成，`zh` 与缺省语言的输出逐字节不变（内容包 `agents-init/project-contract` 因此升版）。**以前用 `--language en` 生成的项目**启动器仍是中文：先运行 `agenthelm check` 看差异，再运行 `agenthelm fix update-content` 预览（直接运行 `agenthelm fix` 会按 `check` 的差异列出同样的项），确认后加 `--apply` 整份替换为英文启动器（替换前备份；你改过启动器时该文件被阻止，逐文件选择 `--keep`、`--merge` 或 `--accept`）；已有的 `private/.gitignore` 不会被改写。`zh` 或缺省语言的项目不受影响，不要求任何动作。
+
 已有项目没有 `language` 时按中文生成。要改，用 `--mode language --language zh|en`（或 `agenthelm config project-language zh|en`）：默认只预览，`--apply` 只把 Profile 的 `language` 写成所选值（Profile 先备份），不改写任何已有文件；`check` 的 `project_language` 字段给出项目是否声明了它。
 
 新项目默认在根目录生成启动器 `menu`（人不经过 Agent 打开项目菜单），并在 Profile 写入 `entry` 段；用户想用别的名字时传 `--entry-name <名称>`，不要启动器时传 `--no-entry`。README.md 不存在时新建并写入使用说明小节（中文项目叫「怎样使用」，英文项目叫 How to use），已存在的不改动。
