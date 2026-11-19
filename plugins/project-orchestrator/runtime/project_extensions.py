@@ -225,7 +225,10 @@ def normalize(inventory: dict) -> dict:
     clients = inventory.get("clients")
     names = {item if isinstance(item, str) else item.get("name") for item in clients
              if isinstance(item, (str, dict))} if isinstance(clients, list) else set()
-    unknown_extra = inventory.get("unknown")
+    # 「文件不存在」（reason=not-found，例如还没装 Desktop）是没有这个存储，不是读不懂，不计入未知。
+    unknown_extra = [item for item in inventory.get("unknown") or []
+                     if not (isinstance(item, dict) and item.get("reason") == "not-found")] \
+        if isinstance(inventory.get("unknown"), list) else None
     projects = inventory.get("projects")
     known = [{"name": item["name"], "last_synced": _text(item.get("last_synced"))} for item in projects
              if isinstance(item, dict) and isinstance(item.get("name"), str)] if isinstance(projects, list) else []
