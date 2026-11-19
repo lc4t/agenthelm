@@ -10,6 +10,10 @@
       "plugins/agent-pack/references/inventory-contract.en.md"
     ],
     [
+      "plugins/agent-pack/references/relocate-contract.md",
+      "plugins/agent-pack/references/relocate-contract.en.md"
+    ],
+    [
       "plugins/opinion-manager/references/inbox.md",
       "plugins/opinion-manager/references/inbox.en.md"
     ],
