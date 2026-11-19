@@ -85,6 +85,8 @@ Case 自有输入放 `refs/`，交付物放 `docs/`（草稿 `docs/drafts/`）�
 
 人不经过 Agent 时用项目入口 `runtime/project_cli.py`（项目根目录的启动器或 `agenthelm project`）找资料、看进展、检查与记录；Agent 需要同样的信息时调用它的子命令并加 `--output json`，例如 `project_cli.py --project <项目> progress --output json`，不另写一套查找逻辑。写入类子命令（`fix`、`record`、`tools --run`）默认只预览，执行前按本 Skill 的授权规则取得用户同意。项目在 Profile 的 `entry` 段声明自有事项工具与项目工具，约定见 [项目入口](../../references/case-workspaces.md#项目入口不需要-ai-agent)。
 
+菜单第 9 屏「技能与 MCP」与子命令 `agenthelm project extensions list|dups|show|check|move|dedupe|scope` 是 agent-pack 技能与 MCP 管理的人用入口：`list`、`dups`、`show`、`check` 只读（机械事实与阈值，不打分、不排序、不建议删除，证据为 `unknown` 的条目不下结论，MCP 只显示名字、作用域与指纹，不显示参数值）；`move`、`dedupe` 转发到 `agenthelm relocate` / `agenthelm dedupe` 并原样展示其预览，`scope --effective project|user` 预览要写入 Profile 的 `skill_scope` / `mcp_scope` 声明（先备份、读回，只写声明，条目在之后 `sync` / `reconcile` 预览并应用时才移动）。写入向导默认预览、确认前零写入，`--apply` 必须带预览的 `--expect-plan`，应用后读回。Agent 展示预览并取得用户同意后才可加 `--apply`；命令清单与契约见 [agent-pack 的 Skill](../../../agent-pack/skills/agent-pack/SKILL.md) 与 [inventory 契约](../../../agent-pack/references/inventory-contract.md)。Claude local 级 MCP 条目是否弹批准、Desktop 是否加载某条目、同步盘符号链接行为均**未确认**，由真机验证。
+
 检索和统计以所有 Case 为入口，通过标题、别名、旧 Task ID、标签、目标和文件名查找；正文只在候选确定后按需读取。查找具体文件、版本或引用影响面时先用随包的 `runtime/assets.py find` / `refs` / `check`（人用入口 `runtime/wf.py`），不靠记忆翻目录；见 [交付物台账](../../references/case-workspaces.md#交付物台账与-wf-查找官方样例)。恢复视图只展示未关闭状态，全量统计包括历史完成与放弃记录，禁止把迁移时间当作业务完成时间。
 
 已授权迁移历史 Task 时，先列出全部源目录与目标映射，再做代表性 Demo、哈希验证和批量迁移。独立 Task 转独立 Case，确有同一目标和证据链的 Task 才合入既有 Case；标题相似不能作为合并证据。保留原 TASK.md、progress、原文件和旧 ID；关闭原因包含放弃时保留真实历史状态。工具入口和限制见 [Case 工作目录工具](../../references/case-workspaces.md)。
