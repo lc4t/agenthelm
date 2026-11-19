@@ -40,9 +40,101 @@ def rule_qualifiers(candidate: dict[str, Any], language: str) -> str:
     return words["join"].join(parts)
 
 
+# 路由（opinion 规则指定某类任务使用某个 skill）：标记是纯 ASCII，与项目语言无关；自动约束的文字随项目文件语言。
+ROUTE_WHEN = ("before", "after", "instead")
+SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")  # Agent Skills 规范：小写字母、数字、连字符
+TAG_NAME = re.compile(r"^[a-z0-9-]{1,32}$")
+MAX_SKILL = 64
+MARKER = re.compile(r"^(?P<head>.*) \[route (?P<body>[^\[\]]*)\]$")
+ROUTE_WORDS = {
+    "zh": {
+        "exclude": "skill {skill} 自身的执行过程",
+        "before": "开始主体工作前先使用 skill {skill}",
+        "after": "主体完成后、交付前使用 skill {skill} 处理成果",
+        "final": "主体完成后、交付前最后一步使用 skill {skill} 处理成果，其后不再改动该成果的文字",
+        "instead": "用 skill {skill} 取代默认做法完成本项工作",
+        "suffix": " 路由：{timing}；该 skill 执行期间不再触发本规则；该 skill 不可用时告知用户并按目的自行完成。",
+    },
+    "en": {
+        "exclude": "the execution of skill {skill} itself",
+        "before": "before starting the main work, use skill {skill}",
+        "after": "after the main work and before delivery, use skill {skill} on the result",
+        "final": "as the last step before delivery, use skill {skill} on the result; do not change its wording afterwards",
+        "instead": "use skill {skill} instead of the default approach for this work",
+        "suffix": " Routing: {timing}; this rule does not trigger again while that skill runs; if it is unavailable, tell the user and finish the work yourself per the purpose.",
+    },
+}
+
+
+def route_problem(route: dict[str, Any]) -> str | None:
+    """路由对象的形式校验：返回第一个问题的代码（skill / when / final / on），没有问题为 None。"""
+    skill = route.get("skill")
+    if not isinstance(skill, str) or len(skill) > MAX_SKILL or not SKILL_NAME.match(skill):
+        return "skill"
+    if route.get("when") not in ROUTE_WHEN:
+        return "when"
+    if route.get("final") and route["when"] != "after":
+        return "final"
+    on = route.get("on") or ""
+    if on and (not isinstance(on, str) or not TAG_NAME.match(on)):
+        return "on"
+    return None
+
+
+def route_marker(route: dict[str, Any]) -> str:
+    """行末的机器可读标记，固定键序；final / on 缺省则省略。"""
+    parts = [f"skill={route['skill']}", f"when={route['when']}"]
+    if route.get("final"):
+        parts.append("final=1")
+    if route.get("on"):
+        parts.append(f"on={route['on']}")
+    return "[route " + " ".join(parts) + "]"
+
+
+def route_exclude(route: dict[str, Any], language: str) -> str:
+    return ROUTE_WORDS[language]["exclude"].format(skill=route["skill"])
+
+
+def route_suffix(route: dict[str, Any], language: str) -> str:
+    words = ROUTE_WORDS[language]
+    timing = words["final" if route.get("final") else route["when"]].format(skill=route["skill"])
+    return words["suffix"].format(timing=timing)
+
+
+def parse_marker(line: str) -> tuple[dict[str, Any] | None, str | None]:
+    """行末标记 -> (路由, 错误)。没有标记为 (None, None)；标记损坏为 (None, 原因)。只认固定的四个键。"""
+    matched = MARKER.match(line.rstrip())
+    if not matched:
+        return None, ("marker_damaged" if re.search(r"\[route\b", line) else None)
+    route: dict[str, Any] = {"final": False, "on": ""}
+    seen: set[str] = set()
+    for token in matched["body"].split(" "):
+        key, found, value = token.partition("=")
+        if not found or key not in ("skill", "when", "final", "on") or key in seen or not value:
+            return None, "marker_damaged"
+        seen.add(key)
+        if key == "final":
+            if value != "1":
+                return None, "marker_damaged"
+            route["final"] = True
+        else:
+            route[key] = value
+    if not {"skill", "when"} <= seen or route_problem(route):
+        return None, "marker_damaged"
+    return route, None
+
+
 def candidate_rule(candidate: dict[str, Any], language: str = "zh") -> str:
     words = RULE_WORDS[language]
-    return f"- **{candidate['title']}**{words['open']}{rule_qualifiers(candidate, language)}{words['close']}{words['colon']}{candidate['text']}"
+    route = candidate.get("route")
+    if not route:
+        return f"- **{candidate['title']}**{words['open']}{rule_qualifiers(candidate, language)}{words['close']}{words['colon']}{candidate['text']}"
+    # 路由行：不适用里自动追加「skill 自身的执行过程」，正文后追加时机句、不再触发与降级条款，行末带标记
+    user_exclude = candidate.get("exclude") or ""
+    exclude = words["sep"].join(part for part in (user_exclude, route_exclude(route, language)) if part)
+    shown = {**candidate, "exclude": exclude}
+    return (f"- **{candidate['title']}**{words['open']}{rule_qualifiers(shown, language)}{words['close']}{words['colon']}"
+            f"{candidate['text']}{route_suffix(route, language)} {route_marker(route)}")
 
 
 CUSTOM_HEADINGS = ("## 用户自定义规则", "## User-defined rules")
@@ -88,6 +180,21 @@ def parse_line(line: str) -> dict[str, Any] | None:
             values[name] = value.strip()
         if "applies" in values:
             separator = words["sep"].strip()
-            return {"format": language, "title": matched["title"], "scopes": [item.strip() for item in values["applies"].split(separator) if item.strip()],
-                    "trigger": values.get("trigger", ""), "purpose": values.get("purpose", ""), "exclude": values.get("exclude", ""), "text": matched["text"]}
+            parsed = {"format": language, "title": matched["title"], "scopes": [item.strip() for item in values["applies"].split(separator) if item.strip()],
+                      "trigger": values.get("trigger", ""), "purpose": values.get("purpose", ""), "exclude": values.get("exclude", ""), "text": matched["text"]}
+            route, problem = parse_marker(matched["text"])
+            if route:
+                parsed["route"] = route
+                # 按同一渲染规则反向剥离自动追加的部分，往返还原用户写的正文与不适用
+                tail = route_suffix(route, language) + f" {route_marker(route)}"
+                if parsed["text"].endswith(tail):
+                    parsed["text"] = parsed["text"][:-len(tail)]
+                automatic = route_exclude(route, language)
+                if parsed["exclude"] == automatic:
+                    parsed["exclude"] = ""
+                elif parsed["exclude"].endswith(words["sep"] + automatic):
+                    parsed["exclude"] = parsed["exclude"][:-len(words["sep"] + automatic)]
+            elif problem:
+                parsed["route_error"] = problem
+            return parsed
     return None

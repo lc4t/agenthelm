@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "技能与 MCP 清单向 agenthelm inventory 要求全部客户端，包含只读的 Claude Desktop 条目，并在按项目看里归入「仅 Desktop 应用」。",
+    "en": "The Skills & MCP views ask agenthelm inventory for all clients, including the read-only Claude Desktop entries, and group them under Desktop app only in the by-project view."
+  },
+  "changes": [{
+    "scope": "project-orchestrator",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
