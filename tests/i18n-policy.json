@@ -14,6 +14,10 @@
       "plugins/agent-pack/references/relocate-contract.en.md"
     ],
     [
+      "plugins/agent-pack/references/dedupe-contract.md",
+      "plugins/agent-pack/references/dedupe-contract.en.md"
+    ],
+    [
       "plugins/opinion-manager/references/inbox.md",
       "plugins/opinion-manager/references/inbox.en.md"
     ],

@@ -2559,6 +2559,24 @@ def parser() -> argparse.ArgumentParser:
     relocate.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
     relocate.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     relocate.add_argument("--recovery-root", type=Path, help=argparse.SUPPRESS)
+    dedupe = sub.add_parser("dedupe", help=_("处置 inventory 报告的一个重复分组：保留一份并归档其余（Skill）、全部保留、忽略（默认预览；--apply --expect-plan <指纹> 才写入）"))
+    dedupe.add_argument("group", nargs="?", help=_("分组 id（用 --list 查看）"))
+    dedupe.add_argument("--list", action="store_true", help=_("只读：列出重复分组与已记录的决定"))
+    dedupe.add_argument("--keep", help=_("保留的条目引用（配合 --retire-others 或 --desktop-snippet）"))
+    dedupe.add_argument("--retire-others", action="store_true", help=_("归档其余 Skill 副本；MCP 副本只输出手工命令，工具不编辑"))
+    dedupe.add_argument("--keep-all", action="store_true", help=_("都保留：只写决定文件，需要 --note"))
+    dedupe.add_argument("--note", help=_("--keep-all 的保留理由（最长 200 个字符，不要写凭据）"))
+    dedupe.add_argument("--ignore", action="store_true", help=_("忽略这一组：只写决定文件，可用 --unignore 撤销"))
+    dedupe.add_argument("--unignore", action="store_true", help=_("撤销对这一组的 --ignore"))
+    dedupe.add_argument("--desktop-snippet", action="store_true",
+                        help=_("只读：给出 claude_desktop_config.json 的路径与可粘贴的 mcpServers 片段（不写任何文件）"))
+    dedupe.add_argument("--project", type=Path, default=None, help=_("项目目录；默认当前目录"))
+    dedupe.add_argument("--apply", action="store_true", help=_("写入；必须同时带 --expect-plan"))
+    dedupe.add_argument("--expect-plan", help=_("预览输出的计划指纹；与重新计算的结果不一致则拒绝写入"))
+    dedupe.add_argument("--output", choices=("text", "json"), default="text")
+    dedupe.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
+    dedupe.add_argument("--home", type=Path, help=argparse.SUPPRESS)
+    dedupe.add_argument("--recovery-root", type=Path, help=argparse.SUPPRESS)
     locate_parser = sub.add_parser("locate", help=_("输出插件的已安装位置（最新优先），供下游脚本查找"))
     locate_parser.add_argument("plugin")
     locate_parser.add_argument("--version", help=_("只要这个版本"))
@@ -2703,6 +2721,14 @@ def run_relocate(args: argparse.Namespace, env: Env) -> int:
     import agent_pack_relocate  # noqa: PLC0415 - shipped next to this file
 
     return agent_pack_relocate.run(args, env.home)
+
+
+def run_dedupe(args: argparse.Namespace, env: Env) -> int:
+    """Thin entry: grouping, planning and writing live in ``agent_pack_dedupe`` (preview by default)."""
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_dedupe  # noqa: PLC0415 - shipped next to this file
+
+    return agent_pack_dedupe.run(args, env.home)
 
 
 def run_project(argv: list[str]) -> int:
@@ -2858,6 +2884,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_inventory(args, env)
     if args.command == "relocate":
         return run_relocate(args, env)
+    if args.command == "dedupe":
+        return run_dedupe(args, env)
     if args.command == "locate":
         found = locate(env, args.plugin, args.version, include_legacy=args.include_legacy)
         if args.output == "json":
