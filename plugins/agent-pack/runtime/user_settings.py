@@ -23,11 +23,12 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from i18n_agent_pack import _, N_, normalize  # noqa: E402
+import agent_pack_clients as client_registry  # noqa: E402
 
 LANGUAGE_NAMES = {"zh": N_("中文"), "en": "English"}
 SOURCE_NAMES = {"locale": N_("系统 locale"), "default": N_("默认值")}
 KNOWN_KEYS = ("language", "language_hint", "update_check", "ignored_clients")
-CLIENT_CHOICES = ("claude", "codex", "cursor")
+CLIENT_CHOICES = client_registry.default_ids()
 
 
 def read_settings(path: Path) -> tuple[dict, str | None]:
