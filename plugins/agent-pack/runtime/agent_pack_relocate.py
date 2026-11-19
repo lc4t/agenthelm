@@ -6,8 +6,8 @@ Write order: recovery directory -> copy beside the target under a temporary name
 content digests, ``SKILL.md`` included) -> rename into place -> archive the source (a move, never a delete).
 Any failure undoes only what this run created and puts archived sources back; an existing target is never touched.
 
-Only Skills are handled here; MCP entries are refused (their writes belong to a later change). Plans and outputs
-never contain file contents, only names, paths and digests.
+Skills are handled here; ``mcp:`` refs go to ``agent_pack_mcp_write`` (same plan shell, digest and apply protocol).
+Plans and outputs never contain file contents or values, only names, paths and digests.
 """
 
 from __future__ import annotations
@@ -64,6 +64,10 @@ def build_plan(home: Path, project: Path, ref: str, to: str, mode: str = "copy",
     """The plan (JSON-safe) and a private context with absolute paths for apply. Reads only, never writes."""
     home = home.expanduser().resolve()
     project = project.expanduser().resolve()
+    parsed_early = parse_ref(ref)
+    if parsed_early is not None and parsed_early[0] == "mcp":
+        import agent_pack_mcp_write as mcp_write  # noqa: PLC0415 - shipped next to this file
+        return mcp_write.build_plan(home, project, ref, to, allow_widen, keep_source, recovery_override, mode)
     plan: dict[str, Any] = {
         "ref": ref, "kind": "skill", "source": None, "target": None, "mode": mode, "retire_source": False,
         "direction": None, "status": "blocked", "steps": [], "blocked": [], "warnings": [], "confirmations": [],
@@ -77,7 +81,7 @@ def build_plan(home: Path, project: Path, ref: str, to: str, mode: str = "copy",
     if parsed is None:
         blocks.append(ext.blocked("invalid-ref", _("引用格式应为 skill:<名>@<客户端>:<作用域>")))
     elif parsed[0] != "skill":
-        blocks.append(ext.blocked("unsupported-kind", _("本版本只处理 Skill；MCP 的写入不在此命令内")))
+        blocks.append(ext.blocked("unsupported-kind", _("本版本只处理 Skill 与 MCP")))
     if target is None:
         blocks.append(ext.blocked("invalid-target", _("目标格式应为 <客户端>:<作用域>，客户端为 {0}，作用域为 user|project").format("|".join(sorted({client for client, _scope in TARGET_STORE})))))
     if blocks:
@@ -201,6 +205,9 @@ def next_command(plan: dict, args_text: str) -> str:
 
 def apply_plan(plan: dict, ctx: dict, confirm_project: bool) -> dict:
     """Execute a ready plan. Never raises for expected failures; returns the ``applied`` record."""
+    if plan["kind"] == "mcp":
+        import agent_pack_mcp_write as mcp_write  # noqa: PLC0415
+        return mcp_write.apply_plan(plan, ctx, confirm_project)
     home, project = ctx["home"], ctx["project"]
     source: Path = ctx["source"]
     target: Path = ctx["target"]
@@ -283,6 +290,7 @@ ACTION_TEXT = {
 
 
 def render_text(plan: dict, applied: dict | None, command: str, color: bool = False) -> str:
+    import agent_pack_mcp_write as mcp_write  # noqa: PLC0415
     lines = []
     preview = applied is None
     lines.append(_("agenthelm relocate：预览（未写入任何文件）") if preview else _("agenthelm relocate：已执行"))
@@ -293,9 +301,13 @@ def render_text(plan: dict, applied: dict | None, command: str, color: bool = Fa
         text = _("方式：{0}；方向：{1}").format(plan["mode"], direction)
         lines.append(ext.red(text, color) if plan["direction"] == "widen" else text)
     for entry in plan["steps"]:
-        template = ACTION_TEXT[entry["action"]]
+        template = ACTION_TEXT.get(entry["action"]) or mcp_write.ACTION_TEXT[entry["action"]]
         body = _(template).format(**entry)
         lines.append(f"  {entry['id']} [{entry['promise']}] {body}")
+    for entry in plan.get("manual", []):
+        lines.append(_("手工（不可由工具归档）：{0}").format(entry.get("command") or entry.get("instruction")))
+        if entry.get("backup"):
+            lines.append(_("  先备份：{0}").format(entry["backup"]))
     for warning in plan["warnings"]:
         text = _("注意：{0}").format(warning["message"])
         lines.append(ext.red(text, color) if warning["code"] == "widen" else text)

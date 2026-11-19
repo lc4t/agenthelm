@@ -89,7 +89,7 @@ class PlanTests(Base):
     def test_bad_inputs_are_blocked_not_crashing(self) -> None:
         self.assertEqual("invalid-ref", self.preview("nonsense", "codex:project")["plan"]["blocked"][0]["code"])
         self.assertEqual("invalid-target", self.preview("skill:demo@claude:user", "vim:user")["plan"]["blocked"][0]["code"])
-        self.assertEqual("unsupported-kind", self.preview("mcp:x@claude:user", "codex:user")["plan"]["blocked"][0]["code"])
+        self.assertEqual("unsupported-kind", self.preview("plugin:x@claude:user", "codex:user")["plan"]["blocked"][0]["code"])
         missing = self.preview("skill:nope@claude:user", "codex:user")["plan"]["blocked"][0]
         self.assertEqual("source-not-found", missing["code"])
 

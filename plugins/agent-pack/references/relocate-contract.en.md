@@ -8,7 +8,7 @@ agenthelm relocate <ref> --to <client>:<scope> [--mode copy|link] [--project DIR
                    [--apply --expect-plan <plan_digest>]
 ```
 
-Skills only; `<ref>` is `skills[].ref` from `agenthelm inventory` (`skill:<name>@<client>:<scope>`, with `#agents` outside the primary store). **Preview by default, zero writes.** `--apply` must carry the `--expect-plan` a preview printed; if the recomputed `plan_digest` differs the command refuses (exit 1, nothing written). Exit codes: 0 success or a preview without blockers; 1 blockers, digest mismatch or a failed write; 2 usage error. macOS and Linux only.
+Skills and MCP entries (below); for a Skill `<ref>` is `skills[].ref` from `agenthelm inventory` (`skill:<name>@<client>:<scope>`, with `#agents` outside the primary store). **Preview by default, zero writes.** `--apply` must carry the `--expect-plan` a preview printed; if the recomputed `plan_digest` differs the command refuses (exit 1, nothing written). Exit codes: 0 success or a preview without blockers; 1 blockers, digest mismatch or a failed write; 2 usage error. macOS and Linux only.
 
 ## Target stores
 
@@ -22,7 +22,19 @@ Skills only; `<ref>` is `skills[].ref` from `agenthelm inventory` (`skill:<name>
 - **Write order and rollback**: recovery directory (0700) -> copy under a temporary name beside the target -> read back (relative path and content digest per file; the `SKILL.md` digest equals the source's) -> rename into place -> archive the source. Any failure removes only what this run created, moves archived sources back and keeps the recovery directory. Symbolic links inside the directory that point outside it -> `source-has-external-symlink`.
 - **Widening** (project -> user level) needs `--allow-widen`, `direction: "widen"`, shown in red in a terminal's text preview.
 - **Entering a project repository** (user -> project level): `confirmations` says the content will enter the project directory and may be committed; `--apply` additionally needs `--confirm-project-content`. License and private content are for the user to judge; the tool cannot.
-- A source without `file` evidence (broken directory, oversized `SKILL.md`) is read-only: `source-not-file-evidence`. MCP entries: `unsupported-kind`.
+- A source without `file` evidence (broken directory, oversized `SKILL.md`) is read-only: `source-not-file-evidence`. Other kinds: `unsupported-kind`.
+
+## MCP entries (`mcp:<name>@claude:<user|local|project>`)
+
+`<ref>` is `mcps[].ref`; `--to claude:user|local|project` (`project` is the project's `.mcp.json`). Same shell (preview, `plan_digest`, `--expect-plan`, `blocked`, `promise`); writes reuse the Claude sync's local and `.mcp.json` readers and helpers, implemented in `agent_pack_mcp_write.py`. `plan.kind` is `mcp`, `source.managed` says whether agent-pack's state records ownership, and `plan.manual[]` carries the manual command for an unmanaged source.
+
+- **Copy only, never overwrite**: an existing target entry of that name → `target-exists-identical|different` (compares a hash of the whole entry, says only same or different, shows no value). `--mode link` → `link-unsupported`.
+- **Direction**: `user` is wider than `local`/`project`; widening (→ `user`) needs `--allow-widen` and is marked red; `local` ↔ `project` is `same`. A `project` target also needs `--confirm-project-content` on `--apply` (the entry enters version control).
+- **Limits for `.mcp.json`**: an inline secret value → `inline-secret-in-project-file` (turn it into a `${VAR}` reference first; the tool never rewrites entries); a machine path → `machine-specific-in-project-file`. A client whose `project_write_supported` is false → `project-write-unsupported`; across clients → `cross-client-unsupported`.
+- **Disposition of the source**: an entry is **managed** only when the state of this project's package records ownership (`mcps` for user level, `scopes.mcps` for local/project). Managed and without `--keep-source`: the target write and the source removal are one atomic replace of `~/.claude.json` (`.mcp.json` is its own atomic write); the whole original file is first backed up byte for byte into the recovery directory (`claude.json.before` / `project-mcp.json.before`), the removed entry's original JSON fragment goes to `mcp/<name>@<scope>.json` (all 0600, directory 0700, never printed), and the state is updated (the `mcps` key still means user level only). On any failure every touched file is restored byte for byte. **Unmanaged** (hand-installed, or owned by another package name): only copied to the new place, the original is left alone, and `plan.manual[]` gives `claude mcp remove --scope <scope> <name>` plus a backup reminder, `not_archivable_by_tool: true`.
+- Recovery: no `restore` command in this version; the result's `restore[]` lists the manual steps (put the fragment back by hand, or restore the whole backup, which loses later changes to that file).
+- Output, `relocate.json` and the plan carry only names, scopes, paths and a 16-hex entry digest, never env values, headers or tokens; only `claude.json.before` and `mcp/*.json` hold the user's own values.
+- When the project Profile's `mcp_scope` differs from the target scope, `warnings` has `declaration-differs` (the next sync follows the declaration).
 
 ## JSON
 
