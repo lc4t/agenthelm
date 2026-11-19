@@ -2544,6 +2544,21 @@ def parser() -> argparse.ArgumentParser:
                            help=_("在 JSON 里附上 description 文本（截断到 1,536 个字符）；默认不输出"))
     inventory.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
     inventory.add_argument("--home", type=Path, help=argparse.SUPPRESS)
+    relocate = sub.add_parser("relocate", help=_("把一个 Skill 复制或迁移到另一个客户端/作用域（默认预览；--apply --expect-plan <指纹> 才写入）"))
+    relocate.add_argument("ref", help=_("inventory 的 Skill 引用，如 skill:名字@claude:user"))
+    relocate.add_argument("--to", required=True, help=_("目标 <客户端>:<作用域>，如 codex:project"))
+    relocate.add_argument("--mode", choices=("copy", "link"), default="copy", help=_("copy（默认）或 link（只限同一作用域内的相对符号链接）"))
+    relocate.add_argument("--project", type=Path, default=None, help=_("项目目录；默认当前目录"))
+    relocate.add_argument("--allow-widen", action="store_true", help=_("允许放宽（项目级 → 用户级）"))
+    relocate.add_argument("--keep-source", action="store_true", help=_("复制并保留源；默认校验通过后把源归档（不是删除）"))
+    relocate.add_argument("--confirm-project-content", action="store_true",
+                          help=_("确认进入项目目录的内容许可证合适且不含私有内容（用户级 → 项目级时需要）"))
+    relocate.add_argument("--apply", action="store_true", help=_("写入；必须同时带 --expect-plan"))
+    relocate.add_argument("--expect-plan", help=_("预览输出的计划指纹；与重新计算的结果不一致则拒绝写入"))
+    relocate.add_argument("--output", choices=("text", "json"), default="text")
+    relocate.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
+    relocate.add_argument("--home", type=Path, help=argparse.SUPPRESS)
+    relocate.add_argument("--recovery-root", type=Path, help=argparse.SUPPRESS)
     locate_parser = sub.add_parser("locate", help=_("输出插件的已安装位置（最新优先），供下游脚本查找"))
     locate_parser.add_argument("plugin")
     locate_parser.add_argument("--version", help=_("只要这个版本"))
@@ -2680,6 +2695,14 @@ def run_inventory(args: argparse.Namespace, env: Env) -> int:
     else:
         sys.stdout.write(agent_pack_inventory.render_text(report))
     return 0
+
+
+def run_relocate(args: argparse.Namespace, env: Env) -> int:
+    """Thin entry: planning and writing live in ``agent_pack_relocate`` (preview by default)."""
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_relocate  # noqa: PLC0415 - shipped next to this file
+
+    return agent_pack_relocate.run(args, env.home)
 
 
 def run_project(argv: list[str]) -> int:
@@ -2833,6 +2856,8 @@ def main(argv: list[str] | None = None) -> int:
         return hook(env, project, args.hook_format, latest_source=args.latest, offline=args.offline, clients=args.client)
     if args.command == "inventory":
         return run_inventory(args, env)
+    if args.command == "relocate":
+        return run_relocate(args, env)
     if args.command == "locate":
         found = locate(env, args.plugin, args.version, include_legacy=args.include_legacy)
         if args.output == "json":
