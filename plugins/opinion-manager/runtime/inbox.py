@@ -24,7 +24,10 @@ from pathlib import Path
 from typing import Any
 
 import inbox_text as words
+import inbox_relations
 import versioned
+from rule_lines import (GLOBAL_VALUES, RULE_WORDS, candidate_rule, custom_section_lines, is_global,  # noqa: F401
+                        localized_global, parse_line, rule_qualifiers)
 
 
 STORE = Path(".opinion") / "inbox.json"
@@ -38,8 +41,6 @@ STRICT_REQUIRED = False
 REQUIRED_FIELDS = ("trigger", "purpose")
 OPTIONAL_FIELDS = ("exclude", "relation")
 FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS
-# 用户要求全局时必须使用的固定标准值（并带非空 --quote）；工具只做形式校验，无法验证是谁提出了全局。
-GLOBAL_VALUES = {"zh": "全部场景，用户要求全局", "en": "All scenarios; the user asked for this to apply globally"}
 # 占位词：传入这些值等于没填，一律拒绝（比较前去掉空白与标点并转小写）。
 PLACEHOLDERS = frozenset({"所有", "全部", "相关", "一切", "任何", "无", "tbd", "any", "all", "everything", "relevant", "anything", "na", "none"})
 RUNTIME = Path(__file__).resolve().with_name("opinion_manager.py")
@@ -168,15 +169,6 @@ def clean(value: str | None, label: str, limit: int, *, required: bool = True) -
     return text
 
 
-def is_global(value: str) -> bool:
-    return value in GLOBAL_VALUES.values()
-
-
-def localized_global(value: str, language: str) -> str:
-    """写进项目文件时把标准全局值换成项目语言的版本，避免 en 项目里出现中文。"""
-    return GLOBAL_VALUES[language] if is_global(value) else value
-
-
 def field_value(value: str | None, name: str, limit: int = MAX_FIELD) -> str:
     """可选字段：未传入返回空串；传入了就必须有内容且不是占位词（relation 只要求非空）。"""
     if value is None:
@@ -239,6 +231,91 @@ def add(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
+    """修订候选内容。pending 且从未展示（presented==0）时是 Agent 自己的暂存修正，无需确认；其他状态必须 --confirmed。
+    旧值写进 history，摘要重算，与其他候选撞摘要时报错；状态不变。"""
+    if len(args.ids) != 1:
+        fail("err_revise_one")
+    changes: dict[str, Any] = {}
+    if args.title is not None:
+        changes["title"] = clean(args.title, "label_title", MAX_TITLE)
+    if args.text is not None:
+        changes["text"] = clean(args.text, "label_text", MAX_TEXT)
+    if args.scope:
+        changes["scopes"] = [clean(item, "label_scope", MAX_TITLE) for item in args.scope]
+    for name in FIELDS:
+        if getattr(args, name, None) is not None:
+            changes[name] = field_value(getattr(args, name), name)
+    quote = clean(args.quote, "label_quote", MAX_QUOTE, required=False)
+    if not changes and not quote:
+        fail("err_revise_nothing")
+    moment = now()
+    with Locked(root) as data:
+        candidate = data["candidates"].get(args.ids[0])
+        if candidate is None:
+            fail("err_missing", id=args.ids[0])
+        if not (candidate["status"] == "pending" and not candidate["presented"]) and not args.confirmed:
+            fail("err_revise_confirm", status=candidate["status"])
+        previous = {name: candidate.get(name, [] if name == "scopes" else "") for name, value in changes.items()
+                    if candidate.get(name, [] if name == "scopes" else "") != value}
+        quotes = list(candidate["quotes"]) + ([quote] if quote and quote not in candidate["quotes"] else [])
+        if quotes != candidate["quotes"]:
+            previous["quotes"] = list(candidate["quotes"])
+        if not previous:
+            return {"ok": True, "status": "unchanged", "id": candidate["id"], "changed": [], "candidate": view(candidate), "warnings": []}
+        merged = {**candidate, **{name: value for name, value in changes.items() if name in previous}, "quotes": quotes}
+        digest = normalized(merged["title"], merged["text"])
+        for other in data["candidates"].values():
+            if other["id"] != candidate["id"] and other["digest"] == digest:
+                fail("err_revise_collision", id=other["id"])
+        if is_global(merged.get("trigger") or "") and not quotes:
+            fail("err_global_quote")
+        if STRICT_REQUIRED and missing_fields(merged):
+            fail("err_missing_fields", fields=say("sep").join(say(f"label_{name}") for name in missing_fields(merged)))
+        candidate.update({name: merged[name] for name in previous if name != "quotes"})
+        candidate["quotes"], candidate["digest"] = quotes, digest
+        candidate["updated_at"] = stamp(moment)
+        if args.confirmed:
+            candidate["last_action_at"] = stamp(moment)
+        candidate["history"].append({"at": stamp(moment), "to": candidate["status"], "note": "revised", "previous": previous})
+        save(root, data)
+        shown = with_relations(candidate, inbox_relations.targets(root, data))
+    warnings = []
+    if candidate["status"] == "formal":
+        warnings.append(say("warn_revise_formal"))
+    if missing_fields(candidate):
+        warnings.append(say("warn_missing_fields", fields=say("sep").join(say(f"label_{name}") for name in missing_fields(candidate))))
+    return {"ok": True, "status": "written", "id": candidate["id"], "changed": sorted(previous), "candidate": shown,
+            "writes_stable_rules": False, "warnings": warnings}
+
+
+def check(root: Path, args: argparse.Namespace) -> dict[str, Any]:
+    """只读：列出缺条件 / 目的的候选（pending、trial）与 OPINION.md 自定义行；认不出格式的行标「未结构化」。不写任何文件。"""
+    data = load(root)
+    candidates = [{"id": item["id"], "title": item["title"], "status": item["status"], "text": item["text"], "scopes": item["scopes"],
+                   "trigger": item.get("trigger") or "", "purpose": item.get("purpose") or "",
+                   "missing": missing_fields(item), "revise_command": revise_command(root, item["id"])}
+                  for item in select(data, list(OPEN_STATUSES)) if missing_fields(item)]
+    lines = []
+    path = root / "OPINION.md"
+    content = versioned.read_text(path) if path.exists() else ""
+    for number, line in custom_section_lines(content):
+        parsed = parse_line(line)
+        if parsed is None:
+            lines.append({"line": number, "format": "unstructured", "title": "", "missing": [], "text": inbox_relations.snippet(line)})
+        elif missing_fields(parsed):
+            lines.append({"line": number, "format": parsed["format"], "title": parsed["title"], "missing": missing_fields(parsed),
+                          "text": inbox_relations.snippet(parsed["text"])})
+    return {"ok": True, "status": "read-only", "candidates": candidates, "custom_lines": lines,
+            "summary": {"candidates_incomplete": len(candidates), "custom_lines_incomplete": sum(1 for item in lines if item["format"] != "unstructured"),
+                        "custom_lines_unstructured": sum(1 for item in lines if item["format"] == "unstructured")},
+            "next_step": say("check_next") if candidates or lines else say("check_clean"), "writes_stable_rules": False}
+
+
+def revise_command(root: Path, identity: str) -> str:
+    return f"python3 {shlex.quote(str(RUNTIME))} inbox revise {shlex.quote(identity)} --project {shlex.quote(str(root))} --trigger \"<…>\" --purpose \"<…>\" --lang {LANGUAGE}"
+
+
 def decide(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     if not args.confirmed:
         fail("err_confirm")
@@ -276,29 +353,6 @@ def adopt_command(root: Path, ids: list[str], confirm: str | None = None) -> str
 
 
 DEFAULT_PROFILE = "private.my-opinion"
-
-
-# 自定义行的标签随项目文件语言（不随界面语言）。没有新字段的候选，zh 渲染与旧版逐字节相同。
-RULE_WORDS = {
-    "zh": {"applies": "适用", "trigger": "条件", "purpose": "目的", "exclude": "不适用", "sep": "、", "join": "；", "colon": "：", "open": "（", "close": "）"},
-    "en": {"applies": "Applies to", "trigger": "When", "purpose": "Purpose", "exclude": "Not for", "sep": ", ", "join": "; ", "colon": ": ", "open": " (", "close": ")"},
-}
-
-
-def rule_qualifiers(candidate: dict[str, Any], language: str) -> str:
-    """括号内的内容：适用范围，随后是条件 / 目的 / 不适用（有才写）。"""
-    words = RULE_WORDS[language]
-    parts = [f"{words['applies']}{words['colon']}{words['sep'].join(candidate['scopes'])}"]
-    for name in ("trigger", "purpose", "exclude"):
-        value = candidate.get(name) or ""
-        if value:
-            parts.append(f"{words[name]}{words['colon']}{localized_global(value, language) if name == 'trigger' else value}")
-    return words["join"].join(parts)
-
-
-def candidate_rule(candidate: dict[str, Any], language: str = "zh") -> str:
-    words = RULE_WORDS[language]
-    return f"- **{candidate['title']}**{words['open']}{rule_qualifiers(candidate, language)}{words['close']}{words['colon']}{candidate['text']}"
 
 
 def fingerprint_input(item: dict[str, Any]) -> list[Any]:
@@ -446,7 +500,8 @@ def present(root: Path, args: argparse.Namespace) -> dict[str, Any]:
                 candidate["presented_at"] = stamp(moment)
                 marked.append(identity)
         save(root, data)
-    return {"ok": True, "status": "written", "marked": marked, "candidates": [view(data["candidates"][identity]) for identity in marked]}
+    pool = inbox_relations.targets(root, data) if marked else []
+    return {"ok": True, "status": "written", "marked": marked, "candidates": [with_relations(data["candidates"][identity], pool) for identity in marked]}
 
 
 def expire(root: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -502,6 +557,16 @@ def field_lines(item: dict[str, Any]) -> list[str]:
     return lines
 
 
+def with_relations(item: dict[str, Any], pool: list[dict[str, str]]) -> dict[str, Any]:
+    shown = view(item)
+    shown["relations"] = [{**entry, "note": say("relations_note")} for entry in inbox_relations.relations_for(item, pool)]
+    return shown
+
+
+def relation_lines(relations: list[dict[str, Any]]) -> list[str]:
+    return [say("list_relations", kind=say(f"kind_{entry['kind']}"), ref=entry["with"]["ref"], evidence=entry["evidence"]) for entry in relations]
+
+
 def brief_qualifiers(item: dict[str, Any]) -> str:
     """试行条目括号内的适用范围，后接条件 / 目的 / 不适用；跟随界面语言。"""
     parts = [say("sep").join(item["scopes"])]
@@ -516,7 +581,9 @@ def listing(root: Path, args: argparse.Namespace) -> dict[str, Any] | str:
     for item in statuses or []:
         if item not in STATUSES:
             fail("err_status", status=item)
-    items = select(load(root), statuses, args.session, args.unpresented)
+    data = load(root)
+    items = select(data, statuses, args.session, args.unpresented)
+    pool = inbox_relations.targets(root, data) if items else []
     if args.output == "markdown":
         if not items:
             return say("list_empty") + "\n"
@@ -526,10 +593,11 @@ def listing(root: Path, args: argparse.Namespace) -> dict[str, Any] | str:
             lines.append(say("list_rule", text=item["text"]))
             lines.append(say("list_scope", scopes=say("sep").join(item["scopes"])))
             lines.extend(field_lines(item))
+            lines.extend(relation_lines(inbox_relations.relations_for(item, pool)))
             if item["quotes"]:
                 lines.append(say("list_quote", quote=item["quotes"][-1]))
         return "\n".join(lines) + "\n"
-    return {"ok": True, "status": "read-only", "value": [view(item) for item in items]}
+    return {"ok": True, "status": "read-only", "value": [with_relations(item, pool) for item in items]}
 
 
 def pending(root: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -581,13 +649,13 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
 
 def add_command(subparsers: Any) -> None:
     parser = subparsers.add_parser("inbox", help="Project-private candidate inbox: stash, decide and summarize pending items; only adopt --apply writes OPINION.md, through the full preview and fingerprint")
-    parser.add_argument("action", choices=("add", "list", "decide", "adopt", "present", "expire", "pending", "brief", "exposure"))
+    parser.add_argument("action", choices=("add", "list", "decide", "adopt", "present", "expire", "pending", "brief", "exposure", "check", "revise"))
     parser.add_argument("ids", nargs="*", help="candidate ids for decide / adopt / present")
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--title")
     parser.add_argument("--text")
     parser.add_argument("--scope", action="append", default=[])
-    parser.add_argument("--quote", help="the user's own words, kept as evidence for the candidate")
+    parser.add_argument("--quote", help="the user's own words, kept as evidence for the candidate (revise: appended)")
     parser.add_argument("--trigger", help="add: when the rule applies (required in spirit: omitting it only warns; placeholders such as 'all' are rejected)")
     parser.add_argument("--purpose", help="add: why the rule exists (omitting it only warns)")
     parser.add_argument("--exclude", help="add: when the rule does not apply")
@@ -623,10 +691,14 @@ def run(args: argparse.Namespace) -> dict[str, Any] | str:
         return brief(root, args)
     if args.action == "exposure":
         return exposure(root)
-    if args.action in ("decide", "adopt", "present") and not args.ids:
+    if args.action == "check":
+        return check(root, args)
+    if args.action in ("decide", "adopt", "present", "revise") and not args.ids:
         fail("err_ids")
     if args.action == "adopt":
         return adopt(root, args)
+    if args.action == "revise":
+        return revise(root, args)
     if args.action == "decide":
         if not args.to:
             fail("err_need_to")

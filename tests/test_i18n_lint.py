@@ -29,6 +29,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("agent-pack/runtime/agenthelm_runtime.py", "<module>"): "text of the generated launcher script, written to disk",
     ("opinion-manager/runtime/opinion_manager.py", "render_opinion"): "OPINION.md body, language independent by design",
     ("opinion-manager/runtime/inbox.py", "<module>"): "project-file words (rule-line labels, standard global value) and placeholder words: written into OPINION.md by project language, not output text",
+    ("opinion-manager/runtime/rule_lines.py", "<module>"): "rule-line labels and heading words written into OPINION.md by project file language (RULE_WORDS, standard global value), independent of the interface language",
     ("opinion-manager/runtime/versioned.py", "<module>"): "OPINION.md frame words by project file language (FRAME), independent of the interface language",
     ("project-orchestrator/runtime/assets.py", "<module>"): "regular expressions that match Chinese file names and dates",
     ("project-orchestrator/runtime/assets.py", "_extract_edges"): "regular expression that stops a path at Chinese punctuation",

@@ -29,7 +29,10 @@
   - 全局声明：用户明确要求全局时，`--trigger` 必须用固定标准值「全部场景，用户要求全局」/ "All scenarios; the user asked for this to apply globally"，并同时带非空 `--quote`；列表标注「全局（请用户确认）」。**工具只做形式校验，无法验证是谁提出的全局**，需由用户在裁决时确认。
   - `--exclude` 写不适用情形；`--relation` 是 Agent 对与现有规则关系的备注，工具原样保存和展示，不解释。
   - 采纳写入时，自定义行为 `- **标题**（适用：…；条件：…；目的：…；不适用：…）：正文`（没有这些字段的旧候选与此前渲染逐字节相同）。行内标签与 `OPINION.md` 的框架文字随**项目文件语言**（Project Profile 的 `language`，缺省 zh），不随界面语言；`en` 项目的文件里不出现中文（用户自己写的内容除外）。`language` 非 zh 的项目，`opinion.lock.json` 带可选键 `"language": "en"` 供 `verify` 复现渲染；zh 项目的锁格式不变。旧版运行时读不了带 `language` 的锁，需先升级。
-- `list [--status a,b] [--session ID] [--unpresented]`：列出候选。
+- `list [--status a,b] [--session ID] [--unpresented]`：列出候选。json 里每项带 `relations`（机械关系提示，没有则为空列表），markdown 里以「可能相关」行展示。
+  - 关系提示的对象：其他候选（不含已丢弃）、`OPINION.md` 自定义行（按本工具自己的两种渲染格式解析）、Profile 里已选的公开规则文本。三种提示：规范化文本相同（`same_text`）、字符二元组 Jaccard 重合度 ≥ 0.5（`text_overlap`，两边规范化后都至少 6 个字符）、触发条件重合度 ≥ 0.4（`condition_overlap`，不含全局声明）。每条带证据片段与「机械比对，仅供参考」，最多 5 条，永不阻断；阈值保守，宁可漏报。冲突、合并、放大缩小、拆分等语义判断由 Agent 做，写入 `--relation` 备注，工具原样保存和展示，不解释。
+- `check`：只读，不写任何文件。列出缺 trigger / purpose 的候选（`pending`、`trial`）与 `OPINION.md` 自定义行；认不出格式的行标 `unstructured`（未结构化），只报告。输出带每个候选的 `revise_command`，供 Agent 逐条提出建议值。`OPINION.md` 里的行补全走 `adopt` 的完整预览流程，由用户一次批量确认，不新增写入命令。
+- `revise <编号> [--title --text --scope --trigger --purpose --exclude --relation --quote]`：修订候选。状态为 `pending` 且从未展示（`presented` 为 0）时无需 `--confirmed`；其他状态必须带 `--confirmed`。`history` 追加 `{to: 原状态, note: revised, previous: 被改字段的旧值}`，状态不变；重算摘要，与其他候选撞摘要时报错；`--scope` 整体替换，`--quote` 追加。`formal` 候选的修订不改 `OPINION.md`（返回警告）。
 - `decide <编号…> --to pending|trial|formal|held|rejected --confirmed [--note]`：裁决。没有 `--confirmed` 一律拒绝；多个编号要么全部成功，要么都不改。
 - `adopt <编号…> [--apply --confirm SHA256]`：从采纳到写入的一步确认入口。用户在对话里明确说「采纳」时用它，不再单独 `decide`。
   - 不带 `--apply`：只预览，零写入。把候选正文作为个人规则追加到项目现有 Profile 的自定义段（没有 Profile 时新建 `private.my-opinion@1.0.0`），经 `profile` 与 `compose` 同一套预览，返回完整 `content`（将成为 `OPINION.md` 的全文）、`blocked`（已有人工内容等需先处理的情况）和 `confirmation_sha256`。
