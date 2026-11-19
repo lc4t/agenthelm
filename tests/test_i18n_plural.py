@@ -15,7 +15,7 @@ CATALOGS = [
 # "entry(ies)", "file(s)", "match(es)" - a letter run directly followed by a bracketed plural suffix.
 HEDGED_PLURAL = re.compile(r"[A-Za-z]\((?:s|ies|es)\)")
 # Counted nouns that read wrong at 1 ("1 subdirectories") in templates whose count can be 1.
-COUNT_THEN_PLURAL = re.compile(r"\{\d\} (?:subdirectories|entries|sections|skeleton paths)\b")
+COUNT_THEN_PLURAL = re.compile(r"\{\d\} (?:subdirectories|entries|sections|skeleton paths|skills|rules|copies|MCP servers|tokens)\b")
 
 
 class PluralWordingTests(unittest.TestCase):

@@ -55,7 +55,8 @@ class LocalStoreTests(ProjectStoreBase):
         self.assertEqual((op["scope"], op["store"]), ("project", "claude-local"))
         state = self.state()
         self.assertEqual(state["scopes"]["mcps"], {MCP: "project:local"})
-        self.assertIn(MCP, state["mcps"])
+        self.assertNotIn(MCP, state["mcps"], "the pre-existing mcps key stays user-level only")
+        self.assertIn(MCP, state["scopes"]["project_hashes"])
         self.assertEqual(payload["by_scope"]["project"]["mcp"], 1)
 
     def test_other_keys_and_permissions_are_kept_and_the_original_is_backed_up(self) -> None:
@@ -186,6 +187,49 @@ class LocalStoreTests(ProjectStoreBase):
         rc, payload, out = self.cli("--project-store", "file", client="cursor")
         self.assertEqual(rc, 2, out)
         self.assertIn("claude client only", payload["error"])
+
+
+def older_runtime_runs(test: "ScopeBase") -> None:
+    """Run ``sync``, ``reconcile`` and ``doctor`` of the latest released runtime on the test's project: they must not
+    fail, and must not remove anything the project-level scope recorded (state keeps it only under ``scopes``)."""
+    import subprocess
+    import tempfile
+    base = Path(os.environ["AGENTHELM_OLD_RUNTIME"]) if os.environ.get("AGENTHELM_OLD_RUNTIME") else None
+    if base is None:
+        root = TESTS.parents[2]
+        tag = subprocess.run(["git", "-C", str(root), "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
+                             capture_output=True, text=True, check=False).stdout.strip()
+        if not tag:
+            test.skipTest("no release tag to take an older runtime from")
+        scratch = Path(tempfile.mkdtemp(dir=test.root))
+        archive = subprocess.run(["git", "-C", str(root), "archive", tag, "plugins/agent-pack/runtime"],
+                                 capture_output=True, check=False)
+        if archive.returncode:
+            test.skipTest("cannot read the tagged runtime")
+        subprocess.run(["tar", "-x", "-C", str(scratch)], input=archive.stdout, check=True)
+        base = scratch / "plugins" / "agent-pack" / "runtime"
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    for command in ("sync", "reconcile", "doctor"):
+        args = [sys.executable, str(base / "agent_pack_config.py"), "--output", "json", command,
+                "--project", str(test.project), "--home", str(test.home), "--client", "claude"]
+        if command != "doctor":
+            args += ["--recovery-root", str(test.recovery), "--replace"]
+        proc = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
+        test.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)
+        test.assertNotIn("error", payload, proc.stdout)
+        removed = {op.get("name") for op in payload.get("operations", []) if str(op.get("action", "")).startswith("remove-")}
+        test.assertFalse(removed, f"{command} would remove {removed}")
+
+
+class OlderRuntimeTests(ProjectStoreBase):
+    """A runtime that predates the scope keys reads this state: it must not see the project-level entries."""
+
+    def test_older_runtime_sync_and_doctor_leave_project_level_entries_alone(self) -> None:
+        rc, _, out = self.cli("--apply")
+        self.assertEqual(rc, 0, out)
+        older_runtime_runs(self)
+        self.assertIn(MCP, self.local(), "the project-level entry is untouched")
 
 
 class ProjectFileTests(ProjectStoreBase):

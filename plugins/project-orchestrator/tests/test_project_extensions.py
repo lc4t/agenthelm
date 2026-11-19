@@ -99,7 +99,7 @@ class SubprocessTests(ExtensionsCase):
         code, payload = self.run_json("extensions", "list")
         self.assertEqual(code, 0, payload)
         calls = [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
-        self.assertIn(["inventory", "--output", "json", "--project", str(self.project)], calls)
+        self.assertIn(["inventory", "--output", "json", "--client", "all", "--project", str(self.project)], calls)
         self.assertNotIn("--include-description", sum(calls, []), "默认不要求输出 description 文本")
 
     def test_check_with_include_description_asks_for_the_text_and_finds_similar_pairs(self) -> None:

@@ -18,6 +18,7 @@ sys.path.insert(0, str(RUNTIME))
 import agent_pack_claude as claude  # noqa: E402
 import agent_pack_config as core  # noqa: E402
 from test_agent_pack_config import make_project  # noqa: E402
+from test_project_store_write import older_runtime_runs  # noqa: E402
 from test_scope_declaration import MCP, SKILL, ScopeBase, declare  # noqa: E402
 from test_sync_preview_parity import snapshot  # noqa: E402
 
@@ -129,6 +130,15 @@ class LinkTests(SkillBase):
             with self.assertRaises(core.AgentPackError):
                 claude.sync_project(self.project, home=self.home, apply=True, recovery_root=self.recovery)
         self.assertFalse((self.project / ".claude").exists(), "the directories created for the link are removed again")
+
+
+class OlderRuntimeTests(SkillBase):
+    def test_older_runtime_leaves_the_project_level_link_alone(self) -> None:
+        rc, _, out = self.cli("--apply")
+        self.assertEqual(rc, 0, out)
+        older_runtime_runs(self)
+        self.assertTrue(self.link.is_symlink())
+        self.assertEqual(self.state()["skills"], [], "nothing project-level in the pre-existing key")
 
 
 class SyncFolderTests(ScopeBase):

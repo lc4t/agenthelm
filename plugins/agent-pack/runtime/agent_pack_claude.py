@@ -436,12 +436,14 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     excluded = sorted(item.name for item in authority.mcps
                       if item.portable and not core._mcp_allowed(layout, item.name, "claude"))
     mcp_places = _state_scopes(state, "mcps")
-    owned_project_mcps = {server for server in state.get("mcps", {}) if mcp_places.get(server, "user") != "user"}
-    owned_mcps = set(state.get("mcps", {})) - owned_project_mcps    # user-level ownership only
+    # Project-level entries are recorded only under ``scopes`` (never in the pre-existing ``skills`` / ``mcps`` keys,
+    # which an older runtime reads as user-level ownership), so those two keys are user-level ownership only.
+    owned_project_mcps = {server for server, place in mcp_places.items() if place != "user"}
+    owned_mcps = set(state.get("mcps", {}))
     owned_mcps |= {server for server, entry in existing.items() if _references(entry, record)}
     skill_places = _state_scopes(state, "skills")
-    owned_project_skills = {item for item in state.get("skills", []) if skill_places.get(item, "user") != "user"}
-    owned_skills = set(state.get("skills", [])) - owned_project_skills   # user-level ownership only
+    owned_project_skills = {item for item, place in skill_places.items() if place != "user"}
+    owned_skills = set(state.get("skills", []))   # the pre-existing key is user-level ownership only
     skill_sources = {item.name: Path(item.path) for item in authority.skills}
     project_skills = {item for item in desired_skills if core.declared_scope(layout, "skill", item) == "project"}
     project_mcps = {item for item in desired_mcps if core.declared_scope(layout, "mcp", item) == "project"}
@@ -856,29 +858,29 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
         return result
 
 
-def _final_mcp_state(plan: dict[str, Any], before: dict[str, Any], user: dict[str, str], project: dict[str, tuple[str, str]],
-                     removed: set[str]) -> tuple[dict[str, str], dict[str, str]]:
-    """Owned MCP entries after an apply and where each sits: ``(name -> hash, name -> place)``.
+def _project_hashes(state: dict[str, Any]) -> dict[str, str]:
+    scopes = state.get("scopes")
+    value = scopes.get("project_hashes") if isinstance(scopes, dict) else None
+    return value if isinstance(value, dict) else {}
 
-    A scope the plan did not handle (``--scope``) keeps what the previous state recorded for it.
+
+def _final_mcp_state(plan: dict[str, Any], before: dict[str, Any], user: dict[str, str], project: dict[str, tuple[str, str]],
+                     removed: set[str]) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    """Owned MCP entries after an apply: ``(user-level name -> hash, project-level name -> (hash, place))``.
+
+    The user-level part goes to the pre-existing ``mcps`` key, the project-level part only to ``scopes``. A scope the
+    plan did not handle (``--scope``) keeps what the previous state recorded for it.
     """
-    old_hashes = before.get("mcps") if isinstance(before.get("mcps"), dict) else {}
-    old_places = _state_scopes(before, "mcps")
-    hashes: dict[str, str] = {}
-    places: dict[str, str] = {}
-    for name, digest in old_hashes.items():
-        place = old_places.get(name, "user")
-        handled = plan["do_user"] if place == "user" else plan["do_project"]
-        if not handled and name not in removed:
-            hashes[name], places[name] = digest, place
-        elif place != "user" and name not in removed and name not in project:
-            hashes[name], places[name] = digest, place    # a project entry the plan left alone (skipped or other store)
-    if plan["do_user"]:
-        for name, digest in user.items():
-            hashes[name], places[name] = digest, "user"
-    for name, (digest, place) in project.items():
-        hashes[name], places[name] = digest, place
-    return hashes, places
+    old_user = before.get("mcps") if isinstance(before.get("mcps"), dict) else {}
+    users = dict(user) if plan["do_user"] else dict(old_user)
+    projects: dict[str, tuple[str, str]] = {}
+    old_hashes = _project_hashes(before)
+    for name, place in _state_scopes(before, "mcps").items():
+        if place != "user" and name not in removed and name not in project:
+            projects[name] = (old_hashes.get(name, ""), place)   # the plan left it alone (skipped, other store, other scope)
+    if plan["do_project"]:
+        projects.update(project)
+    return users, projects
 
 
 def _final_skill_state(plan: dict[str, Any], before: dict[str, Any]) -> dict[str, str]:
@@ -889,8 +891,8 @@ def _final_skill_state(plan: dict[str, Any], before: dict[str, Any]) -> dict[str
     old_places = _state_scopes(before, "skills")
     retired = set(plan["retired_project_skills"])
     places: dict[str, str] = {}
-    for name in before.get("skills", []):
-        place = old_places.get(name, "user")
+    previous = dict.fromkeys(before.get("skills", []), "user") | {n: p for n, p in old_places.items() if p != "user"}
+    for name, place in previous.items():
         handled = plan["do_user"] if place == "user" else plan["do_project"]
         if not handled or (place != "user" and name not in retired and name not in plan["project_skill_places"]):
             places[name] = place
@@ -903,14 +905,20 @@ def _final_skill_state(plan: dict[str, Any], before: dict[str, Any]) -> dict[str
 
 
 def _scopes_record(plan: dict[str, Any], before: dict[str, Any], skills: dict[str, str] | None,
-                   places: dict[str, str] | None) -> dict[str, Any]:
-    """``scopes``: where each owned entry actually sits. Written only once a project declares a scope; a state
-    without it reads as all ``user``."""
+                   mcps: tuple[dict[str, str], dict[str, tuple[str, str]]] | None) -> dict[str, Any]:
+    """``scopes``: where each owned entry actually sits, and the hashes of the project-level MCP entries. Written
+    only once a project declares a scope; a state without it reads as all ``user``."""
     if not plan["aware"] and "scopes" not in before:
         return {}
     old = before.get("scopes") if isinstance(before.get("scopes"), dict) else {}
+    if mcps is None:
+        places, hashes = dict(old.get("mcps", {})), dict(old.get("project_hashes", {}))
+    else:
+        users, projects = mcps
+        places = {name: "user" for name in users} | {name: place for name, (_digest, place) in projects.items()}
+        hashes = {name: digest for name, (digest, _place) in projects.items()}
     return {"scopes": {"skills": dict(skills) if skills is not None else dict(old.get("skills", {})),
-                       "mcps": dict(places) if places is not None else dict(old.get("mcps", {}))}}
+                       "mcps": places, "project_hashes": hashes}}
 
 
 def _restore_bytes(path: Path, data: bytes | None, mode: int) -> None:
@@ -1093,14 +1101,14 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
             # A partial sync records only the types it handled; the others keep their recorded ownership.
             before = _read_state(home, name)
             only = set(plan["only"])
-            final_mcps, places = _final_mcp_state(plan, before, mcp_state, project_state, removed_project) \
-                if "mcp" in only else (before.get("mcps", {}), None)
+            final = _final_mcp_state(plan, before, mcp_state, project_state, removed_project) if "mcp" in only else None
             skill_places_final = _final_skill_state(plan, before) if "skills" in only else None
-            skills_final = sorted(skill_places_final) if skill_places_final is not None else before.get("skills", [])
+            skills_final = (sorted(name for name, place in skill_places_final.items() if place == "user")
+                            if skill_places_final is not None else before.get("skills", []))
             core._write_json_atomic(state_path(home, name), {
                 "schema_version": STATE_SCHEMA, "package": name,
-                "skills": skills_final, "mcps": final_mcps,
-                "updated_at": stamp} | _scopes_record(plan, before, skill_places_final, places), mode=0o600)
+                "skills": skills_final, "mcps": final[0] if final else before.get("mcps", {}),
+                "updated_at": stamp} | _scopes_record(plan, before, skill_places_final, final), mode=0o600)
     except Exception as exc:
         if config_written:
             _restore_bytes(config_path, config_bytes, config_mode)
