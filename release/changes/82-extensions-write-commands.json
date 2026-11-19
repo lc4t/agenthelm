@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "新增 agenthelm project extensions move / dedupe / scope：默认预览、--apply 才写。move 与 dedupe 转发 agenthelm relocate / dedupe 并原样展示其计划，应用时用 --expect-plan 回传同一摘要，摘要不一致即拒绝；scope 把生效范围写成 Project Profile 的 mcp_scope / skill_scope 声明（先备份、原子写入）。写入后重新读取 inventory 与计划比对。",
+    "en": "Add agenthelm project extensions move / dedupe / scope: preview by default, --apply writes. move and dedupe forward to agenthelm relocate / dedupe and show their plan as is, and --apply sends the same digest back with --expect-plan (a changed digest is refused); scope writes the effective scope as a Project Profile mcp_scope / skill_scope declaration (backed up first, atomic write). After a write the inventory is read again and compared with the plan."
+  },
+  "changes": [{
+    "scope": "project-orchestrator",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "off",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

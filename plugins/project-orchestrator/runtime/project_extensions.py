@@ -928,6 +928,31 @@ class ExtensionsMixin:
                 "impact": _("只影响 AI 客户端加载（可能重复占用上下文，或发生同名覆盖）；不影响本菜单与项目文件"),
                 "next": [{"label": _("在「技能与 MCP」里查看重复（只读）"), "action": f"ext:{groups[0]['id']}"}]}
 
+    # ---- 写入动作（默认预览）：转发给 agenthelm relocate / dedupe，或写 Profile 声明（见 project_ext_actions）
+    def _ext_actions(self):
+        import project_ext_actions as actions  # noqa: PLC0415
+
+        if getattr(self, "simulated", False):
+            from project_base import EntryError  # noqa: PLC0415
+
+            raise EntryError(_("演示项目不执行技能与 MCP 的写入动作"), "unavailable", [_("在真实项目里运行")])
+        return actions
+
+    def extensions_move(self, ref: str, to: str, **options: Any) -> dict:
+        return self._ext_actions().move(self.host, self.root, ref, to, **options)
+
+    def extensions_dedupe(self, group_id: str, **options: Any) -> dict:
+        return self._ext_actions().dedupe(self.host, self.root, group_id, **options)
+
+    def extensions_scope(self, ref: str, effective: str, **options: Any) -> dict:
+        return self._ext_actions().scope(self, ref, effective, **options)
+
+    def extensions_readback(self, action: str, result: dict, group_id: str | None = None) -> dict:
+        actions = self._ext_actions()
+        if action == "move":
+            return actions.readback_move(self.host, self.root, result)
+        return actions.readback_dedupe(self.host, self.root, group_id or "", result)
+
     def extensions_check(self, include_description: bool = False) -> dict:
         result = self._extensions(include_description)
         if result["state"] != "available":

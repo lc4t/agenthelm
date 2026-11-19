@@ -100,6 +100,9 @@ PREVIEW: dict[str, list[str]] = {
     "agenthelm config unignore-client": ["claude"],
     "agenthelm config project-language": ["en", *P],
     "agenthelm project fix": [*P, "--no-input"],
+    "agenthelm project extensions move": [*P, "--no-input", "skill:missing@claude:user", "--to", "codex:user"],  # a missing source is a blocked preview; the writing paths are covered by plugins/project-orchestrator/tests/test_project_extensions_actions.py
+    "agenthelm project extensions dedupe": [*P, "--no-input", "g-none", "--ignore"],  # an unknown group is an unsupported preview
+    "agenthelm project extensions scope": [*P, "--no-input", "skill:missing@claude:user", "--effective", "project"],
     "agenthelm project tools": [*P, "--no-input"],
     "agenthelm project record": [*P, "--no-input", "new", "--title", "Second", "--goal", "Goal"],
     "nudge install-hooks": ["--client", "cursor"],

@@ -658,6 +658,8 @@ def cmd_extensions(provider: Provider, args: argparse.Namespace) -> tuple[int, A
     """技能与 MCP：全部只读。inventory 不可用时是「能力不可用」（退出码 4）并写明原因，不猜测。"""
     view = getattr(args, "ext_command", None) or "list"
     title = header(provider, _("技能与 MCP"))
+    if view in ("move", "dedupe", "scope"):
+        return _cmd_extensions_write(provider, args, view, title)
     if view == "list":
         data = provider.extensions_list(getattr(args, "kind", None), getattr(args, "client", None),
                                         getattr(args, "scope", None), getattr(args, "group", None) or "client")
@@ -681,6 +683,32 @@ def cmd_extensions(provider: Provider, args: argparse.Namespace) -> tuple[int, A
     if view in ("list", "dups"):
         lines += [S.dim(note) for note in data["notes"]]
     return EXIT_OK, data, title + lines
+
+
+def _cmd_extensions_write(provider: Provider, args: argparse.Namespace, view: str, title: list[str]) -> tuple[int, Any, list[str]]:
+    """move / dedupe / scope：默认预览；--apply 必须带预览的 plan_digest。blocked、摘要不一致、读回失败都是 EXIT_ATTENTION。"""
+    import project_ext_actions as actions  # noqa: PLC0415
+
+    apply, expect = bool(args.apply), args.expect_plan
+    if view == "move":
+        result = provider.extensions_move(args.ref, args.to, mode=args.mode, keep_source=args.keep_source, allow_widen=args.allow_widen,
+                                          confirm_content=args.confirm_project_content, apply=apply, expect=expect)
+    elif view == "dedupe":
+        result = provider.extensions_dedupe(args.group, keep=args.keep, retire_others=args.retire_others, keep_all=args.keep_all,
+                                            note=args.note, ignore=args.ignore, unignore=args.unignore, apply=apply, expect=expect)
+    else:
+        result = provider.extensions_scope(args.ref, args.effective, allow_widen=args.allow_widen, apply=apply, expect=expect)
+    attention = bool(result.get("blocked")) or bool(result.get("refused"))
+    if apply and not result.get("refused") and view != "scope" and not result.get("unsupported"):
+        status = (result.get("applied") or {}).get("status")
+        if status in ("applied", "recorded") and not (view == "dedupe" and not result["plan"].get("disposition")):
+            result["readback"] = provider.extensions_readback(view, result, getattr(args, "group", None))
+            attention = attention or not result["readback"]["ok"]
+        attention = attention or status in ("rolled-back", "failed", "refused")
+    if apply and view == "scope" and (result.get("applied") or {}).get("status") == "failed":
+        attention = True
+    data = {"view": view, **result}
+    return (EXIT_ATTENTION if attention else EXIT_OK), data, title + actions.render_action(result)
 
 
 def cmd_capabilities(provider: Provider, args: argparse.Namespace) -> tuple[int, Any, list[str]]:
@@ -811,6 +839,32 @@ def parser() -> argparse.ArgumentParser:
     check = add_ext("check", _("技能体检：只列机械事实与阈值，不打分、不排名、不建议删除"))
     check.add_argument("--include-description", action="store_true", dest="include_description",
                        help=_("同时比较 description 文本相似度（阈值 0.6，没有外部依据，只作提示）"))
+    for name_, text_ in (("move", _("移动或复制一个技能（默认预览；--apply 才写；转发给 agenthelm relocate）")),
+                         ("dedupe", _("处置一组重复（默认预览；--apply 才写；转发给 agenthelm dedupe）")),
+                         ("scope", _("设置条目的生效范围：写 Project Profile 的声明（默认预览；--apply 先备份再写）"))):
+        action = add_ext(name_, text_)
+        if name_ == "dedupe":
+            action.add_argument("group", help=_("分组 id（来自 agenthelm dedupe --list）"))
+            action.add_argument("--keep", help=_("保留的条目引用（配合 --retire-others）"))
+            action.add_argument("--retire-others", action="store_true", dest="retire_others", help=_("归档其余技能副本（MCP 副本只给手工命令）"))
+            action.add_argument("--keep-all", action="store_true", dest="keep_all", help=_("都保留并记录备注（只写机器级决定文件）"))
+            action.add_argument("--note", help=_("--keep-all 的备注"))
+            action.add_argument("--ignore", action="store_true", help=_("在本机忽略这一组"))
+            action.add_argument("--unignore", action="store_true", help=_("撤销忽略"))
+        else:
+            action.add_argument("ref", help=_("条目引用 <kind>:<名>@<客户端>:<作用域>"))
+        if name_ == "move":
+            action.add_argument("--to", required=True, help=_("目标 <客户端>:<作用域>，如 codex:project"))
+            action.add_argument("--mode", choices=("copy", "link"), help=_("copy（默认）或 link"))
+            action.add_argument("--keep-source", action="store_true", dest="keep_source", help=_("复制并保留源（默认归档源）"))
+            action.add_argument("--confirm-project-content", action="store_true", dest="confirm_project_content",
+                                help=_("确认进入项目目录的内容许可证合适且不含私有内容（用户级→项目级需要）"))
+        if name_ == "scope":
+            action.add_argument("--effective", required=True, choices=("project", "user"), help=_("生效范围：project 仅此项目；user 所有项目"))
+        if name_ != "dedupe":
+            action.add_argument("--allow-widen", action="store_true", dest="allow_widen", help=_("允许放宽（项目→用户级）"))
+        action.add_argument("--apply", action="store_true", help=_("确认并写入（需要 --expect-plan）"))
+        action.add_argument("--expect-plan", dest="expect_plan", help=_("预览里的 plan_digest；应用时摘要不一致即拒绝"))
     add("capabilities", _("能力状态"))
     add("scenarios", _("列出演示场景"))
     return result
