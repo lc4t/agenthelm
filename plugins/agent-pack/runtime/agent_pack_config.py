@@ -160,6 +160,12 @@ class ProjectLayout:
 SCOPES = ("user", "project")
 
 
+def project_write_supported(client: str) -> bool:
+    """Whether a sync can write a project-level store for this client. The one place that decides it (Claude only
+    for now); everything else asks here instead of branching on client names."""
+    return client == "claude"
+
+
 def declared_scope(layout: ProjectLayout, kind: str, name: str) -> str:
     """The scope the project declares for one Skill (``kind="skill"``) or MCP server (``kind="mcp"``)."""
     mapping = layout.skill_scope if kind == "skill" else layout.mcp_scope
@@ -917,7 +923,7 @@ def _mcp_allowed(layout: ProjectLayout, name: str, client: str) -> bool:
     policy = layout.mcp_client_policy.get(name, {})
     include = policy.get("include", ())
     exclude = policy.get("exclude", ())
-    if client in ("codex", "cursor") and declared_scope(layout, "mcp", name) == "project":
+    if not project_write_supported(client) and declared_scope(layout, "mcp", name) == "project":
         return False   # project-level write for these clients comes later; never fall back to the user level
     return (not include or client in include) and client not in exclude
 
@@ -1074,7 +1080,7 @@ def _portable_package_from_inventory(
     skills_root = destination / "skills"
     skills_root.mkdir()
     for item in inventory.skills:
-        if (client in ("codex", "cursor") and layout is not None
+        if (client is not None and not project_write_supported(client) and layout is not None
                 and declared_scope(layout, "skill", item.name) == "project"):
             continue   # project-native for these clients (.agents/skills); never copied to the user-level package
         _copy_skill(Path(item.path), skills_root / item.name, allowed_root=project_root)

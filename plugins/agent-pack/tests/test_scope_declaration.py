@@ -237,6 +237,13 @@ class ScopeFlagTests(ScopeBase):
         self.assertEqual(rc, 0, out)
         self.assertEqual([(item["action"], item["name"]) for item in project["operations"]], [("add-project-mcp", MCP)])
 
+    def test_no_user_level_mcp_to_write_leaves_claude_json_alone(self) -> None:
+        declare(self.project, default_scope="project")
+        rc, payload, out = self.cli("--apply")
+        self.assertEqual(rc, 0, out)
+        self.assertFalse((self.home / ".claude.json").exists(), "no user-level entry to write: the file is not created")
+        self.assertEqual(self.user_config(), {})
+
     def test_scope_user_apply_writes_user_level_and_scopes_in_state(self) -> None:
         rc, payload, out = self.cli("--scope", "user", "--apply")
         self.assertEqual(rc, 0, out)
