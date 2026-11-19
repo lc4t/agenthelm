@@ -86,7 +86,7 @@ def probe(host: Any) -> tuple[bool, str]:
 
 
 def inventory_argv(command: list[str], root: Path | None, include_description: bool) -> list[str]:
-    argv = [*command, "inventory", "--output", "json"]
+    argv = [*command, "inventory", "--output", "json", "--client", "all"]  # all：含只读的 claude-desktop
     if root is not None:
         argv += ["--project", str(root)]
     if include_description:
@@ -567,7 +567,7 @@ def by_project(analysis: dict, kind: str | None = None) -> dict:
     entries = [row for part in rows for row in part["entries"]]
     parts = []
     for key in ("project", "all", "app", "unknown"):
-        members = [row for row in entries if REACH.get(row["scope"], "unknown") == key]
+        members = [row for row in entries if ("app" if _is_desktop(row["client"]) else REACH.get(row["scope"], "unknown")) == key]
         if members:
             parts.append({"key": key, "label": _(REACH_LABEL[key]), "entries": members})
     return {"group_by": "project", "groups": parts, "known_projects": analysis["norm"]["projects"]}
