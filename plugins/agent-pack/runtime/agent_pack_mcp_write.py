@@ -232,7 +232,8 @@ def build_plan(home: Path, project: Path, ref: str, to: str, allow_widen: bool =
     if layout is not None and package:
         declared = core.declared_scope(layout, "mcp", name)
         landing = "user" if target_scope == "user" else "project"
-        if declared != landing:
+        explicit = name in layout.mcp_scope or layout.default_scope != "user"   # only a declaration the project made
+        if explicit and declared != landing:
             plan["warnings"].append(ext.warning("declaration-differs", _("项目 Profile 把 {0} 声明为 {1} 级：下次 sync 会按声明处理它，请同步更新声明").format(name, declared)))
 
     plan["retire_source"] = owner["managed"] and not keep_source
@@ -297,7 +298,7 @@ def _fragment_name(name: str, scope: str) -> str:
 
 
 def apply_edits(home: Path, root: Path, recovery: Path, edits: list[dict], state_package: str | None = None,
-                state_change: dict | None = None) -> dict:
+                state_change: dict | list[dict] | None = None) -> dict:
     """Apply ``edits`` (``{"op": "set"|"drop", "scope", "name", "entry"?}``) and the optional state change in one
     transaction. Config and project-file writes are atomic; any failure puts every touched file back byte for byte and
     re-raises. Returns the recovery fragment paths of the dropped entries."""
@@ -343,9 +344,11 @@ def apply_edits(home: Path, root: Path, recovery: Path, edits: list[dict], state
             touched.append(project_file)
             core._write_json_atomic(project_file, file_data, mode=snapshots[project_file][1] if snapshots[project_file][0] else 0o644)
         if state_package and state_change is not None and state_path is not None:
-            before = claude._read_state(home, state_package)
+            after = claude._read_state(home, state_package)
+            for change in ([state_change] if isinstance(state_change, dict) else state_change):
+                after = state_after(after, **change)
             touched.append(state_path)
-            _write_state(state_path, state_after(before, **state_change) | {"updated_at": ext_stamp()})
+            _write_state(state_path, after | {"updated_at": ext_stamp()})
         _verify(home, root, edits)
     except Exception:
         for path in reversed(touched):
@@ -401,6 +404,15 @@ def restore_lines(recovery: Path, home: Path, fragments: list[Path], edits: list
             ext.display(fragment, home, None), STORE_PATH[edit["scope"]], edit["name"],
             ext.display(recovery / ("project-mcp.json.before" if edit["scope"] == "project" else "claude.json.before"), home, None)))
     return lines
+
+
+def retire_group(home: Path, root: Path, recovery: Path, package: str | None, items: list[dict]) -> dict:
+    """Remove managed entries (``{"scope", "name", "entry"}``) in one transaction (``dedupe --retire-others``): fragments
+    and byte-exact backups first, atomic edits, state records dropped, byte-exact rollback on failure."""
+    edits = [{"op": "drop", **item} for item in items]
+    changes = [{"name": item["name"], "from_scope": item["scope"], "to_scope": None, "new_hash": None} for item in items]
+    result = apply_edits(home, root, recovery, edits, package, changes)
+    return {"fragments": result["fragments"], "edits": edits}
 
 
 def apply_plan(plan: dict, ctx: dict, confirm_project: bool) -> dict:

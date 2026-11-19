@@ -11,7 +11,7 @@
 | `agenthelm install/update/migrate/fix/config` 写子命令 | 默认预览 | `--apply` |
 | `agenthelm runtime install/update/use` | 默认预览 | `--apply` |
 | `agenthelm relocate`（Skill 复制/迁移到另一客户端或作用域；MCP 在 Claude 的 user/local/project 之间迁移） | 默认预览（零写入），带 `plan_digest` | `--apply --expect-plan <预览指纹>`；用户级→项目级另需 `--confirm-project-content`；不覆盖已有目标，读回校验失败逆序回滚，源只归档不删除；MCP：目标为 `.mcp.json` 另需 `--confirm-project-content`，放宽需 `--allow-widen`，仅对 state 里已受管的源条目编辑 `~/.claude.json`（先逐字节备份、原片段存入 0600 恢复目录、失败按字节回滚），未受管只复制并给手工命令 |
-| `agenthelm dedupe`（重复分组：归档 Skill 副本、全部保留、忽略） | 默认预览（零写入），带 `plan_digest`；`--list` 与 `--desktop-snippet` 只读 | `--apply --expect-plan <预览指纹>`；Skill 副本只归档不删除；MCP 副本只给手工命令，不编辑 `~/.claude.json`；`--keep-all/--ignore/--unignore` 只写 `~/.config/agenthelm/ext-decisions.json`（0600，不含任何值） |
+| `agenthelm dedupe`（重复分组：归档 Skill 副本、全部保留、忽略） | 默认预览（零写入），带 `plan_digest`；`--list` 与 `--desktop-snippet` 只读 | `--apply --expect-plan <预览指纹>`；Skill 副本只归档不删除；MCP 副本：仅 state 里已受管的条目由工具退役（先逐字节备份 `~/.claude.json`、原片段存 0600 恢复目录、原子改写、失败按字节回滚），未受管的只给手工命令；`--keep-all/--ignore/--unignore` 只写 `~/.config/agenthelm/ext-decisions.json`（0600，不含任何值） |
 | `agenthelm project extensions move / dedupe / scope`（技能与 MCP 的移动、重复处置、生效范围） | 默认预览（零写入）；move 与 dedupe 转发 `agenthelm relocate` / `agenthelm dedupe` 并原样展示其 plan，scope 预览 Profile 的 diff 与可粘贴片段 | `--apply --expect-plan <预览指纹>`（重新预览后摘要不一致即拒绝，零写入）；move/dedupe 的写入语义同上两行；scope 只改 Profile 的 `capabilities.mcp_scope` / `skill_scope` 一个键，先把原 Profile 备份到恢复目录，再原子写入并读回，放宽需 `--allow-widen` |
 | `agenthelm local-only fix` | 默认预览 | `--apply` |
 | `agenthelm project record/fix/tools` | 默认预览；菜单显示计划 | `--apply`；菜单确认 |
