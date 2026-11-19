@@ -24,7 +24,7 @@
 | `opinion_manager.py compose` 与 versioned Profile/发布操作 | 默认预览 | `--apply`，不可变发布还需 `--confirm` 指纹 |
 | `init_project.py` 初始化、接管、刷新、区块等写入模式 | 默认预览 | `--apply` |
 | `agent_pack_config.py transfer/sync/bootstrap/reconcile`（亦经 MCP 提供） | 默认预览 | `--apply`；MCP `apply: true` |
-| `agent_pack_config.py sync/reconcile --scope user\|project\|all`（#67，亦经 MCP `scope` 提供） | 默认预览；只限定本次规划的作用域，不改变写入方式。Profile 声明为 `project` 的条目：Claude MCP 写入 `~/.claude.json` 里该项目路径下的 local 存储（缺省）或项目根 `.mcp.json`（`--project-store file`，含机器路径的条目被拒绝）；写前把原文件备份到恢复目录（`claude.json.before`、`project-mcp.json.before`，权限 0600），失败按字节回滚；Claude Skill 与 Codex、Cursor 的项目级当前 `skip-*`，**永不回退写用户级** | `--apply`；`--scope project` 不写用户级 |
+| `agent_pack_config.py sync/reconcile --scope user\|project\|all`（#67，亦经 MCP `scope` 提供） | 默认预览；只限定本次规划的作用域，不改变写入方式。Profile 声明为 `project` 的条目：Claude MCP 写入 `~/.claude.json` 里该项目路径下的 local 存储（缺省）或项目根 `.mcp.json`（`--project-store file`，含机器路径的条目被拒绝）；写前把原文件备份到恢复目录（`claude.json.before`、`project-mcp.json.before`，权限 0600），失败按字节回滚；Claude 项目级 Skill 写 `<项目>/.claude/skills/<名>`（相对符号链接；同步盘内改为复制），作用域从用户级迁到项目级时同一事务归档旧的用户级链接（进恢复目录）；Codex、Cursor 的项目级当前 `skip-*`，**永不回退写用户级**；MCP 旧位置不自动编辑，只给手工命令 | `--apply`；`--scope project` 不写用户级 |
 | `agenthelm nudge install-hooks` | 默认预览 | `--apply` |
 
 `case.py` 的预览复用与执行相同的 schema、路径、项目工具让位和并发前置条件校验。新建 ID 是预测值；并发创建可能占用该序号，执行时会重新分配。更新后再执行时，应传入读到的 `--expect-sha256` 或 `--expect-updated-at`，拒绝覆盖并发修改。

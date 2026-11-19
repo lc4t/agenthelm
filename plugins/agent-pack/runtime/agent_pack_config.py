@@ -2119,7 +2119,8 @@ def _print(value: dict[str, Any], output: str) -> None:
 
         for line in agent_pack_scope.grouped_lines(value):
             print(line)
-        for line in agent_pack_scope.narrowing_lines(value) + agent_pack_scope.skipped_lines(value):
+        for line in (agent_pack_scope.narrowing_lines(value) + agent_pack_scope.migration_lines(value)
+                     + agent_pack_scope.skipped_lines(value)):
             print(line)
         value = {**value, "operations": []}
     for operation in value.get("operations", []):

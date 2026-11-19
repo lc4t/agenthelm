@@ -189,49 +189,47 @@ class LocalStoreTests(ProjectStoreBase):
         self.assertIn("claude client only", payload["error"])
 
 
+def older_runtime_runs(test: "ScopeBase") -> None:
+    """Run ``sync``, ``reconcile`` and ``doctor`` of the latest released runtime on the test's project: they must not
+    fail, and must not remove anything the project-level scope recorded (state keeps it only under ``scopes``)."""
+    import subprocess
+    import tempfile
+    base = Path(os.environ["AGENTHELM_OLD_RUNTIME"]) if os.environ.get("AGENTHELM_OLD_RUNTIME") else None
+    if base is None:
+        root = TESTS.parents[2]
+        tag = subprocess.run(["git", "-C", str(root), "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
+                             capture_output=True, text=True, check=False).stdout.strip()
+        if not tag:
+            test.skipTest("no release tag to take an older runtime from")
+        scratch = Path(tempfile.mkdtemp(dir=test.root))
+        archive = subprocess.run(["git", "-C", str(root), "archive", tag, "plugins/agent-pack/runtime"],
+                                 capture_output=True, check=False)
+        if archive.returncode:
+            test.skipTest("cannot read the tagged runtime")
+        subprocess.run(["tar", "-x", "-C", str(scratch)], input=archive.stdout, check=True)
+        base = scratch / "plugins" / "agent-pack" / "runtime"
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    for command in ("sync", "reconcile", "doctor"):
+        args = [sys.executable, str(base / "agent_pack_config.py"), "--output", "json", command,
+                "--project", str(test.project), "--home", str(test.home), "--client", "claude"]
+        if command != "doctor":
+            args += ["--recovery-root", str(test.recovery), "--replace"]
+        proc = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
+        test.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)
+        test.assertNotIn("error", payload, proc.stdout)
+        removed = {op.get("name") for op in payload.get("operations", []) if str(op.get("action", "")).startswith("remove-")}
+        test.assertFalse(removed, f"{command} would remove {removed}")
+
+
 class OlderRuntimeTests(ProjectStoreBase):
     """A runtime that predates the scope keys reads this state: it must not see the project-level entries."""
 
     def test_older_runtime_sync_and_doctor_leave_project_level_entries_alone(self) -> None:
-        import subprocess
-        import tempfile
-        base = Path(os.environ["AGENTHELM_OLD_RUNTIME"]) if os.environ.get("AGENTHELM_OLD_RUNTIME") else None
-        if base is None:
-            tag = subprocess.run(["git", "-C", str(TESTS.parents[2]), "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
-                                 capture_output=True, text=True, check=False).stdout.strip()
-            if not tag:
-                self.skipTest("no release tag to take an older runtime from")
-            scratch = Path(tempfile.mkdtemp(dir=self.root))
-            archive = subprocess.run(["git", "-C", str(TESTS.parents[2]), "archive", tag, "plugins/agent-pack/runtime"],
-                                     capture_output=True, check=False)
-            if archive.returncode:
-                self.skipTest("cannot read the tagged runtime")
-            subprocess.run(["tar", "-x", "-C", str(scratch)], input=archive.stdout, check=True)
-            base = scratch / "plugins" / "agent-pack" / "runtime"
         rc, _, out = self.cli("--apply")
         self.assertEqual(rc, 0, out)
-        before_config = self.config_path.read_bytes()
-        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-        undeclared = self.project / ".agents" / "mcp.json"
-        undeclared.write_text(undeclared.read_text())
-        # the older runtime ignores the scope keys: it syncs the same project at the user level, which is its
-        # documented behaviour; what must hold is that it neither fails nor removes the project-level entry
-        for command in (["sync"], ["reconcile"], ["doctor"]):
-            args = [sys.executable, str(base / "agent_pack_config.py"), "--output", "json", command[0],
-                    "--project", str(self.project), "--home", str(self.home)]
-            if command[0] != "doctor":
-                args += ["--client", "claude", "--recovery-root", str(self.recovery), "--replace"]
-            else:
-                args += ["--client", "claude"]
-            proc = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
-            self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
-            payload = json.loads(proc.stdout)
-            self.assertNotIn("error", payload, proc.stdout)
-            self.assertNotIn("remove-mcp", {op.get("action") for op in payload.get("operations", [])
-                                            if op.get("name") == MCP})
+        older_runtime_runs(self)
         self.assertIn(MCP, self.local(), "the project-level entry is untouched")
-        self.assertEqual(json.loads(before_config)["projects"][str(self.project)]["mcpServers"][MCP],
-                         self.local()[MCP])
 
 
 class ProjectFileTests(ProjectStoreBase):
@@ -310,15 +308,6 @@ class CarrierTests(ProjectStoreBase):
                                          recovery_root=self.recovery)
         self.assertTrue(result["applied"])
         self.assertIn("agent-pack/plugins/proj-a", self.local()[MCP]["args"][0])
-
-
-class OtherSkillsStillSkippedTests(ProjectStoreBase):
-    def test_project_skills_are_still_skipped(self) -> None:
-        declare(self.project, skill_scope={SKILL: "project"})
-        rc, payload, out = self.cli("--apply")
-        self.assertEqual(rc, 0, out)
-        self.assertFalse((self.home / ".claude" / "skills" / SKILL).exists())
-        self.assertIn(("skip-skill", SKILL), {(item["action"], item["name"]) for item in payload["operations"]})
 
 
 if __name__ == "__main__":

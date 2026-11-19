@@ -1,7 +1,7 @@
 """#67 / #82 I-4 (step 1): scope declaration in the Profile, scope-grouped preview, ``--scope`` and ``state.scopes``.
 
 A project-declared entry is never written to the user level. Project-level MCP goes to Claude local (see
-test_project_store_write.py); project-level Skills are still skipped until ``.claude/skills`` is added.
+test_project_store_write.py), project-level Skills to ``.claude/skills`` (see test_project_skills.py).
 """
 from __future__ import annotations
 
@@ -132,13 +132,14 @@ class ReproductionOfIssue67(ScopeBase):
         self.assertIn(MCP, self.user_config()["projects"][str(self.project)]["mcpServers"])
         self.assertFalse((self.home / ".claude" / "skills" / SKILL).exists())
         self.assertFalse((self.home / ".claude" / "skills" / SKILL).is_symlink())
-        skips = {(item["action"], item["name"], item["scope"]) for item in payload["operations"]
-                 if item["action"].startswith("skip-")}
-        self.assertEqual(skips, {("skip-skill", SKILL, "project")})
+        self.assertFalse([item for item in payload["operations"] if item["action"].startswith("skip-")])
+        link = self.project / ".claude" / "skills" / SKILL
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(os.readlink(link), "../../.agents/skills/" + SKILL)
         state = self.state()
-        self.assertEqual(state["skills"], [])
-        self.assertEqual(state["mcps"], {}, "project-level entries never go into the pre-existing mcps key")
-        self.assertEqual(state["scopes"]["skills"], {})
+        self.assertEqual(state["skills"], [], "project-level entries never go into the pre-existing keys")
+        self.assertEqual(state["mcps"], {})
+        self.assertEqual(state["scopes"]["skills"], {SKILL: "project:link"})
         self.assertEqual(state["scopes"]["mcps"], {MCP: "project:local"})
         self.assertEqual(list(state["scopes"]["project_hashes"]), [MCP])
 
@@ -146,31 +147,35 @@ class ReproductionOfIssue67(ScopeBase):
 class PreviewTests(ScopeBase):
     def test_preview_equals_apply(self) -> None:
         self.cli("--apply")   # user level first
-        declare(self.project, skill_scope={SKILL: "project"})   # skills are still skipped: apply writes nothing
+        declare(self.project, skill_scope={SKILL: "project"})
         before = snapshot(self.home)
+        project_before = snapshot(self.project)
         rc, preview, out = self.cli()
         self.assertEqual(rc, 0, out)
-        self.assertEqual(before, snapshot(self.home))
+        self.assertEqual((before, project_before), (snapshot(self.home), snapshot(self.project)), "preview writes nothing")
         rc, applied, out = self.cli("--apply")
         self.assertEqual(rc, 0, out)
         self.assertEqual(preview["operations"], applied["operations"])
         self.assertEqual(preview["narrowing"], applied["narrowing"])
+        self.assertEqual(preview["migrations"], applied["migrations"])
         self.assertEqual(preview["by_scope"], applied["by_scope"])
-        self.assertEqual(before, snapshot(self.home), "only skip operations: apply writes nothing")
+        planned = {(item["action"], item["name"]) for item in applied["operations"] if not item["action"].startswith("keep-")}
+        self.assertEqual(planned, {("link-project-skill", SKILL), ("archive-skill", SKILL)})
+        changed = {name for name, value in snapshot(self.project).items() if project_before.get(name) != value}
+        self.assertEqual(changed, {".claude", ".claude/skills", f".claude/skills/{SKILL}"})
 
-    def test_existing_user_level_entries_stay_and_are_reported_as_narrowing_not_applied(self) -> None:
+    def test_existing_user_level_entries_follow_their_declared_scope(self) -> None:
         self.cli("--apply")
         declare(self.project, mcp_scope={MCP: "project"}, skill_scope={SKILL: "project"})
         rc, payload, out = self.cli("--apply")
         self.assertEqual(rc, 0, out)
-        self.assertIn(MCP, self.user_config()["mcpServers"])
-        self.assertTrue((self.home / ".claude" / "skills" / SKILL).is_symlink())
+        self.assertIn(MCP, self.user_config()["mcpServers"], "an MCP entry's old location is never edited")
+        self.assertFalse((self.home / ".claude" / "skills" / SKILL).exists(), "the Skill's old link is archived")
         self.assertEqual({(item["kind"], item["name"], item["status"]) for item in payload["narrowing"]},
-                         {("skill", SKILL, "not-applied"), ("mcp", MCP, "not-applied")})
+                         {("skill", SKILL, "planned"), ("mcp", MCP, "not-applied")})
         mcp_note = next(item for item in payload["narrowing"] if item["kind"] == "mcp")
         self.assertEqual(mcp_note["manual"], f"claude mcp remove --scope user {MCP}")   # never edited automatically
         self.assertIn(MCP, self.state()["mcps"], "ownership is kept")
-        self.assertIn(SKILL, self.state()["skills"])
 
     def test_narrowing_counts_other_projects_from_state(self) -> None:
         other = make_project(self.root / "proj-b", "proj-b")

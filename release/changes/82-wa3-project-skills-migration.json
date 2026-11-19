@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agent-pack 支持把声明为 project 的 Skill 写到项目的 .claude/skills（相对符号链接，同步盘内改为复制，同名冲突需 --replace-skills），并在作用域改变时预览「写入新位置」与「从旧位置退役」两步：Skill 的旧位置同一事务归档，MCP 的旧位置只给手工移除命令。同名多存储且官方文档明确优先级时给出建议级屏蔽提示，不影响 ok 与退出码。",
+    "en": "agent-pack can write Skills declared project-level to the project's .claude/skills (relative symbolic links, copies inside sync folders, a same-name conflict needs --replace-skills), and previews a scope change as two steps: write the new location and retire the old one. A Skill's old location is archived in the same transaction; an MCP entry's old location only gets a manual removal command. Same-name entries in several stores get an advisory shadow notice where the official documentation states the precedence; ok and the exit code are unaffected."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": ["capabilities.skill_scope", "capabilities.default_scope"],
+    "default_for_existing": "off",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

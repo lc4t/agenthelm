@@ -110,8 +110,10 @@ def narrowing_lines(value: dict[str, Any]) -> list[str]:
             n=known, kind=item["kind"], name=item["name"]))
         if item["also_declared_by"]:
             lines.append("  " + _("其中也声明了它的项目记录：{names}").format(names=", ".join(item["also_declared_by"])))
-        if item.get("status") == "not-applied":
-            lines.append("  " + _("本次不改动用户级原条目（项目级写入尚未提供或未选择）"))
+        if item.get("status") == "planned":
+            lines.append("  " + _("用户级原条目将归档到恢复目录（可取回）"))
+        else:
+            lines.append("  " + _("本次不改动用户级原条目"))
     return lines
 
 
@@ -122,6 +124,8 @@ def skipped_lines(value: dict[str, Any]) -> list[str]:
 
 
 REASONS = {
+    "project-skills-symlink": N_("项目 .claude/skills 或 .claude 是符号链接，未写入"),
+    "skill-source-outside-project": N_("Skill 源目录不在项目内，未写入"),
     "local-structure-unrecognized": N_("~/.claude.json 里按项目路径存放的条目结构无法识别，未写入"),
     "target-not-writable": N_("目标位置不可写，未写入"),
     "mcp-json-symlink": N_(".mcp.json 是符号链接，未写入"),
@@ -144,3 +148,86 @@ def undeclared_warning(names: list[str]) -> str:
 
 def project_replace_warning(count: int) -> str:
     return _("替换 {n} 个项目级 MCP 条目；它们只对本项目生效（被替换的原文件进恢复目录）").format(n=count)
+
+
+# ---------------------------------------------------------------- migration and shadowing
+
+def migration_entry(kind: str, name: str, direction: str, from_store: str, to_store: str, *,
+                    write_new: str, retire: dict[str, str]) -> dict[str, Any]:
+    """One entry whose declared scope changed: write the new location, then retire the old one.
+
+    ``direction`` is ``narrow`` (user -> project) or ``widen`` (project -> user). A Skill's old location is
+    archived by the same plan; an MCP entry's old location is only named (``manual``), never edited here.
+    """
+    return {"kind": kind, "name": name, "direction": direction, "from_store": from_store, "to_store": to_store,
+            "steps": [{"step": "write-new", "action": write_new}, {"step": "retire-old", **retire}]}
+
+
+def migration_lines(value: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for item in value.get("migrations", []):
+        arrow = _("收窄") if item["direction"] == "narrow" else _("放宽")
+        lines.append("~ " + _("作用域迁移（{direction}）：{kind} {name}").format(
+            direction=arrow, kind=item["kind"], name=item["name"]))
+        new, old = item["steps"]
+        lines.append("  1. " + _("写入新位置：{action}").format(action=new["action"]))
+        if old["action"] == "manual":
+            lines.append("  2. " + _("从旧位置退役（不自动编辑，请手工执行）：{command}").format(command=old["command"]))
+        elif old["action"] == "none":
+            lines.append("  2. " + _("旧位置不由本包创建，不退役"))
+        else:
+            lines.append("  2. " + _("从旧位置退役：{action}").format(action=old["action"]))
+    return lines
+
+
+def widen_warning(kind: str, name: str) -> str:
+    return _("放宽：此后所有项目都会看到 {kind} {name}").format(kind=kind, name=name)
+
+
+def _inventory():
+    import agent_pack_inventory  # noqa: PLC0415 - read-only observation layer (M1); only its precedence rules are used
+
+    return agent_pack_inventory
+
+
+def skill_shadow(name: str) -> dict[str, Any] | None:
+    """A project-level Skill that a same-name user-level Skill outranks, by the precedence the inventory layer
+    already encodes (Claude: personal over project, from the official Skills documentation). None when the
+    documentation states no precedence."""
+    inventory = _inventory()
+    group = [{"scope": "user", "store": "~/.claude/skills"}, {"scope": "project", "store": ".claude/skills"}]
+    effective = inventory._skill_effective("claude", group)
+    if effective.get("evidence") == "unknown" or not effective.get("store"):
+        return None
+    return {"kind": "skill", "name": name, "client": "claude", "effective_store": effective["store"],
+            "shadowed_store": ".claude/skills", "rule": effective["rule"], "evidence": effective["evidence"],
+            "source_url": effective["source_url"], "advisory": True}
+
+
+def mcp_shadow(name: str, project_store: str) -> dict[str, Any] | None:
+    """A same-name user-level MCP entry next to the new project-level one. Only a Claude ``local`` winner is
+    concluded (``.mcp.json`` depends on a per-project approval this version does not read)."""
+    inventory = _inventory()
+    scope = "local" if project_store == "local" else "project"
+    group = [{"scope": "user", "store": "~/.claude.json"}, {"scope": scope, "store": project_store}]
+    effective = inventory._mcp_effective("claude", group)
+    if effective.get("evidence") == "unknown" or not effective.get("store"):
+        return None
+    return {"kind": "mcp", "name": name, "client": "claude", "effective_store": effective["store"],
+            "shadowed_store": "~/.claude.json", "rule": effective["rule"], "evidence": effective["evidence"],
+            "source_url": effective["source_url"], "advisory": True}
+
+
+def project_skills_replace_warning(count: int) -> str:
+    return _("替换 {n} 个项目级 Skill；它们只对本项目生效（被替换的原件进恢复目录）").format(n=count)
+
+
+def sync_folder_warning(service: str | None) -> str:
+    return _("项目位于同步盘（{service}）：项目级 Skill 改为复制而不是符号链接（同步盘对符号链接的行为未核实）").format(
+        service=service or "?")
+
+
+def shadow_warning(item: dict[str, Any]) -> str:
+    return _("{kind} {name}：{shadowed} 的同名项被 {winner} 优先（{rule}，仅建议）").format(
+        kind=item["kind"], name=item["name"], shadowed=item["shadowed_store"], winner=item["effective_store"],
+        rule=item["rule"])
