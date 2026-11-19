@@ -86,6 +86,28 @@ class RouteArgumentTests(RouteBase):
         self.run_action("revise", identity, route_skill="s1")
         self.assertEqual(self.candidate(identity)["route"]["skill"], "s1")
 
+    def test_route_clear_removes_the_route_and_keeps_history(self) -> None:
+        identity = self.route(route_on="tag-a")["id"]
+        old = self.candidate(identity)["route"]
+        result = self.run_action("revise", identity, route_clear=True)
+        self.assertEqual(result["changed"], ["route"])
+        self.assertNotIn("route", result["candidate"])
+        self.assertEqual(self.candidate(identity)["history"][-1]["previous"], {"route": old})
+        self.assertNotIn("[route", inbox.candidate_rule(self.candidate(identity)))
+        self.assertEqual(self.run_action("routes")["routes"], [])
+        self.assertEqual(self.run_action("revise", identity, route_clear=True)["status"], "unchanged")
+
+    def test_route_clear_is_exclusive_and_needs_confirmation_after_presenting(self) -> None:
+        identity = self.route()["id"]
+        for options in ({"route_skill": "x"}, {"route_when": "after"}, {"route_final": True}, {"route_on": "t"}):
+            with self.subTest(options=options), self.assertRaises(inbox.InboxError):
+                self.run_action("revise", identity, route_clear=True, **options)
+        self.run_action("present", identity)
+        with self.assertRaises(inbox.InboxError):
+            self.run_action("revise", identity, route_clear=True)
+        self.run_action("revise", identity, route_clear=True, confirmed=True)
+        self.assertNotIn("route", self.run_action("list")["value"][0])
+
     def test_identical_revision_is_unchanged(self) -> None:
         identity = self.route()["id"]
         self.assertEqual(self.run_action("revise", identity, route_skill="humanizer-zh")["status"], "unchanged")

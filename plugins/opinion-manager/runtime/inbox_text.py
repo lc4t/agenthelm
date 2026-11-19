@@ -172,6 +172,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "routes_check_multiple_final": {"zh": "项目里有 {count} 条收尾（--route-final）路由，通常只应有一条", "en": "The project has {count} final (--route-final) routes; normally there should be only one"},
     "routes_check_too_many_routes": {"zh": "共 {count} 条路由，超过 {limit} 条的预算", "en": "{count} routes in total, over the budget of {limit}"},
     "routes_check_line_too_long": {"zh": "单条 {bytes} 字节，超过 {limit} 字节的预算", "en": "A single rule is {bytes} bytes, over the budget of {limit}"},
+    "err_route_clear_exclusive": {"zh": "--route-clear 不能与其他 --route-* 参数同时使用", "en": "--route-clear cannot be combined with the other --route-* options"},
     "err_routes_action": {"zh": "routes 只支持 list", "en": "routes only supports list"},
     "brief_trial_header": {
         "zh": "\n[试行候选 · 用户已同意在本项目试用，尚未正式；按其工作并在交付时说明是否适用]",

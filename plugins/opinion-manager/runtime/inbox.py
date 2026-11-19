@@ -291,7 +291,11 @@ def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
         if getattr(args, name, None) is not None:
             changes[name] = field_value(getattr(args, name), name)
     quote = clean(args.quote, "label_quote", MAX_QUOTE, required=False)
+    clearing = bool(getattr(args, "route_clear", False))
     routing = any(getattr(args, name, None) is not None for name in ("route_skill", "route_when", "route_on")) or bool(getattr(args, "route_final", False))
+    if clearing and routing:
+        fail("err_route_clear_exclusive")
+    routing = routing or clearing
     if not changes and not quote and not routing:
         fail("err_revise_nothing")
     moment = now()
@@ -302,7 +306,7 @@ def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
         if not (candidate["status"] == "pending" and not candidate["presented"]) and not args.confirmed:
             fail("err_revise_confirm", status=candidate["status"])
         if routing:
-            changes["route"] = route_from_args(args, candidate.get("route"))
+            changes["route"] = None if clearing else route_from_args(args, candidate.get("route"))
         blank = lambda name: [] if name == "scopes" else (None if name == "route" else "")  # noqa: E731
         previous = {name: candidate.get(name, blank(name)) for name, value in changes.items()
                     if candidate.get(name, blank(name)) != value}
@@ -804,6 +808,7 @@ def add_command(subparsers: Any) -> None:
     parser.add_argument("--route-when", choices=("before", "after", "instead"), help="add / revise: when to use the routed skill (default before)")
     parser.add_argument("--route-final", action="store_true", help="add / revise: the routed skill is the last step before delivery (implies --route-when after)")
     parser.add_argument("--route-on", help="add / revise: a short tag (lowercase letters, digits, hyphens) for mechanical comparison between routes")
+    parser.add_argument("--route-clear", action="store_true", help="revise: remove the whole route (cannot be combined with the other --route-* options)")
     parser.add_argument("--client", help="source client: claude / codex / cursor")
     parser.add_argument("--session", help="source session id; lets the end-of-task confirmation cover only this session's candidates")
     parser.add_argument("--status", help="list: comma-separated status filter")
