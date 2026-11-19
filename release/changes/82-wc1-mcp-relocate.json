@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agenthelm relocate 支持 MCP：在 Claude 的 user / local / 项目 .mcp.json 之间复制或迁移条目；预览=应用，不覆盖同名目标，内联密钥值与本机路径不能进入 .mcp.json，只收窄不放宽（放宽需 --allow-widen）。已受管的源条目由 agent-pack 原子改写 ~/.claude.json 并先逐字节备份、可回滚；未受管条目只复制并给手工命令。",
+    "en": "agenthelm relocate now handles MCP entries: copy or move them between Claude's user, local and project .mcp.json scopes; preview equals apply, an existing target is never overwritten, inline secrets and machine paths cannot enter .mcp.json, narrowing only (widening needs --allow-widen). A managed source entry is retired by an atomic edit of ~/.claude.json with a byte-exact backup first and rollback; an unmanaged entry is only copied, with a manual command."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "off",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
