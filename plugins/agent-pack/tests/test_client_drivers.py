@@ -101,7 +101,10 @@ class DeclarationTests(unittest.TestCase):
         result = self.run_cli("check", "--client", "example-ide", "--offline")
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid choice: 'example-ide'", result.stderr)
-        self.assertIn("'claude', 'codex', 'cursor'", result.stderr)
+        message = result.stderr.rsplit("invalid choice", 1)[1]  # argparse quotes the choices differently per Python
+        for client in registry.default_ids():
+            self.assertIn(client, message)
+        self.assertNotIn("claude-desktop", message)
 
     def test_invalid_declarations_warn_and_are_ignored(self) -> None:
         bad = {
