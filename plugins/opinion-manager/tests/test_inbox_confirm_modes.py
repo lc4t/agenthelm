@@ -21,8 +21,12 @@ SESSION = "session-0123456789abcdef"
 ASK_SENTENCES = {"zh": "任务完成或即将完成", "en": "the task is done or nearly done"}
 
 
+LONG_RUNTIME = Path("/" + "r" * 119 + "/opinion_manager.py")  # a realistic long install path: runtime 120 characters, project 80
+LONG_PROJECT = "/" + "p" * 79
+
+
 def protocol(language: str, mode: str, **options: object) -> str:
-    return inbox_text.protocol(language, runtime=SCRIPT, project="/tmp/project", lang=language, session=SESSION, mode=mode, **options)
+    return inbox_text.protocol(language, runtime=LONG_RUNTIME, project=LONG_PROJECT, lang=language, session=SESSION, mode=mode, **options)
 
 
 class ConfirmModeTests(unittest.TestCase):
@@ -53,10 +57,10 @@ class ConfirmModeTests(unittest.TestCase):
         for mode in ("ask", "digest", "quiet"):
             self.assertLessEqual(len(protocol("zh", mode).encode("utf-8")), 3000, mode)
 
-    def test_budget_holds_with_a_long_checkout_path(self) -> None:
-        runtime = Path("/home/runner/work/agenthelm/agenthelm/plugins/opinion-manager/runtime/opinion_manager.py")
-        text = inbox_text.protocol("zh", runtime=runtime, project="/tmp/project", lang="zh", session=SESSION, mode="ask")
-        self.assertLessEqual(len(text.encode("utf-8")), 3000)
+    def test_the_size_does_not_grow_with_the_path(self) -> None:
+        short = inbox_text.protocol("zh", runtime="/r/om.py", project="/p", lang="zh", session=SESSION, mode="ask")
+        long = protocol("zh", "ask")
+        self.assertLessEqual(len(long.encode("utf-8")) - len(short.encode("utf-8")), 250, "paths appear in one command only")
 
     def test_no_command_argument_contains_square_brackets(self) -> None:
         for language in inbox_text.LANGUAGES:
