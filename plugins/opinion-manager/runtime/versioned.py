@@ -72,8 +72,8 @@ def read_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def fields(value: Any, expected: set[str], label: str) -> None:
-    if not isinstance(value, dict) or set(value) != expected:
+def fields(value: Any, expected: set[str], label: str, optional: set[str] = frozenset()) -> None:
+    if not isinstance(value, dict) or not expected <= set(value) <= expected | optional:
         fail(_("{0} 字段必须为：{1}").format(label, sorted(expected)))
 
 
@@ -465,7 +465,7 @@ def profile_command(args: argparse.Namespace) -> dict[str, Any]:
         changes = updated_changes
     path = root / ".opinion" / "profiles" / args.id / "versions" / f"{args.version}.json"
     fingerprint = digest(value)
-    result = {"ok": True, "status": "preview", "path": str(path), "profile": value, "content": render(value), "effective_rules": list(effective_rules(value).values()), "changes": changes, "unresolved": sorted(unresolved), "confirmation_sha256": fingerprint}
+    result = {"ok": True, "status": "preview", "path": str(path), "profile": value, "content": render(value, project_language(root)), "effective_rules": list(effective_rules(value).values()), "changes": changes, "unresolved": sorted(unresolved), "confirmation_sha256": fingerprint}
     if args.apply:
         if unresolved:
             fail(_("升级存在未确认的冲突：{0}").format(sorted(unresolved)))
@@ -513,24 +513,50 @@ def publish_command(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
-def render_rule(profile: dict[str, Any], rule: dict[str, Any]) -> str:
-    level = "强制规则" if rule["level"] == "required" else "偏好"
-    origin = f"个人修订：`{profile['id']}@{profile['version']}`" if rule["id"] in profile["overrides"] else f"规则：`{rule['id']}@{rule['version']}`"
-    return "\n".join((f"## {rule['title']}", "", f"{origin}；{level}；适用：{'、'.join(rule['scopes'])}。", "", rule["text"]))
+PROJECT_PROFILE = Path(".agents") / "moe.sakanano.agent-pack" / "project.json"
+PROJECT_LANGUAGES = ("zh", "en")
+
+# 写进项目文件（OPINION.md 与规则行）的语言标签；界面语言只决定命令输出，不决定这里。
+FRAME = {
+    "zh": {"title": "# Agent Opinion", "intro": "本文件包含当前环境中用户确认的 Agent 行为、表达、判断与交付要求。",
+           "custom": "## 用户自定义规则", "required": "强制规则", "preferred": "偏好", "revision": "个人修订", "rule": "规则",
+           "applies": "适用", "sep": "、", "colon": "：", "semi": "；", "stop": "。"},
+    "en": {"title": "# Agent Opinion", "intro": "This file holds the agent behavior, expression, judgment and delivery requirements the user confirmed for this environment.",
+           "custom": "## User-defined rules", "required": "Required", "preferred": "Preferred", "revision": "Personal revision", "rule": "Rule",
+           "applies": "Applies to", "sep": ", ", "colon": ": ", "semi": "; ", "stop": "."},
+}
 
 
-def render(profile: dict[str, Any]) -> str:
+def project_language(root: Path) -> str:
+    """项目文件语言：Project Profile 的 language；缺省、不是 en 或读不了都按 zh（既有项目保持不变）。"""
+    try:
+        value = json.loads((root / PROJECT_PROFILE).read_text(encoding="utf-8")).get("language")
+    except (OSError, ValueError, AttributeError):
+        return "zh"
+    return "en" if value == "en" else "zh"
+
+
+def render_rule(profile: dict[str, Any], rule: dict[str, Any], language: str = "zh") -> str:
+    words = FRAME[language]
+    level = words["required"] if rule["level"] == "required" else words["preferred"]
+    label = words["revision"] if rule["id"] in profile["overrides"] else words["rule"]
+    origin = f"{label}{words['colon']}`{profile['id']}@{profile['version']}`" if rule["id"] in profile["overrides"] else f"{label}{words['colon']}`{rule['id']}@{rule['version']}`"
+    return "\n".join((f"## {rule['title']}", "", f"{origin}{words['semi']}{level}{words['semi']}{words['applies']}{words['colon']}{words['sep'].join(rule['scopes'])}{words['stop']}", "", rule["text"]))
+
+
+def render(profile: dict[str, Any], language: str = "zh") -> str:
+    words = FRAME[language]
     metadata = {"schema_version": "2.0", "profile": f"{profile['id']}@{profile['version']}", "sha256": digest(profile), "templates": profile["templates"], "rules": profile["rules"]}
-    lines = ["<!-- opinion-manager:metadata", pretty(metadata).rstrip(), "-->", "", "# Agent Opinion", "", "本文件包含当前环境中用户确认的 Agent 行为、表达、判断与交付要求。"]
+    lines = ["<!-- opinion-manager:metadata", pretty(metadata).rstrip(), "-->", "", words["title"], "", words["intro"]]
     for rule in effective_rules(profile).values():
-        lines.extend(("", render_rule(profile, rule)))
-    lines.extend(custom_section(profile))
+        lines.extend(("", render_rule(profile, rule, language)))
+    lines.extend(custom_section(profile, language))
     return "\n".join(lines).rstrip() + "\n"
 
 
-def custom_section(profile: dict[str, Any]) -> list[str]:
-    """OPINION.md 的自定义规则小节（标题属于正文，不随界面语言）；切片输出复用同一份。"""
-    return ["", "## 用户自定义规则", "", profile["custom"]] if profile["custom"] else []
+def custom_section(profile: dict[str, Any], language: str = "zh") -> list[str]:
+    """OPINION.md 的自定义规则小节（标题随项目文件语言，不随界面语言）；切片输出复用同一份。"""
+    return ["", FRAME[language]["custom"], "", profile["custom"]] if profile["custom"] else []
 
 
 def file_state(path: Path) -> str | None:
@@ -538,16 +564,23 @@ def file_state(path: Path) -> str | None:
     return read_text(path) if path.exists() else None
 
 
-def lock_value(profile: dict[str, Any], content: str) -> dict[str, Any]:
-    return {"schema_version": "2.0", "renderer_version": "2.0", "profile": profile, "profile_sha256": digest(profile), "opinion_sha256": text_digest(content)}
+def lock_value(profile: dict[str, Any], content: str, language: str = "zh") -> dict[str, Any]:
+    """锁快照。只有项目文件语言不是 zh 时才带 language；zh 项目的锁格式与旧版完全相同（旧运行时读不了带 language 的锁）。"""
+    value = {"schema_version": "2.0", "renderer_version": "2.0", "profile": profile, "profile_sha256": digest(profile), "opinion_sha256": text_digest(content)}
+    if language != "zh":
+        value["language"] = language
+    return value
 
 
 def validate_lock(lock: Any) -> dict[str, Any]:
-    fields(lock, {"schema_version", "renderer_version", "profile", "profile_sha256", "opinion_sha256"}, "lock")
+    fields(lock, {"schema_version", "renderer_version", "profile", "profile_sha256", "opinion_sha256"}, "lock", optional={"language"})
     if lock["schema_version"] != "2.0" or lock["renderer_version"] != "2.0":
         fail(_("锁定文件版本不受支持"))
+    language = lock.get("language", "zh")
+    if language not in PROJECT_LANGUAGES or ("language" in lock and language == "zh"):
+        fail(_("锁定文件的 language 无效：{0!r}").format(language))
     profile = validate_profile(lock["profile"])
-    if lock != lock_value(profile, render(profile)):
+    if lock != lock_value(profile, render(profile, language), language):
         fail(_("锁定文件指纹与内容不一致"))
     return lock
 
@@ -575,8 +608,9 @@ def compose_command(args: argparse.Namespace) -> dict[str, Any]:
     root = safe_path(args.project)
     if not root.is_dir():
         fail(_("项目目录不存在：{0}").format(root))
-    content = render(profile)
-    lock = lock_value(profile, content)
+    language = project_language(root)
+    content = render(profile, language)
+    lock = lock_value(profile, content, language)
     destination, lock_path = root / "OPINION.md", root / "opinion.lock.json"
     current, current_lock = file_state(destination), file_state(lock_path)
     blocked = None

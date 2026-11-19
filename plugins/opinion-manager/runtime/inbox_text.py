@@ -23,8 +23,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "zh": """[Opinion 协议 · agenthelm]
 1. 实施前读取项目 OPINION.md（如有）并按其要求工作；下列「试行」候选同样要遵循，交付时说明是否适用。
 2. 用户在对话里表达长期偏好、纠正或规则（如“以后都…”“不要再…”“必须…”“记住…”）时，先静默暂存为候选，不打断当前工作：
-   python3 {runtime} inbox add --project {project} --title "<标题>" --text "<完整规则>" --scope "<适用范围>" --quote "<用户原话>"{session} --lang {lang}
-   一次性的任务要求、项目事实和命令不是候选。暂存不需要确认，也不会改变任何规则。
+   python3 {runtime} inbox add --project {project} --title "<标题>" --text "<完整规则>" --scope "<适用范围>" --trigger "<何时适用>" --purpose "<为什么>" --quote "<用户原话>"{session} --lang {lang}
+   暂存时就填好 trigger 与 purpose（缺失仅警告，展示与裁决时按「不完整」处理；可选 --exclude 写不适用情形）；不得写「所有」之类占位词，确需全局须用户明确要求并带 --quote。一次性的任务要求、项目事实和命令不是候选。暂存不需要确认，也不会改变任何规则。
 3. 任务完成或即将完成时，若本次暂存了候选，用编号列表一次性请用户裁决：正式采纳 / 项目内试行 / 暂缓 / 丢弃。
    用户明确表态后记录：python3 {runtime} inbox decide <编号…> --project {project} --to trial|held|rejected --confirmed --lang {lang}
    用户说“采纳”时不要 decide：直接 python3 {runtime} inbox adopt <编号…> --project {project} --lang {lang} 预览（零写入），展示 content，用户确认后加 --apply --confirm <confirmation_sha256> 一次写入并读回。「已批准」不等于「已生效」：只有 adopt --apply 成功才写入 OPINION.md。
@@ -35,8 +35,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": """[Opinion protocol · agenthelm]
 1. Before working, read the project's OPINION.md (if any) and follow it. The "trial" candidates listed below apply too; say in your delivery whether they applied.
 2. When the user states a lasting preference, a correction of your behavior or a rule during the conversation (e.g. "from now on...", "never again...", "must...", "remember..."), stash it as a candidate silently, without interrupting the current work:
-   python3 {runtime} inbox add --project {project} --title "<title>" --text "<the full rule>" --scope "<where it applies>" --quote "<the user's own words>"{session} --lang {lang}
-   One-off task requirements, project facts and commands are not candidates. Stashing needs no confirmation and changes no rule.
+   python3 {runtime} inbox add --project {project} --title "<title>" --text "<the full rule>" --scope "<where it applies>" --trigger "<when it applies>" --purpose "<why>" --quote "<the user's own words>"{session} --lang {lang}
+   Fill trigger and purpose at stash time (missing ones only warn, and the candidate is shown as incomplete when deciding; optional --exclude states when it does not apply); no placeholders like "all"; global only when the user explicitly asked, with --quote. One-off task requirements, project facts and commands are not candidates. Stashing needs no confirmation and changes no rule.
 3. When the task is done or nearly done and you stashed candidates in this session, ask the user once, as a numbered list: adopt as formal / trial in this project / hold / discard.
    After the user states a decision explicitly, record it: python3 {runtime} inbox decide <ids...> --project {project} --to trial|held|rejected --confirmed --lang {lang}
    When the user says "adopt", do not decide: run python3 {runtime} inbox adopt <ids...> --project {project} --lang {lang} to preview (writes nothing), show the content, and once the user confirms add --apply --confirm <confirmation_sha256> to write and read back in one step. "Approved" is not "in effect": OPINION.md is written only when adopt --apply succeeds.
@@ -63,6 +63,27 @@ MESSAGES: dict[str, dict[str, str]] = {
     "label_text": {"zh": "规则正文", "en": "Rule text"},
     "label_quote": {"zh": "用户原话", "en": "User's words"},
     "label_scope": {"zh": "适用范围", "en": "Scope"},
+    "label_trigger": {"zh": "触发条件", "en": "Trigger"},
+    "label_purpose": {"zh": "目的", "en": "Purpose"},
+    "label_exclude": {"zh": "不适用情形", "en": "Exclusion"},
+    "label_relation": {"zh": "关系备注", "en": "Relation note"},
+    "err_placeholder": {"zh": "{label}不能是占位词（{value}）：请写具体的条件；确需全局时用标准全局值并附 --quote",
+                        "en": "{label} must not be a placeholder ({value}): write a concrete condition; if it really is global, use the standard global value and add --quote"},
+    "err_global_quote": {"zh": "全局声明（触发条件为「全部场景，用户要求全局」）必须同时带非空 --quote（用户原话）",
+                         "en": "A global declaration (trigger \"All scenarios; the user asked for this to apply globally\") needs a non-empty --quote with the user's own words"},
+    "err_missing_fields": {"zh": "缺少必填项：{fields}", "en": "Missing required fields: {fields}"},
+    "warn_missing_fields": {"zh": "已暂存，但缺少：{fields}。候选会按「不完整」展示；请补全（inbox add 时带 --trigger / --purpose）后再请用户裁决。",
+                            "en": "Stashed, but missing: {fields}. The candidate will be shown as incomplete; fill them in (--trigger / --purpose on inbox add) before asking the user to decide."},
+    "global_mark": {"zh": " [全局（请用户确认）]", "en": " [Global (ask the user to confirm)]"},
+    "list_trigger": {"zh": "   - 条件：{value}{mark}", "en": "   - Trigger: {value}{mark}"},
+    "list_purpose": {"zh": "   - 目的：{value}{mark}", "en": "   - Purpose: {value}{mark}"},
+    "list_exclude": {"zh": "   - 不适用：{value}{mark}", "en": "   - Not for: {value}{mark}"},
+    "list_relation": {"zh": "   - 关系备注：{value}{mark}", "en": "   - Relation note: {value}{mark}"},
+    "list_incomplete": {"zh": "   - 不完整：缺少{fields}", "en": "   - Incomplete: missing {fields}"},
+    "brief_trigger": {"zh": "条件：{value}", "en": "when: {value}"},
+    "brief_purpose": {"zh": "目的：{value}", "en": "purpose: {value}"},
+    "brief_exclude": {"zh": "不适用：{value}", "en": "not for: {value}"},
+    "brief_join": {"zh": "；", "en": "; "},
     "err_symlink": {"zh": "拒绝使用符号链接：{path}", "en": "Refusing to use a symbolic link: {path}"},
     "err_format": {"zh": "收件箱格式不正确：{path}", "en": "The inbox file is malformed: {path}"},
     "err_empty": {"zh": "{label}不能为空", "en": "{label} must not be empty"},

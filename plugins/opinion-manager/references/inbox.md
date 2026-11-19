@@ -23,7 +23,12 @@
 
 以下命令都在 `opinion_manager.py inbox <动作>` 下，`--project` 必填；`--lang zh|en` 指定提示语言（缺省按 `AGENTHELM_LANG`、系统 locale 决定，最后用英文）；输出为 JSON，`list` 可用 `--output markdown` 得到给用户看的编号列表。
 
-- `add --title --text --scope [--quote] [--client] [--session]`：暂存。标题 ≤120、正文 ≤1200、原话 ≤600 个字符；至少一个 `--scope`。内容相同（忽略空白与大小写）的候选合并，新原话追加为证据。
+- `add --title --text --scope --trigger --purpose [--exclude] [--relation] [--quote] [--client] [--session]`：暂存。标题 ≤120、正文 ≤1200、原话 ≤600、各字段 ≤300 个字符；至少一个 `--scope`。内容相同（忽略空白与大小写）的候选合并，新原话追加为证据。
+  - `--trigger`（何时适用）与 `--purpose`（为什么）由 Agent 暂存时填写，用户在集中裁决时一次看到。本版为**软必填**：缺失时仍暂存成功，返回 `warnings` 且 `complete: false`，列表按「不完整」展示；严格拒绝缺失项留给之后的 major（代码里集中开关 `STRICT_REQUIRED`）。
+  - 传入了但无效的值一律拒绝：空白，以及「所有」「全部」「相关」「一切」「any」「all」「everything」「relevant」「n/a」等占位词。
+  - 全局声明：用户明确要求全局时，`--trigger` 必须用固定标准值「全部场景，用户要求全局」/ "All scenarios; the user asked for this to apply globally"，并同时带非空 `--quote`；列表标注「全局（请用户确认）」。**工具只做形式校验，无法验证是谁提出的全局**，需由用户在裁决时确认。
+  - `--exclude` 写不适用情形；`--relation` 是 Agent 对与现有规则关系的备注，工具原样保存和展示，不解释。
+  - 采纳写入时，自定义行为 `- **标题**（适用：…；条件：…；目的：…；不适用：…）：正文`（没有这些字段的旧候选与此前渲染逐字节相同）。行内标签与 `OPINION.md` 的框架文字随**项目文件语言**（Project Profile 的 `language`，缺省 zh），不随界面语言；`en` 项目的文件里不出现中文（用户自己写的内容除外）。`language` 非 zh 的项目，`opinion.lock.json` 带可选键 `"language": "en"` 供 `verify` 复现渲染；zh 项目的锁格式不变。旧版运行时读不了带 `language` 的锁，需先升级。
 - `list [--status a,b] [--session ID] [--unpresented]`：列出候选。
 - `decide <编号…> --to pending|trial|formal|held|rejected --confirmed [--note]`：裁决。没有 `--confirmed` 一律拒绝；多个编号要么全部成功，要么都不改。
 - `adopt <编号…> [--apply --confirm SHA256]`：从采纳到写入的一步确认入口。用户在对话里明确说「采纳」时用它，不再单独 `decide`。

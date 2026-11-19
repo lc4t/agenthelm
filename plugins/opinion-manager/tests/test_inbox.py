@@ -39,6 +39,7 @@ class InboxBase(unittest.TestCase):
 
     def run_action(self, action: str, *ids: str, **options):
         defaults = dict(project=self.root, title=None, text=None, scope=[], quote=None, client=None, session=None,
+                        trigger=None, purpose=None, exclude=None, relation=None,
                         status=None, unpresented=False, to=None, confirmed=False, note=None, days=None,
                         max_chars=6000, output="json", lang="zh", apply=False, confirm=None)
         defaults.update(options)
@@ -135,7 +136,7 @@ class InboxTests(InboxBase):
         self.assertEqual(result["oldest_pending_days"], 9.0)
         for item in result["items"]:
             self.assertEqual(set(item), {"id", "source", "kind", "title", "status", "created_at", "last_action_at",
-                                          "age_days", "hint_command"})
+                                          "age_days", "hint_command", "trigger", "purpose", "exclude", "relation", "complete"})
         self.assertEqual(len(result["items"]), 2)
 
     def test_presented_candidates_leave_the_unpresented_list(self) -> None:

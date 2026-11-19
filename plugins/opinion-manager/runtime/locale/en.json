@@ -189,5 +189,6 @@
  "## 规则束索引": "## Rule bundle index",
  "任务命中触发条件时用 `context bundle <系列>` 读取对应规则束；判断不清时一并读取。": "When a task matches a trigger, read the bundle with `context bundle <family>`; when unsure, read it too.",
  "- `{0}`（{1}，{2} 条）：{3}。不适用：{4}。": "- `{0}` ({1}; rules: {2}): {3}. Not applicable: {4}.",
- "# 规则束 `{0}`": "# Rule bundle `{0}`"
+ "# 规则束 `{0}`": "# Rule bundle `{0}`",
+ "锁定文件的 language 无效：{0!r}": "The language in the lock file is invalid: {0!r}"
 }
