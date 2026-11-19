@@ -190,5 +190,7 @@
  "任务命中触发条件时用 `context bundle <系列>` 读取对应规则束；判断不清时一并读取。": "When a task matches a trigger, read the bundle with `context bundle <family>`; when unsure, read it too.",
  "- `{0}`（{1}，{2} 条）：{3}。不适用：{4}。": "- `{0}` ({1}; rules: {2}): {3}. Not applicable: {4}.",
  "# 规则束 `{0}`": "# Rule bundle `{0}`",
- "锁定文件的 language 无效：{0!r}": "The language in the lock file is invalid: {0!r}"
+ "锁定文件的 language 无效：{0!r}": "The language in the lock file is invalid: {0!r}",
+ "{0} 的本地化写法只能包含 zh、en，且至少一种语言": "The localized form of {0} may only contain zh and en, with at least one language",
+ "项目文件语言为 {0}，但这些公开内容没有对应译文，会按原文写入：{1}": "The project file language is {0}, but these public items have no translation and are written as published: {1}"
 }

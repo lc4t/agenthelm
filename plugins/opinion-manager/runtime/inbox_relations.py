@@ -41,11 +41,12 @@ def snippet(text: str) -> str:
     return text if len(text) <= EVIDENCE_CHARS else text[:EVIDENCE_CHARS] + "…"
 
 
-def plain(value: Any) -> str:
-    """规则字段可能是字符串，也可能是 {zh, en}（PR4）；机械比对取字符串，本地化字段取其全部文字。"""
-    if isinstance(value, dict):
-        return " ".join(str(item) for item in value.values() if isinstance(item, str))
-    return value if isinstance(value, str) else ""
+def plain(value: Any, language: str = "zh") -> str:
+    """规则字段可能是字符串，也可能是 {zh, en}：按项目语言取文字（缺该语言时回退），其他类型当空。"""
+    if value is None:
+        return ""
+    text = versioned.pick(value, language)[0]
+    return text if isinstance(text, str) else ""
 
 
 def custom_targets(root: Path) -> list[dict[str, str]]:
@@ -66,9 +67,10 @@ def public_targets(root: Path) -> list[dict[str, str]]:
     """Profile 里已选的公开规则（锁里的有效规则）；没有锁或读不了时为空。"""
     try:
         profile = versioned.read_object(root / "opinion.lock.json")["profile"]
+        language = versioned.project_language(root)
         rules = versioned.effective_rules(profile).values()
-        return [{"type": "public_rule", "ref": f"{rule['id']}@{rule['version']}", "title": plain(rule["title"]),
-                 "text": plain(rule["text"]), "trigger": plain(rule.get("trigger", ""))} for rule in rules]
+        return [{"type": "public_rule", "ref": f"{rule['id']}@{rule['version']}", "title": plain(rule["title"], language),
+                 "text": plain(rule["text"], language), "trigger": plain(rule.get("trigger"), language)} for rule in rules]
     except (OSError, ValueError, KeyError, TypeError, versioned.OpinionVersionError):
         return []
 

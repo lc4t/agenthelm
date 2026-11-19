@@ -49,7 +49,7 @@ def load(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | Non
     return profile, lock
 
 
-def partition(profile: dict[str, Any]) -> dict[str, Any]:
+def partition(profile: dict[str, Any], language: str = "zh") -> dict[str, Any]:
     """把每条有效规则分到唯一的模板系列；常驻系列优先，未登记的系列按常驻处理。"""
     loading = profile["loading"]
     rules = versioned.effective_rules(profile)
@@ -72,7 +72,7 @@ def partition(profile: dict[str, Any]) -> dict[str, Any]:
     return {
         "rules": rules, "groups": groups, "unlisted": unlisted,
         "refs": {family: ref for ref, family, _ in templates},
-        "names": {family: value["name"] for _, family, value in templates},
+        "names": {family: versioned.pick(value["name"], language)[0] for _, family, value in templates},
         "always": [family for family in (*loading["core"], *unlisted, DIRECT) if family in groups],
         "bundles": [bundle for bundle in loading["bundles"] if bundle["family"] in groups],
     }
@@ -83,7 +83,7 @@ def group_text(profile: dict[str, Any], parts: dict[str, Any], family: str, lang
 
 
 def core_text(profile: dict[str, Any], lock: dict[str, Any] | None, language: str = "zh") -> str:
-    parts = partition(profile)
+    parts = partition(profile, language)
     if lock:
         origin = _("正文指纹：`{0}`").format(lock["opinion_sha256"])
     else:
@@ -112,7 +112,7 @@ def resolve_bundle(parts: dict[str, Any], name: str) -> str:
 def bundle_text(profile: dict[str, Any], names: list[str], language: str = "zh") -> str:
     if not names:
         versioned.fail(_("bundle 需要至少一个模板系列或精确模板引用"))
-    parts = partition(profile)
+    parts = partition(profile, language)
     lines: list[str] = []
     for name in names:
         family = resolve_bundle(parts, name)
@@ -121,7 +121,7 @@ def bundle_text(profile: dict[str, Any], names: list[str], language: str = "zh")
 
 
 def index_view(profile: dict[str, Any], lock: dict[str, Any] | None, language: str = "zh") -> dict[str, Any]:
-    parts = partition(profile)
+    parts = partition(profile, language)
 
     def entry(family: str) -> dict[str, Any]:
         return {"family": family, "ref": parts["refs"].get(family), "name": parts["names"].get(family),
