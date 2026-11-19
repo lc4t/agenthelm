@@ -36,10 +36,12 @@
 - `decide <编号…> --to pending|trial|formal|held|rejected --confirmed [--note]`：裁决。没有 `--confirmed` 一律拒绝；多个编号要么全部成功，要么都不改。
 - `adopt <编号…> [--apply --confirm SHA256]`：从采纳到写入的一步确认入口。用户在对话里明确说「采纳」时用它，不再单独 `decide`。
   - 不带 `--apply`：只预览，零写入。把候选正文作为个人规则追加到项目现有 Profile 的自定义段（没有 Profile 时新建 `private.my-opinion@1.0.0`），经 `profile` 与 `compose` 同一套预览，返回完整 `content`（将成为 `OPINION.md` 的全文）、`blocked`（已有人工内容等需先处理的情况）和 `confirmation_sha256`。
+  - 预览还返回 `added_lines`（采纳后将追加到自定义段的行，与 `content` 里的一致）和 `shown_matches`：全部候选都有展示快照、快照与此刻渲染行一致、没有 `blocked`、没有冲突时为 `true`；`shown` 逐个候选列出是否一致。它只是事实记录，不改变保护：写入仍必须带预览指纹，不因 `shown_matches` 放宽。
   - 带 `--apply --confirm <预览的 confirmation_sha256>`：用户确认后一次写入新 Profile 版本、`OPINION.md` 与 `opinion.lock.json`，用 `verify` 读回核对，最后才把候选置为 `formal`。预览之后候选、Profile 或 `OPINION.md` 有变化则指纹不符，拒绝并零写入。不使用 `--confirmed`：确认凭据是预览指纹。
   - 多个编号一次预览、一次确认，全部成功或都不改；不存在的编号、已是 `formal` 的编号整体报错并点名。写入或读回失败时，`OPINION.md`、锁、本次新建的 Profile 文件恢复原状，候选状态不变。
   - 已被 `decide --to formal` 记录、但尚未写入的候选：先 `decide --to pending --confirmed` 退回，再 `adopt`。
-- `present <编号…>`：记录已向用户展示过（hook 在发出确认请求时调用，避免同一候选反复提示）。
+- `present <编号…>`：记录已向用户展示过（hook 在发出确认请求时调用，避免同一候选反复提示），同时记录**展示快照**：此刻候选将被渲染成的规则行的摘要（`shown`：`at`、`language`、`line_sha256`）。之后候选被修订或项目语言改变，摘要就对不上。输出带这些候选（含 `relations`）。
+- `gate [--session ID] [--cooldown-hours N] [--max-per-session N] [--peek]`：询问节流，只记账，不决定要不要问。同项目 N 小时内（默认 24）最多放行一次，同会话最多放行 `--max-per-session` 次（默认 1）；返回 `allowed`、`reason`（`ok` / `cooldown` / `session_limit`）、`next_allowed_at`。放行且没有 `--peek` 时才记一次；`--peek` 只读，不创建任何文件。没有 `--session` 时只看冷却。状态在项目私有的 `.opinion/ask-state.json`（保留最近 50 个会话），拒绝符号链接，读改写持有 `.opinion/.ask.lock`；状态文件格式不对时报错，不当作放行。本命令只提供计数；何时调用、询问的措辞由协议和 hook 决定。
 - `expire --days N`：把试行超过 N 天的候选退回 `pending`。退回保留 `last_action_at`，因此仍计入“久未处理”。
 - `pending [--session ID]`：待确认项提供者，见下。
 - `exposure`：只读，报告 `.opinion/inbox.json` 在 Git 里的状态与提醒文字。

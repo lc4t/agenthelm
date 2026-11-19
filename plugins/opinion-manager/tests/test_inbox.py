@@ -463,7 +463,7 @@ class AdoptTests(InboxBase):
         identity = next(iter(inbox.load(self.root)["candidates"]))
         code, preview = cli("adopt", identity, *arguments)
         self.assertEqual(code, 0)
-        outside = {key: value for key, value in preview.items() if key != "content"}
+        outside = {key: value for key, value in preview.items() if key not in ("content", "added_lines")}  # file text, in the project file language
         self.assertFalse(CatalogTests.CJK.search(json.dumps(outside, ensure_ascii=False)), outside)
         self.assertIn("inbox adopt", preview["next_step"])
         code, result = cli("adopt", identity, *arguments, "--apply", "--confirm", preview["confirmation_sha256"])
