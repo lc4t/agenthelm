@@ -139,11 +139,11 @@ RECOVERY_DIR_FLAG = (
     "agenthelm config language", "agenthelm config language-hint", "agenthelm config ignore-client",
     "agenthelm config unignore-client", "agenthelm config project-language",
 )
-# Commands that scope a sync to one kind of content (#68). Reconciled against ``--help`` below, so a command in this
+# Commands that scope a sync to one kind of content (#68) or one scope (#67). Reconciled against ``--help`` below, so a command in this
 # list cannot silently lose a flag, and every name must still be a registered PREVIEW command.
 TYPE_SCOPE_FLAGS = {
-    "agent-pack sync": ("--only", "--replace-mcp", "--replace-skills"),
-    "agent-pack reconcile": ("--only", "--replace-mcp", "--replace-skills"),
+    "agent-pack sync": ("--only", "--replace-mcp", "--replace-skills", "--scope"),
+    "agent-pack reconcile": ("--only", "--replace-mcp", "--replace-skills", "--scope"),
 }
 
 

@@ -76,6 +76,8 @@ TOOLS = [
                 "replaceSkills": {"type": "boolean", "default": False},
                 "only": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skills", "plugins"]}, "default": [],
                          "description": "claude: sync only these types; default is all"},
+                "scope": {"type": "string", "enum": ["user", "project", "all"], "default": "all",
+                         "description": "claude: user-level entries only, project-declared entries only, or both"},
                 "resetOverrides": {"type": "boolean", "default": False},
                 "home": {"type": "string"},
                 "retireSkills": {"type": "array", "items": {"type": "string"}, "default": []},
@@ -173,6 +175,8 @@ TOOLS = [
                 "replaceSkills": {"type": "boolean", "default": False},
                 "only": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skills", "plugins"]}, "default": [],
                          "description": "claude: sync only these types (plugins = package and install record); default is all"},
+                "scope": {"type": "string", "enum": ["user", "project", "all"], "default": "all",
+                         "description": "claude: user-level entries only, project-declared entries only, or both"},
                 "recoveryRoot": {"type": "string"},
             },
             "required": ["project", "client"],
@@ -234,6 +238,7 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             only=arguments.get("only", []),
             replace_mcp=bool(arguments.get("replaceMcp", False)),
             replace_skills=bool(arguments.get("replaceSkills", False)),
+            scope=arguments.get("scope", "all"),
         )
     if name == "agent_pack_inventory":
         inventory = inventory_source(arguments["source"], home)
@@ -266,6 +271,7 @@ def _call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             only=arguments.get("only", []),
             replace_mcp=bool(arguments.get("replaceMcp", False)),
             replace_skills=bool(arguments.get("replaceSkills", False)),
+            scope=arguments.get("scope", "all"),
         )
     if name == "agent_pack_cloud_sync_safety_check":
         import agenthelm  # noqa: PLC0415 - shipped next to this file

@@ -77,6 +77,11 @@ python3 /path/to/agent-pack/runtime/agent_pack_config.py --output json bootstrap
   - 预览和结果在有冲突时给出 `conflicts`（按类型计数），并在 `warnings` 里提示：用户级 Skill 与 MCP 条目对所有项目生效，被替换的原件进恢复目录。
   - 显式的 `--retire-skill` / `--retire-plugin` 不受 `--only` 过滤。Codex 与 Cursor 把 Skill、MCP 与清单装在同一个包里，只接受全部类型（`--only mcp,skills,plugins` 等价于不带）；部分选择与 `--replace-skills` 会明确报错、不写入。`--replace-mcp` 在 Codex 等同于对原生远程 MCP 条目使用 `--replace`。`bootstrap` 已有按名称选择的 `--skill` / `--mcp`，不增加 `--only`。
 
+- **作用域声明（`capabilities.default_scope` / `mcp_scope` / `skill_scope`，#67）**：`default_scope` 取 `user`（缺省，对本机所有项目生效）或 `project`（只对本项目生效）；`mcp_scope`、`skill_scope` 是「名称 → `user|project`」的映射，覆盖 `default_scope`。取值非法会明确报错。旧版运行时忽略这些键。不写这些键时，`sync` / `reconcile` 的输出、`state` 与磁盘内容与以前完全相同。
+  - 声明为 `project` 的条目**不会写到用户级**：当前版本把它们规划为 `skip-skill` / `skip-mcp`（Claude 的项目级存储随后续变更提供；Codex 与 Cursor 的 MCP 项目级暂未提供，其 Skill 由项目 `.agents/skills` 原生加载，两者都不写进用户级包），并在 `skipped` 与 `warnings` 里说明。已经在用户级的同名条目保持原样并仍归本包所有，只在 `narrowing` 里列出「收窄：N 个项目将不再看到它」，状态为 `not-applied`。N 来自 `~/.claude/agent-pack/state/*.json` 里其他项目的归属记录，**只含在本机同步过的项目**。
+  - 一旦项目声明了作用域（或传了 `--scope`），预览才多出这些键：每条 `operations` 带 `scope`（`user|project`）与 `store`，另有 `by_scope`、`narrowing`、`skipped`，文本输出按存储分组；`state` 追加 `scopes`（条目实际所在位置，缺省视为 `user`）。
+  - `--scope user|project|all`（缺省 `all`，仅 Claude；MCP Tool 参数 `scope`）与 `--only` 正交：`user` 只规划用户级条目与载体包，`project` 只规划声明为项目级的条目，不碰用户级。
+
 - 安装记录原来指向别的目录（旧做法：`bootstrap --plugin ~/.agents/plugins/plugins/<name> --client claude`）时，第一次同步自动迁移：旧记录指向写入恢复目录的 `record.json`，指向旧目录的 Skill 链接改为指向新包。此后 Codex 端的包怎么变、是否删除，都不影响 Claude。
 - 默认只预览；`--apply` 时整笔操作写入同一个恢复目录，任一步失败全部回滚。
 
