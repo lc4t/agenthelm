@@ -26,11 +26,12 @@ if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 import agent_pack_config as core  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
+import agent_pack_clients as client_registry  # noqa: E402
 
 SCHEMA_VERSION = 1
-CLIENTS = ("claude", "codex", "cursor")
+CLIENTS = client_registry.default_ids()
 DESKTOP = "claude-desktop"  # a separate target: the standalone CLI does not read claude_desktop_config.json
-ALL_CLIENTS = (*CLIENTS, DESKTOP)  # the default set is CLIENTS; claude-desktop must be named (or ``all``)
+ALL_CLIENTS = client_registry.all_ids()  # the default set is CLIENTS; claude-desktop must be named (or ``all``)
 TYPES = ("skills", "mcp", "all")
 SCOPES = ("project", "user", "all")
 EVIDENCE = ("file", "setting", "cli", "unknown")  # setting / cli are reserved: this version never reads them

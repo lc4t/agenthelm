@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from i18n_agent_pack import _, N_, resolve_language  # noqa: E402
+import agent_pack_clients as client_registry  # noqa: E402
 
 MARKETPLACE = "agenthelm"
 NPX = "npx @sakanano-moe/agenthelm"
@@ -984,8 +985,8 @@ def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
     return module.fingerprint(scaffold)
 
 
-CLIENT_NAMES = {"claude": "Claude Code", "codex": "Codex", "cursor": "Cursor"}
-CLIENT_KEYS = ("claude", "codex", "cursor")
+CLIENT_NAMES = client_registry.display_names()
+CLIENT_KEYS = client_registry.default_ids()
 
 
 def ignored_clients(env: Env) -> list[str]:
@@ -1574,7 +1575,7 @@ def hook(env: Env, project: Path | None, output: str, *, latest_source: str | No
 
 # ---------------------------------------------------------------- install / update / migrate
 
-CLIENTS = ("claude", "codex", "cursor")
+CLIENTS = client_registry.default_ids()  # the default set, derived from the driver registry
 
 
 def github_slug(latest: dict) -> str:
@@ -1585,14 +1586,10 @@ def github_slug(latest: dict) -> str:
 
 
 def detect_clients(env: Env) -> list[str]:
-    found = []
-    if find_cli(env, "claude") or env.claude_dir.is_dir():
-        found.append("claude")
-    if find_cli(env, "codex") or env.codex_dir.is_dir():
-        found.append("codex")
-    if (env.home / ".cursor").is_dir():
-        found.append("cursor")
-    return found
+    """Default-set clients whose declared detection evidence (executable or configuration directory) is present."""
+    return [driver["id"] for driver in client_registry.BUILTIN
+            if driver["capabilities"]["default_set"]
+            and client_registry.detect(driver, env.home, env.get, lambda name: find_cli(env, name))["detected"]]
 
 
 def _safe_extract(archive: Path, destination: Path) -> None:
@@ -2535,7 +2532,7 @@ def parser() -> argparse.ArgumentParser:
                    help=_("项目自助入口：找资料、看进展、项目指南、检查（不需要 AI Agent；详见 project --help）"))
     inventory = sub.add_parser("inventory", help=_("只读：列出各客户端能看到的 Skill 与 MCP（存放位置、重复、description 字节数），输出带 schema_version 的稳定 JSON"))
     inventory.add_argument("--output", choices=("text", "json"), default="text")
-    inventory.add_argument("--client", action="append", choices=("claude", "claude-desktop", "codex", "cursor", "all"),
+    inventory.add_argument("--client", action="append", choices=(*sorted(client_registry.all_ids()), "all"),
                            help=_("只看这个客户端（可重复）；默认 claude、codex、cursor；claude-desktop 须点名或用 all"))
     inventory.add_argument("--type", choices=("skills", "mcp", "all"), default="all", help=_("只看 Skill 或 MCP；默认全部"))
     inventory.add_argument("--scope", choices=("project", "user", "all"), default="all", help=_("只看项目级或用户级；默认全部"))
@@ -2544,6 +2541,10 @@ def parser() -> argparse.ArgumentParser:
                            help=_("在 JSON 里附上 description 文本（截断到 1,536 个字符）；默认不输出"))
     inventory.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
     inventory.add_argument("--home", type=Path, help=argparse.SUPPRESS)
+    clients_parser = sub.add_parser("clients", help=_("只读：列出已注册的客户端驱动，以及本机检测到哪些（依据、分发驱动类型、能力标志）"))
+    clients_parser.add_argument("--output", choices=("text", "json"), default="text")
+    clients_parser.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
+    clients_parser.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     relocate = sub.add_parser("relocate", help=_("把一个 Skill 复制或迁移到另一个客户端/作用域（默认预览；--apply --expect-plan <指纹> 才写入）"))
     relocate.add_argument("ref", help=_("inventory 的 Skill 引用，如 skill:名字@claude:user"))
     relocate.add_argument("--to", required=True, help=_("目标 <客户端>:<作用域>，如 codex:project"))
@@ -2882,6 +2883,15 @@ def main(argv: list[str] | None = None) -> int:
         return hook(env, project, args.hook_format, latest_source=args.latest, offline=args.offline, clients=args.client)
     if args.command == "inventory":
         return run_inventory(args, env)
+    if args.command == "clients":
+        if args.lang and args.lang != "auto":
+            os.environ["AGENTHELM_LANG"] = args.lang
+        data = client_registry.report(env.home, env.get, lambda name: find_cli(env, name))
+        if args.output == "json":
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            sys.stdout.write(client_registry.render_text(data))
+        return 0
     if args.command == "relocate":
         return run_relocate(args, env)
     if args.command == "dedupe":

@@ -24,11 +24,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+import agent_pack_clients as client_registry
 from nudge_text import LANGUAGES, resolve_language, session_flag, text as say
 
 ENV_DISABLE = "AGENTHELM_NO_NUDGE"
 ENV_DEBUG = "AGENTHELM_NUDGE_DEBUG"
-CLIENTS = ("claude", "codex", "cursor")
+CLIENTS = client_registry.default_ids()
 EVENTS = ("session-start", "prompt-submit", "stop")
 STOP_MODES = ("off", "on-completion", "always")
 OURS = re.compile(r"agenthelm\.py['\"]?\s+nudge\s+hook")

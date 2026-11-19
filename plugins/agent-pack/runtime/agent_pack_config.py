@@ -161,9 +161,10 @@ SCOPES = ("user", "project")
 
 
 def project_write_supported(client: str) -> bool:
-    """Whether a sync can write a project-level store for this client. The one place that decides it (Claude only
-    for now); everything else asks here instead of branching on client names."""
-    return client == "claude"
+    """Whether a sync can write a project-level store for this client. The one place that decides it; the answer is
+    the ``project_mcp_write`` capability of the client's driver (``agent_pack_clients``), not a client name."""
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file; imported late (python3 -I path set in main)
+    return agent_pack_clients.supports(client, "project_mcp_write")
 
 
 def declared_scope(layout: ProjectLayout, kind: str, name: str) -> str:
