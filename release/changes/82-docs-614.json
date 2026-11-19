@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。",
+    "en": "Documentation update: README, INSTALL, MIGRATION and the plugin Skills cover skills and MCP management, scope declarations, client drivers, the language=en launcher update path and 6.14.0 migration notes; the write-command inventory is completed."
+  },
+  "changes": [
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agents-init",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
