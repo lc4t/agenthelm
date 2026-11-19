@@ -108,7 +108,7 @@ PREVIEW: dict[str, list[str]] = {
     "case update": [*P, "quarterly", "--log", "Preview log", "--dry-run"],
     "sop step": ["missing", "1", "--done"],
     "sop confirm-read": ["missing", "private/input.txt"],
-    "opinion inbox": ["adopt", "cand-none", "--project", "{project}"],  # adopt previews by default; check and gate --peek are read-only; gate records .opinion/ask-state.json; add / revise / decide / present / expire write .opinion/inbox.json at once (covered by the opinion-manager inbox tests)
+    "opinion inbox": ["adopt", "cand-none", "--project", "{project}"],  # adopt previews by default; check, routes list and gate --peek are read-only; gate records .opinion/ask-state.json; add / revise / decide / present / expire write .opinion/inbox.json at once (covered by the opinion-manager inbox tests)
 }
 HELP_ONLY: dict[str, str] = {
     "memory": "a single command with flags only; its English output is in the project-orchestrator tests",
