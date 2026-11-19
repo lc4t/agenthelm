@@ -43,6 +43,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("project-orchestrator/runtime/project_menu.py", "ask"): "accepted input words (quit / back)",
     ("project-orchestrator/runtime/project_menu.py", "confirm"): "accepted input word (yes)",
     ("project-orchestrator/runtime/project_menu.py", "run"): "accepted input word (help)",
+    ("project-orchestrator/runtime/project_menu.py", "extensions_screen"): "accepted input word (help)",
     ("project-orchestrator/runtime/sop.py", "parse_steps"): "regular expressions that parse Chinese and English SOP files",
     ("project-orchestrator/runtime/sop.py", "split_list"): "list separators accepted when parsing SOP files",
     ("project-orchestrator/runtime/sop.py", "parse_requirements"): "regular expressions that parse Chinese and English SOP files",

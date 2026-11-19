@@ -356,6 +356,9 @@ class RealProvider(project_extensions.ExtensionsMixin):
         self._check_memory(findings, ok)
         self._check_sop(findings, ok)
         self._check_private(findings, ok)
+        duplicates = self.extensions_health_finding()
+        if duplicates:
+            findings.append(duplicates)
         project_write.check_tools(self, findings, ok)
         source = project_maintain.check_updates(self, findings, ok)
         self._health = {"findings": findings, "ok": ok, "read_at": now_iso(), "update_source": source,

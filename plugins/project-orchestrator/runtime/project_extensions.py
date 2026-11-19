@@ -226,6 +226,9 @@ def normalize(inventory: dict) -> dict:
     names = {item if isinstance(item, str) else item.get("name") for item in clients
              if isinstance(item, (str, dict))} if isinstance(clients, list) else set()
     unknown_extra = inventory.get("unknown")
+    projects = inventory.get("projects")
+    known = [{"name": item["name"], "last_synced": _text(item.get("last_synced"))} for item in projects
+             if isinstance(item, dict) and isinstance(item.get("name"), str)] if isinstance(projects, list) else []
     rules: dict[tuple[str, str], str] = {}
     duplicates = inventory.get("duplicates") if isinstance(inventory.get("duplicates"), dict) else {}
     for kind_key, kind_name in (("skills", "skill"), ("mcps", "mcp")):
@@ -233,7 +236,8 @@ def normalize(inventory: dict) -> dict:
             effective = item.get("effective") if isinstance(item, dict) else None
             if isinstance(effective, dict) and _text(effective.get("rule")) and _text(item.get("name")):
                 rules[(kind_name, item["name"])] = effective["rule"]
-    return {"rules": rules, "entries": entries, "clients": sorted({*(name for name in names if isinstance(name, str)),
+    return {"rules": rules, "projects": known, "entries": entries,
+            "clients": sorted({*(name for name in names if isinstance(name, str)),
                                                    *(entry["client"] for entry in entries)}),
             "unknown_extra": len(unknown_extra) if isinstance(unknown_extra, list) else 0}
 
@@ -551,6 +555,24 @@ def dups(analysis: dict, kind: str | None = None) -> dict:
     return {"groups": [public_group(group) for group in analysis["groups"] if kind is None or group["kind"] == kind]}
 
 
+REACH = {"project": "project", "local": "project", "user": "all", "personal": "all", "managed": "all", "enterprise": "all",
+         "desktop": "app"}
+REACH_LABEL = {"project": N_("本项目（仅在此项目里生效）"), "all": N_("所有项目共用（用户级）"),
+               "app": N_("仅 Desktop 应用"), "unknown": N_("作用域未知")}
+
+
+def by_project(analysis: dict, kind: str | None = None) -> dict:
+    """按「在哪些项目里生效」看：本项目专有 / 所有项目共用 / Desktop 应用 / 未知。只含本项目与本机已知存储。"""
+    rows = listing(analysis, kind=kind)["groups"]
+    entries = [row for part in rows for row in part["entries"]]
+    parts = []
+    for key in ("project", "all", "app", "unknown"):
+        members = [row for row in entries if REACH.get(row["scope"], "unknown") == key]
+        if members:
+            parts.append({"key": key, "label": _(REACH_LABEL[key]), "entries": members})
+    return {"group_by": "project", "groups": parts, "known_projects": analysis["norm"]["projects"]}
+
+
 def find_entries(analysis: dict, token: str) -> list[dict]:
     entries = analysis["norm"]["entries"]
     for matches in (lambda entry: entry["ref"] == token,
@@ -606,40 +628,51 @@ def origin_text(entry: dict) -> str:
     return _("来源 {0}").format(origin_value(entry))
 
 
-def entry_columns(entry: dict) -> list[tuple[str, str]]:
-    """(列名, 文字)；缩列时按 来源 → 体积 → desc 字节 的顺序先丢后面的列。"""
+def entry_columns(entry: dict, show_refs: bool = False) -> list[tuple[str, str]]:
+    """(列名, 文字)；缩列时按 来源 → 体积 → desc 字节 的顺序先丢，条目名与作用域永不丢。
+    show_refs：清单里至少有一项带 referenced_by 时整列显示（缺失的行显示 —），否则整列不出现。"""
     if entry["kind"] == "skill":
-        return [("size", fmt_bytes(entry.get("skill_md_bytes"))),
-                ("desc", _("desc {0}").format(fmt_bytes(entry.get("description_bytes")))), ("origin", origin_text(entry))]
-    return [("transport", entry.get("transport") or _("未知")),
-            ("fingerprint", _("指纹 {0}…").format(entry["fingerprint8"]) if entry.get("fingerprint8") else _("指纹 未知"))]
+        columns = [("size", fmt_bytes(entry.get("skill_md_bytes"))),
+                   ("desc", _("desc {0}").format(fmt_bytes(entry.get("description_bytes")))),
+                   ("origin", origin_text(entry))]
+    else:
+        columns = [("transport", entry.get("transport") or _("未知")),
+                   ("fingerprint", _("指纹 {0}…").format(entry["fingerprint8"]) if entry.get("fingerprint8") else _("指纹 未知"))]
+    if show_refs:
+        refs = entry.get("referenced_by")
+        columns.append(("refs", _("被 {0} 条规则引用").format(len(refs)) if refs else _("被引用 —")))
+    return columns
 
 
-def entry_line(entry: dict, name_width: int, *, show_client: bool = False, width: int | None = None) -> list[str]:
-    """一个条目的一行（放不下时标签移到下一行）。条目名与作用域永不省略，也不在词内换行。"""
+SHRINK_ORDER = ("origin", "size", "desc")  # 横向放不下时先丢哪一列
+
+
+def entry_line(entry: dict, name_width: int, *, show_client: bool = False, width: int | None = None,
+               show_refs: bool = False) -> list[str]:
+    """一个条目的一行；放不下时先按 来源 → 体积 → desc 字节 缩列，标签仍放不下就整块移到下一行。
+    条目名与作用域永不省略，也不在词内换行。"""
     width = width or term_width()
     scope = scope_text(entry["scope"])
     place = f"{entry['client']}:{scope}" if show_client else scope
-    columns = entry_columns(entry)
+    columns = entry_columns(entry, show_refs)
     tags = " ".join(f"[{tag}]" for tag in entry.get("tags", []))
     head = f"  {badge(entry)} {S.bold(pad(entry['name'], name_width))}  {pad(place, 10)}"
-    plain_head = display_width(f"  X {pad(entry['name'], name_width)}  {pad(place, 10)}")
-    order = ["origin", "size", "desc"]  # 缩列顺序
-    keep = [col for col in columns]
-    while True:
-        body = "  ".join(text for _name, text in keep)
-        total = plain_head + 2 + display_width(body) + (2 + display_width(tags) if tags else 0)
-        if total <= width:
-            break
-        drop = next((name for name in order if any(col[0] == name for col in keep)), None)
+    head_width = display_width(f"  X {pad(entry['name'], name_width)}  {pad(place, 10)}")
+
+    def total(items: list[tuple[str, str]], with_tags: bool) -> int:
+        body = "  ".join(text for _col, text in items)
+        return head_width + (2 + display_width(body) if body else 0) + (2 + display_width(tags) if tags and with_tags else 0)
+
+    while total(columns, True) > width:
+        drop = next((name for name in SHRINK_ORDER if any(col[0] == name for col in columns)), None)
         if drop is None:
             break
-        keep = [col for col in keep if col[0] != drop]
-    body = "  ".join(text for _name, text in keep)
+        columns = [col for col in columns if col[0] != drop]
+    body = "  ".join(text for _col, text in columns)
     line = f"{head}  {S.dim(body)}" if body else head
     if not tags:
         return [line]
-    if plain_head + 2 + display_width(body) + 2 + display_width(tags) <= width:
+    if total(columns, True) <= width:
         return [f"{line}  {S.yellow(tags)}"]
     return [line, f"      {S.yellow(tags)}"]
 
@@ -673,6 +706,7 @@ def render_list(data: dict, summary: dict) -> list[str]:
     if not data["groups"]:
         return lines + [S.dim(_("没有匹配的条目。"))]
     show_client = data["group_by"] != "client"
+    show_refs = any(row.get("referenced_by") for part in data["groups"] for row in part["entries"])
     name_width = min(40, max(display_width(row["name"]) for part in data["groups"] for row in part["entries"]))
     for part in data["groups"]:
         evidences = {row["evidence"] for row in part["entries"]}
@@ -686,8 +720,19 @@ def render_list(data: dict, summary: dict) -> list[str]:
                 count = sum((r["kind"], r["scope"], r["store"]) == section for r in part["entries"])
                 lines.append(S.dim(_("  {0} · {1} · {2}  {3} 个").format(
                     _(KIND_LABEL[row["kind"]]), scope_text(row["scope"]), row["store"] or _("未知"), count)))
-            lines += entry_line(row, name_width, show_client=show_client)
+            lines += entry_line(row, name_width, show_client=show_client, show_refs=show_refs)
     lines.append(S.dim(_("证据：● file（读到文件）· ⚙ setting · ⌘ cli · ? 未知（不做结论）")))
+    return lines
+
+
+def render_projects(data: dict, summary: dict) -> list[str]:
+    lines = render_list(data, summary)
+    projects = data.get("known_projects") or []
+    if projects:
+        lines.append(S.bold(_("已同步过的其他项目")))
+        lines += [f"  {item['name']}" + (f"  {item['last_synced']}" if item.get("last_synced") else "") for item in projects]
+    else:
+        lines.append(S.dim(_("其他项目：inventory 没有提供已知项目列表，这里只显示本项目；没在本机同步过的项目不可见")))
     return lines
 
 
@@ -855,6 +900,30 @@ class ExtensionsMixin:
             raise EntryError(_("“{0}”对应多个条目，请用完整引用").format(token), "ambiguous",
                              [entry["ref"] for entry in found])
         return {**self.extensions_state(), "view": "entry", "entry": show_entry(analysis, found[0])}
+
+    def extensions_projects(self, kind: str | None = None) -> dict:
+        result = self._extensions()
+        if result["state"] != "available":
+            return self.extensions_state()
+        analysis = result["analysis"]
+        return {**self.extensions_state(), **by_project(analysis, kind), "summary": analysis["summary"]}
+
+    def extensions_health_finding(self) -> dict | None:
+        """health 里的一条建议级（info）发现：有需要关注的重复时指向第 9 屏。跨客户端的重复不计入；不改变 ok 与退出码。"""
+        if self.extensions_capability()[0] != "available":
+            return None
+        result = self._extensions()
+        if result["state"] != "available":
+            return None
+        groups = [group for group in result["analysis"]["groups"] if not group["cross_client"]]
+        if not groups:
+            return None
+        names = _("、").join(group["name"] for group in groups[:3]) + (_("……共 {0} 组").format(len(groups)) if len(groups) > 3 else "")
+        return {"id": "extensions-duplicates", "level": "info", "area": _("技能与 MCP"),
+                "title": _("发现 {0} 组重复的技能或 MCP").format(len(groups)),
+                "reason": names + _("（跨客户端的重复不计入）"),
+                "impact": _("只影响 AI 客户端加载（可能重复占用上下文，或发生同名覆盖）；不影响本菜单与项目文件"),
+                "next": [{"label": _("在「技能与 MCP」里查看重复（只读）"), "action": f"ext:{groups[0]['id']}"}]}
 
     def extensions_check(self, include_description: bool = False) -> dict:
         result = self._extensions(include_description)
