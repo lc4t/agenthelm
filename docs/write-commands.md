@@ -11,6 +11,7 @@
 | `agenthelm install/update/migrate/fix/config` 写子命令 | 默认预览 | `--apply` |
 | `agenthelm runtime install/update/use` | 默认预览 | `--apply` |
 | `agenthelm relocate`（Skill 复制/迁移到另一客户端或作用域） | 默认预览（零写入），带 `plan_digest` | `--apply --expect-plan <预览指纹>`；用户级→项目级另需 `--confirm-project-content`；不覆盖已有目标，读回校验失败逆序回滚，源只归档不删除 |
+| `agenthelm dedupe`（重复分组：归档 Skill 副本、全部保留、忽略） | 默认预览（零写入），带 `plan_digest`；`--list` 与 `--desktop-snippet` 只读 | `--apply --expect-plan <预览指纹>`；Skill 副本只归档不删除；MCP 副本只给手工命令，不编辑 `~/.claude.json`；`--keep-all/--ignore/--unignore` 只写 `~/.config/agenthelm/ext-decisions.json`（0600，不含任何值） |
 | `agenthelm local-only fix` | 默认预览 | `--apply` |
 | `agenthelm project record/fix/tools` | 默认预览；菜单显示计划 | `--apply`；菜单确认 |
 | `case.py new/update` | `--dry-run`（返回 `status: preview`、目标 `path` 与 unified `diff`） | 省略 `--dry-run`，保留兼容行为 |
