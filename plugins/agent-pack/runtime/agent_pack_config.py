@@ -151,6 +151,36 @@ class ProjectLayout:
     mcp_client_policy: dict[str, dict[str, tuple[str, ...]]]
     destination_skill_root: Path
     destination_mcp: Path
+    # Scope declaration (#67): ``user`` serves every project, ``project`` only this one. Absent keys mean ``user``.
+    default_scope: str = "user"
+    mcp_scope: dict[str, str] = field(default_factory=dict)
+    skill_scope: dict[str, str] = field(default_factory=dict)
+
+
+SCOPES = ("user", "project")
+
+
+def declared_scope(layout: ProjectLayout, kind: str, name: str) -> str:
+    """The scope the project declares for one Skill (``kind="skill"``) or MCP server (``kind="mcp"``)."""
+    mapping = layout.skill_scope if kind == "skill" else layout.mcp_scope
+    return mapping.get(name, layout.default_scope)
+
+
+def _parse_scopes(config: dict[str, Any]) -> tuple[str, dict[str, str], dict[str, str]]:
+    default = config.get("default_scope", "user")
+    if default not in SCOPES:
+        raise AgentPackError(f"capabilities.default_scope must be one of {', '.join(SCOPES)}: {default!r}")
+    parsed: dict[str, dict[str, str]] = {}
+    for key in ("mcp_scope", "skill_scope"):
+        value = config.get(key, {})
+        if not isinstance(value, dict):
+            raise AgentPackError(f"capabilities.{key} must be an object mapping names to user|project")
+        for name, scope in value.items():
+            if not isinstance(name, str) or not name or scope not in SCOPES:
+                raise AgentPackError(
+                    f"capabilities.{key}.{name} must be one of {', '.join(SCOPES)}: {scope!r}")
+        parsed[key] = dict(value)
+    return default, parsed["mcp_scope"], parsed["skill_scope"]
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -306,6 +336,7 @@ def load_project_layout(project: Path) -> ProjectLayout:
     destination_mcp = _resolve_profile_paths(
         root, [config.get("destination_mcp", ".agents/mcp.json")], [".agents/mcp.json"]
     )[0]
+    default_scope, mcp_scope, skill_scope = _parse_scopes(config)
     return ProjectLayout(
         root=root,
         profile_path=profile_path if profile_path.is_file() else None,
@@ -318,6 +349,9 @@ def load_project_layout(project: Path) -> ProjectLayout:
         mcp_client_policy=mcp_client_policy,
         destination_skill_root=destination_skill,
         destination_mcp=destination_mcp,
+        default_scope=default_scope,
+        mcp_scope=mcp_scope,
+        skill_scope=skill_scope,
     )
 
 
@@ -883,6 +917,8 @@ def _mcp_allowed(layout: ProjectLayout, name: str, client: str) -> bool:
     policy = layout.mcp_client_policy.get(name, {})
     include = policy.get("include", ())
     exclude = policy.get("exclude", ())
+    if client in ("codex", "cursor") and declared_scope(layout, "mcp", name) == "project":
+        return False   # project-level write for these clients comes later; never fall back to the user level
     return (not include or client in include) and client not in exclude
 
 
@@ -1038,6 +1074,9 @@ def _portable_package_from_inventory(
     skills_root = destination / "skills"
     skills_root.mkdir()
     for item in inventory.skills:
+        if (client in ("codex", "cursor") and layout is not None
+                and declared_scope(layout, "skill", item.name) == "project"):
+            continue   # project-native for these clients (.agents/skills); never copied to the user-level package
         _copy_skill(Path(item.path), skills_root / item.name, allowed_root=project_root)
 
     system_env = _system_env_values(home)
@@ -1639,6 +1678,7 @@ def reconcile_project(
     only: Iterable[str] | None = None,
     replace_mcp: bool = False,
     replace_skills: bool = False,
+    scope: str = "all",
 ) -> dict[str, Any]:
     """Reconcile one project package and explicitly selected legacy components.
 
@@ -1657,8 +1697,13 @@ def reconcile_project(
         return agent_pack_claude.sync_project(
             project, home=home, apply=apply, replace=replace, reset_overrides=reset_overrides,
             recovery_root=recovery_root, retire_skills=retire_skills, retire_plugins=retire_plugins,
-            retire_only=retire_only, only=only, replace_mcp=replace_mcp, replace_skills=replace_skills)
+            retire_only=retire_only, only=only, replace_mcp=replace_mcp, replace_skills=replace_skills,
+            scope=scope)
     import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+
+    if scope != "all":
+        raise AgentPackError(f"--scope user|project is supported for the claude client only: {client} has no "
+                             "project-level write yet")
 
     if agent_pack_claude.normalize_only(only) != frozenset(agent_pack_claude.SYNC_TYPES) and not retire_only:
         raise AgentPackError(
@@ -1737,6 +1782,12 @@ def reconcile_project(
     if native_plan is not None:
         operations.extend(native_plan["operations"])
     extras = {"residuals": residuals} if residuals else {}
+    skipped = _project_scope_skips(layout, authority, client)
+    if skipped:   # declared project-level entries are skipped for this client, never written to the user level
+        extras["skipped"] = skipped
+        import agent_pack_scope  # noqa: PLC0415 - shipped next to this file
+
+        extras["warnings"] = [agent_pack_scope.skipped_warning(item) for item in skipped]
     if not apply:
         return {"ok": True, "applied": False, "states": states, "operations": operations, **extras}
 
@@ -1822,10 +1873,20 @@ def sync_project(
     only: Iterable[str] | None = None,
     replace_mcp: bool = False,
     replace_skills: bool = False,
+    scope: str = "all",
 ) -> dict[str, Any]:
     return reconcile_project(project, client, home=home, apply=apply, replace=replace,
                              reset_overrides=reset_overrides, recovery_root=recovery_root,
-                             only=only, replace_mcp=replace_mcp, replace_skills=replace_skills)
+                             only=only, replace_mcp=replace_mcp, replace_skills=replace_skills, scope=scope)
+
+
+def _project_scope_skips(layout: ProjectLayout, authority: Inventory, client: str) -> list[dict[str, str]]:
+    """Project-declared entries a codex / cursor sync leaves out (their project level is not written yet)."""
+    skipped = [{"kind": "mcp", "name": item.name, "client": client, "reason": "client-project-unsupported"}
+               for item in authority.mcps if item.portable and declared_scope(layout, "mcp", item.name) == "project"]
+    skipped += [{"kind": "skill", "name": item.name, "client": client, "reason": "project-native"}
+                for item in authority.skills if declared_scope(layout, "skill", item.name) == "project"]
+    return sorted(skipped, key=lambda item: (item["kind"], item["name"]))
 
 
 def _update_personal_marketplace(home: Path, package_name: str) -> None:
@@ -2025,6 +2086,14 @@ def _print(value: dict[str, Any], output: str) -> None:
     summary = value.get("conflicts")
     if isinstance(summary, dict):
         print("conflicts: " + ", ".join(f"{key}={number}" for key, number in summary.items()))
+    if "by_scope" in value:   # a project declares scopes (or --scope was given): group by store
+        import agent_pack_scope  # noqa: PLC0415 - shipped next to this file; imported late (python3 -I path set in main)
+
+        for line in agent_pack_scope.grouped_lines(value):
+            print(line)
+        for line in agent_pack_scope.narrowing_lines(value) + agent_pack_scope.skipped_lines(value):
+            print(line)
+        value = {**value, "operations": []}
     for operation in value.get("operations", []):
         target = operation.get("to") or operation.get("from", "")
         print(f"- {operation['action']}: {operation.get('name', '')} -> {target}")
@@ -2037,6 +2106,9 @@ def _print(value: dict[str, Any], output: str) -> None:
 
 
 def _add_scope_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--scope", choices=("user", "project", "all"), default="all",
+                        help="claude: act on the user-level entries only (user), the entries the project declares "
+                             "project-level only (project), or both (all, default). Combines with --only")
     parser.add_argument("--only", action="append", default=[], metavar="TYPE",
                         help="claude: sync only these types (repeat or comma separate): mcp, skills, plugins; "
                              "default is all. plugins = the package and its install record. Other types are left untouched")
@@ -2142,6 +2214,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.project, args.client, home=args.home, apply=args.apply, replace=args.replace,
                 reset_overrides=args.reset_overrides, recovery_root=args.recovery_root,
                 only=args.only, replace_mcp=args.replace_mcp, replace_skills=args.replace_skills,
+                scope=args.scope,
             )
         elif args.command == "bootstrap":
             result = install_plugin(
@@ -2168,6 +2241,7 @@ def main(argv: list[str] | None = None) -> int:
                 replace=args.replace,
                 reset_overrides=args.reset_overrides,
                 only=args.only, replace_mcp=args.replace_mcp, replace_skills=args.replace_skills,
+                scope=args.scope,
             )
         _print(result, args.output)
         return 0 if result.get("ok", True) else 1

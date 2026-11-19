@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。",
+    "en": "agent-pack adds scope declaration: the Project Profile keys capabilities.default_scope / mcp_scope / skill_scope and --scope on sync and reconcile. Entries declared project-level are no longer written to the user level (skipped with a warning for now; project-level writes follow in later releases), the preview is grouped by scope and shows the narrowing impact; without the new keys behavior and output are unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": ["capabilities.default_scope", "capabilities.mcp_scope", "capabilities.skill_scope"],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agents-init",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": ["capabilities.default_scope", "capabilities.mcp_scope", "capabilities.skill_scope"],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

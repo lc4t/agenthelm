@@ -674,5 +674,19 @@
  "无法判定：{0}（{1}）": "Undetermined: {0} ({1})",
  "没有发现任何 Skill 或 MCP 配置。": "No Skill or MCP configuration found.",
  "在 JSON 里附上 description 文本（截断到 1,536 个字符）；默认不输出": "Include the description text in the JSON (truncated to 1,536 characters); off by default",
- "目录文件过多，未统计大小与文件数": "Too many files in the directory; size and file count not computed"
+ "目录文件过多，未统计大小与文件数": "Too many files in the directory; size and file count not computed",
+ "用户级 · 对所有项目生效": "User level · applies to every project",
+ "项目级 · 仅此项目 · .claude/skills": "Project level · this project only · .claude/skills",
+ "项目级 · 仅此项目 · local（~/.claude.json，不进版本库）": "Project level · this project only · local (~/.claude.json, not in version control)",
+ "项目级 · 仅此项目 · 项目文件 .mcp.json": "Project level · this project only · project file .mcp.json",
+ "只统计在本机同步过的项目（~/.claude/agent-pack/state），未同步过的项目看不到，也无法计入": "Only projects synced on this machine (~/.claude/agent-pack/state) are counted; projects never synced here are not visible and cannot be counted",
+ "其中也声明了它的项目记录：{names}": "Of these, records that also declare it: {names}",
+ "本次不改动用户级原条目（项目级写入尚未提供或未选择）": "The original user-level entry is left as it is this time (project-level write is not available yet or not selected)",
+ "跳过 {kind} {name}（{client}）：{reason}": "Skipped {kind} {name} ({client}): {reason}",
+ "项目级写入尚未提供；不会回退写入用户级": "project-level write is not available yet; it is never written to the user level instead",
+ "Skill 由项目 .agents/skills 原生加载，不写用户级包": "the Skill is loaded natively from the project's .agents/skills; it is not copied into the user-level package",
+ "该客户端的项目级 MCP 写入尚未提供；不会回退写入用户级": "project-level MCP write for this client is not available yet; it is never written to the user level instead",
+ "{kind} {name} 声明为项目级，对 {client} 跳过：{reason}": "{kind} {name} is declared project-level and is skipped for {client}: {reason}",
+ "为项目里不存在的条目声明了作用域：{names}": "Scope declared for entries the project does not define: {names}",
+ "收窄：{n} 个项目将不再看到 {kind} {name}": "Narrowing: projects other than this one will no longer see {kind} {name} (known on this machine: {n})"
 }
