@@ -850,6 +850,17 @@ class ExtensionsMixin:
 
     def extensions_refresh(self) -> None:
         self.__dict__["_ext_cache"] = {}
+        self.__dict__.pop("_ext_dedupe", None)
+
+    def extensions_dedupe_groups(self) -> list[dict]:
+        """``agenthelm dedupe --list`` 的分组（写入动作只认这些）；演示项目与旧版 agenthelm 为空。"""
+        if getattr(self, "simulated", False):
+            return []
+        if "_ext_dedupe" not in self.__dict__:
+            import project_ext_actions as actions  # noqa: PLC0415
+
+            self.__dict__["_ext_dedupe"] = actions.dedupe_groups(self.host, self.root) or []
+        return self.__dict__["_ext_dedupe"]
 
     def _extensions(self, include_description: bool = False) -> dict:
         cache = self.__dict__.setdefault("_ext_cache", {})

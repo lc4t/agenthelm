@@ -4,10 +4,12 @@
 """
 from __future__ import annotations
 
+import json
 import re
 
 import project_cli as cli
 import project_extensions as ext
+import project_ext_actions as actions
 from project_cli import S, EntryError
 from i18n_orchestrator import _, N_  # noqa: E402
 
@@ -29,8 +31,8 @@ EXTENSION_ENTRIES = (
     ("2", N_("按项目看"), N_("本项目 / 所有项目共用（只列本机已知存储）"), True),
     ("3", N_("按重复看"), N_("同名 · 同指纹 · 同名不同内容"), True),
     ("4", N_("技能体检"), N_("缺 description · 体积 · 加载成本 · 过期"), True),
-    ("5", N_("移动或复制"), N_("在作用域、客户端之间迁移（先预览）"), False),
-    ("6", N_("设置生效范围"), N_("全局 / 仅此项目（先预览）"), False),
+    ("5", N_("移动或复制"), N_("在作用域、客户端之间迁移（先预览）"), True),
+    ("6", N_("设置生效范围"), N_("全局 / 仅此项目（先预览）"), True),
 )
 ACTION_RE = re.compile(r"^([ofcvr])\s*(\d+)$")
 RECORD_ACTIONS = (("1", N_("追加一条记录"), "log"), ("2", N_("更新下一动作"), "next_action"),
@@ -475,7 +477,7 @@ def extensions_screen(provider) -> None:
         print(S.dim(_("\n  输入序号；或输入条目名直接看详情。 ? 帮助 · 回车返回")))
         line = ask(_("技能与 MCP"))
         screens = {"1": extensions_clients_screen, "2": extensions_projects_screen, "3": extensions_dups_screen,
-                   "4": extensions_check_screen}
+                   "4": extensions_check_screen, "5": extensions_pick_move, "6": extensions_pick_scope}
         if line in screens:
             sub(screens[line], provider)
         elif line in {entry[0] for entry in EXTENSION_ENTRIES}:
@@ -489,8 +491,9 @@ def extensions_screen(provider) -> None:
 def extensions_help() -> str:
     return (S.bold(_("怎么用")) + "\n"
             + _("  1–4 进入只读的清单；输入条目名（或 kind:名@客户端:作用域）看详情；回车返回，q 退出。") + "\n"
-            + _("  这一屏全程只读：不会改任何文件。MCP 只显示名字、作用域、指纹前缀与变量名，不显示命令参数或任何值。") + "\n"
-            + _("  「未知」表示证据不足，不做结论。命令行：extensions list / dups / show / check（--output json）。"))
+            + _("  清单与体检只读，不会改任何文件；5、6 与 m / s / d / p 是带预览的写入向导，确认前零写入。MCP 只显示名字、作用域、指纹前缀与变量名，不显示命令参数或任何值。") + "\n"
+            + _("  「未知」表示证据不足，不做结论。命令行：extensions list / dups / show / check（--output json）。") + "\n"
+            + _("  写入向导先预览，输入 yes 才执行，放宽另需键入条目名；命令行：extensions move / dedupe / scope。"))
 
 
 def _extensions_view(provider, title: str, fetch, render) -> None:
@@ -518,7 +521,11 @@ def extensions_show_screen(provider, token: str) -> None:
     except EntryError as exc:
         fail(exc)
         return
-    show(ext.render_show(data["entry"]) if data["view"] == "entry" else ext.render_group(1, data["group"]))
+    if data["view"] == "entry":
+        show(ext.render_show(data["entry"]))
+        extensions_entry_actions(provider, data["entry"])
+        return
+    show(ext.render_group(1, data["group"]))
     ask(_("回车返回"))
 
 
@@ -544,7 +551,19 @@ def extensions_group_screen(provider, group: dict) -> None:
     for ref in group["members"]:
         print()
         show(ext.render_show(provider.extensions_show(ref)["entry"]))
-    ask(_("回车返回"))
+    target = dedupe_group_for(provider, group)
+    print()
+    while True:
+        if target is None:
+            print(S.yellow(_(actions.NO_WRITE_GROUP)))
+            ask(_("回车返回"))
+            continue
+        print(S.dim(_("d 处理这一组重复（先预览） · 回车返回")))
+        if ask(_("重复")) == "d":
+            sub(dedupe_wizard, provider, group, target)
+            target = dedupe_group_for(provider, group)
+        else:
+            print(S.yellow(_("没有这个操作。")))
 
 
 def extensions_check_screen(provider) -> None:
@@ -576,6 +595,7 @@ SCREENS = {"1": find_screen, "2": progress_screen, "3": guide_screen, "4": healt
 
 
 def run(provider) -> int:
+    ATTENTION[0] = False
     try:
         import readline  # noqa: F401  line editing and history
     except ImportError:
@@ -599,7 +619,215 @@ def run(provider) -> int:
             except EntryError as exc:
                 fail(exc)
     except Quit:
-        return cli.EXIT_OK
+        return cli.EXIT_ATTENTION if ATTENTION[0] else cli.EXIT_OK
     except KeyboardInterrupt:
         print()
         return cli.EXIT_INTERRUPTED
+
+
+# ---------------------------------------------------------------- 第 9 屏的写入向导：选条目 → 选目标 → 预览 → yes → 执行 → 读回
+
+ATTENTION = [False]  # 任何一次写入失败或读回不一致后，菜单退出时返回 EXIT_ATTENTION
+EXT_CLIENTS = ("claude", "codex", "cursor")
+EXT_SCOPES = ("user", "project")
+
+
+def dedupe_group_for(provider, group: dict) -> dict | None:
+    """菜单侧的分组对应 ``agenthelm dedupe --list`` 里的哪一组；没有对应就没有写入动作。"""
+    members = set(group["members"])
+    for candidate in provider.extensions_dedupe_groups():
+        refs = {member.get("ref") for member in candidate.get("members", [])}
+        if candidate.get("kind") == group["kind"] and refs and refs <= members:
+            return candidate
+    return None
+
+
+def extensions_entry_actions(provider, entry: dict) -> None:
+    """条目详情下面的动作：m 移动或复制 · s 设置生效范围 · d 处理重复 · p 可粘贴片段。"""
+    while True:
+        keys = [("m", _("移动或复制")), ("s", _("设置生效范围")), ("d", _("处理重复")), ("p", _("可粘贴片段"))]
+        print(S.dim(" · ".join(f"{key} {label}" for key, label in keys) + _(" · 回车返回")))
+        line = ask(_("回车返回"))
+        if line == "m":
+            sub(extensions_move_wizard, provider, entry)
+        elif line == "s":
+            sub(extensions_scope_wizard, provider, entry)
+        elif line == "d":
+            sub(extensions_entry_dedupe, provider, entry)
+        elif line == "p":
+            show(extensions_manual_lines(provider, entry))
+        else:
+            print(S.yellow(_("没有这个操作。")))
+
+
+def _pick_entry(provider, title: str) -> dict | None:
+    token = ask(_("条目名或引用（kind:名@客户端:作用域）"))
+    try:
+        data = provider.extensions_show(token)
+    except EntryError as exc:
+        fail(exc)
+        return None
+    if data["view"] != "entry":
+        print(S.yellow(_("请输入条目，而不是分组 id。")))
+        return None
+    return data["entry"]
+
+
+def extensions_pick_move(provider) -> None:
+    show(cli.header(provider, _("技能与 MCP · 移动或复制")))
+    entry = _pick_entry(provider, "")
+    if entry:
+        show(ext.render_show(entry))
+        extensions_move_wizard(provider, entry)
+
+
+def extensions_pick_scope(provider) -> None:
+    show(cli.header(provider, _("技能与 MCP · 设置生效范围")))
+    entry = _pick_entry(provider, "")
+    if entry:
+        show(ext.render_show(entry))
+        extensions_scope_wizard(provider, entry)
+
+
+def _read_only(provider, entry: dict, reason: str) -> None:
+    print(S.yellow(reason))
+    show(extensions_manual_lines(provider, entry))
+
+
+def _write_wizard(provider, view: str, preview, apply, *, name: str, group_id: str | None = None) -> None:
+    """预览 → 放宽另需键入条目名 → 输入 yes → 执行 → 读回。任何一步取消都没有写入。"""
+    result = preview()
+    show(actions.render_action(result))
+    if result.get("unsupported") or result.get("blocked"):
+        print(S.yellow(_("计划有 blocked 项，不可执行；没有写入。")))
+        return
+    plan = result["plan"]
+    if plan.get("direction") == "widen":
+        print(S.red(_("放宽：此后所有项目都会看到它。")))
+        try:
+            typed = ask(_("键入条目名 {0} 确认放宽").format(name))
+        except Back:
+            typed = ""
+        if typed != name:
+            print(S.dim(_("已取消，没有写入。")))
+            return
+    if not confirm():
+        return
+    done = apply(plan["plan_digest"])
+    attention = actions.finish(provider, view, done, group_id)
+    provider.extensions_refresh()
+    show(actions.render_action(done))
+    if attention:
+        ATTENTION[0] = True
+        print(S.red(_("需要关注：请看上面的结果与恢复目录。")))
+
+
+def _unsafe_entry(entry: dict) -> bool:
+    return entry["evidence"] == "unknown"
+
+
+def extensions_move_wizard(provider, entry: dict) -> None:
+    if _unsafe_entry(entry):
+        return _read_only(provider, entry, _("这个条目的证据为未知：只给只读信息与手工步骤，不写入。"))
+    if entry["kind"] != "skill":
+        return _read_only(provider, entry, _("MCP 条目本版只给手工命令与可粘贴片段，不由本菜单写入。"))
+    targets = [(client, scope) for client in EXT_CLIENTS for scope in EXT_SCOPES if (client, scope) != (entry["client"], entry["scope"])]
+    print(S.bold(_("目标（客户端:作用域）")))
+    for index, (client, scope) in enumerate(targets, 1):
+        widen = entry["scope"] == "project" and scope == "user"
+        print(f"  {S.bold(S.cyan(str(index)))}  {client}:{scope}" + (S.red("  " + _("放宽")) if widen else ""))
+    line = ask(_("选择目标"))
+    if not line.isdigit() or not 1 <= int(line) <= len(targets):
+        print(S.yellow(_("没有这一项。")))
+        return
+    client, scope = targets[int(line) - 1]
+    to = f"{client}:{scope}"
+    keep_source = choose(_("k 保留源（复制），回车 归档源（移动）"), "") == "k"
+    options = {"keep_source": keep_source, "allow_widen": entry["scope"] == "project" and scope == "user"}
+    probe = provider.extensions_move(entry["ref"], to, **options)
+    if probe["plan"] and probe["plan"].get("confirmations"):
+        options["confirm_content"] = True  # 预览里已列出「将进入项目目录」；用户输入 yes 才算确认
+    if entry["scope"] == "user" and scope == "project":
+        print(S.yellow(_("将进入项目目录：内容可能被提交到版本库；许可证与私有内容请你自己确认。")))
+    if scope == "project" or entry["scope"] == "user":
+        print(S.dim(_("受影响项目：未知（只能看到在本机同步过的项目）")))
+    _write_wizard(provider, "move", lambda: provider.extensions_move(entry["ref"], to, **options),
+                  lambda digest: provider.extensions_move(entry["ref"], to, apply=True, expect=digest, **options), name=entry["name"])
+
+
+def extensions_scope_wizard(provider, entry: dict) -> None:
+    if _unsafe_entry(entry):
+        return _read_only(provider, entry, _("这个条目的证据为未知：只给只读信息与手工步骤，不写入。"))
+    if entry["kind"] != "skill":
+        return _read_only(provider, entry, _("MCP 条目本版只给手工命令与可粘贴片段，不由本菜单写入。"))
+    print(S.bold(_("生效范围")))
+    print(f"  {S.bold(S.cyan('1'))}  " + _("仅此项目（收窄）"))
+    print(f"  {S.bold(S.cyan('2'))}  " + _("全局（所有项目；放宽，需键入条目名）"))
+    line = ask(_("选择"))
+    if line not in ("1", "2"):
+        print(S.yellow(_("没有这一项。")))
+        return
+    effective = "project" if line == "1" else "user"
+    options = {"allow_widen": effective == "user"}
+    _write_wizard(provider, "scope", lambda: provider.extensions_scope(entry["ref"], effective, **options),
+                  lambda digest: provider.extensions_scope(entry["ref"], effective, apply=True, expect=digest, **options), name=entry["name"])
+
+
+def extensions_entry_dedupe(provider, entry: dict) -> None:
+    if not entry["groups"]:
+        print(S.yellow(_("这个条目不在任何重复组里。")))
+        return
+    analysis = provider._extensions()["analysis"]
+    group = next(item for item in analysis["groups"] if item["id"] == entry["groups"][0])
+    target = dedupe_group_for(provider, group)
+    if target is None:
+        print(S.yellow(_(actions.NO_WRITE_GROUP)))
+        return
+    dedupe_wizard(provider, group, target)
+
+
+def dedupe_wizard(provider, group: dict, target: dict) -> None:
+    print(S.bold(_("处置：{0}").format(group["name"])))
+    for key, label in (("1", _("保留一份，退役其余")), ("2", _("都保留并标注")), ("3", _("在本机忽略这一组")), ("4", _("撤销忽略"))):
+        print(f"  {S.bold(S.cyan(key))}  {label}")
+    line = ask(_("选择"))
+    gid, options = target["id"], {}
+    if line == "1":
+        refs = [member["ref"] for member in target["members"]]
+        for index, ref in enumerate(refs, 1):
+            print(f"  {S.bold(S.cyan(str(index)))}  {ref}")
+        pick = ask(_("保留哪一份"))
+        if not pick.isdigit() or not 1 <= int(pick) <= len(refs):
+            print(S.yellow(_("没有这一项。")))
+            return
+        options = {"keep": refs[int(pick) - 1], "retire_others": True}
+    elif line == "2":
+        options = {"keep_all": True, "note": ask(_("备注（说明为什么保留）"))}
+    elif line in ("3", "4"):
+        options = {"ignore": True} if line == "3" else {"unignore": True}
+    else:
+        print(S.yellow(_("没有这一项。")))
+        return
+    _write_wizard(provider, "dedupe", lambda: provider.extensions_dedupe(gid, **options),
+                  lambda digest: provider.extensions_dedupe(gid, apply=True, expect=digest, **options), name=group["name"], group_id=gid)
+
+
+def extensions_manual_lines(provider, entry: dict) -> list[str]:
+    """手工步骤与可粘贴片段：不写任何文件，不含任何值。"""
+    lines = [S.bold(_("手工步骤与可粘贴片段（本屏不写入）"))]
+    if _unsafe_entry(entry):
+        return lines + [_("证据未知：无法确认这个条目的真实状态。请自己确认路径与客户端的加载情况，再手工复制或移动；之后到客户端里重启确认。")]
+    try:
+        plan = provider.extensions_scope(entry["ref"], "project").get("plan") or {}
+    except EntryError:
+        plan = {}
+    if plan.get("snippet"):
+        lines += [_("Project Profile 的声明片段（合并进 capabilities；之后用 agent-pack 的 sync 预览落地）："),
+                  *json.dumps(plan["snippet"], ensure_ascii=False, indent=2).splitlines()]
+    if entry["kind"] == "mcp":
+        if entry["client"] == "claude":
+            lines += [_("官方命令（先自己备份 ~/.claude.json）："), f"  claude mcp remove --scope {entry['scope']} {entry['name']}"]
+        group = next((item for item in provider.extensions_dedupe_groups() if entry["ref"] in {m.get("ref") for m in item.get("members", [])}), None)
+        lines.append(_("Claude Desktop 的可粘贴片段：") + (f"agenthelm dedupe {group['id']} --keep {entry['ref']} --desktop-snippet" if group
+                                                        else _("先用 agenthelm dedupe --list 找到该条目所在的分组")))
+    return lines

@@ -87,7 +87,7 @@ class MenuStructureTests(MenuCase):
 
 
 class ExtensionsScreenTests(MenuCase):
-    def test_overview_has_the_summary_and_six_entries_two_of_them_not_yet_available(self) -> None:
+    def test_overview_has_the_summary_and_six_entries_all_available(self) -> None:
         _code, text = self.run_menu(self.provider(), ["9"])
         self.assertIn("技能 7 个 · MCP 8 个", text)
         self.assertIn("每会话 description 常驻：claude ≈", text)
@@ -95,18 +95,21 @@ class ExtensionsScreenTests(MenuCase):
         screen = text[text.index("按客户端看") - 200:]
         for number, title in (("1", "按客户端看"), ("2", "按项目看"), ("3", "按重复看"), ("4", "技能体检")):
             self.assertRegex(screen, rf"{number}  {title}")
-        self.assertRegex(screen, r"5  移动或复制.*本版尚未提供")
-        self.assertRegex(screen, r"6  设置生效范围.*本版尚未提供")
+        self.assertRegex(screen, r"5  移动或复制")
+        self.assertRegex(screen, r"6  设置生效范围")
+        self.assertNotIn("本版尚未提供", screen)  # N2b：5、6 是真实向导（tests/test_project_extensions_wizard.py）
         self.assertIn("? 帮助", screen)
 
-    def test_entries_five_and_six_are_not_fake_entrances(self) -> None:
-        _code, text = self.run_menu(self.provider(), ["9", "5", "6"])
-        self.assertEqual(text.count("这一项本版尚未提供"), 2)
-        self.assertNotIn("向导", text)
+    def test_entries_five_and_six_ask_for_an_entry_and_do_not_pretend(self) -> None:
+        _code, text = self.run_menu(self.provider(), ["9", "5", "no-such-entry", "6", "no-such-entry"])
+        self.assertEqual(text.count("没有这个条目：no-such-entry"), 2)
+        self.assertNotIn("本版尚未提供", text)
 
     def test_help_and_unknown_words(self) -> None:
         _code, text = self.run_menu(self.provider(), ["9", "?", "no-such-entry"])
-        self.assertIn("这一屏全程只读", text)
+        self.assertIn("清单与体检只读", text)
+        self.assertIn("确认前零写入", text)
+        self.assertNotIn("全程只读", text)
         self.assertIn("没有这个条目：no-such-entry", text)
 
     def test_by_client_then_detail_then_back_then_quit(self) -> None:
@@ -159,7 +162,7 @@ class ExtensionsScreenTests(MenuCase):
         after = sorted(path.relative_to(self.base).as_posix() for path in self.base.rglob("*") if path.is_file() and path != self.log)
         self.assertEqual(before, after)
         calls = [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
-        self.assertTrue(all(call[0] == "inventory" for call in calls), calls)
+        self.assertTrue(all(call[0] == "inventory" or call[:2] == ["dedupe", "--list"] for call in calls), calls)  # 只有只读调用
 
     def test_no_screen_prints_a_secret(self) -> None:
         _code, text = self.run_menu(self.provider(), ["9", "1", "mcp:notes-server@claude:user", "", "", "2", "", "3", "1", "", "2", "", "", "4", "d", "",
@@ -304,7 +307,7 @@ class DemoMenuTests(unittest.TestCase):
         text = self.run_demo("study", ["9", "1", "", "2", "", "3", "1", "", "", "4", "d", "", "?", "code-review@claude:user", "", "5", "", "q"], "en")
         self.assertFalse([line for line in text.splitlines() if CJK.search(line)], [line for line in text.splitlines() if CJK.search(line)][:3])
         self.assertIn("Skills & MCP", text)
-        self.assertIn("not available in this version", text)
+        self.assertIn("Move or copy", text)
 
 
 class RealMenuEnglishTests(MenuCase):
