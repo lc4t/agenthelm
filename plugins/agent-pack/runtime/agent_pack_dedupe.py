@@ -3,7 +3,9 @@
 
 Dispositions:
 * ``--keep <ref> --retire-others``: Skill copies are archived (a move into the recovery directory, never a delete);
-  MCP copies are *never* edited here - the plan only prints the official manual command and a backup reminder.
+  MCP copies the project's agent-pack state owns (managed) are removed by ``agent_pack_mcp_write`` (original JSON
+  fragment into the 0600 recovery directory, byte-exact backup, atomic edit, byte-exact rollback); every other MCP
+  copy only gets the official manual command and a backup reminder (not archivable by the tool).
 * ``--keep-all --note "..."`` / ``--ignore`` / ``--unignore``: write only the machine-level decision file
   (``~/.config/agenthelm/ext-decisions.json``, mode 0600, no values); no configuration is changed.
 * ``--desktop-snippet``: read-only paste-ready ``claude_desktop_config.json`` fragment for the kept MCP entry.
@@ -30,6 +32,7 @@ if str(RUNTIME_DIR) not in sys.path:
 import agent_pack_desktop as desktop  # noqa: E402
 import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
+import agent_pack_mcp_write as mcp_write  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
 DECISIONS_SCHEMA = 1
@@ -40,8 +43,8 @@ SECRET_LIKE = re.compile(r"(sk-[A-Za-z0-9]{12,}|gh[pousr]_[A-Za-z0-9]{12,}|xox[a
 
 # Manual-removal commands per client, as data (no per-client branches in the code): a client without an entry only
 # gets an instruction to delete the entry in its file by hand. ``{scope}`` and ``{name}`` are filled in.
-MANUAL_REMOVE = {"claude": "claude mcp remove --scope {scope} {name}"}
-MANUAL_BACKUP = {"claude": "cp ~/.claude.json ~/.claude.json.bak"}
+MANUAL_REMOVE = mcp_write.MANUAL_REMOVE
+MANUAL_BACKUP = mcp_write.MANUAL_BACKUP
 
 
 def decisions_path(home: Path) -> Path:
@@ -197,7 +200,7 @@ def _plan_retire(plan: dict, ctx: dict, group: dict, keep: str | None, home: Pat
     if blocks:
         return
     if group["kind"] == "mcp":
-        _plan_mcp_manual(plan, group, kept, others, home)
+        _plan_mcp(plan, ctx, group, kept, others, home, project)
         return
     kept_real = os.path.realpath(_entry_path(kept, home, project))
     for item in others:
@@ -223,25 +226,44 @@ def _plan_retire(plan: dict, ctx: dict, group: dict, keep: str | None, home: Pat
     ctx["kept_path"] = kept_real
 
 
-def _plan_mcp_manual(plan: dict, group: dict, kept: dict, others: list[dict], home: Path) -> None:
-    """MCP copies are never edited: only the official manual command, flagged as not archivable by this tool."""
+def _plan_mcp(plan: dict, ctx: dict, group: dict, kept: dict, others: list[dict], home: Path, project: Path) -> None:
+    """Managed copies (the project's agent-pack state owns them) are retired by the tool; the rest only get the official
+    manual command, flagged as not archivable by this tool."""
+    root, package, _layout = mcp_write._root_and_package(project)
+    ctx["root"], ctx["package"], ctx["retire_items"] = root, package, []
+    steps = plan["steps"]
+    managed: list[dict] = []
     for item in others:
-        entry: dict[str, Any] = {"ref": item["ref"], "client": item["client"], "scope": item["scope"], "store": item["store"],
-                                 "name": item["name"], "not_archivable_by_tool": True, "promise": "cannot-promise"}
-        if item["client"] in MANUAL_REMOVE:
-            entry["command"] = MANUAL_REMOVE[item["client"]].format(scope=item["scope"], name=shlex.quote(item["name"]))
-            entry["backup"] = MANUAL_BACKUP[item["client"]]
+        raw, problem = (mcp_write.read_entry(home, root, item["scope"], item["name"])
+                        if item["client"] in mcp_write.MCP_WRITERS else (None, "unsupported"))
+        owner = mcp_write.ownership(home, package, item["scope"], item["name"]) if raw is not None and not problem else None
+        if owner and owner["managed"] and isinstance(raw, dict):
+            store = mcp_write.STORE_PATH[item["scope"]]
+            managed.append({"ref": item["ref"], "client": item["client"], "scope": item["scope"], "store": store,
+                            "name": item["name"], "managed": True, "entry_digest": mcp_write.entry_hash(raw)[:16]})
+            ctx["retire_items"].append({"scope": item["scope"], "name": item["name"], "entry": raw})
+            if owner["recorded_hash"] and owner["recorded_hash"] != mcp_write.entry_hash(raw):
+                plan["warnings"].append(ext.warning("modified-since-sync", _("{0} 自上次同步后被改过：仍按受管处理，原片段会完整存入恢复目录").format(item["ref"]), ref=item["ref"]))
         else:
-            entry["instruction"] = _("手工删除 {0} 里名为 {1} 的 MCP 条目（先自己备份该文件）").format(item["store"], item["name"])
-        plan["manual"].append(entry)
-        plan["steps"].append(ext.step(f"s{len(plan['steps']) + 1}", "manual-remove-mcp", "cannot-promise", ref=item["ref"]))
-    plan["warnings"].append(ext.warning("mcp-not-archivable", _("MCP 副本不可由工具归档：配置文件可能含本地凭据，本工具不编辑它，只给手工命令")))
-    if group["client"] in MANUAL_BACKUP:
-        plan["warnings"].append(ext.warning("backup-first", _("先自己备份 ~/.claude.json，再执行下面的命令")))
-    else:
-        plan["warnings"].append(ext.warning("backup-first", _("先自己备份相关配置文件，再手工修改")))
+            plan["manual"].append(mcp_write.manual_entry(item["ref"], item["client"], item["scope"], item["store"], item["name"]))
+    if managed:
+        plan["retire"] = managed
+        steps.append(ext.step("s1", "create-recovery-dir", "certain", to=plan["recovery_base"]))
+        for entry in managed:
+            steps.append(ext.step(f"s{len(steps) + 1}", "retire-mcp-entry", "certain", name=entry["name"], **{"from": entry["store"]}))
+            steps.append(ext.step(f"s{len(steps) + 1}", "drop-state", "certain", name=entry["name"]))
+    for entry in plan["manual"]:
+        steps.append(ext.step(f"s{len(steps) + 1}", "manual-remove-mcp", "cannot-promise", ref=entry["ref"]))
+    if plan["manual"]:
+        plan["warnings"].append(ext.warning("mcp-not-archivable", _("MCP 副本不可由工具归档：配置文件可能含本地凭据，本工具不编辑它，只给手工命令")))
+        if group["client"] in MANUAL_BACKUP:
+            plan["warnings"].append(ext.warning("backup-first", _("先自己备份 ~/.claude.json，再执行下面的命令")))
+        else:
+            plan["warnings"].append(ext.warning("backup-first", _("先自己备份相关配置文件，再手工修改")))
     if (group.get("effective") or {}).get("evidence") != "file":
         plan["warnings"].append(ext.warning("precedence-unknown", _("哪一份生效官方文档没有给出（或需要读设置），请自行确认后再执行")))
+    if managed:
+        steps.append(ext.step(f"s{len(steps) + 1}", "confirm-in-client", "best-effort", client=group["client"]))
 
 
 def _entry_path(item: dict, home: Path, project: Path) -> Path:
@@ -262,6 +284,8 @@ def apply_plan(plan: dict, ctx: dict) -> dict:
         return _apply_decision(plan, ctx)
     if not plan["retire"]:
         return {"status": "manual-only", "written": False, "manual": plan["manual"]}
+    if plan["kind"] == "mcp":
+        return _apply_mcp(plan, ctx)
     moved: list[tuple[Path, Path]] = []
     recovery: Path | None = None
     try:
@@ -284,6 +308,25 @@ def apply_plan(plan: dict, ctx: dict) -> dict:
             "archived": [ext.display(a, home, project) for a, _o in moved],
             "restore": [ext.restore_line(a, o, home) for a, o in moved],
             "restore_note": _("恢复：把归档目录移回原位（本版没有 restore 命令）")}
+
+
+def _apply_mcp(plan: dict, ctx: dict) -> dict:
+    home, project = ctx["home"], ctx["root"]
+    recovery: Path | None = None
+    try:
+        recovery = ext.new_recovery_dir(ext.recovery_base(home, ctx["recovery_override"]), f"dedupe-{plan['group']}")
+        ext.write_private_json(recovery / "dedupe.json", {
+            "schema_version": ext.SCHEMA_VERSION, "group": plan["group"], "keep": plan["keep"], "plan_digest": plan["plan_digest"],
+            "retired": [{"ref": item["ref"], "store": item["store"], "entry_digest": item["entry_digest"]} for item in plan["retire"]]})
+        result = mcp_write.retire_group(home, project, recovery, ctx["package"], ctx["retire_items"])
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "rolled-back", "written": False, "reason": type(exc).__name__,
+                "message": _("失败，已回滚：{0}").format(str(exc)),
+                "recovery_dir": ext.display(recovery, home, project) if recovery else None}
+    return {"status": "applied", "written": True, "recovery_dir": ext.display(recovery, home, project),
+            "archived": [ext.display(path, home, project) for path in result["fragments"]],
+            "restore": mcp_write.restore_lines(recovery, home, result["fragments"], result["edits"]),
+            "manual": plan["manual"]}
 
 
 def _kept_still_intact(ctx: dict) -> bool:
@@ -319,6 +362,8 @@ ACTION_TEXT = {
     "archive-copy": N_("归档 {from} 到恢复目录（归档不是删除）"),
     "confirm-in-client": N_("下一步：重启 {client} 或重新进入项目，确认结果（工具不执行客户端命令）"),
     "manual-remove-mcp": N_("{ref}：不可由工具归档，见下面的手工命令"),
+    "retire-mcp-entry": mcp_write.ACTION_TEXT["retire-mcp-entry"],
+    "drop-state": N_("从 agent-pack 的归属记录里去掉 {name}"),
     "write-decision": N_("写入决定文件 {to}（权限 0600，不含任何值）"),
     "remove-decision": N_("从决定文件 {to} 移除这个分组的决定"),
 }
