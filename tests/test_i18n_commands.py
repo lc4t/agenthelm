@@ -87,6 +87,7 @@ PREVIEW: dict[str, list[str]] = {
     "agenthelm update": ["--no-project", "--latest", "{latest}"],
     "agenthelm migrate": ["--latest", "{latest}"],
     "agenthelm fix": [*P, "--no-input"],
+    "agenthelm relocate": ["skill:missing@claude:user", "--to", "codex:user", *P],  # a missing source is a blocked preview; the writing paths are covered by plugins/agent-pack/tests/test_relocate.py
     "agenthelm local-only fix": P,
     "agenthelm runtime install": [],
     "agenthelm runtime update": ["--source", str(ROOT)],

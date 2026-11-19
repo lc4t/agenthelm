@@ -452,7 +452,8 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     carried_mcps = sorted(server for server in project_mcps & owned_mcps if server in existing)
     undeclared = sorted((set(layout.mcp_scope) - set(desired_mcps) - set(item.name for item in authority.mcps))
                         | (set(layout.skill_scope) - desired_skills - set(item.name for item in authority.skills)))
-    return {"name": name, "aware": aware, "scope": scope, "skipped": skipped, "narrowing": narrowing,
+    return {"name": name, "aware": aware, "scope": scope, "do_user": do_user, "do_project": do_project,
+            "skipped": skipped, "narrowing": narrowing,
             "others": others, "undeclared": undeclared,
             "state_skills": state_skills, "carried_mcps": carried_mcps,
             "scope_counts": {"user": {"skills": len(desired_skills - project_skills) if sync_skills and do_user else 0,
@@ -641,7 +642,11 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
             if action == "archive-plugin":
                 archive(Path(item["from"]), "plugins", item_name)
         # A sync that does not include mcp never opens ~/.claude.json for writing (#68).
-        servers = config.setdefault("mcpServers", {}) if "mcp" in plan["only"] else {}
+        user_mcp_ops = any(item["action"].endswith("-mcp") and not item["action"].startswith("skip-")
+                           for item in plan["operations"])
+        # (a scope-aware plan with no user-level MCP operation leaves ~/.claude.json's user section alone)
+        servers = (config.setdefault("mcpServers", {})
+                   if "mcp" in plan["only"] and plan["do_user"] and (user_mcp_ops or not plan["aware"]) else {})
         replaced: dict[str, Any] = {}
         mcp_state: dict[str, str] = {}
         for item in plan["operations"]:
