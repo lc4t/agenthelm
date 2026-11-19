@@ -19,7 +19,7 @@ sys.path.insert(0, str(RUNTIME))
 import agent_pack_claude as claude  # noqa: E402
 import agent_pack_mcp_write as mcp_write  # noqa: E402
 from test_project_store_write import older_runtime_runs  # noqa: E402
-from test_scope_declaration import FAKE_TOKEN, ScopeBase  # noqa: E402
+from test_scope_declaration import FAKE_TOKEN, ScopeBase, declare  # noqa: E402
 
 NAME = "demo-mcp"
 ENTRY = {"type": "stdio", "command": "uvx", "args": ["demo-mcp-server"], "env": {"DEMO_API_TOKEN": FAKE_TOKEN}}
@@ -123,6 +123,26 @@ class PreviewTests(McpBase):
         applied_plan = document["plan"]
         self.assertEqual(planned["plan_digest"], applied_plan["plan_digest"])
         self.assertEqual(planned["steps"], applied_plan["steps"])
+
+
+class DeclarationWarningTests(McpBase):
+    def codes(self, to: str = "claude:local") -> list[str]:
+        return [w["code"] for w in self.preview(USER_REF, to)["plan"]["warnings"]]
+
+    def test_no_warning_without_an_explicit_declaration(self) -> None:
+        self.write_config()
+        self.own("user")
+        self.assertNotIn("declaration-differs", self.codes())
+
+    def test_warns_when_the_profile_declares_a_different_scope(self) -> None:
+        self.write_config()
+        self.own("user")
+        declare(self.project, mcp_scope={NAME: "user"})
+        self.assertIn("declaration-differs", self.codes())
+        declare(self.project, mcp_scope={NAME: "project"})
+        self.assertNotIn("declaration-differs", self.codes())
+        declare(self.project, mcp_scope={}, default_scope="project")
+        self.assertNotIn("declaration-differs", self.codes())
 
 
 class ManagedMoveTests(McpBase):

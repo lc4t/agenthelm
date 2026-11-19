@@ -232,7 +232,8 @@ def build_plan(home: Path, project: Path, ref: str, to: str, allow_widen: bool =
     if layout is not None and package:
         declared = core.declared_scope(layout, "mcp", name)
         landing = "user" if target_scope == "user" else "project"
-        if declared != landing:
+        explicit = name in layout.mcp_scope or layout.default_scope != "user"   # only a declaration the project made
+        if explicit and declared != landing:
             plan["warnings"].append(ext.warning("declaration-differs", _("项目 Profile 把 {0} 声明为 {1} 级：下次 sync 会按声明处理它，请同步更新声明").format(name, declared)))
 
     plan["retire_source"] = owner["managed"] and not keep_source
