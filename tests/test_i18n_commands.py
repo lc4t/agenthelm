@@ -48,6 +48,7 @@ READ_ONLY: dict[str, list[str]] = {
     "agent-pack inventory": ["--source", "project:{project}"],
     "agent-pack doctor": P,
     "agenthelm check": ["--offline", "--no-project"],
+    "agenthelm inventory": P,
     "agenthelm doctor": ["--no-project"],
     "agenthelm locate": ["agents-init"],
     "agenthelm local-only check": P,
