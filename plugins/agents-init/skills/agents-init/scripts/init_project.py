@@ -55,6 +55,7 @@ BUNDLED_PLUGINS = {
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "AGENT.template.md"
 # 项目根目录的人用入口（启动器）：文件名由项目选择，内容与名称无关，随内容包更新。
 LAUNCHER_TEMPLATE = Path(__file__).resolve().parents[1] / "launcher.sh"
+LAUNCHER_TEMPLATE_EN = Path(__file__).resolve().parents[1] / "launcher.en.sh"  # language=en 项目用的同一脚本英文版
 DEFAULT_ENTRY = "menu"
 ENTRY_API = 1
 ENTRY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -62,6 +63,7 @@ RESERVED_ENTRY_NAMES = {"AGENTS.md", "AGENT.md", "CLAUDE.md", "AGENT.RULES.md", 
                         "cases", "docs", "memory", "sops", "private", ".agents", ".git"}
 # 私有目录：内容默认不进入 git（与 project-orchestrator 的 private_paths.IGNORE_TEXT 相同，测试核对一致）。
 PRIVATE_IGNORE = "# agenthelm: 本目录内容默认不进入 git；读取前须经用户确认。\n*\n!.gitignore\n"
+PRIVATE_IGNORE_EN = "# agenthelm: this directory is kept out of git by default; get the user's confirmation before reading it.\n*\n!.gitignore\n"
 README_START = "<!-- agenthelm:entry -->"
 README_END = "<!-- /agenthelm:entry -->"
 # 内容锁里没有记录模板版本时（早于内容锁的项目），补登的条目使用这个版本，检查会提示刷新。
@@ -440,11 +442,17 @@ def validate_entry_name(name: str) -> str:
     return name
 
 
-def launcher_text() -> str:
+def launcher_text(language: str = "zh") -> str:
+    """The launcher shipped with this plugin, in the project's file language (``en`` has its own script)."""
+    path = LAUNCHER_TEMPLATE_EN if language == "en" else LAUNCHER_TEMPLATE
     try:
-        return LAUNCHER_TEMPLATE.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise InitError(_("无法读取启动器模板：{0}").format(LAUNCHER_TEMPLATE), code="template-invalid") from exc
+        raise InitError(_("无法读取启动器模板：{0}").format(path), code="template-invalid") from exc
+
+
+def private_ignore_text(language: str = "zh") -> str:
+    return PRIVATE_IGNORE_EN if language == "en" else PRIVATE_IGNORE
 
 
 def entry_command(launcher: str | None) -> str:
@@ -482,8 +490,11 @@ def tracked_paths(pack: dict | None, launcher: str | None) -> list[Path]:
     return tracked + ([Path(launcher)] if launcher else [])
 
 
-def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher: str | None = None) -> dict[Path, str]:
-    """``launcher`` is the launcher script text; omitted, the one shipped with this plugin."""
+def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher: str | None = None,
+              launcher_en: str | None = None) -> dict[Path, str]:
+    """``launcher`` / ``launcher_en`` are the launcher script texts (Chinese / English); both omitted, the ones shipped
+    with this plugin. A historical pack source without an English script (``launcher`` given, ``launcher_en`` not) renders
+    the Chinese one for every language: that is what such a release wrote."""
     templates = templates or load_templates()
     profile = {
         "$schema": PROFILE_SCHEMA,
@@ -571,14 +582,18 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher:
         Path(".agent-doc/chat-summary.md"): render_template(localized(templates, ".agent-doc/chat-summary.md", inputs.language), replacements),
         Path("memory/.gitkeep"): "",
         Path("sops/.gitkeep"): "",
-        Path("private/.gitignore"): PRIVATE_IGNORE,
+        Path("private/.gitignore"): private_ignore_text(inputs.language),
         Path("docs/refs/README.md"): render_template(localized(templates, "docs/refs/README.md", inputs.language), replacements),
         Path("docs/drafts/.gitkeep"): "",
     }
     if inputs.work_mode == "case-workspace":
         files[Path("cases/.gitkeep")] = ""
     if inputs.entry_launcher:
-        files[Path(inputs.entry_launcher)] = launcher if launcher is not None else launcher_text()
+        if inputs.language == "en" and (launcher_en is not None or launcher is None):
+            text = launcher_en if launcher_en is not None else launcher_text("en")
+        else:
+            text = launcher if launcher is not None else launcher_text()
+        files[Path(inputs.entry_launcher)] = text
     return files
 
 
@@ -999,7 +1014,7 @@ def find_baseline(root: Path, relative: Path, digest: str, versions: list[str], 
                 try:
                     templates = parse_templates(source.template, historical=True)
                     for variant in variants:
-                        text = files_for(variant, templates, source.launcher).get(relative)
+                        text = files_for(variant, templates, source.launcher, source.launcher_en).get(relative)
                         if text is not None and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest:
                             return {"text": text, "source": source.label, "kind": source.kind, "version": source.version}
                         if text is not None and diagnostics is not None and (not versions or source.version in versions):
@@ -1537,7 +1552,7 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     entry = profile.get("entry") if isinstance(profile.get("entry"), dict) else {}
     if entry.get("launcher") and entry["launcher"] != name:
         raise InitError(_("项目已声明入口 ./{0}；改名请同时修改 Profile 的 entry.launcher 与文件名").format(entry['launcher']))
-    template = launcher_text()
+    template = launcher_text(project_language(profile))
     target = root / name
     if target.is_symlink():
         raise InitError(f"refusing symlinked launcher: {name}")

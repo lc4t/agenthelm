@@ -21,6 +21,26 @@ import sop  # noqa: E402
 HAS_GIT = shutil.which("git") is not None
 
 
+class IgnoreTextLanguageTests(unittest.TestCase):
+    """The .gitignore written into a private directory follows the Profile language (zh when it is missing)."""
+
+    def text_for(self, profile: dict | None) -> str:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            if profile is not None:
+                path = root / private_paths.PROFILE
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(profile), encoding="utf-8")
+            return private_paths.plan_ignore(root, "private")[0]["content"]
+
+    def test_language_picks_the_text(self) -> None:
+        self.assertEqual(self.text_for({"language": "en"}), private_paths.IGNORE_TEXT_EN)
+        self.assertEqual(self.text_for({"language": "zh"}), private_paths.IGNORE_TEXT)
+        self.assertEqual(self.text_for({"name": "no language field"}), private_paths.IGNORE_TEXT)
+        self.assertEqual(self.text_for(None), private_paths.IGNORE_TEXT)
+        self.assertEqual(self.text_for({"language": "fr"}), private_paths.IGNORE_TEXT)
+
+
 class PrivateCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()

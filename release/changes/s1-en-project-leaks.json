@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。",
+    "en": "Projects with language=en no longer get files that contain Chinese: the root launcher (header comment and error/guidance messages) and private/.gitignore follow the project file language; zh and default-language output is byte-identical. Projects generated earlier with --language en keep a Chinese launcher until it is replaced after a preview."
+  },
+  "changes": [
+    {
+      "scope": "agents-init",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [
+        {
+          "what": "以前用 --language en 生成的项目：根目录启动器（默认 ./menu，名称见 Profile 的 entry.launcher）仍是中文版。先运行 `agenthelm check` 查看差异，再运行 `agenthelm fix` 预览（默认不写入），确认后用 `agenthelm fix --apply` 整份替换为英文版；你改过启动器时该文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响；已存在的 private/.gitignore 不会被改写。",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "entry.launcher"
+      ],
+      "default_for_existing": "advisory",
+      "template_changes": [
+        {
+          "path": "skills/agents-init/launcher.en.sh",
+          "class": "semantic"
+        }
+      ],
+      "contracts": []
+    },
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

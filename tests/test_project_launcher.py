@@ -10,6 +10,7 @@ os.environ["AGENTHELM_LANG"] = "zh"  # these tests assert the Chinese messages; 
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "plugins/agents-init/skills/agents-init/launcher.sh"
+LAUNCHER_EN = ROOT / "plugins/agents-init/skills/agents-init/launcher.en.sh"
 AGENTHELM = ROOT / "plugins/agent-pack/runtime/agenthelm.py"
 
 
@@ -140,3 +142,42 @@ class ProjectDispatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("sh") and sys.platform != "win32", "the launcher is a POSIX shell script")
+class EnglishLauncherTests(unittest.TestCase):
+    """launcher.en.sh is what language=en projects get: same behaviour as launcher.sh, no Chinese anywhere."""
+
+    CJK = re.compile(r"[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]")
+
+    @staticmethod
+    def code_lines(path: Path) -> list[str]:
+        """Shell lines that are neither comments nor user-facing echo messages."""
+        return [line for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.lstrip().startswith("#") and "echo " not in line]
+
+    def test_english_script_has_no_chinese(self) -> None:
+        self.assertEqual(self.CJK.findall(LAUNCHER_EN.read_text(encoding="utf-8")), [])
+
+    def test_english_script_runs_the_same_code_as_the_chinese_one(self) -> None:
+        self.assertEqual(self.code_lines(LAUNCHER_EN), self.code_lines(LAUNCHER))
+        self.assertEqual(LAUNCHER_EN.stat().st_mode & 0o111, LAUNCHER.stat().st_mode & 0o111)
+
+    def test_missing_runtime_message_is_english_and_exits_3(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            menu = base / "menu"
+            shutil.copy(LAUNCHER_EN, menu)
+            menu.chmod(0o755)
+            plain = base / "bin"
+            plain.mkdir()
+            (plain / "dirname").symlink_to(shutil.which("dirname"))
+            (plain / "python3").symlink_to(sys.executable)
+            home = base / "home"
+            home.mkdir()
+            result = subprocess.run(["/bin/sh", str(menu)], input="", capture_output=True, text=True, check=False, timeout=30,
+                                    env={"HOME": str(home), "PATH": str(plain), "NO_COLOR": "1", "PYTHONDONTWRITEBYTECODE": "1"})
+            self.assertEqual(result.returncode, 3)
+            self.assertIn("no agenthelm runtime", result.stderr)
+            self.assertIn("runtime install --apply", result.stderr)
+            self.assertEqual(self.CJK.findall(result.stderr), [])
