@@ -137,8 +137,10 @@ class ReproductionOfIssue67(ScopeBase):
         self.assertEqual(skips, {("skip-skill", SKILL, "project")})
         state = self.state()
         self.assertEqual(state["skills"], [])
-        self.assertEqual(list(state["mcps"]), [MCP])
-        self.assertEqual(state["scopes"], {"skills": {}, "mcps": {MCP: "project:local"}})
+        self.assertEqual(state["mcps"], {}, "project-level entries never go into the pre-existing mcps key")
+        self.assertEqual(state["scopes"]["skills"], {})
+        self.assertEqual(state["scopes"]["mcps"], {MCP: "project:local"})
+        self.assertEqual(list(state["scopes"]["project_hashes"]), [MCP])
 
 
 class PreviewTests(ScopeBase):
@@ -239,7 +241,7 @@ class ScopeFlagTests(ScopeBase):
 
     def test_no_user_level_mcp_to_write_leaves_claude_json_alone(self) -> None:
         declare(self.project, default_scope="project")
-        rc, payload, out = self.cli("--apply")
+        rc, payload, out = self.cli("--scope", "user", "--apply")
         self.assertEqual(rc, 0, out)
         self.assertFalse((self.home / ".claude.json").exists(), "no user-level entry to write: the file is not created")
         self.assertEqual(self.user_config(), {})
@@ -247,7 +249,8 @@ class ScopeFlagTests(ScopeBase):
     def test_scope_user_apply_writes_user_level_and_scopes_in_state(self) -> None:
         rc, payload, out = self.cli("--scope", "user", "--apply")
         self.assertEqual(rc, 0, out)
-        self.assertEqual(self.state()["scopes"], {"skills": {SKILL: "user"}, "mcps": {MCP: "user"}})
+        scopes = self.state()["scopes"]
+        self.assertEqual((scopes["skills"], scopes["mcps"]), ({SKILL: "user"}, {MCP: "user"}))
 
     def test_scope_project_never_touches_the_user_level(self) -> None:
         declare(self.project, mcp_scope={MCP: "project"})
