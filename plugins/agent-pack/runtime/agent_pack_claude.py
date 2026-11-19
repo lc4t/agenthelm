@@ -204,6 +204,105 @@ def _inside(path: Path, root: Path) -> bool:
         return False
 
 
+# ---------------------------------------------------------------- project-level stores
+
+PROJECT_STORES = ("local", "file")
+LOCAL_UNRECOGNIZED = "local-structure-unrecognized"
+PROJECT_ACTIONS = ("add-project-mcp", "update-project-mcp", "conflict-project-mcp", "keep-project-mcp",
+                   "keep-override-project-mcp")
+
+
+def normalize_project_store(value: str | None) -> str:
+    store = value or "local"
+    if store not in PROJECT_STORES:
+        raise core.AgentPackError(f"unknown --project-store: {store} (choose from {', '.join(PROJECT_STORES)})")
+    return store
+
+
+def local_section(config: dict[str, Any], root: Path) -> tuple[str | None, dict[str, Any], str | None]:
+    """(key, servers, problem) of ``~/.claude.json`` ``projects[<absolute path>].mcpServers`` for this project.
+
+    The documentation says only that the entry lives "under that project's path"; any shape other than
+    ``projects`` -> path -> ``mcpServers`` objects is a ``problem`` and nothing is written there.
+    """
+    projects = config.get("projects")
+    if projects is None:
+        return str(root), {}, None
+    if not isinstance(projects, dict):
+        return None, {}, LOCAL_UNRECOGNIZED
+    for key in dict.fromkeys((str(root), str(root.resolve()))):
+        if key in projects:
+            section = projects[key]
+            if not isinstance(section, dict):
+                return None, {}, LOCAL_UNRECOGNIZED
+            servers = section.get("mcpServers")
+            if servers is None:
+                return key, {}, None
+            return (key, servers, None) if isinstance(servers, dict) else (None, {}, LOCAL_UNRECOGNIZED)
+    return str(root.resolve()), {}, None
+
+
+def _entry_strings(entry: dict[str, Any]) -> Iterable[tuple[str, str]]:
+    """(field path, text) of the command, arguments, working directory and environment values: field paths only,
+    never the text, are ever reported."""
+    for field in ("command", "cwd"):
+        if isinstance(entry.get(field), str):
+            yield field, entry[field]
+    for index, text in enumerate(entry.get("args") or []):
+        if isinstance(text, str):
+            yield f"args[{index}]", text
+    for container in ("env", "headers"):
+        values = entry.get(container)
+        for key, text in (values.items() if isinstance(values, dict) else ()):
+            if isinstance(text, str):
+                yield f"{container}.{key}", text
+
+
+def machine_specific(entry: dict[str, Any], home: Path, root: Path) -> list[str]:
+    """Fields of a rendered entry that tie it to this machine (absolute or home paths, this project's path).
+
+    A project file (``.mcp.json``) travels with the repository, so such an entry is refused there.
+    Returns field names only.
+    """
+    anchors = [str(home), str(root), str(root.resolve())]
+    found: list[str] = []
+    for field, text in _entry_strings(entry):
+        if text.startswith(("/", "~")) or any(anchor and anchor != "/" and anchor in text for anchor in anchors):
+            found.append(field)
+    return found
+
+
+def _project_file(root: Path) -> Path:
+    return root / ".mcp.json"
+
+
+def _read_project_file(path: Path) -> tuple[dict[str, Any], str | None]:
+    """(servers, problem) of the project's ``.mcp.json``."""
+    if not path.exists() and not path.is_symlink():
+        return {}, None
+    if path.is_symlink():
+        return {}, "mcp-json-symlink"
+    try:
+        data = core._read_json(path)
+    except core.AgentPackError:
+        return {}, "mcp-json-unreadable"
+    servers = data.get("mcpServers", {})
+    return (servers, None) if isinstance(servers, dict) else ({}, "mcp-json-unreadable")
+
+
+def _writable(path: Path) -> bool:
+    target = path if path.exists() else path.parent
+    while not target.exists() and target != target.parent:
+        target = target.parent
+    return os.access(target, os.W_OK)
+
+
+def _state_scopes(state: dict[str, Any], kind: str) -> dict[str, str]:
+    scopes = state.get("scopes")
+    value = scopes.get(kind) if isinstance(scopes, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
 # ---------------------------------------------------------------- plan
 
 def _plugin_skill_links(home: Path, plugin_path: Path) -> list[Path]:
@@ -291,7 +390,8 @@ def _render_package_mcps(package: Path, home: Path, name: str) -> dict[str, dict
 def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: bool = False,
                  retire_skills: Iterable[str] = (), retire_plugins: Iterable[str] = (),
                  retire_only: bool = False, only: frozenset[str] = frozenset(SYNC_TYPES),
-                 package_tree: Path | None = None, scope: str = "all") -> dict[str, Any]:
+                 package_tree: Path | None = None, scope: str = "all",
+                 project_store: str = "local") -> dict[str, Any]:
     """Every change a Claude sync would make, without writing; conflicts are listed, not raised.
 
     ``only`` limits the sync to those types (#68): ``plugins`` is the package and its install record,
@@ -300,8 +400,12 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
 
     ``scope`` (#67) narrows the plan to the user-level entries (``user``), the entries the project declares as
     project-level (``project``) or both (``all``). A project-declared entry is never written to the user level;
-    this version only plans it as ``skip-*`` (the project-level stores arrive with later changes).
+    ``project`` MCP entries go to ``project_store``: ``local`` (``~/.claude.json`` under the project's path) or
+    ``file`` (the project's ``.mcp.json``, only for entries that do not depend on this machine). A target that is not
+    writable, or whose structure is not recognised, makes the entry ``skip-*`` with a warning: never a fallback to
+    the user level. Project-declared Skills are still ``skip-skill`` here (``.claude/skills`` arrives with a later change).
     """
+    project_store = normalize_project_store(project_store)
     package_tree = package_tree or built
     layout = core.load_project_layout(project)
     authority = core.inventory_project(layout.root)
@@ -318,6 +422,10 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     desired_mcps = _render_package_mcps(built, home, name)
     excluded = sorted(item.name for item in authority.mcps
                       if item.portable and not core._mcp_allowed(layout, item.name, "claude"))
+    mcp_places = _state_scopes(state, "mcps")
+    # Project-level entries are recorded only under ``scopes`` (never in the pre-existing ``skills`` / ``mcps`` keys,
+    # which an older runtime reads as user-level ownership), so those two keys are user-level ownership only.
+    owned_project_mcps = {server for server, place in mcp_places.items() if place != "user"}
     owned_mcps = set(state.get("mcps", {}))
     owned_mcps |= {server for server, entry in existing.items() if _references(entry, record)}
     owned_skills = set(state.get("skills", []))
@@ -411,12 +519,56 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             if (skills_root / skill).is_symlink() or (skills_root / skill).exists():
                 narrowing.append(scoping.narrowing_entry("skill", skill, scoping.USER_SKILLS,
                                                          scoping.PROJECT_SKILLS, others))
-        for server in sorted(project_mcps if sync_mcps else ()):
-            operations.append({"action": "skip-mcp", "name": server,
-                               "to": f"{core._claude_user_config(home)}#projects[{layout.root}].mcpServers"})
-            skipped.append({"kind": "mcp", "name": server, "client": "claude", "reason": "project-write-unavailable"})
+        local_key, local_servers, local_problem = local_section(config, layout.root)
+        file_path = _project_file(layout.root)
+        file_servers, file_problem = _read_project_file(file_path)
+        target_store = scoping.LOCAL_MCP if project_store == "local" else scoping.FILE_MCP
+        target_path = (f"{core._claude_user_config(home)}#projects[{local_key or layout.root}].mcpServers"
+                       if project_store == "local" else str(file_path))
+        problem = (local_problem if project_store == "local" else file_problem) or (
+            None if _writable(core._claude_user_config(home) if project_store == "local" else file_path)
+            else "target-not-writable")
+        place = "project:local" if project_store == "local" else "project:file"
+        wanted = sorted(project_mcps) if sync_mcps else []
+        if scope == "project" and any(_references(desired_mcps[server], record) for server in wanted) \
+                and not package.is_dir():
+            raise core.AgentPackError(
+                "project-level MCP entries launch through the project package, which is not installed yet: "
+                "sync the package first (--scope user, or --only plugins)")
+        if project_store == "file":
+            bad = {server: machine_specific(desired_mcps[server], home, layout.root) for server in wanted}
+            bad = {server: fields for server, fields in bad.items() if fields}
+            if bad:
+                raise core.AgentPackError(
+                    "MCP entries that depend on this machine cannot be written to the project file .mcp.json "
+                    "(use --project-store local or declare them user-level): "
+                    + "; ".join(f"{server} ({', '.join(fields)})" for server, fields in sorted(bad.items())))
+        current_servers = local_servers if project_store == "local" else file_servers
+        for server in wanted:
+            if problem:
+                operations.append({"action": "skip-mcp", "name": server, "to": target_path,
+                                   "scope": "project", "store": target_store})
+                skipped.append({"kind": "mcp", "name": server, "client": "claude", "reason": problem})
+                continue
+            state_name, entry, kept = classify_mcp(desired_mcps[server], current_servers.get(server),
+                                                   reset=reset_overrides or project_store == "file")
+            if state_name == "differ":
+                if mcp_places.get(server) == place and server in owned_project_mcps:
+                    state_name = "update"
+                else:
+                    state_name = "conflict"
+                    conflicts.append(f"project-mcp {server}: {target_path}")
+            if kept:
+                overrides.append({"name": server, "keys": kept})
+            operations.append({"action": f"{state_name}-project-mcp", "name": server, "to": target_path,
+                               "keys": kept, "scope": "project", "store": target_store, "_entry": entry})
             if server in existing:
-                narrowing.append(scoping.narrowing_entry("mcp", server, scoping.USER_MCP, scoping.LOCAL_MCP, others))
+                narrowing.append(scoping.narrowing_entry("mcp", server, scoping.USER_MCP, target_store, others)
+                                 | {"manual": f"claude mcp remove --scope user {server}"})
+        for server in sorted(owned_project_mcps - set(desired_mcps) if sync_mcps else ()):
+            if mcp_places.get(server) == place and server in current_servers and not problem:
+                operations.append({"action": "remove-project-mcp", "name": server, "to": target_path,
+                                   "scope": "project", "store": target_store, "reason": "no longer in project"})
 
     client_inventory = core.inventory_client("claude", home)
     actual_skills = {item.name: Path(item.path) for item in client_inventory.skills}
@@ -452,8 +604,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     carried_mcps = sorted(server for server in project_mcps & owned_mcps if server in existing)
     undeclared = sorted((set(layout.mcp_scope) - set(desired_mcps) - set(item.name for item in authority.mcps))
                         | (set(layout.skill_scope) - desired_skills - set(item.name for item in authority.skills)))
-    return {"name": name, "aware": aware, "scope": scope, "do_user": do_user, "do_project": do_project,
-            "skipped": skipped, "narrowing": narrowing,
+    return {"name": name, "aware": aware, "scope": scope, "do_user": do_user, "do_project": do_project, "skipped": skipped, "narrowing": narrowing,
             "others": others, "undeclared": undeclared,
             "state_skills": state_skills, "carried_mcps": carried_mcps,
             "scope_counts": {"user": {"skills": len(desired_skills - project_skills) if sync_skills and do_user else 0,
@@ -472,7 +623,8 @@ def _public(operations: list[dict[str, Any]], aware: bool = False) -> list[dict[
               | {"client": "claude"} for item in operations]
     if aware:   # scope and store only appear once a project declares a scope (older output stays byte-identical)
         for item in result:
-            item.update(_scope_of_operation(item))
+            for key, value in _scope_of_operation(item).items():
+                item.setdefault(key, value)
     return result
 
 
@@ -481,6 +633,8 @@ def _scope_of_operation(item: dict[str, Any]) -> dict[str, str]:
     if action.endswith("-skill") and action.startswith("skip-"):
         return {"scope": "project", "store": scoping.PROJECT_SKILLS}
     if action.startswith("skip-") and action.endswith("-mcp"):
+        return {"scope": "project", "store": scoping.LOCAL_MCP}
+    if action.endswith("-project-mcp"):
         return {"scope": "project", "store": scoping.LOCAL_MCP}
     if action.endswith("-mcp"):
         return {"scope": "user", "store": scoping.USER_MCP}
@@ -494,7 +648,8 @@ def _scope_of_operation(item: dict[str, Any]) -> dict[str, str]:
 def _conflict_summary(conflicts: list[str]) -> dict[str, int]:
     """Conflicts counted per type; a conflict string starts with ``skill`` or ``mcp``."""
     counts = {"skills": sum(1 for item in conflicts if item.startswith("skill ")),
-              "mcp": sum(1 for item in conflicts if item.startswith("mcp "))}
+              "mcp": sum(1 for item in conflicts if item.startswith("mcp ")),
+              "project_mcp": sum(1 for item in conflicts if item.startswith("project-mcp "))}
     return {key: number for key, number in counts.items() if number}
 
 
@@ -507,6 +662,8 @@ def _global_warnings(home: Path, summary: dict[str, int]) -> list[str]:
     if summary.get("mcp"):
         warnings.append(f"replaces {summary['mcp']} user-scope MCP entr{'y' if summary['mcp'] == 1 else 'ies'} in "
                         f"{core._claude_user_config(home)}; they apply to every project (the replaced originals go to recovery)")
+    if summary.get("project_mcp"):
+        warnings.append(scoping.project_replace_warning(summary["project_mcp"]))
     return warnings
 
 
@@ -514,7 +671,8 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
                  reset_overrides: bool = False, recovery_root: Path | None = None,
                  retire_skills: Iterable[str] = (), retire_plugins: Iterable[str] = (),
                  retire_only: bool = False, only: Iterable[str] | None = None,
-                 replace_mcp: bool = False, replace_skills: bool = False, scope: str = "all") -> dict[str, Any]:
+                 replace_mcp: bool = False, replace_skills: bool = False, scope: str = "all",
+                 project_store: str = "local") -> dict[str, Any]:
     home = (home or Path.home()).expanduser().resolve()
     try:
         scope = scoping.normalize_scope(scope)
@@ -531,9 +689,9 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
             package_root(home, name), built, types, Path(temporary))
         plan = plan_project(project, home, built=built, reset_overrides=reset_overrides,
                             retire_skills=retire_skills, retire_plugins=retire_plugins, retire_only=retire_only,
-                            only=types, package_tree=tree, scope=scope)
+                            only=types, package_tree=tree, scope=scope, project_store=project_store)
         blocking = [item for item in plan["conflicts"]
-                    if not (replace or (replace_mcp and item.startswith("mcp ")) or
+                    if not (replace or (replace_mcp and item.startswith(("mcp ", "project-mcp "))) or
                             (replace_skills and item.startswith("skill ")))]
         if blocking:
             raise core.AgentPackError("Claude client already has different content not installed by this package "
@@ -574,15 +732,65 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
         return result
 
 
-def _scopes_record(plan: dict[str, Any], before: dict[str, Any], mcp_state: dict[str, str], only: set[str]) -> dict[str, Any]:
-    """``scopes``: where each owned entry actually sits. Written only once a project declares a scope; a state
-    without it reads as all ``user``."""
+def _project_hashes(state: dict[str, Any]) -> dict[str, str]:
+    scopes = state.get("scopes")
+    value = scopes.get("project_hashes") if isinstance(scopes, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _final_mcp_state(plan: dict[str, Any], before: dict[str, Any], user: dict[str, str], project: dict[str, tuple[str, str]],
+                     removed: set[str]) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    """Owned MCP entries after an apply: ``(user-level name -> hash, project-level name -> (hash, place))``.
+
+    The user-level part goes to the pre-existing ``mcps`` key, the project-level part only to ``scopes``. A scope the
+    plan did not handle (``--scope``) keeps what the previous state recorded for it.
+    """
+    old_user = before.get("mcps") if isinstance(before.get("mcps"), dict) else {}
+    users = dict(user) if plan["do_user"] else dict(old_user)
+    projects: dict[str, tuple[str, str]] = {}
+    old_hashes = _project_hashes(before)
+    for name, place in _state_scopes(before, "mcps").items():
+        if place != "user" and name not in removed and name not in project:
+            projects[name] = (old_hashes.get(name, ""), place)   # the plan left it alone (skipped, other store, other scope)
+    if plan["do_project"]:
+        projects.update(project)
+    return users, projects
+
+
+def _scopes_record(plan: dict[str, Any], before: dict[str, Any], skills: dict[str, str] | None,
+                   mcps: tuple[dict[str, str], dict[str, tuple[str, str]]] | None) -> dict[str, Any]:
+    """``scopes``: where each owned entry actually sits, and the hashes of the project-level MCP entries. Written
+    only once a project declares a scope; a state without it reads as all ``user``."""
     if not plan["aware"] and "scopes" not in before:
         return {}
     old = before.get("scopes") if isinstance(before.get("scopes"), dict) else {}
-    skills = {item: "user" for item in plan["state_skills"]} if "skills" in only else dict(old.get("skills", {}))
-    mcps = {item: "user" for item in mcp_state} if "mcp" in only else dict(old.get("mcps", {}))
-    return {"scopes": {"skills": skills, "mcps": mcps}}
+    if mcps is None:
+        places, hashes = dict(old.get("mcps", {})), dict(old.get("project_hashes", {}))
+    else:
+        users, projects = mcps
+        places = {name: "user" for name in users} | {name: place for name, (_digest, place) in projects.items()}
+        hashes = {name: digest for name, (digest, _place) in projects.items()}
+    return {"scopes": {"skills": dict(skills) if skills is not None else dict(old.get("skills", {})),
+                       "mcps": places, "project_hashes": hashes}}
+
+
+def _restore_bytes(path: Path, data: bytes | None, mode: int) -> None:
+    """Put a file back exactly as it was (or remove it when it did not exist)."""
+    if data is None:
+        if path.exists() or path.is_symlink():
+            path.unlink()
+        return
+    descriptor, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp_name, mode)
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
 
 
 def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | None) -> Path:
@@ -596,6 +804,12 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
     config = _read_config(home)
     original_config = json.loads(json.dumps(config))
     config_written = False
+    config_bytes = config_path.read_bytes() if config_path.is_file() else None
+    config_mode = stat.S_IMODE(config_path.stat().st_mode) if config_path.is_file() else 0o600
+    project_file = _project_file(plan["layout"].root)
+    file_bytes = project_file.read_bytes() if project_file.is_file() else None
+    file_mode = stat.S_IMODE(project_file.stat().st_mode) if project_file.is_file() else 0o644
+    file_written = False
     moved: list[tuple[Path, Path]] = []   # (archived, original)
     created: list[Path] = []
     actions = {(item["action"], item["name"]): item for item in plan["operations"]}
@@ -642,8 +856,8 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
             if action == "archive-plugin":
                 archive(Path(item["from"]), "plugins", item_name)
         # A sync that does not include mcp never opens ~/.claude.json for writing (#68).
-        user_mcp_ops = any(item["action"].endswith("-mcp") and not item["action"].startswith("skip-")
-                           for item in plan["operations"])
+        user_mcp_ops = any(item["action"].endswith("-mcp") and not item["action"].endswith("-project-mcp")
+                           and not item["action"].startswith("skip-") for item in plan["operations"])
         # (a scope-aware plan with no user-level MCP operation leaves ~/.claude.json's user section alone)
         servers = (config.setdefault("mcpServers", {})
                    if "mcp" in plan["only"] and plan["do_user"] and (user_mcp_ops or not plan["aware"]) else {})
@@ -661,10 +875,53 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
                 replaced[server] = servers.pop(server)
         if replaced:
             core._write_json_atomic(transaction / "replaced-mcp.json", {"mcpServers": replaced}, mode=0o600)
+        # Project-level entries: Claude local (inside ~/.claude.json, written with the user-level change in one
+        # atomic replace) and the project file .mcp.json.
+        project_state: dict[str, tuple[str, str]] = {}
+        removed_project: set[str] = set()
+        local_set: dict[str, Any] = {}
+        file_set: dict[str, Any] = {}
+        local_drop: set[str] = set()
+        file_drop: set[str] = set()
+        for item in plan["operations"]:
+            action, server = item["action"], item["name"]
+            if action in PROJECT_ACTIONS:
+                local = item["store"] == scoping.LOCAL_MCP
+                project_state[server] = (hashlib.sha256(json.dumps(item["_entry"], sort_keys=True).encode("utf-8")).hexdigest(),
+                                         "project:local" if local else "project:file")
+                if not action.startswith("keep-"):
+                    (local_set if local else file_set)[server] = item["_entry"]
+            elif action == "remove-project-mcp":
+                removed_project.add(server)
+                (local_drop if item["store"] == scoping.LOCAL_MCP else file_drop).add(server)
+        if local_set or local_drop:
+            key = local_section(config, plan["layout"].root)[0]
+            if key is None:
+                raise core.AgentPackError("claude local MCP store changed shape since the preview")
+            if config_bytes is not None:   # the original file, before any write (it may hold the user's own values)
+                backup = transaction / "claude.json.before"
+                backup.write_bytes(config_bytes)
+                os.chmod(backup, 0o600)
+            section = config.setdefault("projects", {}).setdefault(key, {})
+            local_servers = section.setdefault("mcpServers", {})
+            local_servers.update(local_set)
+            for server in local_drop:
+                local_servers.pop(server, None)
         if config != original_config:
-            mode = stat.S_IMODE(config_path.stat().st_mode) if config_path.exists() else 0o600
-            core._write_json_atomic(config_path, config, mode=mode)
+            core._write_json_atomic(config_path, config, mode=config_mode)
             config_written = True
+        if file_set or file_drop:
+            if file_bytes is not None:
+                backup = transaction / "project-mcp.json.before"
+                backup.write_bytes(file_bytes)
+                os.chmod(backup, 0o600)
+            data = core._read_json(project_file) if file_bytes is not None else {}
+            file_servers = data.setdefault("mcpServers", {})
+            file_servers.update(file_set)
+            for server in file_drop:
+                file_servers.pop(server, None)
+            core._write_json_atomic(project_file, data, mode=file_mode)
+            file_written = True
         for server in plan["carried_mcps"]:   # project-declared, already owned at the user level: keep owning it
             if "mcp" in plan["only"]:
                 mcp_state.setdefault(server, (_read_state(home, name).get("mcps") or {}).get(server)
@@ -673,14 +930,17 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
             # A partial sync records only the types it handled; the others keep their recorded ownership.
             before = _read_state(home, name)
             only = set(plan["only"])
+            final = _final_mcp_state(plan, before, mcp_state, project_state, removed_project) if "mcp" in only else None
+            skills_final = plan["state_skills"] if "skills" in only and plan["do_user"] else before.get("skills", [])
             core._write_json_atomic(state_path(home, name), {
                 "schema_version": STATE_SCHEMA, "package": name,
-                "skills": plan["state_skills"] if "skills" in only else before.get("skills", []),
-                "mcps": mcp_state if "mcp" in only else before.get("mcps", {}),
-                "updated_at": stamp} | _scopes_record(plan, before, mcp_state, only), mode=0o600)
+                "skills": skills_final, "mcps": final[0] if final else before.get("mcps", {}),
+                "updated_at": stamp} | _scopes_record(plan, before, {item: "user" for item in skills_final}, final), mode=0o600)
     except Exception as exc:
         if config_written:
-            core._write_json_atomic(config_path, original_config, mode=0o600)
+            _restore_bytes(config_path, config_bytes, config_mode)
+        if file_written:
+            _restore_bytes(project_file, file_bytes, file_mode)
         for path in reversed(created):
             if path.is_symlink():
                 path.unlink()
@@ -708,11 +968,12 @@ def drift(project: Path, home: Path | None = None) -> dict[str, Any]:
                               "excluded": plan["excluded"], "dangling": [], "coupled": plan["legacy_root"]}
     for item in plan["operations"]:
         action, item_name = item["action"], item["name"]
-        if action in ("install-package", "link-record", "link-skill", "add-mcp"):
+        if action in ("install-package", "link-record", "link-skill", "add-mcp", "add-project-mcp"):
             report["missing"].append(f"{action.split('-')[1]} {item_name}")
-        elif action in ("replace-package", "relink-skill", "conflict-skill", "update-mcp", "conflict-mcp"):
+        elif action in ("replace-package", "relink-skill", "conflict-skill", "update-mcp", "conflict-mcp",
+                        "update-project-mcp", "conflict-project-mcp"):
             report["different"].append(f"{action.split('-')[-1]} {item_name}")
-        elif action in ("remove-skill", "remove-mcp"):
+        elif action in ("remove-skill", "remove-mcp", "remove-project-mcp"):
             report["stale"].append(f"{action.split('-')[1]} {item_name}")
     skills_root = home / ".claude" / "skills"
     if skills_root.is_dir():
