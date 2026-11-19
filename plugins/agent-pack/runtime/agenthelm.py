@@ -2533,6 +2533,17 @@ def parser() -> argparse.ArgumentParser:
                    help=_("用户级设置：界面语言、语言提示、项目文件语言（config show / language / language-hint / project-language；默认只预览）"))
     sub.add_parser("project", add_help=False,
                    help=_("项目自助入口：找资料、看进展、项目指南、检查（不需要 AI Agent；详见 project --help）"))
+    inventory = sub.add_parser("inventory", help=_("只读：列出各客户端能看到的 Skill 与 MCP（存放位置、重复、description 字节数），输出带 schema_version 的稳定 JSON"))
+    inventory.add_argument("--output", choices=("text", "json"), default="text")
+    inventory.add_argument("--client", action="append", choices=("claude", "claude-desktop", "codex", "cursor", "all"),
+                           help=_("只看这个客户端（可重复）；默认 claude、codex、cursor；claude-desktop 须点名或用 all"))
+    inventory.add_argument("--type", choices=("skills", "mcp", "all"), default="all", help=_("只看 Skill 或 MCP；默认全部"))
+    inventory.add_argument("--scope", choices=("project", "user", "all"), default="all", help=_("只看项目级或用户级；默认全部"))
+    inventory.add_argument("--project", type=Path, default=None, help=_("项目目录；默认当前目录"))
+    inventory.add_argument("--include-description", action="store_true",
+                           help=_("在 JSON 里附上 description 文本（截断到 1,536 个字符）；默认不输出"))
+    inventory.add_argument("--lang", choices=("auto", "zh", "en"), help=_("输出语言；默认 AGENTHELM_LANG，再到用户配置与系统语言"))
+    inventory.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     locate_parser = sub.add_parser("locate", help=_("输出插件的已安装位置（最新优先），供下游脚本查找"))
     locate_parser.add_argument("plugin")
     locate_parser.add_argument("--version", help=_("只要这个版本"))
@@ -2652,6 +2663,23 @@ def _print_steps(results: list[dict], apply: bool) -> None:
             print(_("以上为预览；其中有步骤被阻塞（见上），--apply 只执行未被阻塞的步骤，被阻塞的步骤需先按提示处理。"))
         else:
             print(_("以上为预览；确认后追加 --apply 执行。"))
+
+
+def run_inventory(args: argparse.Namespace, env: Env) -> int:
+    """Thin entry: the observation lives in ``agent_pack_inventory`` (read-only, never writes)."""
+    if args.lang and args.lang != "auto":
+        os.environ["AGENTHELM_LANG"] = args.lang
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
+
+    project = (args.project or Path.cwd()).resolve()
+    report = agent_pack_inventory.observe(env.home, project, args.client, args.type, args.scope,
+                                          include_description=args.include_description)
+    if args.output == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        sys.stdout.write(agent_pack_inventory.render_text(report))
+    return 0
 
 
 def run_project(argv: list[str]) -> int:
@@ -2803,6 +2831,8 @@ def main(argv: list[str] | None = None) -> int:
         project = (args.project or Path.cwd()).resolve()
     if args.command == "check" and args.hook:
         return hook(env, project, args.hook_format, latest_source=args.latest, offline=args.offline, clients=args.client)
+    if args.command == "inventory":
+        return run_inventory(args, env)
     if args.command == "locate":
         found = locate(env, args.plugin, args.version, include_legacy=args.include_legacy)
         if args.output == "json":

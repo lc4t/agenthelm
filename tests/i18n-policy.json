@@ -6,6 +6,10 @@
       "plugins/agent-pack/references/nudge.en.md"
     ],
     [
+      "plugins/agent-pack/references/inventory-contract.md",
+      "plugins/agent-pack/references/inventory-contract.en.md"
+    ],
+    [
       "plugins/opinion-manager/references/inbox.md",
       "plugins/opinion-manager/references/inbox.en.md"
     ],

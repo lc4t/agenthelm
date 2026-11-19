@@ -48,6 +48,7 @@ READ_ONLY: dict[str, list[str]] = {
     "agent-pack inventory": ["--source", "project:{project}"],
     "agent-pack doctor": P,
     "agenthelm check": ["--offline", "--no-project"],
+    "agenthelm inventory": P,
     "agenthelm doctor": ["--no-project"],
     "agenthelm locate": ["agents-init"],
     "agenthelm local-only check": P,
@@ -107,7 +108,7 @@ PREVIEW: dict[str, list[str]] = {
     "case update": [*P, "quarterly", "--log", "Preview log", "--dry-run"],
     "sop step": ["missing", "1", "--done"],
     "sop confirm-read": ["missing", "private/input.txt"],
-    "opinion inbox": ["adopt", "cand-none", "--project", "{project}"],  # adopt previews by default; add / decide / present / expire write .opinion/inbox.json at once (covered by the opinion-manager inbox tests)
+    "opinion inbox": ["adopt", "cand-none", "--project", "{project}"],  # adopt previews by default; check and gate --peek are read-only; gate records .opinion/ask-state.json; add / revise / decide / present / expire write .opinion/inbox.json at once (covered by the opinion-manager inbox tests)
 }
 HELP_ONLY: dict[str, str] = {
     "memory": "a single command with flags only; its English output is in the project-orchestrator tests",

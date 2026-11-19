@@ -28,6 +28,29 @@ codex plugin marketplace add lc4t/agenthelm --ref vX.Y.Z-rc.N
 
 验收用的临时项目一律由仓库内的 `release/acceptance/mkfixture.py` 生成，验收提示词不再内嵌生成器。它依赖 `plugins/agent-pack/tests` 里的 `make_project`，该目录不在 npm 包内，因此 `<extracted-package-dir>` 必须是目标 tag 的 **GitHub tarball 解压目录**：`python3 -I release/acceptance/mkfixture.py <kind> <outdir> <extracted-package-dir>`，kind 为 `clean | token | home | multisource | credname | wrapped`，末行打印项目根；参数错误退出码 2。`tests/test_acceptance_fixture.py` 逐个 kind 运行它，防止 `make_project` 接口漂移。各 kind 的用例用途见脚本 docstring。
 
+## 云端先行：验收提示词先在 Linux 沙盒逐字预跑
+
+适用于每一份发给实机验收会话的提示词。目的是在占用实机之前，先发现提示词本身的错误，并让每个用例的预期来自真实输出。
+
+1. **逐字预跑。** 提示词里的每个 bash 块，先在 Linux 沙盒里原样执行：用 `release/acceptance/extract_blocks.py` 把提示词（markdown）里的 bash 块按顺序提成一个脚本，先 `bash -n` 检查语法，再在临时 HOME 下运行。
+
+   ```sh
+   python3 -I release/acceptance/extract_blocks.py <提示词.md> <输出.sh>
+   bash -n <输出.sh>
+   HOME=$(mktemp -d) bash <输出.sh>
+   ```
+
+2. **预期取自真实输出。** 每个用例的「预跑预期（Linux、临时 HOME，非实机）」从这次预跑的真实输出里取，不凭记忆写；与实机无关的部分（如本机路径）用占位说明。
+3. **不一致时先复核环境。** 实机输出与预期不一致，先核对界面语言、`HOME` 是否为临时目录、是否误带了 `python3 -I`，再判断是缺陷还是环境差异。
+4. **提示词的固定约定**（6.13.1 预跑时发现的提示词错误）：
+   - 全程 `export AGENTHELM_LANG=en` 固定输出语言（Mac 默认可能是中文）；涉及中文输出的用例单独设 `zh`。
+   - 命令里不要用 `| head`（Python 会报 BrokenPipe 堆栈），先落盘再取前几行。
+   - `grep` 的模式不要匹配到 usage 行（先看 `--help` 输出再定模式）。
+   - 产品命令不加 `python3 -I`，参数以 `--help` 为准；只有 `release/acceptance/` 下的脚本用 `-I`。
+   - 解压后的目录名带 `-rc.N` 时，`--version` 的标签也带 `-rc.N`；非 rc 目录不带。
+   - 零写入反例（改坏 SHA-256）要在仍落后的安装上做：已更新的 HOME 不会再下载，走不到校验。
+5. **分工。** Claude Code 与 Codex 由 Mac 上的 Claude desktop 会话验收，提示词第 0 步让它按统筹会话的标题联络统筹（只按名称，找不到时把报告写在对话里并保存为 `~/agenthelm-acceptance/<版本>-report.md`）；Cursor 单独一份，由维护者在 Cursor 里执行。
+
 ## 下一个候选版或正式版的实机补测
 
 以下均为**待验收**，本次的夹具与桩客户端测试不替代实机结果。补测结果应记录到发布跟踪 #44，写明操作系统、客户端版本、目标 tag、命令、前后状态与通过/失败证据。

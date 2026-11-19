@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。",
+    "en": "The candidate inbox gains trigger, purpose, exclusion and relation fields (missing ones only warn); the rule line and OPINION.md frame written on adopt follow the project file language. The lock of an en project carries language, which older runtimes cannot read."
+  },
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
