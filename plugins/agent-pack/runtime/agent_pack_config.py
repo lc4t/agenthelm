@@ -1679,6 +1679,7 @@ def reconcile_project(
     replace_mcp: bool = False,
     replace_skills: bool = False,
     scope: str = "all",
+    project_store: str = "local",
 ) -> dict[str, Any]:
     """Reconcile one project package and explicitly selected legacy components.
 
@@ -1698,11 +1699,14 @@ def reconcile_project(
             project, home=home, apply=apply, replace=replace, reset_overrides=reset_overrides,
             recovery_root=recovery_root, retire_skills=retire_skills, retire_plugins=retire_plugins,
             retire_only=retire_only, only=only, replace_mcp=replace_mcp, replace_skills=replace_skills,
-            scope=scope)
+            scope=scope, project_store=project_store)
     import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
 
     if scope != "all":
         raise AgentPackError(f"--scope user|project is supported for the claude client only: {client} has no "
+                             "project-level write yet")
+    if project_store != "local":
+        raise AgentPackError(f"--project-store is supported for the claude client only: {client} has no "
                              "project-level write yet")
 
     if agent_pack_claude.normalize_only(only) != frozenset(agent_pack_claude.SYNC_TYPES) and not retire_only:
@@ -1874,10 +1878,12 @@ def sync_project(
     replace_mcp: bool = False,
     replace_skills: bool = False,
     scope: str = "all",
+    project_store: str = "local",
 ) -> dict[str, Any]:
     return reconcile_project(project, client, home=home, apply=apply, replace=replace,
                              reset_overrides=reset_overrides, recovery_root=recovery_root,
-                             only=only, replace_mcp=replace_mcp, replace_skills=replace_skills, scope=scope)
+                             only=only, replace_mcp=replace_mcp, replace_skills=replace_skills, scope=scope,
+                             project_store=project_store)
 
 
 def _project_scope_skips(layout: ProjectLayout, authority: Inventory, client: str) -> list[dict[str, str]]:
@@ -2109,6 +2115,10 @@ def _add_scope_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--scope", choices=("user", "project", "all"), default="all",
                         help="claude: act on the user-level entries only (user), the entries the project declares "
                              "project-level only (project), or both (all, default). Combines with --only")
+    parser.add_argument("--project-store", choices=("local", "file"), default="local",
+                        help="claude: where project-level MCP entries go: local (~/.claude.json, under the project's "
+                             "path; default) or file (the project's .mcp.json, only for entries that do not depend on "
+                             "this machine)")
     parser.add_argument("--only", action="append", default=[], metavar="TYPE",
                         help="claude: sync only these types (repeat or comma separate): mcp, skills, plugins; "
                              "default is all. plugins = the package and its install record. Other types are left untouched")
@@ -2214,7 +2224,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.project, args.client, home=args.home, apply=args.apply, replace=args.replace,
                 reset_overrides=args.reset_overrides, recovery_root=args.recovery_root,
                 only=args.only, replace_mcp=args.replace_mcp, replace_skills=args.replace_skills,
-                scope=args.scope,
+                scope=args.scope, project_store=args.project_store,
             )
         elif args.command == "bootstrap":
             result = install_plugin(
@@ -2241,7 +2251,7 @@ def main(argv: list[str] | None = None) -> int:
                 replace=args.replace,
                 reset_overrides=args.reset_overrides,
                 only=args.only, replace_mcp=args.replace_mcp, replace_skills=args.replace_skills,
-                scope=args.scope,
+                scope=args.scope, project_store=args.project_store,
             )
         _print(result, args.output)
         return 0 if result.get("ok", True) else 1

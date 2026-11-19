@@ -1,7 +1,7 @@
 """#67 / #82 I-4 (step 1): scope declaration in the Profile, scope-grouped preview, ``--scope`` and ``state.scopes``.
 
-Nothing here writes a project-level store: a project-declared entry is skipped (never written to the user level)
-until the later changes that add Claude local / ``.mcp.json`` / ``.claude/skills``.
+A project-declared entry is never written to the user level. Project-level MCP goes to Claude local (see
+test_project_store_write.py); project-level Skills are still skipped until ``.claude/skills`` is added.
 """
 from __future__ import annotations
 
@@ -129,21 +129,22 @@ class ReproductionOfIssue67(ScopeBase):
         rc, payload, out = self.cli("--apply")
         self.assertEqual(rc, 0, out)
         self.assertNotIn(MCP, self.user_config().get("mcpServers", {}))
+        self.assertIn(MCP, self.user_config()["projects"][str(self.project)]["mcpServers"])
         self.assertFalse((self.home / ".claude" / "skills" / SKILL).exists())
         self.assertFalse((self.home / ".claude" / "skills" / SKILL).is_symlink())
         skips = {(item["action"], item["name"], item["scope"]) for item in payload["operations"]
                  if item["action"].startswith("skip-")}
-        self.assertEqual(skips, {("skip-skill", SKILL, "project"), ("skip-mcp", MCP, "project")})
+        self.assertEqual(skips, {("skip-skill", SKILL, "project")})
         state = self.state()
         self.assertEqual(state["skills"], [])
-        self.assertEqual(state["mcps"], {})
-        self.assertEqual(state["scopes"], {"skills": {}, "mcps": {}})
+        self.assertEqual(list(state["mcps"]), [MCP])
+        self.assertEqual(state["scopes"], {"skills": {}, "mcps": {MCP: "project:local"}})
 
 
 class PreviewTests(ScopeBase):
     def test_preview_equals_apply(self) -> None:
         self.cli("--apply")   # user level first
-        declare(self.project, mcp_scope={MCP: "project"}, skill_scope={SKILL: "project"})
+        declare(self.project, skill_scope={SKILL: "project"})   # skills are still skipped: apply writes nothing
         before = snapshot(self.home)
         rc, preview, out = self.cli()
         self.assertEqual(rc, 0, out)
@@ -164,7 +165,9 @@ class PreviewTests(ScopeBase):
         self.assertTrue((self.home / ".claude" / "skills" / SKILL).is_symlink())
         self.assertEqual({(item["kind"], item["name"], item["status"]) for item in payload["narrowing"]},
                          {("skill", SKILL, "not-applied"), ("mcp", MCP, "not-applied")})
-        self.assertIn(MCP, self.state()["mcps"], "ownership of the user-level entry is kept")
+        mcp_note = next(item for item in payload["narrowing"] if item["kind"] == "mcp")
+        self.assertEqual(mcp_note["manual"], f"claude mcp remove --scope user {MCP}")   # never edited automatically
+        self.assertIn(MCP, self.state()["mcps"], "ownership is kept")
         self.assertIn(SKILL, self.state()["skills"])
 
     def test_narrowing_counts_other_projects_from_state(self) -> None:
@@ -183,7 +186,7 @@ class PreviewTests(ScopeBase):
         self.assertTrue(any("never synced" in item or "未同步" in item for item in payload["warnings"]) or payload["warnings"])
 
     def test_no_narrowing_when_the_entry_is_not_at_the_user_level(self) -> None:
-        declare(self.project, mcp_scope={MCP: "project"})
+        declare(self.project, mcp_scope={MCP: "project"}, skill_scope={SKILL: "project"})
         rc, payload, out = self.cli()
         self.assertEqual(rc, 0, out)
         self.assertEqual(payload["narrowing"], [])
@@ -215,10 +218,10 @@ class PreviewTests(ScopeBase):
                 rc, _, out = self.cli(*flags, output=output)
                 self.assertEqual(rc, 0, out)
                 self.assertNotIn(FAKE_TOKEN, out)
-        recovery = self.recovery
-        for path in recovery.rglob("*") if recovery.exists() else ():
-            if path.is_file():
-                self.assertNotIn(FAKE_TOKEN, path.read_text(errors="ignore"))
+        for path in self.recovery.rglob("*") if self.recovery.exists() else ():
+            # the verbatim backup of the user's own file is the one place their values live (mode 0600)
+            if path.is_file() and path.name != "claude.json.before":
+                self.assertNotIn(FAKE_TOKEN, path.read_text(errors="ignore"), path.name)
         self.assertNotIn(FAKE_TOKEN, json.dumps(self.state()))
 
 
@@ -232,7 +235,7 @@ class ScopeFlagTests(ScopeBase):
         self.assertEqual(user["scope"], "user")
         rc, project, out = self.cli("--scope", "project")
         self.assertEqual(rc, 0, out)
-        self.assertEqual([(item["action"], item["name"]) for item in project["operations"]], [("skip-mcp", MCP)])
+        self.assertEqual([(item["action"], item["name"]) for item in project["operations"]], [("add-project-mcp", MCP)])
 
     def test_scope_user_apply_writes_user_level_and_scopes_in_state(self) -> None:
         rc, payload, out = self.cli("--scope", "user", "--apply")
@@ -241,10 +244,14 @@ class ScopeFlagTests(ScopeBase):
 
     def test_scope_project_never_touches_the_user_level(self) -> None:
         declare(self.project, mcp_scope={MCP: "project"})
-        before = snapshot(self.home)
+        self.cli("--scope", "user", "--apply")
+        carriers = (self.home / ".claude" / "skills", self.home / ".claude" / "agent-pack" / "packages",
+                    self.home / ".claude" / "agent-pack" / "plugins")
+        before = [snapshot(path) for path in carriers]
         rc, payload, out = self.cli("--scope", "project", "--apply")
         self.assertEqual(rc, 0, out)
-        self.assertEqual(before, snapshot(self.home))
+        self.assertEqual(before, [snapshot(path) for path in carriers])
+        self.assertNotIn(MCP, self.user_config().get("mcpServers", {}))
 
     def test_scope_composes_with_only(self) -> None:
         declare(self.project, mcp_scope={MCP: "project"})

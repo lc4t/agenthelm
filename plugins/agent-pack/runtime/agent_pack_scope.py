@@ -122,6 +122,10 @@ def skipped_lines(value: dict[str, Any]) -> list[str]:
 
 
 REASONS = {
+    "local-structure-unrecognized": N_("~/.claude.json 里按项目路径存放的条目结构无法识别，未写入"),
+    "target-not-writable": N_("目标位置不可写，未写入"),
+    "mcp-json-symlink": N_(".mcp.json 是符号链接，未写入"),
+    "mcp-json-unreadable": N_(".mcp.json 无法解析，未写入"),
     "project-write-unavailable": N_("项目级写入尚未提供；不会回退写入用户级"),
     "project-native": N_("Skill 由项目 .agents/skills 原生加载，不写用户级包"),
     "client-project-unsupported": N_("该客户端的项目级 MCP 写入尚未提供；不会回退写入用户级"),
@@ -136,3 +140,7 @@ def skipped_warning(item: dict[str, str]) -> str:
 
 def undeclared_warning(names: list[str]) -> str:
     return _("为项目里不存在的条目声明了作用域：{names}").format(names=", ".join(names))
+
+
+def project_replace_warning(count: int) -> str:
+    return _("替换 {n} 个项目级 MCP 条目；它们只对本项目生效（被替换的原文件进恢复目录）").format(n=count)

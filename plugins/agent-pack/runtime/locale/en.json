@@ -688,5 +688,10 @@
  "该客户端的项目级 MCP 写入尚未提供；不会回退写入用户级": "project-level MCP write for this client is not available yet; it is never written to the user level instead",
  "{kind} {name} 声明为项目级，对 {client} 跳过：{reason}": "{kind} {name} is declared project-level and is skipped for {client}: {reason}",
  "为项目里不存在的条目声明了作用域：{names}": "Scope declared for entries the project does not define: {names}",
- "收窄：{n} 个项目将不再看到 {kind} {name}": "Narrowing: projects other than this one will no longer see {kind} {name} (known on this machine: {n})"
+ "收窄：{n} 个项目将不再看到 {kind} {name}": "Narrowing: projects other than this one will no longer see {kind} {name} (known on this machine: {n})",
+ "~/.claude.json 里按项目路径存放的条目结构无法识别，未写入": "the entries kept under the project's path in ~/.claude.json have an unrecognized structure; nothing was written",
+ "目标位置不可写，未写入": "the target is not writable; nothing was written",
+ ".mcp.json 是符号链接，未写入": ".mcp.json is a symbolic link; nothing was written",
+ ".mcp.json 无法解析，未写入": ".mcp.json cannot be parsed; nothing was written",
+ "替换 {n} 个项目级 MCP 条目；它们只对本项目生效（被替换的原文件进恢复目录）": "Replaces {n} project-level MCP entries; they apply to this project only (the original file goes to recovery)"
 }
