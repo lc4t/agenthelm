@@ -491,9 +491,9 @@ def extensions_screen(provider) -> None:
 def extensions_help() -> str:
     return (S.bold(_("怎么用")) + "\n"
             + _("  1–4 进入只读的清单；输入条目名（或 kind:名@客户端:作用域）看详情；回车返回，q 退出。") + "\n"
-            + _("  这一屏全程只读：不会改任何文件。MCP 只显示名字、作用域、指纹前缀与变量名，不显示命令参数或任何值。") + "\n"
+            + _("  清单与体检只读，不会改任何文件；5、6 与 m / s / d / p 是带预览的写入向导，确认前零写入。MCP 只显示名字、作用域、指纹前缀与变量名，不显示命令参数或任何值。") + "\n"
             + _("  「未知」表示证据不足，不做结论。命令行：extensions list / dups / show / check（--output json）。") + "\n"
-            + _("  例外：5、6 与条目详情里的 m / s / d / p 是写入向导：先预览，输入 yes 才执行，放宽另需键入条目名；命令行：extensions move / dedupe / scope。"))
+            + _("  写入向导先预览，输入 yes 才执行，放宽另需键入条目名；命令行：extensions move / dedupe / scope。"))
 
 
 def _extensions_view(provider, title: str, fetch, render) -> None:

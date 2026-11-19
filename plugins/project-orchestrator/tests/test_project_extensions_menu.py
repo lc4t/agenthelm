@@ -107,7 +107,9 @@ class ExtensionsScreenTests(MenuCase):
 
     def test_help_and_unknown_words(self) -> None:
         _code, text = self.run_menu(self.provider(), ["9", "?", "no-such-entry"])
-        self.assertIn("这一屏全程只读", text)
+        self.assertIn("清单与体检只读", text)
+        self.assertIn("确认前零写入", text)
+        self.assertNotIn("全程只读", text)
         self.assertIn("没有这个条目：no-such-entry", text)
 
     def test_by_client_then_detail_then_back_then_quit(self) -> None:

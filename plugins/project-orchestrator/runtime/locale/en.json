@@ -1642,7 +1642,6 @@
  "技能与 MCP · 按重复看": "Skills & MCP · by duplicate",
  "重复": "Duplicates",
  "\n  输入序号；或输入条目名直接看详情。 ? 帮助 · 回车返回": "\n  Type a number; or type an entry name to see its details. ? help · Enter to go back",
- "  这一屏全程只读：不会改任何文件。MCP 只显示名字、作用域、指纹前缀与变量名，不显示命令参数或任何值。": "  This screen is read-only throughout: it changes no file. MCP servers show only name, scope, fingerprint prefix and variable names, never command arguments or any value.",
  "输入条目名看详情 · 回车返回": "type an entry name for details · Enter to go back",
  "条目": "Entry",
  "序号看这一组的成员详情 · 回车返回": "a number shows the members of that group · Enter to go back",
@@ -1767,5 +1766,6 @@
  "Claude Desktop 的可粘贴片段：": "Claude Desktop paste-ready snippet: ",
  "先用 agenthelm dedupe --list 找到该条目所在的分组": "first find the group of this entry with agenthelm dedupe --list",
  "d 处理这一组重复（先预览） · 回车返回": "d handle this duplicate group (preview first) · Enter goes back",
- "  例外：5、6 与条目详情里的 m / s / d / p 是写入向导：先预览，输入 yes 才执行，放宽另需键入条目名；命令行：extensions move / dedupe / scope。": "  Exception: 5, 6 and m / s / d / p in the entry detail are write wizards: they preview first and run only after you type yes (widening also needs the entry name); command line: extensions move / dedupe / scope."
+ "  清单与体检只读，不会改任何文件；5、6 与 m / s / d / p 是带预览的写入向导，确认前零写入。MCP 只显示名字、作用域、指纹前缀与变量名，不显示命令参数或任何值。": "  Lists and the check are read-only and change no file; 5, 6 and m / s / d / p are write wizards with a preview, and nothing is written before you confirm. MCP shows only names, scopes, fingerprint prefixes and variable names, never command arguments or any value.",
+ "  写入向导先预览，输入 yes 才执行，放宽另需键入条目名；命令行：extensions move / dedupe / scope。": "  Wizards preview first and run only after you type yes (widening also needs the entry name); command line: extensions move / dedupe / scope."
 }
