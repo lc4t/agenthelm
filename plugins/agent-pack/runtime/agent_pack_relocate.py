@@ -25,8 +25,8 @@ import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
-CLIENTS = ("claude", "codex", "cursor")
-# Where a Skill for ``client:scope`` is written. ``codex:user`` / ``cursor:project`` use the shared ``.agents/skills``
+# The one data table of target stores (no per-client branches elsewhere in this module): where a Skill for
+# ``client:scope`` is written. ``codex:user`` / ``cursor:project`` use the shared ``.agents/skills``
 # (decision D-CB11); a Skill already sitting in a store that client reads natively is a zero-write ``native`` plan.
 TARGET_STORE = {
     ("claude", "user"): "~/.claude/skills", ("claude", "project"): f"{inv.PROJECT}/.claude/skills",
@@ -50,7 +50,7 @@ def parse_ref(ref: str) -> tuple[str, str, str, str] | None:
 
 def parse_target(text: str) -> tuple[str, str] | None:
     client, colon, scope = text.partition(":")
-    if colon and client in CLIENTS and scope in RANK:
+    if colon and (client, scope) in TARGET_STORE:
         return client, scope
     return None
 
@@ -79,7 +79,7 @@ def build_plan(home: Path, project: Path, ref: str, to: str, mode: str = "copy",
     elif parsed[0] != "skill":
         blocks.append(ext.blocked("unsupported-kind", _("本版本只处理 Skill；MCP 的写入不在此命令内")))
     if target is None:
-        blocks.append(ext.blocked("invalid-target", _("目标格式应为 <客户端>:<作用域>，客户端为 claude|codex|cursor，作用域为 user|project")))
+        blocks.append(ext.blocked("invalid-target", _("目标格式应为 <客户端>:<作用域>，客户端为 {0}，作用域为 user|project").format("|".join(sorted({client for client, _scope in TARGET_STORE})))))
     if blocks:
         return _finish(plan), ctx
     assert parsed is not None and target is not None

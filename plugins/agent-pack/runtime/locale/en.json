@@ -697,7 +697,7 @@
  "只支持 macOS 与 Linux\n": "Only macOS and Linux are supported\n",
  "--apply 必须带 --expect-plan <计划指纹>（先预览取得）\n": "--apply requires --expect-plan <plan digest> (get it from a preview first)\n",
  "引用格式应为 skill:<名>@<客户端>:<作用域>": "The reference must look like skill:<name>@<client>:<scope>",
- "目标格式应为 <客户端>:<作用域>，客户端为 claude|codex|cursor，作用域为 user|project": "The target must be <client>:<scope>, client one of claude|codex|cursor, scope user|project",
+ "目标格式应为 <客户端>:<作用域>，客户端为 {0}，作用域为 user|project": "The target must be <client>:<scope>, client one of {0}, scope user|project",
  "没有找到这个 Skill 引用": "No Skill matches this reference",
  "需要项目目录，请用 --project 指定": "A project directory is needed; pass --project",
  "源条目没有文件级证据（目录损坏或没有可读的 SKILL.md），只读，不能迁移": "The source has no file-level evidence (broken directory or unreadable SKILL.md); read-only, cannot be relocated",
