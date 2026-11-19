@@ -25,9 +25,10 @@ from typing import Any
 
 import inbox_text as words
 import inbox_relations
+import inbox_routes
 import versioned
 from rule_lines import (GLOBAL_VALUES, RULE_WORDS, candidate_rule, custom_section_lines, is_global,  # noqa: F401
-                        localized_global, parse_line, rule_qualifiers)
+                        localized_global, parse_line, route_problem, rule_qualifiers)
 
 
 STORE = Path(".opinion") / "inbox.json"
@@ -188,6 +189,40 @@ def missing_fields(candidate: dict[str, Any]) -> list[str]:
     return [name for name in REQUIRED_FIELDS if not candidate.get(name)]
 
 
+def route_from_args(args: argparse.Namespace, existing: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """--route-* 参数 -> 路由对象；没有任何 --route-* 参数返回 None（不改变）。revise 时在已有路由上合并。"""
+    skill, when, on = (getattr(args, name, None) for name in ("route_skill", "route_when", "route_on"))
+    final = bool(getattr(args, "route_final", False))
+    if skill is None and when is None and on is None and not final:
+        return None
+    route = {"when": "before", "final": False, "on": "", **(existing or {})}
+    if skill is None and not existing:
+        fail("err_route_need_skill")
+    if skill is not None:
+        route["skill"] = skill.strip()
+    if on is not None:
+        route["on"] = on.strip()
+    if when is not None:
+        route["when"] = when
+        if when != "after" and not final:
+            route["final"] = False
+    if final:
+        route["final"] = True
+        if when is None:
+            route["when"] = "after"
+    problem = route_problem(route)
+    if problem:
+        fail(f"err_route_{problem}", value=route.get(problem) or "")
+    return {key: route[key] for key in ("skill", "when", "final", "on")}
+
+
+def route_warnings(candidate: dict[str, Any], root: Path) -> list[str]:
+    if not candidate.get("route"):
+        return []
+    size = inbox_routes.line_bytes(candidate_rule(candidate, versioned.project_language(root)))
+    return [say("warn_route_long", bytes=size, limit=inbox_routes.MAX_LINE_BYTES)] if size > inbox_routes.MAX_LINE_BYTES else []
+
+
 def next_identity(data: dict[str, Any], moment: datetime) -> str:
     prefix = f"cand-{moment:%Y%m%d}-"
     used = [int(key[len(prefix):]) for key in data["candidates"] if key.startswith(prefix) and key[len(prefix):].isdigit()]
@@ -202,6 +237,9 @@ def add(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     if not scopes:
         fail("err_scope")
     extras = {name: field_value(getattr(args, name, None), name) for name in FIELDS}
+    route = route_from_args(args)
+    if route:
+        extras["route"] = route
     if is_global(extras["trigger"]) and not quote:
         fail("err_global_quote")
     absent = [name for name in REQUIRED_FIELDS if not extras[name]]
@@ -229,6 +267,7 @@ def add(root: Path, args: argparse.Namespace) -> dict[str, Any]:
         save(root, data)
     result = {"ok": True, "status": "added", "id": identity, "state": "pending", "writes_stable_rules": False,
               "complete": not absent, "warnings": [say("warn_missing_fields", fields=say("sep").join(say(f"label_{name}") for name in absent))] if absent else []}
+    result["warnings"] += route_warnings({**extras, "title": title, "text": text, "scopes": scopes}, root)
     if first:
         notice = exposure(root)
         if notice["needs_notice"]:
@@ -252,7 +291,12 @@ def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
         if getattr(args, name, None) is not None:
             changes[name] = field_value(getattr(args, name), name)
     quote = clean(args.quote, "label_quote", MAX_QUOTE, required=False)
-    if not changes and not quote:
+    clearing = bool(getattr(args, "route_clear", False))
+    routing = any(getattr(args, name, None) is not None for name in ("route_skill", "route_when", "route_on")) or bool(getattr(args, "route_final", False))
+    if clearing and routing:
+        fail("err_route_clear_exclusive")
+    routing = routing or clearing
+    if not changes and not quote and not routing:
         fail("err_revise_nothing")
     moment = now()
     with Locked(root) as data:
@@ -261,8 +305,11 @@ def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             fail("err_missing", id=args.ids[0])
         if not (candidate["status"] == "pending" and not candidate["presented"]) and not args.confirmed:
             fail("err_revise_confirm", status=candidate["status"])
-        previous = {name: candidate.get(name, [] if name == "scopes" else "") for name, value in changes.items()
-                    if candidate.get(name, [] if name == "scopes" else "") != value}
+        if routing:
+            changes["route"] = None if clearing else route_from_args(args, candidate.get("route"))
+        blank = lambda name: [] if name == "scopes" else (None if name == "route" else "")  # noqa: E731
+        previous = {name: candidate.get(name, blank(name)) for name, value in changes.items()
+                    if candidate.get(name, blank(name)) != value}
         quotes = list(candidate["quotes"]) + ([quote] if quote and quote not in candidate["quotes"] else [])
         if quotes != candidate["quotes"]:
             previous["quotes"] = list(candidate["quotes"])
@@ -285,7 +332,7 @@ def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
         candidate["history"].append({"at": stamp(moment), "to": candidate["status"], "note": "revised", "previous": previous})
         save(root, data)
         shown = with_relations(candidate, inbox_relations.targets(root, data))
-    warnings = []
+    warnings = route_warnings(candidate, root)
     if candidate["status"] == "formal":
         warnings.append(say("warn_revise_formal"))
     if missing_fields(candidate):
@@ -364,6 +411,9 @@ def fingerprint_input(item: dict[str, Any]) -> list[Any]:
     """采纳指纹里每条候选的输入；没有新字段的旧记录与旧版指纹一致。"""
     base = [item["title"], item["text"], item["scopes"]]
     extras = [item.get(name) or "" for name in ("trigger", "purpose", "exclude")]
+    route = item.get("route")
+    if route:
+        return [item["id"], versioned.digest(base + extras + [route])]
     return [item["id"], versioned.digest(base + extras if any(extras) else base)]
 
 
@@ -609,6 +659,8 @@ def view(candidate: dict[str, Any]) -> dict[str, Any]:
     shown.update({name: candidate.get(name) or "" for name in FIELDS})
     shown["complete"] = not missing_fields(candidate)
     shown["global"] = is_global(candidate.get("trigger") or "")
+    if candidate.get("route"):
+        shown["route"] = candidate["route"]
     return shown
 
 
@@ -630,6 +682,8 @@ def field_lines(item: dict[str, Any]) -> list[str]:
         if value:
             mark = say("global_mark") if name == "trigger" and is_global(value) else ""
             lines.append(say(f"list_{name}", value=value, mark=mark))
+    if item.get("route"):
+        lines.append(say("list_route", value=inbox_routes.route_text(item["route"], say)))
     missing = missing_fields(item)
     if missing:
         lines.append(say("list_incomplete", fields=say("sep").join(say(f"label_{name}") for name in missing)))
@@ -652,6 +706,8 @@ def brief_qualifiers(item: dict[str, Any]) -> str:
     for name in ("trigger", "purpose", "exclude"):
         if item.get(name):
             parts.append(say(f"brief_{name}", value=item[name]))
+    if item.get("route"):
+        parts.append(say("brief_route", value=inbox_routes.route_text(item["route"], say)))
     return say("brief_join").join(parts)
 
 
@@ -690,7 +746,8 @@ def pending(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     items = [{"id": item["id"], "source": "opinion", "kind": "candidate", "title": item["title"],
               "status": item["status"], "created_at": item["created_at"], "last_action_at": item["last_action_at"],
               "age_days": round(days_since(item["last_action_at"], moment), 1), "hint_command": command,
-              **{name: item.get(name) or "" for name in FIELDS}, "complete": not missing_fields(item)}
+              **{name: item.get(name) or "" for name in FIELDS}, "complete": not missing_fields(item),
+              **({"route": item["route"]} if item.get("route") else {})}
              for item in open_items]
     session_items = select(data, ["pending"], args.session, True) if args.session else []
     last_actions = [item["last_action_at"] for item in data["candidates"].values()]
@@ -726,9 +783,17 @@ def brief(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             "pending": waiting, "trial": len(trial)}
 
 
+def routes(root: Path, args: argparse.Namespace) -> dict[str, Any] | str:
+    """只读：路由规则清单与机械检查（inbox routes list）。"""
+    if args.ids not in ([], ["list"]):
+        fail("err_routes_action")
+    result = inbox_routes.listing(root, load(root), versioned.project_language(root), say)
+    return inbox_routes.markdown(result, say) if args.output == "markdown" else result
+
+
 def add_command(subparsers: Any) -> None:
     parser = subparsers.add_parser("inbox", help="Project-private candidate inbox: stash, decide and summarize pending items; only adopt --apply writes OPINION.md, through the full preview and fingerprint")
-    parser.add_argument("action", choices=("add", "list", "decide", "adopt", "present", "expire", "pending", "brief", "exposure", "check", "revise", "gate"))
+    parser.add_argument("action", choices=("add", "list", "decide", "adopt", "present", "expire", "pending", "brief", "exposure", "check", "revise", "gate", "routes"))
     parser.add_argument("ids", nargs="*", help="candidate ids for decide / adopt / present")
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--title")
@@ -739,6 +804,11 @@ def add_command(subparsers: Any) -> None:
     parser.add_argument("--purpose", help="add: why the rule exists (omitting it only warns)")
     parser.add_argument("--exclude", help="add: when the rule does not apply")
     parser.add_argument("--relation", help="add: the agent's own note on how this relates to existing rules; stored and shown verbatim, never interpreted")
+    parser.add_argument("--route-skill", help="add / revise: route this rule to a skill by name (lowercase letters, digits, hyphens; at most 64 characters)")
+    parser.add_argument("--route-when", choices=("before", "after", "instead"), help="add / revise: when to use the routed skill (default before)")
+    parser.add_argument("--route-final", action="store_true", help="add / revise: the routed skill is the last step before delivery (implies --route-when after)")
+    parser.add_argument("--route-on", help="add / revise: a short tag (lowercase letters, digits, hyphens) for mechanical comparison between routes")
+    parser.add_argument("--route-clear", action="store_true", help="revise: remove the whole route (cannot be combined with the other --route-* options)")
     parser.add_argument("--client", help="source client: claude / codex / cursor")
     parser.add_argument("--session", help="source session id; lets the end-of-task confirmation cover only this session's candidates")
     parser.add_argument("--status", help="list: comma-separated status filter")
@@ -777,6 +847,8 @@ def run(args: argparse.Namespace) -> dict[str, Any] | str:
         return check(root, args)
     if args.action == "gate":
         return gate(root, args)
+    if args.action == "routes":
+        return routes(root, args)
     if args.action in ("decide", "adopt", "present", "revise") and not args.ids:
         fail("err_ids")
     if args.action == "adopt":
