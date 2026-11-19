@@ -16,20 +16,15 @@ RUNTIME_DIR = Path(__file__).resolve().parent
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 import agent_pack_ext_common as ext  # noqa: E402
+import agent_pack_inventory as inv  # noqa: E402
 from i18n_agent_pack import _  # noqa: E402
 
 REDACTED = "<redacted>"
-# Official location of the Desktop config (design #82 section 2.3; first-party page not re-read in this change).
-DESKTOP_CONFIG = {
-    "darwin": "~/Library/Application Support/Claude/claude_desktop_config.json",
-    "linux": "~/.config/Claude/claude_desktop_config.json",
-}
 
 
 def config_path(platform: str | None = None) -> str | None:
-    platform = platform or sys.platform
-    return DESKTOP_CONFIG["darwin" if platform == "darwin" else "linux"] if (
-        platform == "darwin" or platform.startswith("linux")) else None
+    """Documented location of ``claude_desktop_config.json`` (the inventory owns the platform table)."""
+    return inv.desktop_store(platform)
 
 
 def placeholder(variable: str) -> str:

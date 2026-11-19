@@ -796,5 +796,6 @@
  "--keep-all 的保留理由（最长 200 个字符，不要写凭据）": "Reason for --keep-all (at most 200 characters; no credentials)",
  "忽略这一组：只写决定文件，可用 --unignore 撤销": "Ignore this group: writes only the decision file; undo with --unignore",
  "撤销对这一组的 --ignore": "Undo --ignore for this group",
- "只读：给出 claude_desktop_config.json 的路径与可粘贴的 mcpServers 片段（不写任何文件）": "Read-only: print the path of claude_desktop_config.json and a paste-ready mcpServers snippet (no file written)"
+ "只读：给出 claude_desktop_config.json 的路径与可粘贴的 mcpServers 片段（不写任何文件）": "Read-only: print the path of claude_desktop_config.json and a paste-ready mcpServers snippet (no file written)",
+ "先自己备份相关配置文件，再手工修改": "Back up the relevant config file yourself first, then edit it by hand"
 }

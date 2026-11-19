@@ -38,6 +38,12 @@ SECRET_LIKE = re.compile(r"(sk-[A-Za-z0-9]{12,}|gh[pousr]_[A-Za-z0-9]{12,}|xox[a
                          r"|[A-Za-z0-9+/_-]{32,}|://[^/\s:@]+:[^/\s@]+@)")
 
 
+# Manual-removal commands per client, as data (no per-client branches in the code): a client without an entry only
+# gets an instruction to delete the entry in its file by hand. ``{scope}`` and ``{name}`` are filled in.
+MANUAL_REMOVE = {"claude": "claude mcp remove --scope {scope} {name}"}
+MANUAL_BACKUP = {"claude": "cp ~/.claude.json ~/.claude.json.bak"}
+
+
 def decisions_path(home: Path) -> Path:
     return home / ".config" / "agenthelm" / "ext-decisions.json"
 
@@ -222,15 +228,18 @@ def _plan_mcp_manual(plan: dict, group: dict, kept: dict, others: list[dict], ho
     for item in others:
         entry: dict[str, Any] = {"ref": item["ref"], "client": item["client"], "scope": item["scope"], "store": item["store"],
                                  "name": item["name"], "not_archivable_by_tool": True, "promise": "cannot-promise"}
-        if item["client"] == "claude":
-            entry["command"] = f"claude mcp remove --scope {item['scope']} {shlex.quote(item['name'])}"
-            entry["backup"] = "cp ~/.claude.json ~/.claude.json.bak"
+        if item["client"] in MANUAL_REMOVE:
+            entry["command"] = MANUAL_REMOVE[item["client"]].format(scope=item["scope"], name=shlex.quote(item["name"]))
+            entry["backup"] = MANUAL_BACKUP[item["client"]]
         else:
             entry["instruction"] = _("手工删除 {0} 里名为 {1} 的 MCP 条目（先自己备份该文件）").format(item["store"], item["name"])
         plan["manual"].append(entry)
         plan["steps"].append(ext.step(f"s{len(plan['steps']) + 1}", "manual-remove-mcp", "cannot-promise", ref=item["ref"]))
     plan["warnings"].append(ext.warning("mcp-not-archivable", _("MCP 副本不可由工具归档：配置文件可能含本地凭据，本工具不编辑它，只给手工命令")))
-    plan["warnings"].append(ext.warning("backup-first", _("先自己备份 ~/.claude.json，再执行下面的命令")))
+    if group["client"] in MANUAL_BACKUP:
+        plan["warnings"].append(ext.warning("backup-first", _("先自己备份 ~/.claude.json，再执行下面的命令")))
+    else:
+        plan["warnings"].append(ext.warning("backup-first", _("先自己备份相关配置文件，再手工修改")))
     if (group.get("effective") or {}).get("evidence") != "file":
         plan["warnings"].append(ext.warning("precedence-unknown", _("哪一份生效官方文档没有给出（或需要读设置），请自行确认后再执行")))
 
