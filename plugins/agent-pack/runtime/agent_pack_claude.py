@@ -208,6 +208,8 @@ def _inside(path: Path, root: Path) -> bool:
 
 PROJECT_STORES = ("local", "file")
 LOCAL_UNRECOGNIZED = "local-structure-unrecognized"
+PROJECT_SKILL_ACTIONS = ("link-project-skill", "copy-project-skill", "relink-project-skill", "refresh-project-skill",
+                         "conflict-project-skill", "keep-project-skill")
 PROJECT_ACTIONS = ("add-project-mcp", "update-project-mcp", "conflict-project-mcp", "keep-project-mcp",
                    "keep-override-project-mcp")
 
@@ -270,6 +272,17 @@ def machine_specific(entry: dict[str, Any], home: Path, root: Path) -> list[str]
         if text.startswith(("/", "~")) or any(anchor and anchor != "/" and anchor in text for anchor in anchors):
             found.append(field)
     return found
+
+
+def _sync_service(root: Path) -> dict[str, Any] | None:
+    """The cloud-sync folder service the project sits in (by path only), or None. A symbolic link inside a synced
+    folder may not survive, so project-level Skills are copied there instead."""
+    try:
+        import local_only  # noqa: PLC0415 - shipped next to this file
+
+        return local_only.detect_service(root, None)
+    except Exception:  # noqa: BLE001 - detection is advisory; never block a sync on it
+        return None
 
 
 def _project_file(root: Path) -> Path:
@@ -426,12 +439,15 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     owned_project_mcps = {server for server in state.get("mcps", {}) if mcp_places.get(server, "user") != "user"}
     owned_mcps = set(state.get("mcps", {})) - owned_project_mcps    # user-level ownership only
     owned_mcps |= {server for server, entry in existing.items() if _references(entry, record)}
-    owned_skills = set(state.get("skills", []))
+    skill_places = _state_scopes(state, "skills")
+    owned_project_skills = {item for item in state.get("skills", []) if skill_places.get(item, "user") != "user"}
+    owned_skills = set(state.get("skills", [])) - owned_project_skills   # user-level ownership only
+    skill_sources = {item.name: Path(item.path) for item in authority.skills}
     project_skills = {item for item in desired_skills if core.declared_scope(layout, "skill", item) == "project"}
     project_mcps = {item for item in desired_mcps if core.declared_scope(layout, "mcp", item) == "project"}
     # Scope fields appear only once the project declares a scope (or --scope is given); older output is unchanged.
     aware = bool(project_skills or project_mcps or layout.mcp_scope or layout.skill_scope
-                 or layout.default_scope != "user") or scope != "all"
+                 or layout.default_scope != "user" or owned_project_skills or owned_project_mcps) or scope != "all"
     do_user, do_project = scope != "project", scope != "user"
 
     operations: list[dict[str, Any]] = []
@@ -443,6 +459,12 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     others = scoping.other_projects(home, name) if aware else []
     narrowing: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
+    migrations: list[dict[str, Any]] = []
+    shadowed: list[dict[str, Any]] = []
+    degraded: list[dict[str, Any]] = []
+    project_skill_places: dict[str, str] = {}
+    retired_project_skills: set[str] = set()
+    retired_user_skills: set[str] = set()
     if not retire_only:
         # The package is the carrier of the other two types, so a partial sync still installs it (composed
         # from what is installed plus the selected parts); the record link follows the package.
@@ -509,14 +531,89 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                                    "reason": "excluded for claude" if server in excluded else "no longer in project"})
 
     if not retire_only and do_project:
-        project_dir = layout.root
+        skills_dir = layout.root / ".claude" / "skills"
+        service = _sync_service(layout.root)
+        mode = "copy" if service else "link"
+        skills_problem = None
+        if (layout.root / ".claude").is_symlink() or skills_dir.is_symlink():
+            skills_problem = "project-skills-symlink"
+        elif not _writable(skills_dir):
+            skills_problem = "target-not-writable"
         for skill in sorted(project_skills if sync_skills else ()):
-            target = project_dir / ".claude" / "skills" / skill
-            operations.append({"action": "skip-skill", "name": skill, "to": str(target)})
-            skipped.append({"kind": "skill", "name": skill, "client": "claude", "reason": "project-write-unavailable"})
-            if (skills_root / skill).is_symlink() or (skills_root / skill).exists():
-                narrowing.append(scoping.narrowing_entry("skill", skill, scoping.USER_SKILLS,
-                                                         scoping.PROJECT_SKILLS, others))
+            path, source = skills_dir / skill, skill_sources.get(skill)
+            base = {"name": skill, "to": str(path), "scope": "project", "store": scoping.PROJECT_SKILLS}
+            reason = skills_problem or (None if source is not None and _inside(source, layout.root)
+                                        else "skill-source-outside-project")
+            if reason:
+                operations.append({"action": "skip-skill", **base})
+                skipped.append({"kind": "skill", "name": skill, "client": "claude", "reason": reason})
+                continue
+            rel = os.path.relpath(source, skills_dir)
+            existing_here = path.is_symlink() or path.exists()
+            ours_here = skill in owned_project_skills
+            if mode == "link":
+                if not existing_here:
+                    action = "link-project-skill"
+                elif path.is_symlink() and (os.readlink(path) == rel or _link_target(path) == source):
+                    action = "keep-project-skill"
+                elif ours_here:
+                    action = "relink-project-skill"
+                else:
+                    action = "conflict-project-skill"
+            else:
+                if not existing_here:
+                    action = "copy-project-skill"
+                elif (not path.is_symlink() and path.is_dir()
+                      and core._tree_fingerprint(path) == core._tree_fingerprint(source)):
+                    action = "keep-project-skill"
+                elif ours_here:
+                    action = "refresh-project-skill"
+                else:
+                    action = "conflict-project-skill"
+            if action == "conflict-project-skill":
+                conflicts.append(f"project-skill {skill}: {path}")
+            operations.append({"action": action, **base, "mode": mode, "_source": source,
+                               **({"target": rel} if mode == "link" else {})})
+            project_skill_places[skill] = f"project:{mode}"
+        if sync_skills and service and any(item.get("mode") == "copy" for item in operations):
+            degraded.append({"kind": "skill", "mode": "copy", "reason": "sync-folder", "service": service.get("id")})
+        for skill in sorted((owned_project_skills - project_skills) if sync_skills else ()):
+            path = skills_dir / skill
+            if not (path.is_symlink() or path.exists()) or skills_problem:
+                continue
+            moved_user = skill in desired_skills and do_user   # declared user-level now: the project copy is retired
+            if skill in desired_skills and not do_user:
+                continue
+            operations.append({"action": "archive-project-skill", "name": skill, "from": str(path),
+                               "scope": "project", "store": scoping.PROJECT_SKILLS,
+                               "reason": "moved to user level" if moved_user else "no longer in project"})
+            retired_project_skills.add(skill)
+            if moved_user:
+                migrations.append(scoping.migration_entry(
+                    "skill", skill, "widen", scoping.PROJECT_SKILLS, scoping.USER_SKILLS,
+                    write_new="link-skill", retire={"action": "archive-project-skill", "path": str(path)}))
+        # user -> project: the user-level link this package made is archived (personal Skills outrank project ones)
+        for skill in sorted(project_skills if sync_skills and do_user else ()):
+            user_path = skills_root / skill
+            if skill not in project_skill_places or not (user_path.is_symlink() or user_path.exists()):
+                continue
+            link = _link_target(user_path)
+            ours_user = link is not None and (_inside(link, package) or (legacy_root is not None and _inside(link, legacy_root)))
+            if not ours_user:   # someone else's Skill of that name: not archived, but it outranks the project one
+                advisory = scoping.skill_shadow(skill)
+                if advisory:
+                    shadowed.append(advisory)
+                continue
+            operations.append({"action": "archive-skill", "name": skill, "from": str(user_path),
+                               "reason": "moved to project level", "scope": "user", "store": scoping.USER_SKILLS})
+            retired_user_skills.add(skill)
+            narrowing.append(scoping.narrowing_entry("skill", skill, scoping.USER_SKILLS, scoping.PROJECT_SKILLS, others)
+                             | {"status": "planned"})
+            migrations.append(scoping.migration_entry(
+                "skill", skill, "narrow", scoping.USER_SKILLS, scoping.PROJECT_SKILLS,
+                write_new=next((item["action"] for item in operations if item["name"] == skill
+                                and item["action"].endswith("-project-skill")), "skip-skill"),
+                retire={"action": "archive-skill", "path": str(user_path)}))
         local_key, local_servers, local_problem = local_section(config, layout.root)
         file_path = _project_file(layout.root)
         file_servers, file_problem = _read_project_file(file_path)
@@ -561,8 +658,15 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             operations.append({"action": f"{state_name}-project-mcp", "name": server, "to": target_path,
                                "keys": kept, "scope": "project", "store": target_store, "_entry": entry})
             if server in existing:
+                command = f"claude mcp remove --scope user {server}"
                 narrowing.append(scoping.narrowing_entry("mcp", server, scoping.USER_MCP, target_store, others)
-                                 | {"manual": f"claude mcp remove --scope user {server}"})
+                                 | {"manual": command})
+                migrations.append(scoping.migration_entry(
+                    "mcp", server, "narrow", scoping.USER_MCP, target_store, write_new=f"{state_name}-project-mcp",
+                    retire={"action": "manual", "command": command}))
+                advisory = scoping.mcp_shadow(server, project_store)
+                if advisory:
+                    shadowed.append(advisory)
         for server in sorted(owned_project_mcps - set(desired_mcps) if sync_mcps else ()):
             if mcp_places.get(server) == place and server in current_servers and not problem:
                 operations.append({"action": "remove-project-mcp", "name": server, "to": target_path,
@@ -595,14 +699,23 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     if retire_only and not (retire_skills or retire_plugins):
         raise core.AgentPackError("retire-only reconcile needs at least one --retire-skill or --retire-plugin")
 
+    if sync_mcps and do_user and do_project:   # project -> user: the old project-level entry is not edited, only named
+        for server in sorted(owned_project_mcps & (set(desired_mcps) - project_mcps)):
+            place = mcp_places.get(server)
+            command = "claude mcp remove --scope " + ("local" if place == "project:local" else "project") + f" {server}"
+            migrations.append(scoping.migration_entry(
+                "mcp", server, "widen", scoping.LOCAL_MCP if place == "project:local" else scoping.FILE_MCP,
+                scoping.USER_MCP, write_new="add-mcp", retire={"action": "manual", "command": command}))
     native = sorted(server for server in existing if server not in desired_mcps and server not in owned_mcps)
     # What the state records as owned: what this plan puts at the user level, plus project-declared entries that
     # already sit there under this package's ownership (they stay until a later change moves them).
-    state_skills = sorted((desired_skills - project_skills) | (project_skills & owned_skills))
+    state_skills = sorted((desired_skills - project_skills) | ((project_skills & owned_skills) - retired_user_skills))
     carried_mcps = sorted(server for server in project_mcps & owned_mcps if server in existing)
     undeclared = sorted((set(layout.mcp_scope) - set(desired_mcps) - set(item.name for item in authority.mcps))
                         | (set(layout.skill_scope) - desired_skills - set(item.name for item in authority.skills)))
-    return {"name": name, "aware": aware, "scope": scope, "do_user": do_user, "do_project": do_project, "skipped": skipped, "narrowing": narrowing,
+    return {"name": name, "aware": aware, "scope": scope, "do_user": do_user, "do_project": do_project,
+            "migrations": migrations, "shadowed": shadowed, "degraded": degraded,
+            "project_skill_places": project_skill_places, "retired_project_skills": sorted(retired_project_skills), "skipped": skipped, "narrowing": narrowing,
             "others": others, "undeclared": undeclared,
             "state_skills": state_skills, "carried_mcps": carried_mcps,
             "scope_counts": {"user": {"skills": len(desired_skills - project_skills) if sync_skills and do_user else 0,
@@ -628,7 +741,7 @@ def _public(operations: list[dict[str, Any]], aware: bool = False) -> list[dict[
 
 def _scope_of_operation(item: dict[str, Any]) -> dict[str, str]:
     action = item["action"]
-    if action.endswith("-skill") and action.startswith("skip-"):
+    if action.endswith("-project-skill") or (action.endswith("-skill") and action.startswith("skip-")):
         return {"scope": "project", "store": scoping.PROJECT_SKILLS}
     if action.startswith("skip-") and action.endswith("-mcp"):
         return {"scope": "project", "store": scoping.LOCAL_MCP}
@@ -647,7 +760,8 @@ def _conflict_summary(conflicts: list[str]) -> dict[str, int]:
     """Conflicts counted per type; a conflict string starts with ``skill`` or ``mcp``."""
     counts = {"skills": sum(1 for item in conflicts if item.startswith("skill ")),
               "mcp": sum(1 for item in conflicts if item.startswith("mcp ")),
-              "project_mcp": sum(1 for item in conflicts if item.startswith("project-mcp "))}
+              "project_mcp": sum(1 for item in conflicts if item.startswith("project-mcp ")),
+              "project_skills": sum(1 for item in conflicts if item.startswith("project-skill "))}
     return {key: number for key, number in counts.items() if number}
 
 
@@ -662,6 +776,8 @@ def _global_warnings(home: Path, summary: dict[str, int]) -> list[str]:
                         f"{core._claude_user_config(home)}; they apply to every project (the replaced originals go to recovery)")
     if summary.get("project_mcp"):
         warnings.append(scoping.project_replace_warning(summary["project_mcp"]))
+    if summary.get("project_skills"):
+        warnings.append(scoping.project_skills_replace_warning(summary["project_skills"]))
     return warnings
 
 
@@ -690,7 +806,7 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
                             only=types, package_tree=tree, scope=scope, project_store=project_store)
         blocking = [item for item in plan["conflicts"]
                     if not (replace or (replace_mcp and item.startswith(("mcp ", "project-mcp "))) or
-                            (replace_skills and item.startswith("skill ")))]
+                            (replace_skills and item.startswith(("skill ", "project-skill "))))]
         if blocking:
             raise core.AgentPackError("Claude client already has different content not installed by this package "
                                       "(use --replace, or --replace-mcp / --replace-skills for one type; "
@@ -712,9 +828,19 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
             result["by_scope"] = plan["scope_counts"]
             result["narrowing"] = plan["narrowing"]
             result["skipped"] = plan["skipped"]
+            if plan["migrations"]:
+                result["migrations"] = plan["migrations"]
+            if plan["shadowed"]:
+                result["shadowed"] = plan["shadowed"]
+            if plan["degraded"]:
+                result["degraded"] = plan["degraded"]
             notes = [scoping.narrowing_note()] if plan["narrowing"] else []
             if plan["undeclared"]:
                 notes.append(scoping.undeclared_warning(plan["undeclared"]))
+            notes += [scoping.widen_warning(item["kind"], item["name"]) for item in plan["migrations"]
+                      if item["direction"] == "widen"]
+            notes += [scoping.sync_folder_warning(item["service"]) for item in plan["degraded"]]
+            notes += [scoping.shadow_warning(item) for item in plan["shadowed"]]
             if notes:
                 result["warnings"] = [*result.get("warnings", []), *notes]
         if plan["residuals"]:
@@ -755,14 +881,36 @@ def _final_mcp_state(plan: dict[str, Any], before: dict[str, Any], user: dict[st
     return hashes, places
 
 
-def _scopes_record(plan: dict[str, Any], before: dict[str, Any], skills: list[str], places: dict[str, str] | None) -> dict[str, Any]:
+def _final_skill_state(plan: dict[str, Any], before: dict[str, Any]) -> dict[str, str]:
+    """Owned Skills after an apply and where each sits (name -> ``user`` | ``project:link`` | ``project:copy``).
+
+    A scope the plan did not handle (``--scope``) keeps what the previous state recorded for it.
+    """
+    old_places = _state_scopes(before, "skills")
+    retired = set(plan["retired_project_skills"])
+    places: dict[str, str] = {}
+    for name in before.get("skills", []):
+        place = old_places.get(name, "user")
+        handled = plan["do_user"] if place == "user" else plan["do_project"]
+        if not handled or (place != "user" and name not in retired and name not in plan["project_skill_places"]):
+            places[name] = place
+    if plan["do_user"]:
+        for name in plan["state_skills"]:
+            places[name] = "user"
+    if plan["do_project"]:
+        places.update(plan["project_skill_places"])
+    return places
+
+
+def _scopes_record(plan: dict[str, Any], before: dict[str, Any], skills: dict[str, str] | None,
+                   places: dict[str, str] | None) -> dict[str, Any]:
     """``scopes``: where each owned entry actually sits. Written only once a project declares a scope; a state
     without it reads as all ``user``."""
     if not plan["aware"] and "scopes" not in before:
         return {}
     old = before.get("scopes") if isinstance(before.get("scopes"), dict) else {}
-    mcps = dict(places) if places is not None else dict(old.get("mcps", {}))
-    return {"scopes": {"skills": {item: "user" for item in skills}, "mcps": mcps}}
+    return {"scopes": {"skills": dict(skills) if skills is not None else dict(old.get("skills", {})),
+                       "mcps": dict(places) if places is not None else dict(old.get("mcps", {}))}}
 
 
 def _restore_bytes(path: Path, data: bytes | None, mode: int) -> None:
@@ -803,6 +951,7 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
     file_written = False
     moved: list[tuple[Path, Path]] = []   # (archived, original)
     created: list[Path] = []
+    made_dirs: list[Path] = []
     actions = {(item["action"], item["name"]): item for item in plan["operations"]}
 
     def archive(path: Path, bucket: str, item_name: str) -> None:
@@ -810,6 +959,15 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
         archived.parent.mkdir(parents=True, exist_ok=True)
         os.replace(path, archived)
         moved.append((archived, path))
+
+    def ensure_dir(directory: Path) -> None:
+        missing = []
+        probe = directory
+        while not probe.exists() and probe != probe.parent:
+            missing.append(probe)
+            probe = probe.parent
+        directory.mkdir(parents=True, exist_ok=True)
+        made_dirs.extend(missing)
 
     def link(path: Path, target: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -844,6 +1002,20 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
                     archive(path, "replaced-skills" if action != "archive-skill" else "skills", item_name)
             if action in ("link-skill", "relink-skill", "conflict-skill"):
                 link(Path(item["to"]), package / "skills" / item_name)
+            if action in ("relink-project-skill", "refresh-project-skill", "conflict-project-skill"):
+                path = Path(item["to"])
+                if path.is_symlink() or path.exists():
+                    archive(path, "replaced-project-skills", item_name)
+            if action == "archive-project-skill":
+                archive(Path(item["from"]), "project-skills", item_name)
+            if action in PROJECT_SKILL_ACTIONS and not action.startswith("keep-"):
+                path = Path(item["to"])
+                ensure_dir(path.parent)
+                if item["mode"] == "link":
+                    os.symlink(item["target"], path, target_is_directory=True)
+                else:
+                    core._copy_skill(item["_source"], path, allowed_root=plan["layout"].root)
+                created.append(path)
             if action == "archive-plugin":
                 archive(Path(item["from"]), "plugins", item_name)
         # A sync that does not include mcp never opens ~/.claude.json for writing (#68).
@@ -923,11 +1095,12 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
             only = set(plan["only"])
             final_mcps, places = _final_mcp_state(plan, before, mcp_state, project_state, removed_project) \
                 if "mcp" in only else (before.get("mcps", {}), None)
-            skills_final = plan["state_skills"] if "skills" in only and plan["do_user"] else before.get("skills", [])
+            skill_places_final = _final_skill_state(plan, before) if "skills" in only else None
+            skills_final = sorted(skill_places_final) if skill_places_final is not None else before.get("skills", [])
             core._write_json_atomic(state_path(home, name), {
                 "schema_version": STATE_SCHEMA, "package": name,
                 "skills": skills_final, "mcps": final_mcps,
-                "updated_at": stamp} | _scopes_record(plan, before, skills_final, places), mode=0o600)
+                "updated_at": stamp} | _scopes_record(plan, before, skill_places_final, places), mode=0o600)
     except Exception as exc:
         if config_written:
             _restore_bytes(config_path, config_bytes, config_mode)
@@ -942,6 +1115,11 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
             if (archived.exists() or archived.is_symlink()) and not (original.exists() or original.is_symlink()):
                 original.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(archived, original)
+        for directory in made_dirs:   # deepest first: the list was built from the leaf upwards
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
         raise core.AgentPackError(f"claude sync rolled back: {exc}") from exc
     return transaction
 
@@ -960,12 +1138,14 @@ def drift(project: Path, home: Path | None = None) -> dict[str, Any]:
                               "excluded": plan["excluded"], "dangling": [], "coupled": plan["legacy_root"]}
     for item in plan["operations"]:
         action, item_name = item["action"], item["name"]
-        if action in ("install-package", "link-record", "link-skill", "add-mcp", "add-project-mcp"):
+        if action in ("install-package", "link-record", "link-skill", "add-mcp", "add-project-mcp",
+                      "link-project-skill", "copy-project-skill"):
             report["missing"].append(f"{action.split('-')[1]} {item_name}")
         elif action in ("replace-package", "relink-skill", "conflict-skill", "update-mcp", "conflict-mcp",
-                        "update-project-mcp", "conflict-project-mcp"):
+                        "update-project-mcp", "conflict-project-mcp", "relink-project-skill",
+                        "refresh-project-skill", "conflict-project-skill"):
             report["different"].append(f"{action.split('-')[-1]} {item_name}")
-        elif action in ("remove-skill", "remove-mcp", "remove-project-mcp"):
+        elif action in ("remove-skill", "remove-mcp", "remove-project-mcp", "archive-project-skill"):
             report["stale"].append(f"{action.split('-')[1]} {item_name}")
     skills_root = home / ".claude" / "skills"
     if skills_root.is_dir():
@@ -978,6 +1158,8 @@ def drift(project: Path, home: Path | None = None) -> dict[str, Any]:
             if text.startswith(str(record) + os.sep) and not Path(text).exists():
                 report["dangling"].append(f"mcp {server}: {text}")
                 break
+    if plan["shadowed"]:   # advisory only: never part of in_sync
+        report["advisories"] = plan["shadowed"]
     report["in_sync"] = not (report["missing"] or report["different"] or report["stale"]
                              or report["dangling"] or report["coupled"])
     return report

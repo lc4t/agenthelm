@@ -266,14 +266,5 @@ class CarrierTests(ProjectStoreBase):
         self.assertIn("agent-pack/plugins/proj-a", self.local()[MCP]["args"][0])
 
 
-class OtherSkillsStillSkippedTests(ProjectStoreBase):
-    def test_project_skills_are_still_skipped(self) -> None:
-        declare(self.project, skill_scope={SKILL: "project"})
-        rc, payload, out = self.cli("--apply")
-        self.assertEqual(rc, 0, out)
-        self.assertFalse((self.home / ".claude" / "skills" / SKILL).exists())
-        self.assertIn(("skip-skill", SKILL), {(item["action"], item["name"]) for item in payload["operations"]})
-
-
 if __name__ == "__main__":
     unittest.main()
