@@ -115,6 +115,16 @@ v6.5.0 之前初始化的项目没有 `.agents/moe.sakanano.agent-pack/content.l
 
 对下游的说明：发布条目（`release/migrations.json`）现在带 `user_action_required`、`touches`、`default_for_existing`、`template_changes`，可据此判断一次升级对你的项目意味着什么；`CHANGELOG.md` 的“不兼容点与注意”仍是完整清单。
 
+## 6.14.0：技能与 MCP 管理、观点字段与项目文件语言
+
+**不要求任何项目做动作**：不改也能继续使用，Profile 新键都是可选的，不写则行为不变。
+
+1. **只有以前用 `--language en` 生成的项目**会在 `agenthelm check` 里看到「模板有更新」：它们的根目录启动器（默认 `./menu`）当时仍是中文版。先 `agenthelm check` 看差异，再 `agenthelm fix update-content` 预览（默认不写入），确认后加 `--apply` 整份替换为英文启动器（替换前备份；你改过启动器时该文件被阻止，逐文件选择 `--keep`、`--merge` 或 `--accept`）。已有的 `private/.gitignore` 不会被改写。`language=zh` 或缺省的项目不受影响。内容包 `agents-init/project-contract` 因此升版。
+2. **多台机器共用同一项目时**：`language: en` 的项目，`opinion.lock.json` 带 `"language": "en"`，**旧运行时读不了带该键的锁**。先升级所有机器的运行时（`agenthelm update --apply` 或 `agenthelm runtime install --apply`），再在任一台上写入或采纳规则。`zh` 项目的锁格式不变。
+3. **Profile 新键（可选）**：`capabilities.default_scope`、`mcp_scope`、`skill_scope` 声明条目只对本项目生效，并与 `sync` / `reconcile --scope` 配合；不声明就与以前完全一致。旧运行时忽略这些键。详见 [capability-config.md](plugins/agent-pack/references/capability-config.md)。
+4. **新命令（只读或默认预览）**：`agenthelm inventory`、`agenthelm clients`、`agenthelm relocate`、`agenthelm dedupe`、`agenthelm project extensions …` 与菜单第 9 屏「技能与 MCP」，入口见 [README「技能与 MCP 管理」](README.md#技能与-mcp-管理)。Claude Desktop 本版只读；`clients.d` 用户声明文件只校验、不执行。
+5. **opinion-manager**：候选与规则新增「适用条件 / 目的 / 不适用于 / 关系备注」，本版缺失只警告、占位词拒绝；已有候选不需要处理，可用 `inbox check` 查看缺项、`inbox revise` 补全。路由到 skill 是软约束，检查命令下个版本提供。公开模板的中英双语内容由维护者另行改写，尚未完成。
+
 ## 项目文件的语言（agents-init 6.9.0）
 
 Project Profile 顶层 `language` 决定工具新写入文件的语言；缺省与旧项目仍为 `zh`。`AGENTHELM_LANG` 仅控制界面，不会改变项目模板、记忆索引或退役标记。`--language en` 新建或接管项目时，入口、规则、空 Opinion、摘要及受管区块均使用英文。实际 Opinion 模板与自定义规则保留原文，不自动翻译用户内容。
