@@ -2535,8 +2535,8 @@ def parser() -> argparse.ArgumentParser:
                    help=_("项目自助入口：找资料、看进展、项目指南、检查（不需要 AI Agent；详见 project --help）"))
     inventory = sub.add_parser("inventory", help=_("只读：列出各客户端能看到的 Skill 与 MCP（存放位置、重复、description 字节数），输出带 schema_version 的稳定 JSON"))
     inventory.add_argument("--output", choices=("text", "json"), default="text")
-    inventory.add_argument("--client", action="append", choices=("claude", "codex", "cursor"),
-                           help=_("只看这个客户端（可重复）；默认全部"))
+    inventory.add_argument("--client", action="append", choices=("claude", "claude-desktop", "codex", "cursor", "all"),
+                           help=_("只看这个客户端（可重复）；默认 claude、codex、cursor；claude-desktop 须点名或用 all"))
     inventory.add_argument("--type", choices=("skills", "mcp", "all"), default="all", help=_("只看 Skill 或 MCP；默认全部"))
     inventory.add_argument("--scope", choices=("project", "user", "all"), default="all", help=_("只看项目级或用户级；默认全部"))
     inventory.add_argument("--project", type=Path, default=None, help=_("项目目录；默认当前目录"))

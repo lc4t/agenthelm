@@ -1,0 +1,408 @@
+{
+ "schema_version": 1,
+ "project": "<project>",
+ "clients": [
+  "claude",
+  "codex",
+  "cursor",
+  "claude-desktop"
+ ],
+ "filters": {},
+ "summary": {
+  "per_client": {}
+ },
+ "duplicates": {
+  "skills": [],
+  "mcps": []
+ },
+ "overlap_hints": [],
+ "unknown": [],
+ "skills": [
+  {
+   "name": "code-review",
+   "client": "claude",
+   "scope": "user",
+   "store": "~/.claude/skills",
+   "evidence": "file",
+   "frontmatter": {
+    "name": "code-review",
+    "description": "Review a pull request for correctness, style and missing tests before merging"
+   },
+   "description_bytes": 312,
+   "description_chars": 312,
+   "skill_md_bytes": 1230,
+   "skill_md_lines": 40,
+   "dir_bytes": 2460,
+   "file_count": 3,
+   "content_sha256": "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4",
+   "is_symlink": false,
+   "name_matches_dir": true,
+   "frontmatter_ok": true,
+   "origin": {
+    "type": "plugin",
+    "id": "example-plugin",
+    "version": "1.4",
+    "latest_known": "1.5",
+    "evidence": "file"
+   },
+   "precedence": "winner"
+  },
+  {
+   "name": "code-review",
+   "client": "claude",
+   "scope": "project",
+   "store": ".claude/skills",
+   "evidence": "file",
+   "frontmatter": {
+    "name": "code-review",
+    "description": "Review a pull request for correctness, style and missing tests before merging"
+   },
+   "description_bytes": 312,
+   "description_chars": 312,
+   "skill_md_bytes": 1230,
+   "skill_md_lines": 40,
+   "dir_bytes": 2460,
+   "file_count": 3,
+   "content_sha256": "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4",
+   "is_symlink": false,
+   "name_matches_dir": true,
+   "frontmatter_ok": true,
+   "origin": {
+    "type": "unknown",
+    "id": null,
+    "version": null,
+    "latest_known": null,
+    "evidence": "unknown"
+   },
+   "precedence": "shadowed",
+   "shadowed_by": {
+    "store": "~/.claude/skills",
+    "rule": "claude-skill-personal-over-project",
+    "evidence": "file",
+    "source_url": "https://code.claude.com/docs/en/skills"
+   }
+  },
+  {
+   "name": "pdf-notes",
+   "client": "claude",
+   "scope": "user",
+   "store": "~/.claude/skills",
+   "evidence": "file",
+   "frontmatter": {
+    "name": "pdf-notes",
+    "description": ""
+   },
+   "description_bytes": 0,
+   "description_chars": 0,
+   "skill_md_bytes": 900,
+   "skill_md_lines": 40,
+   "dir_bytes": 1800,
+   "file_count": 3,
+   "content_sha256": "5e4d3c2b5e4d3c2b5e4d3c2b5e4d3c2b5e4d3c2b5e4d3c2b5e4d3c2b5e4d3c2b",
+   "is_symlink": false,
+   "name_matches_dir": true,
+   "frontmatter_ok": false,
+   "origin": {
+    "type": "unknown",
+    "id": null,
+    "version": null,
+    "latest_known": null,
+    "evidence": "unknown"
+   }
+  },
+  {
+   "name": "long-guide",
+   "client": "claude",
+   "scope": "user",
+   "store": "~/.claude/skills",
+   "evidence": "file",
+   "frontmatter": {
+    "name": "long-guide",
+    "description": ""
+   },
+   "description_bytes": 1800,
+   "description_chars": 1800,
+   "skill_md_bytes": 9000,
+   "skill_md_lines": 620,
+   "dir_bytes": 18000,
+   "file_count": 3,
+   "content_sha256": "7766554477665544776655447766554477665544776655447766554477665544",
+   "is_symlink": false,
+   "name_matches_dir": true,
+   "frontmatter_ok": true,
+   "origin": {
+    "type": "unknown",
+    "id": null,
+    "version": null,
+    "latest_known": null,
+    "evidence": "unknown"
+   }
+  },
+  {
+   "name": "meeting-notes",
+   "client": "codex",
+   "scope": "user",
+   "store": "~/.agents/skills",
+   "evidence": "file",
+   "frontmatter": {
+    "name": "meeting-notes",
+    "description": "Review a pull request for correctness, style and missing tests before release"
+   },
+   "description_bytes": 210,
+   "description_chars": 210,
+   "skill_md_bytes": 800,
+   "skill_md_lines": 40,
+   "dir_bytes": 1600,
+   "file_count": 3,
+   "content_sha256": "0f1e2d3c0f1e2d3c0f1e2d3c0f1e2d3c0f1e2d3c0f1e2d3c0f1e2d3c0f1e2d3c",
+   "is_symlink": false,
+   "name_matches_dir": true,
+   "frontmatter_ok": true,
+   "origin": {
+    "type": "unknown",
+    "id": null,
+    "version": null,
+    "latest_known": null,
+    "evidence": "unknown"
+   },
+   "precedence": "both-load"
+  },
+  {
+   "name": "meeting-notes",
+   "client": "codex",
+   "scope": "project",
+   "store": ".agents/skills",
+   "evidence": "file",
+   "frontmatter": {
+    "name": "meeting-notes",
+    "description": "Review a pull request for correctness, style and missing tests before release"
+   },
+   "description_bytes": 210,
+   "description_chars": 210,
+   "skill_md_bytes": 840,
+   "skill_md_lines": 40,
+   "dir_bytes": 1680,
+   "file_count": 3,
+   "content_sha256": "9a8b7c6d9a8b7c6d9a8b7c6d9a8b7c6d9a8b7c6d9a8b7c6d9a8b7c6d9a8b7c6d",
+   "is_symlink": false,
+   "name_matches_dir": true,
+   "frontmatter_ok": true,
+   "origin": {
+    "type": "unknown",
+    "id": null,
+    "version": null,
+    "latest_known": null,
+    "evidence": "unknown"
+   },
+   "precedence": "both-load"
+  },
+  {
+   "name": "search-helper",
+   "client": "cursor",
+   "scope": "project",
+   "store": ".agents/skills",
+   "evidence": "unknown",
+   "frontmatter": {
+    "name": "search-helper",
+    "description": ""
+   },
+   "description_bytes": null,
+   "description_chars": null,
+   "skill_md_bytes": 700,
+   "skill_md_lines": 40,
+   "dir_bytes": 1400,
+   "file_count": 3,
+   "content_sha256": "7766554477665544776655447766554477665544776655447766554477665544",
+   "is_symlink": false,
+   "name_matches_dir": true,
+   "frontmatter_ok": true,
+   "origin": {
+    "type": "unknown",
+    "id": null,
+    "version": null,
+    "latest_known": null,
+    "evidence": "unknown"
+   }
+  }
+ ],
+ "mcps": [
+  {
+   "name": "notes-server",
+   "client": "claude",
+   "scope": "user",
+   "store": "~/.claude.json",
+   "evidence": "file",
+   "transport": "stdio",
+   "fingerprint": "a1b2c3d4e5f60718",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [
+    "NOTES_API_KEY"
+   ],
+   "has_inline_secret": false,
+   "command": "notes-server",
+   "args": [
+    "--token",
+    "FAKE_SECRET_VALUE_0001"
+   ],
+   "env": {
+    "NOTES_API_KEY": "FAKE_SECRET_VALUE_0001"
+   },
+   "headers": {
+    "Authorization": "Bearer FAKE_SECRET_VALUE_0001"
+   }
+  },
+  {
+   "name": "notes-server",
+   "client": "codex",
+   "scope": "user",
+   "store": "~/.codex/config.toml",
+   "evidence": "file",
+   "transport": "stdio",
+   "fingerprint": "a1b2c3d4e5f60718",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [
+    "NOTES_API_KEY"
+   ],
+   "has_inline_secret": false,
+   "command": "notes-server",
+   "args": [
+    "--token",
+    "FAKE_SECRET_VALUE_0001"
+   ],
+   "env": {
+    "NOTES_API_KEY": "FAKE_SECRET_VALUE_0001"
+   },
+   "headers": {
+    "Authorization": "Bearer FAKE_SECRET_VALUE_0001"
+   }
+  },
+  {
+   "name": "search",
+   "client": "claude",
+   "scope": "local",
+   "store": "~/.claude.json[<project>]",
+   "evidence": "file",
+   "transport": "stdio",
+   "fingerprint": "c3d4e5f607182930",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [],
+   "has_inline_secret": false,
+   "precedence": "winner"
+  },
+  {
+   "name": "search",
+   "client": "claude",
+   "scope": "user",
+   "store": "~/.claude.json",
+   "evidence": "file",
+   "transport": "stdio",
+   "fingerprint": "e5f6071829304152",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [],
+   "has_inline_secret": false,
+   "precedence": "shadowed",
+   "shadowed_by": {
+    "store": "~/.claude.json[<project>]",
+    "rule": "claude-mcp-local-over-user",
+    "evidence": "file",
+    "source_url": "https://code.claude.com/docs/en/mcp"
+   }
+  },
+  {
+   "name": "fetch",
+   "client": "cursor",
+   "scope": "project",
+   "store": ".cursor/mcp.json",
+   "evidence": "unknown",
+   "transport": "stdio",
+   "fingerprint": "77aa88bb99cc00dd",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [],
+   "has_inline_secret": false,
+   "precedence": "unknown"
+  },
+  {
+   "name": "fetch",
+   "client": "cursor",
+   "scope": "user",
+   "store": "~/.cursor/mcp.json",
+   "evidence": "unknown",
+   "transport": "stdio",
+   "fingerprint": "77aa88bb99cc00dd",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [],
+   "has_inline_secret": false,
+   "precedence": "unknown"
+  },
+  {
+   "name": "remote-docs",
+   "client": "claude",
+   "scope": "project",
+   "store": ".mcp.json",
+   "evidence": "file",
+   "transport": "http",
+   "fingerprint": "1122334455667788",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [
+    "DOCS_TOKEN"
+   ],
+   "has_inline_secret": false,
+   "url_host": "docs.example.com",
+   "url": "https://docs.example.com/mcp?token=FAKE_SECRET_VALUE_0001",
+   "headers": {
+    "X-Api-Key": "FAKE_SECRET_VALUE_0001"
+   }
+  },
+  {
+   "name": "local-db",
+   "client": "claude-desktop",
+   "scope": "desktop",
+   "store": "<app-config>/claude_desktop_config.json",
+   "evidence": "unknown",
+   "transport": "stdio",
+   "fingerprint": "99887766aabbccdd",
+   "fingerprint_fields": [
+    "command",
+    "args",
+    "env_var_names"
+   ],
+   "env_var_names": [],
+   "has_inline_secret": true,
+   "command": "db-server",
+   "args": [
+    "--password=FAKE_SECRET_VALUE_0001"
+   ],
+   "env": {
+    "DB_PASSWORD": "FAKE_SECRET_VALUE_0001"
+   }
+  }
+ ]
+}

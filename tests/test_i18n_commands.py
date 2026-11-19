@@ -62,6 +62,10 @@ READ_ONLY: dict[str, list[str]] = {
     "agenthelm project show": [*P, "--no-input", "missing"],
     "agenthelm project guide": [*P, "--no-input"],
     "agenthelm project health": [*P, "--no-input", "--offline"],
+    "agenthelm project extensions list": [*P, "--no-input"],
+    "agenthelm project extensions dups": [*P, "--no-input"],
+    "agenthelm project extensions show": [*P, "--no-input", "nothing"],
+    "agenthelm project extensions check": [*P, "--no-input"],
     "agenthelm project capabilities": [*P, "--no-input"],
     "agenthelm project scenarios": [*P, "--no-input"],
     "agenthelm project sop": [*P, "--no-input", "list"],
@@ -106,7 +110,7 @@ PREVIEW: dict[str, list[str]] = {
     "case update": [*P, "quarterly", "--log", "Preview log", "--dry-run"],
     "sop step": ["missing", "1", "--done"],
     "sop confirm-read": ["missing", "private/input.txt"],
-    "opinion inbox": ["adopt", "cand-none", "--project", "{project}"],  # adopt previews by default; add / decide / present / expire write .opinion/inbox.json at once (covered by the opinion-manager inbox tests)
+    "opinion inbox": ["adopt", "cand-none", "--project", "{project}"],  # adopt previews by default; check and gate --peek are read-only; gate records .opinion/ask-state.json; add / revise / decide / present / expire write .opinion/inbox.json at once (covered by the opinion-manager inbox tests)
 }
 HELP_ONLY: dict[str, str] = {
     "memory": "a single command with flags only; its English output is in the project-orchestrator tests",

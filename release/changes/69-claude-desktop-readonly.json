@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "inventory 与 doctor 以独立目标 claude-desktop 只读 Claude Desktop 的 claude_desktop_config.json（须点名或用 --client all，不在默认客户端内）；doctor --client claude 对同名条目给建议级 shadowed-by 提示。",
+    "en": "inventory and doctor read Claude Desktop's claude_desktop_config.json read-only as the separate target claude-desktop (must be named or use --client all; not in the default client set); doctor --client claude adds an advisory shadowed-by hint for same-name entries."
+  },
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "off",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
