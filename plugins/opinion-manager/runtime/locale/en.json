@@ -220,5 +220,10 @@
  "loading.members 引用了不存在的规则：{0}": "loading.members refers to a rule that does not exist: {0}",
  "loading.members 使用了未知标签：{0}；有效标签：{1}": "loading.members uses unknown tags: {0}; valid tags: {1}",
  "标签 id（schema 2.2），select 与 check 使用，可重复，取并集": "Tag id (schema 2.2) for select and check; repeatable, takes the union",
- "该 Profile 使用规则束声明（schema 2.1），请用 context bundle；select 与 --tag 只用于标签声明（schema 2.2）": "This Profile uses a bundle declaration (schema 2.1); use context bundle; select and --tag only work with a tag declaration (schema 2.2)"
+ "该 Profile 使用规则束声明（schema 2.1），请用 context bundle；select 与 --tag 只用于标签声明（schema 2.2）": "This Profile uses a bundle declaration (schema 2.1); use context bundle; select and --tag only work with a tag declaration (schema 2.2)",
+ "当前 Profile 使用标签声明（schema 2.2），请改用 {0}": "This Profile uses a tag declaration (schema 2.2); use {0} instead",
+ "当前 Profile 未声明标签（schema 2.2），不能记录 {0}；规则束声明请用 loaded_bundles 与 routing_miss": "This Profile declares no tags (schema 2.2), so {0} cannot be recorded; for a bundle declaration use loaded_bundles and routing_miss",
+ "{0} 必须是标签 id 的列表": "{0} must be a list of tag ids",
+ "{0} 含有重复标签": "{0} contains a duplicate tag",
+ "{0} 含有未声明的标签：{1}；有效标签：{2}": "{0} contains undeclared tags: {1}; valid tags: {2}"
 }
