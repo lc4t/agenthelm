@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -804,6 +805,53 @@ def opinion_findings(project: Path, installed: list[dict]) -> list[dict]:
     return [{"status": "update-available" if result["updates"] else "current", "updates": result["updates"]}]
 
 
+OPINION_MIGRATE_TIMEOUT = 5  # seconds, per project; a slow or stuck preview is silently skipped
+OPINION_MIGRATE_CONFLICTS = ("manual-edit-conflict", "catalog-conflict")
+
+
+def _shell_quote(value: Path | str) -> str:
+    """POSIX shlex.quote; cmd.exe has no single quotes, so Windows keeps double quotes (same rule as the nudge)."""
+    return shlex.quote(str(value)) if os.name == "posix" else f'"{value}"'
+
+
+def opinion_migrate_findings(project: Path, installed: list[dict]) -> list[dict]:
+    """Advisory only: ask opinion-manager for a read-only ``migrate`` preview of the project's opinion.
+
+    Silent (empty list) for everything except a previewable migration or a conflict the user can resolve: no lock, no
+    installed opinion-manager, timeout, non-JSON output, an unknown status, and every other status/reason. Never raises.
+    One subprocess per project, bounded by OPINION_MIGRATE_TIMEOUT; opinion-manager is only ever run, never imported.
+    """
+    try:
+        if not (project / OPINION_LOCK).is_file():
+            return []
+        manager = locate_companion("opinion-manager", installed)
+        runtime = manager / "runtime" / "opinion_manager.py" if manager else None
+        if runtime is None or not runtime.is_file():
+            return []
+        root = project.expanduser().resolve()
+        completed = subprocess.run([sys.executable, str(runtime), "migrate", "--project", str(root), "--output", "json"],
+                                   capture_output=True, text=True, check=False, timeout=OPINION_MIGRATE_TIMEOUT)
+        result = json.loads(completed.stdout)
+        if not isinstance(result, dict):
+            return []
+        status, reason = result.get("status"), result.get("reason")
+        command = f"python3 {_shell_quote(runtime)} migrate --project {_shell_quote(root)}"
+        if status == "preview" and completed.returncode == 0:
+            target = result.get("target") if isinstance(result.get("target"), dict) else {}
+            updates = [{key: item.get(key) for key in ("kind", "id", "current", "target", "action")}
+                       for item in result.get("updates") or [] if isinstance(item, dict)]
+            incomplete = (result.get("inbox") or {}).get("incomplete") or []
+            return [{"kind": "opinion-migrate", "status": "preview", "reason": None, "command": command,
+                     "target": {"profile": target.get("profile"), "schema_version": target.get("schema_version")},
+                     "updates": updates, "inbox_incomplete": len(incomplete) if isinstance(incomplete, list) else 0}]
+        if status == "cannot-migrate" and reason in OPINION_MIGRATE_CONFLICTS and completed.returncode == 3:
+            return [{"kind": "opinion-migrate", "status": "cannot-migrate", "reason": reason, "command": command,
+                     "message": result.get("message") if isinstance(result.get("message"), str) else None}]
+    except Exception:  # noqa: BLE001 - an advisory hint must never make check fail or slow down
+        return []
+    return []
+
+
 # ---------------------------------------------------------------- project scaffold
 
 PROFILE_FILE = Path(".agents/moe.sakanano.agent-pack/project.json")
@@ -1066,7 +1114,7 @@ def capability_notice(reports: list[dict]) -> str | None:
 
 def run_check(env: Env, project: Path | None, *, latest_source: str | None = None, offline: bool = False,
               max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False,
-              clients: list[str] | None = None, source: Path | None = None) -> dict:
+              clients: list[str] | None = None, source: Path | None = None, migrate_hint: bool = False) -> dict:
     latest, origin = load_latest(
         env, latest_source, offline=offline, max_age=max_age,
         timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS, backoff=hook_mode,
@@ -1082,6 +1130,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     state = install_state(env, latest, everything, others, declared_marketplaces(env, project), selection["active"])
     content = content_findings(project, latest) if project else []
     opinion = opinion_findings(project, installed) if project else []
+    # Explicit `check` only (never the session-start hook, doctor or update): one bounded read-only preview per project.
+    opinion_migrate = opinion_migrate_findings(project, installed) if project and migrate_hint and not hook_mode else []
     scaffold = scaffold_report(env, project, reprompt=reprompt)
     machine = machine_findings(env, project, reprompt=reprompt, quick=hook_mode)
     local_attention = sum(1 for item in machine["findings"] if item.get("attention"))
@@ -1129,7 +1179,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     settings = user_settings_module()
     language = settings.report_section(env.variables, settings.read_settings(env.config_file)[0], scaffold,
                                        drift=language_drift(project) if project else None, cli=CLI)
-    return {
+    report = {
         "ok": True,
         "latest": {"source": origin, "released_at": latest.get("released_at")},
         "_latest": latest,
@@ -1169,6 +1219,9 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
                                or local_attention),
         },
     }
+    if opinion_migrate:  # advisory: not in summary, not in up_to_date, absent when silent so existing output is unchanged
+        report["opinion_migrate"] = opinion_migrate
+    return report
 
 
 def update_hint(client: str | None) -> str | None:
@@ -1379,6 +1432,28 @@ def render_install_state(state: dict) -> list[str]:
     return lines
 
 
+def render_opinion_migrate(findings: list[dict]) -> list[str]:
+    lines = []
+    for item in findings:
+        if item["status"] == "preview":
+            target = item.get("target") or {}
+            ids = [str(update.get("id")) for update in item.get("updates") or [] if update.get("id")]
+            line = _("  [Opinion·可迁移] 该项目的 opinion 有可迁移到标签按需加载的内容：目标 {0}（schema {1}）").format(
+                target.get("profile"), target.get("schema_version"))
+            if item.get("updates"):
+                line += _("，{0} 项更新").format(len(item["updates"]))
+                if ids:
+                    line += _("（") + _("、").join(ids[:3]) + (_("等") if len(ids) > 3 else "") + _("）")
+            if item.get("inbox_incomplete"):
+                line += _("，{0} 条收件箱记录未完成").format(item["inbox_incomplete"])
+            lines.append(line + _("\n      查看迁移预览（只读）：{0}\n      确认后再执行；不迁移则保持原样，不影响现有行为。").format(item["command"]))
+        elif item.get("reason") == "manual-edit-conflict":
+            lines.append(_("  [Opinion·可迁移] 迁移预览发现手工改动与迁移冲突，需要你先处理 OPINION.md 的改动。\n      查看详情（只读）：{0}").format(item["command"]))
+        elif item.get("reason") == "catalog-conflict":
+            lines.append(_("  [Opinion·可迁移] 迁移预览发现公开 catalog 与 Profile 记录的来源不一致，暂时无法迁移。\n      查看详情（只读）：{0}").format(item["command"]))
+    return lines
+
+
 def render_text(report: dict, *, show_skipped: bool = False, details: bool = False, show_extras: bool = False) -> str:
     lines = []
     origin = report["latest"]["source"]
@@ -1452,6 +1527,7 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
             lines.append(_("  [Opinion] 有新版本：{0}（用 opinion-manager 预览后确认）").format(refs))
         elif item["status"] in {"error", "unknown"}:
             lines.append(f"  [Opinion] {item.get('error')}")
+    lines += render_opinion_migrate(report.get("opinion_migrate") or [])
     lines += render_scaffold(report, show_skipped, details, show_extras)
     lines += render_machine(report, details=details)
     lines += [_("  [语言] {0}").format(hint) for hint in (report.get("language") or {}).get("hints", [])]
@@ -2907,7 +2983,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "check":
             report = run_check(env, project, latest_source=args.latest, offline=args.offline,
                                max_age=0 if args.refresh else CACHE_TTL_SECONDS, reprompt=args.reprompt,
-                               clients=args.client, source=args.source)
+                               clients=args.client, source=args.source, migrate_hint=True)
             report.pop("_latest")
             if args.fingerprint or args.explain:
                 return print_fingerprint(env, report, args, project)
