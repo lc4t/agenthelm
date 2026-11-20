@@ -1,5 +1,63 @@
 # 更新记录
 
+<!-- release-plan:start -->
+## 2026-11-20 — agenthelm 6.14.0
+
+### agent-pack 1.14.0
+
+- 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。
+- 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。
+- 新增声明式客户端驱动注册表（agent_pack_clients）：claude / codex / cursor 与只读的 claude-desktop 由数据声明，客户端名单与 --client 选项改为从注册表派生（既有输出不变）；新增只读命令 agenthelm clients 列出各驱动的检测结果、分发驱动类型与能力标志；预留 ~/.config/agenthelm/clients.d/*.json 用户声明文件，本版只校验，不执行其中任何内容，也不据此安装。
+- agenthelm check 对有 opinion.lock.json 的项目运行一次只读的 opinion-manager migrate 预览（5 秒超时、零写入）：有可迁移到标签按需加载的内容时给出一条建议（目标 Profile、更新摘要、未完成的收件箱记录数与可直接复制的预览命令），手工改动或 catalog 冲突时给一条简短说明，其余情况一律静默。建议项不改退出码、不计入 up_to_date；会话开始的 hook 与 nudge 不调用 migrate；check --output json 在有提示时多一个 opinion_migrate 数组，既有字段不变。不迁移则保持原样，不影响现有行为。
+- 新增只读命令 agenthelm inventory：列出各客户端能看到的 Skill 与 MCP（含 ~/.agents/skills、项目级与 Claude 本地级存储）、重复、description 字节数与可识别来源，输出带 schema_version 的稳定 JSON。
+- inventory 与 doctor 以独立目标 claude-desktop 只读 Claude Desktop 的 claude_desktop_config.json（须点名或用 --client all，不在默认客户端内）；doctor --client claude 对同名条目给建议级 shadowed-by 提示。
+- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。
+- agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。
+- agent-pack 支持把声明为 project 的 MCP 写到 Claude 项目级存储：默认 local（~/.claude.json 里该项目路径下，写前备份、保持权限、失败回滚），或用 --project-store file 写项目根 .mcp.json（含机器路径的条目被拒绝）。目标不可写或结构无法识别时跳过并警告，不回退写用户级。
+- agent-pack 支持把声明为 project 的 Skill 写到项目的 .claude/skills（相对符号链接，同步盘内改为复制，同名冲突需 --replace-skills），并在作用域改变时预览「写入新位置」与「从旧位置退役」两步：Skill 的旧位置同一事务归档，MCP 的旧位置只给手工移除命令。同名多存储且官方文档明确优先级时给出建议级屏蔽提示，不影响 ok 与退出码。
+- 新增 agenthelm relocate：把一个 Skill 复制或迁移到另一个客户端/作用域，默认预览，带计划指纹确认；不覆盖已有目录，读回校验，失败回滚，源只归档不删除；放宽作用域需 --allow-widen。
+- 新增 agenthelm dedupe：处置 inventory 报告的重复分组。Skill 副本可保留一份并归档其余（可恢复，不删除）；MCP 副本只给官方手工命令，不编辑配置；全部保留与忽略只写机器级决定文件；另提供只读的 Claude Desktop 配置可粘贴片段。
+- agenthelm relocate 支持 MCP：在 Claude 的 user / local / 项目 .mcp.json 之间复制或迁移条目；预览=应用，不覆盖同名目标，内联密钥值与本机路径不能进入 .mcp.json，只收窄不放宽（放宽需 --allow-widen）。已受管的源条目由 agent-pack 原子改写 ~/.claude.json 并先逐字节备份、可回滚；未受管条目只复制并给手工命令。
+- agenthelm dedupe --keep --retire-others 对 MCP 副本：已受管的条目由 agent-pack 退役（原 JSON 片段存入 0600 恢复目录、先逐字节备份 ~/.claude.json、原子改写、失败按字节回滚）；未受管的条目仍只给官方手工命令；证据不明的成员仍只读，跨客户端同指纹仍只是建议保留。
+
+### agents-init 6.10.0
+
+- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。
+- agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。
+- language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。
+
+### opinion-manager 0.7.0
+
+- 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。
+- 收件箱记录展示快照，采纳预览返回 shown_matches 与 added_lines；新增询问节流 gate（只记账，状态在 .opinion/ask-state.json）。
+- 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。
+- 公开 catalog 新增 1.1.0（31 条规则与 10 个模板）：zh/en 双语文字与 trigger / purpose / exclude，行为语义与 1.0.0 一致；两个场景模板另声明常驻集合与四个按需标签（decisions、files、reports、maintenance），选择它们时 profile 预览生成 schema 2.2 的标签加载声明，经确认后才生效，--no-tags 保持完整读取。既有项目不会自动变化，可用 updates 查看并经完整预览确认升级。
+- 公开规则与模板支持 {zh, en} 双语字段与可选的 trigger / purpose / exclude；profile、compose 按项目语言选取文字，en 项目选用缺译文的公开规则时预览给出 untranslated 警告（不阻断）。
+- 收件箱新增只读 check（报告缺条件/目的的候选与 OPINION.md 行）、revise（修订候选并留痕）和机械关系提示（relations，仅供参考）。
+- opinion 规则可以路由到某个 skill：inbox add / revise 新增 --route-skill、--route-when、--route-final、--route-on，渲染成 OPINION.md 自定义段里带机器可读标记的一行，并自动追加「skill 自身执行时不再触发」与「skill 不可用时降级」两条约束；新增只读 inbox routes list 列出路由并做机械检查。路由只能提高调用概率，不能保证。
+- 新增 opinion_manager.py migrate：把用户现有的 Opinion（Profile 2.0 / 2.1）迁移到标签选择加载。默认预览（零写入，失败路径也一样），--apply --confirm <指纹> 才写入；写入前备份到 .opinion/backups/<时间戳>-migrate/ 并写 manifest，复用 profile → compose → verify 的原子写与读回，失败按备份逐字节还原；--rollback 只在当前状态等于迁移后状态时还原。用户的 custom 段与手工追加的内容原样保留、常驻，不替用户猜标签；2.1 默认不动，--tags 才改用标签。另新增 catalog 1.1.0 的体积守卫测试。既有项目不会自动变化。
+- opinion-manager 新增标签选择引擎（Profile schema 2.2）：一条规则可带多个标签，context select --tag 按标签并集读取规则，core 输出常驻规则与标签索引，check 由标签派生交付信号；自定义规则可用 [tags …] 行尾标记带标签，inbox add / revise 新增 --tag。既有 2.0 与 2.1 的 Profile 与 OPINION.md 字节不变。
+- opinion-manager 的 lifecycle 支持 Profile schema 2.2 的标签记账：use 事件新增 loaded_tags 与 routing_miss_tags，取值校验自 loading.tags；有标签漏读的使用与规则束漏读一样阻断转正式；status 对标签输出 loaded_in、exercised_in、routing_misses 与 unused_tags。2.1 的 loaded_bundles、routing_miss、bundles 输出不变。
+
+### project-orchestrator 1.12.0
+
+- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。
+- 技能与 MCP 清单向 agenthelm inventory 要求全部客户端，包含只读的 Claude Desktop 条目，并在按项目看里归入「仅 Desktop 应用」。
+- 技能与 MCP 视图：英文措辞不再依赖数量（修正「1 groups」），缺失的 Claude Desktop 配置不再计为未知项；新增用真实 agenthelm inventory 的端到端测试。
+- 项目菜单新增第 9 屏「技能与 MCP」（只读）：按客户端、按项目、按重复查看与技能体检；检查屏对重复发现增加跳转；原有 1–8 号不变。
+- 新增 agenthelm project extensions list / dups / show / check：只读地列出技能与 MCP、重复组、条目详情与机械体检；数据来自 agenthelm inventory，能力状态里增加 extensions 一项。
+- 新增 agenthelm project extensions move / dedupe / scope：默认预览、--apply 才写。move 与 dedupe 转发 agenthelm relocate / dedupe 并原样展示其计划，应用时用 --expect-plan 回传同一摘要，摘要不一致即拒绝；scope 把生效范围写成 Project Profile 的 mcp_scope / skill_scope 声明（先备份、原子写入）。写入后重新读取 inventory 与计划比对。
+- 菜单第 9 屏的「移动或复制」「设置生效范围」成为真实向导，条目详情与重复组里新增 m / s / d / p：选条目、选目标、预览（计划、blocked、将进入项目目录的提示）、输入 yes（放宽另需键入条目名）、执行、再取 inventory 读回；读回不一致显示「读回失败」与恢复目录，菜单退出码为 1。证据未知的条目与 MCP 条目只给手工命令与可粘贴片段；没有对应 agenthelm dedupe 分组的重复只读展示。
+- language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。
+
+### suite 6.14.0
+
+- 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。
+- 设计文档：公开规则的渐进式加载（标签选择、读取时切片、体积测算、兼容与迁移契约）；运行时与公开 catalog 的实现见 opinion-manager 条目。
+- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。
+<!-- release-plan:end -->
+
+
 ## 2026-11-15 — agenthelm 6.13.1
 
 ### agent-pack 1.13.1

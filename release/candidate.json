@@ -1,0 +1,2156 @@
+{
+  "schema": 1,
+  "baseline": "v6.13.1",
+  "suite": "6.14.0",
+  "plugins": {
+    "agent-pack": {
+      "version": "1.14.0",
+      "source": "./plugins/agent-pack"
+    },
+    "agents-init": {
+      "version": "6.10.0",
+      "source": "./plugins/agents-init",
+      "content": {
+        "agents-init/project-contract": {
+          "version": "1.5.0",
+          "kind": "template"
+        },
+        "agents-init/project-skeleton": {
+          "version": "1.1.0",
+          "kind": "manifest"
+        }
+      }
+    },
+    "opinion-manager": {
+      "version": "0.7.0",
+      "source": "./plugins/opinion-manager",
+      "content": {
+        "opinion-manager/catalog": {
+          "version": "1.1.0",
+          "kind": "catalog"
+        }
+      }
+    },
+    "project-orchestrator": {
+      "version": "1.12.0",
+      "source": "./plugins/project-orchestrator",
+      "content": {
+        "project-orchestrator/asset-synonyms": {
+          "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/case-template": {
+          "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/sop-samples": {
+          "version": "1.0.0",
+          "kind": "sample"
+        }
+      }
+    }
+  },
+  "migrations": [
+    {
+      "plugin": "agent-pack",
+      "from": "1.13.1",
+      "to": "1.14.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-20",
+      "summary": "确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。; 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。; 新增声明式客户端驱动注册表（agent_pack_clients）：claude / codex / cursor 与只读的 claude-desktop 由数据声明，客户端名单与 --client 选项改为从注册表派生（既有输出不变）；新增只读命令 agenthelm clients 列出各驱动的检测结果、分发驱动类型与能力标志；预留 ~/.config/agenthelm/clients.d/*.json 用户声明文件，本版只校验，不执行其中任何内容，也不据此安装。; agenthelm check 对有 opinion.lock.json 的项目运行一次只读的 opinion-manager migrate 预览（5 秒超时、零写入）：有可迁移到标签按需加载的内容时给出一条建议（目标 Profile、更新摘要、未完成的收件箱记录数与可直接复制的预览命令），手工改动或 catalog 冲突时给一条简短说明，其余情况一律静默。建议项不改退出码、不计入 up_to_date；会话开始的 hook 与 nudge 不调用 migrate；check --output json 在有提示时多一个 opinion_migrate 数组，既有字段不变。不迁移则保持原样，不影响现有行为。; 新增只读命令 agenthelm inventory：列出各客户端能看到的 Skill 与 MCP（含 ~/.agents/skills、项目级与 Claude 本地级存储）、重复、description 字节数与可识别来源，输出带 schema_version 的稳定 JSON。; inventory 与 doctor 以独立目标 claude-desktop 只读 Claude Desktop 的 claude_desktop_config.json（须点名或用 --client all，不在默认客户端内）；doctor --client claude 对同名条目给建议级 shadowed-by 提示。; 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。; agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。; agent-pack 支持把声明为 project 的 MCP 写到 Claude 项目级存储：默认 local（~/.claude.json 里该项目路径下，写前备份、保持权限、失败回滚），或用 --project-store file 写项目根 .mcp.json（含机器路径的条目被拒绝）。目标不可写或结构无法识别时跳过并警告，不回退写用户级。; agent-pack 支持把声明为 project 的 Skill 写到项目的 .claude/skills（相对符号链接，同步盘内改为复制，同名冲突需 --replace-skills），并在作用域改变时预览「写入新位置」与「从旧位置退役」两步：Skill 的旧位置同一事务归档，MCP 的旧位置只给手工移除命令。同名多存储且官方文档明确优先级时给出建议级屏蔽提示，不影响 ok 与退出码。; 新增 agenthelm relocate：把一个 Skill 复制或迁移到另一个客户端/作用域，默认预览，带计划指纹确认；不覆盖已有目录，读回校验，失败回滚，源只归档不删除；放宽作用域需 --allow-widen。; 新增 agenthelm dedupe：处置 inventory 报告的重复分组。Skill 副本可保留一份并归档其余（可恢复，不删除）；MCP 副本只给官方手工命令，不编辑配置；全部保留与忽略只写机器级决定文件；另提供只读的 Claude Desktop 配置可粘贴片段。; agenthelm relocate 支持 MCP：在 Claude 的 user / local / 项目 .mcp.json 之间复制或迁移条目；预览=应用，不覆盖同名目标，内联密钥值与本机路径不能进入 .mcp.json，只收窄不放宽（放宽需 --allow-widen）。已受管的源条目由 agent-pack 原子改写 ~/.claude.json 并先逐字节备份、可回滚；未受管条目只复制并给手工命令。; agenthelm dedupe --keep --retire-others 对 MCP 副本：已受管的条目由 agent-pack 退役（原 JSON 片段存入 0600 恢复目录、先逐字节备份 ~/.claude.json、原子改写、失败按字节回滚）；未受管的条目仍只给官方手工命令；证据不明的成员仍只读，跨客户端同指纹仍只是建议保留。",
+      "summary_en": "Confirmation frequency is tunable: inbox brief gains the ask / digest / quiet confirmation modes, nudge gains the confirm and prompt_cooldown_hours settings and asks the gate before stop, and the docs state the hard limits of the hook path and the boundary of the model-judged path.; The candidate inbox gains trigger, purpose, exclusion and relation fields (missing ones only warn); the rule line and OPINION.md frame written on adopt follow the project file language. The lock of an en project carries language, which older runtimes cannot read.; Adds a declarative client-driver registry (agent_pack_clients): claude / codex / cursor and the read-only claude-desktop are declared as data, and the client lists and --client choices derive from it (existing output unchanged). New read-only command agenthelm clients lists each driver's detection result, distribution driver type and capability flags. Reserves user declarations in ~/.config/agenthelm/clients.d/*.json: this version only validates them, never executes anything in them and never installs from them.; agenthelm check now runs one read-only opinion-manager migrate preview (5 s timeout, zero writes) for projects that have opinion.lock.json. When content can move to on-demand tag loading it prints one advisory line (target profile, update summary, unfinished inbox records and a copyable preview command); a manual-edit or catalog conflict gets a short note; every other case stays silent. The advisory does not change the exit code or up_to_date; the session-start hook and the nudge never call migrate; check --output json gains an opinion_migrate array only when a hint is shown, existing fields unchanged. If you do not migrate, nothing changes and current behaviour is unaffected.; Add the read-only command agenthelm inventory: list the Skills and MCP servers each client can see (including ~/.agents/skills, project-level and Claude local-level stores), duplicates, description bytes and recognizable origin, as stable JSON carrying schema_version.; inventory and doctor read Claude Desktop's claude_desktop_config.json read-only as the separate target claude-desktop (must be named or use --client all; not in the default client set); doctor --client claude adds an advisory shadowed-by hint for same-name entries.; Documentation update: README, INSTALL, MIGRATION and the plugin Skills cover skills and MCP management, scope declarations, client drivers, the language=en launcher update path and 6.14.0 migration notes; the write-command inventory is completed.; agent-pack adds scope declaration: the Project Profile keys capabilities.default_scope / mcp_scope / skill_scope and --scope on sync and reconcile. Entries declared project-level are no longer written to the user level (skipped with a warning for now; project-level writes follow in later releases), the preview is grouped by scope and shows the narrowing impact; without the new keys behavior and output are unchanged.; agent-pack can write MCP servers declared project-level to Claude's project stores: local by default (under the project's path in ~/.claude.json, backed up first, permissions kept, rolled back on failure) or, with --project-store file, the project's .mcp.json (entries tied to this machine are refused). An unwritable or unrecognized target is skipped with a warning, never written to the user level instead.; agent-pack can write Skills declared project-level to the project's .claude/skills (relative symbolic links, copies inside sync folders, a same-name conflict needs --replace-skills), and previews a scope change as two steps: write the new location and retire the old one. A Skill's old location is archived in the same transaction; an MCP entry's old location only gets a manual removal command. Same-name entries in several stores get an advisory shadow notice where the official documentation states the precedence; ok and the exit code are unaffected.; Add agenthelm relocate: copy or move one Skill to another client/scope. Preview by default, confirmed with a plan digest; never overwrites an existing directory, reads back and verifies, rolls back on failure and only archives (never deletes) the source; widening the scope needs --allow-widen.; Add agenthelm dedupe: handle the duplicate groups inventory reports. Skill copies can be kept once with the rest archived (recoverable, never deleted); MCP copies get only the official manual command and no config is edited; keep-all and ignore write only a machine-level decision file; plus a read-only paste-ready Claude Desktop config snippet.; agenthelm relocate now handles MCP entries: copy or move them between Claude's user, local and project .mcp.json scopes; preview equals apply, an existing target is never overwritten, inline secrets and machine paths cannot enter .mcp.json, narrowing only (widening needs --allow-widen). A managed source entry is retired by an atomic edit of ~/.claude.json with a byte-exact backup first and rollback; an unmanaged entry is only copied, with a manual command.; agenthelm dedupe --keep --retire-others now retires managed MCP copies itself (original JSON fragment into a 0600 recovery directory, byte-exact backup of ~/.claude.json first, atomic edit, byte-exact rollback); unmanaged copies still get only the official manual command; members with unknown evidence stay read-only and cross-client same-fingerprint copies remain keep-recommended advice.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        "capabilities.default_scope",
+        "capabilities.mcp_scope",
+        "capabilities.skill_scope"
+      ],
+      "template_changes": [],
+      "default_for_existing": "on"
+    },
+    {
+      "plugin": "agents-init",
+      "from": "6.9.2",
+      "to": "6.10.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-11-20",
+      "summary": "文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。; agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。; language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。",
+      "summary_en": "Documentation update: README, INSTALL, MIGRATION and the plugin Skills cover skills and MCP management, scope declarations, client drivers, the language=en launcher update path and 6.14.0 migration notes; the write-command inventory is completed.; agent-pack adds scope declaration: the Project Profile keys capabilities.default_scope / mcp_scope / skill_scope and --scope on sync and reconcile. Entries declared project-level are no longer written to the user level (skipped with a warning for now; project-level writes follow in later releases), the preview is grouped by scope and shows the narrowing impact; without the new keys behavior and output are unchanged.; Projects with language=en no longer get files that contain Chinese: the root launcher (header comment and error/guidance messages) and private/.gitignore follow the project file language; zh and default-language output is byte-identical. Projects generated earlier with --language en keep a Chinese launcher until it is replaced after a preview.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [
+        {
+          "what": "以前用 --language en 生成的项目：根目录启动器（默认 ./menu，名称见 Profile 的 entry.launcher）仍是中文版。先运行 `agenthelm check` 查看差异，再运行 `agenthelm fix` 预览（默认不写入），确认后用 `agenthelm fix --apply` 整份替换为英文版；你改过启动器时该文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响；已存在的 private/.gitignore 不会被改写。",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "capabilities.default_scope",
+        "capabilities.mcp_scope",
+        "capabilities.skill_scope",
+        "entry.launcher"
+      ],
+      "template_changes": [
+        {
+          "path": "skills/agents-init/launcher.en.sh",
+          "class": "semantic"
+        }
+      ],
+      "default_for_existing": "on"
+    },
+    {
+      "plugin": "opinion-manager",
+      "from": "0.6.0",
+      "to": "0.7.0",
+      "change_kind": "both",
+      "breaking": false,
+      "date": "2026-11-20",
+      "summary": "确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。; 收件箱记录展示快照，采纳预览返回 shown_matches 与 added_lines；新增询问节流 gate（只记账，状态在 .opinion/ask-state.json）。; 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。; 公开 catalog 新增 1.1.0（31 条规则与 10 个模板）：zh/en 双语文字与 trigger / purpose / exclude，行为语义与 1.0.0 一致；两个场景模板另声明常驻集合与四个按需标签（decisions、files、reports、maintenance），选择它们时 profile 预览生成 schema 2.2 的标签加载声明，经确认后才生效，--no-tags 保持完整读取。既有项目不会自动变化，可用 updates 查看并经完整预览确认升级。; 公开规则与模板支持 {zh, en} 双语字段与可选的 trigger / purpose / exclude；profile、compose 按项目语言选取文字，en 项目选用缺译文的公开规则时预览给出 untranslated 警告（不阻断）。; 收件箱新增只读 check（报告缺条件/目的的候选与 OPINION.md 行）、revise（修订候选并留痕）和机械关系提示（relations，仅供参考）。; opinion 规则可以路由到某个 skill：inbox add / revise 新增 --route-skill、--route-when、--route-final、--route-on，渲染成 OPINION.md 自定义段里带机器可读标记的一行，并自动追加「skill 自身执行时不再触发」与「skill 不可用时降级」两条约束；新增只读 inbox routes list 列出路由并做机械检查。路由只能提高调用概率，不能保证。; 新增 opinion_manager.py migrate：把用户现有的 Opinion（Profile 2.0 / 2.1）迁移到标签选择加载。默认预览（零写入，失败路径也一样），--apply --confirm <指纹> 才写入；写入前备份到 .opinion/backups/<时间戳>-migrate/ 并写 manifest，复用 profile → compose → verify 的原子写与读回，失败按备份逐字节还原；--rollback 只在当前状态等于迁移后状态时还原。用户的 custom 段与手工追加的内容原样保留、常驻，不替用户猜标签；2.1 默认不动，--tags 才改用标签。另新增 catalog 1.1.0 的体积守卫测试。既有项目不会自动变化。; opinion-manager 新增标签选择引擎（Profile schema 2.2）：一条规则可带多个标签，context select --tag 按标签并集读取规则，core 输出常驻规则与标签索引，check 由标签派生交付信号；自定义规则可用 [tags …] 行尾标记带标签，inbox add / revise 新增 --tag。既有 2.0 与 2.1 的 Profile 与 OPINION.md 字节不变。; opinion-manager 的 lifecycle 支持 Profile schema 2.2 的标签记账：use 事件新增 loaded_tags 与 routing_miss_tags，取值校验自 loading.tags；有标签漏读的使用与规则束漏读一样阻断转正式；status 对标签输出 loaded_in、exercised_in、routing_misses 与 unused_tags。2.1 的 loaded_bundles、routing_miss、bundles 输出不变。",
+      "summary_en": "Confirmation frequency is tunable: inbox brief gains the ask / digest / quiet confirmation modes, nudge gains the confirm and prompt_cooldown_hours settings and asks the gate before stop, and the docs state the hard limits of the hook path and the boundary of the model-judged path.; The inbox records a shown snapshot, the adopt preview returns shown_matches and added_lines, and a new ask-throttling gate command keeps its bookkeeping in .opinion/ask-state.json.; The candidate inbox gains trigger, purpose, exclusion and relation fields (missing ones only warn); the rule line and OPINION.md frame written on adopt follow the project file language. The lock of an en project carries language, which older runtimes cannot read.; The public catalog gains 1.1.0 (31 rules and 10 templates): zh/en text with trigger / purpose / exclude, behaviourally identical to 1.0.0. The two scenario templates also declare a resident set and four on-demand tags (decisions, files, reports, maintenance); selecting them makes the profile preview generate a schema 2.2 tag-loading declaration that only takes effect after confirmation, and --no-tags keeps full reading. Existing projects do not change automatically; updates lists the new versions and the upgrade needs a full preview and confirmation.; Public rules and templates accept {zh, en} localized fields and optional trigger / purpose / exclude; profile and compose pick text by the project language, and an en project that selects a public rule without a translation gets an untranslated warning in the preview (not blocking).; The inbox gains a read-only check (reports candidates and OPINION.md lines missing a trigger or purpose), revise (edit a candidate with history) and mechanical relation hints (relations, for reference only).; Opinion rules can route to a skill: inbox add / revise gain --route-skill, --route-when, --route-final and --route-on, rendered as a line in the custom section of OPINION.md with a machine-readable marker plus two automatic constraints (no re-trigger while the skill runs, fallback when it is unavailable); a new read-only inbox routes list shows the routes and runs mechanical checks. A route raises the chance of the skill being called but cannot guarantee it.; Add opinion_manager.py migrate: migrate a user's existing Opinion (Profile 2.0 / 2.1) to tag-based loading. It previews by default (nothing is written, failure paths included) and writes only with --apply --confirm <fingerprint>; before writing it backs up to .opinion/backups/<timestamp>-migrate/ with a manifest, reuses the atomic profile → compose → verify write and read-back, and restores the backup byte for byte on failure; --rollback restores only while the current state still equals the migrated state. The user's custom section and hand-written additions are kept as written and always loaded; no tags are guessed for the user. 2.1 stays untouched unless --tags is given. Also adds a size-budget test for catalog 1.1.0. Existing projects do not change automatically.; opinion-manager gains a tag selection engine (Profile schema 2.2): a rule can carry several tags, context select --tag reads the union of the chosen tags, core prints the always-loaded rules with a tag index, and check derives delivery signals from tags; custom rules can carry tags through a trailing [tags …] marker, and inbox add / revise gain --tag. Existing 2.0 and 2.1 Profiles and OPINION.md bytes are unchanged.; opinion-manager lifecycle now records tags for Profile schema 2.2: use events gain loaded_tags and routing_miss_tags, validated against loading.tags; a use with a missed tag blocks formalization just like a missed bundle; status reports loaded_in, exercised_in, routing_misses and unused_tags per tag. The 2.1 loaded_bundles, routing_miss and bundles output are unchanged.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [
+        {
+          "what": "可选：运行 opinion_manager.py updates 查看公开规则与模板的 1.1.0，需要时按完整预览确认升级（手工修改会保留；场景模板的标签加载声明随预览一并生成，不需要时加 --no-tags）",
+          "session": "current"
+        },
+        {
+          "what": "可选：运行 opinion_manager.py migrate --project <项目> 查看迁移预览，确认后加 --apply --confirm <指纹> 写入；不迁移则保持原样（2.1 项目要改用标签再加 --tags）；写入前自动备份，可用 --rollback 回滚",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "opinion.lock.json",
+        ".opinion/backups",
+        ".opinion/profiles",
+        "OPINION.md",
+        ".opinion/lifecycle"
+      ],
+      "template_changes": [
+        {
+          "path": "catalog/README.md",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.align-requirements/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.assumptions-authority/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.batch-questions/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.bilingual-terms/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.calculations/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.chinese-response/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.clean-deliverable/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.complete-options/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.conclusion-first/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.concrete-titles/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.consistent-items/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.device-readable/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.editable-diagrams/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.evidence-inference/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.maintenance-chinese/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.maintenance-project-language/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.markdown-structure/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.portable-files/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.report-context/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.report-formats/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.report-review/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.response-brief/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.response-dense/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.rules-tools/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.semantic-wrap/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.solutions-proportional/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.solutions-three-level/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.tables-compact/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.tables-list-first/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.test-evidence/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.versioned-files/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/delivery-standard/compact-tables/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/delivery-standard/list-first/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/development-standard/chinese-maintenance/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/development-standard/project-language/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/response-style/brief-chinese/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/response-style/dense-chinese/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/scenario/concise-project/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/scenario/reviewed-project/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/work-method/proportional/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/work-method/three-level/versions/1.1.0.json",
+          "class": "semantic"
+        }
+      ],
+      "default_for_existing": "advisory"
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.11.5",
+      "to": "1.12.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-20",
+      "summary": "文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。; 技能与 MCP 清单向 agenthelm inventory 要求全部客户端，包含只读的 Claude Desktop 条目，并在按项目看里归入「仅 Desktop 应用」。; 技能与 MCP 视图：英文措辞不再依赖数量（修正「1 groups」），缺失的 Claude Desktop 配置不再计为未知项；新增用真实 agenthelm inventory 的端到端测试。; 项目菜单新增第 9 屏「技能与 MCP」（只读）：按客户端、按项目、按重复查看与技能体检；检查屏对重复发现增加跳转；原有 1–8 号不变。; 新增 agenthelm project extensions list / dups / show / check：只读地列出技能与 MCP、重复组、条目详情与机械体检；数据来自 agenthelm inventory，能力状态里增加 extensions 一项。; 新增 agenthelm project extensions move / dedupe / scope：默认预览、--apply 才写。move 与 dedupe 转发 agenthelm relocate / dedupe 并原样展示其计划，应用时用 --expect-plan 回传同一摘要，摘要不一致即拒绝；scope 把生效范围写成 Project Profile 的 mcp_scope / skill_scope 声明（先备份、原子写入）。写入后重新读取 inventory 与计划比对。; 菜单第 9 屏的「移动或复制」「设置生效范围」成为真实向导，条目详情与重复组里新增 m / s / d / p：选条目、选目标、预览（计划、blocked、将进入项目目录的提示）、输入 yes（放宽另需键入条目名）、执行、再取 inventory 读回；读回不一致显示「读回失败」与恢复目录，菜单退出码为 1。证据未知的条目与 MCP 条目只给手工命令与可粘贴片段；没有对应 agenthelm dedupe 分组的重复只读展示。; language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。",
+      "summary_en": "Documentation update: README, INSTALL, MIGRATION and the plugin Skills cover skills and MCP management, scope declarations, client drivers, the language=en launcher update path and 6.14.0 migration notes; the write-command inventory is completed.; The Skills & MCP views ask agenthelm inventory for all clients, including the read-only Claude Desktop entries, and group them under Desktop app only in the by-project view.; Skills & MCP views: English wording no longer depends on a count (fixes \"1 groups\"), a missing Claude Desktop config is no longer counted as an unknown item; adds an end-to-end test against the real agenthelm inventory.; The project menu gains screen 9, Skills & MCP (read-only): view by client, by project and by duplicate, plus a skill check; the health screen links duplicate findings to it. Entries 1-8 are unchanged.; Add agenthelm project extensions list / dups / show / check: a read-only view of skills and MCP servers, duplicate groups, entry details and mechanical checks, fed by agenthelm inventory; capabilities gains an extensions item.; Add agenthelm project extensions move / dedupe / scope: preview by default, --apply writes. move and dedupe forward to agenthelm relocate / dedupe and show their plan as is, and --apply sends the same digest back with --expect-plan (a changed digest is refused); scope writes the effective scope as a Project Profile mcp_scope / skill_scope declaration (backed up first, atomic write). After a write the inventory is read again and compared with the plan.; The Move or copy and Set the effective scope items of menu screen 9 become real wizards, and the entry detail and duplicate groups gain m / s / d / p: pick an entry, pick a target, preview (plan, blocked, the notice that content enters the project), type yes (widening also needs the entry name), run, then read the inventory back; a mismatch shows read-back failed with the recovery directory and the menu exits with 1. Entries with unknown evidence and MCP entries only get manual commands and paste-ready snippets; duplicates without a matching agenthelm dedupe group are shown read-only.; Projects with language=en no longer get files that contain Chinese: the root launcher (header comment and error/guidance messages) and private/.gitignore follow the project file language; zh and default-language output is byte-identical. Projects generated earlier with --language en keep a Chinese launcher until it is replaced after a preview.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "template_changes": [],
+      "default_for_existing": "on"
+    }
+  ],
+  "changelog": "## 2026-11-20 — agenthelm 6.14.0\n\n### agent-pack 1.14.0\n\n- 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。\n- 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。\n- 新增声明式客户端驱动注册表（agent_pack_clients）：claude / codex / cursor 与只读的 claude-desktop 由数据声明，客户端名单与 --client 选项改为从注册表派生（既有输出不变）；新增只读命令 agenthelm clients 列出各驱动的检测结果、分发驱动类型与能力标志；预留 ~/.config/agenthelm/clients.d/*.json 用户声明文件，本版只校验，不执行其中任何内容，也不据此安装。\n- agenthelm check 对有 opinion.lock.json 的项目运行一次只读的 opinion-manager migrate 预览（5 秒超时、零写入）：有可迁移到标签按需加载的内容时给出一条建议（目标 Profile、更新摘要、未完成的收件箱记录数与可直接复制的预览命令），手工改动或 catalog 冲突时给一条简短说明，其余情况一律静默。建议项不改退出码、不计入 up_to_date；会话开始的 hook 与 nudge 不调用 migrate；check --output json 在有提示时多一个 opinion_migrate 数组，既有字段不变。不迁移则保持原样，不影响现有行为。\n- 新增只读命令 agenthelm inventory：列出各客户端能看到的 Skill 与 MCP（含 ~/.agents/skills、项目级与 Claude 本地级存储）、重复、description 字节数与可识别来源，输出带 schema_version 的稳定 JSON。\n- inventory 与 doctor 以独立目标 claude-desktop 只读 Claude Desktop 的 claude_desktop_config.json（须点名或用 --client all，不在默认客户端内）；doctor --client claude 对同名条目给建议级 shadowed-by 提示。\n- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。\n- agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。\n- agent-pack 支持把声明为 project 的 MCP 写到 Claude 项目级存储：默认 local（~/.claude.json 里该项目路径下，写前备份、保持权限、失败回滚），或用 --project-store file 写项目根 .mcp.json（含机器路径的条目被拒绝）。目标不可写或结构无法识别时跳过并警告，不回退写用户级。\n- agent-pack 支持把声明为 project 的 Skill 写到项目的 .claude/skills（相对符号链接，同步盘内改为复制，同名冲突需 --replace-skills），并在作用域改变时预览「写入新位置」与「从旧位置退役」两步：Skill 的旧位置同一事务归档，MCP 的旧位置只给手工移除命令。同名多存储且官方文档明确优先级时给出建议级屏蔽提示，不影响 ok 与退出码。\n- 新增 agenthelm relocate：把一个 Skill 复制或迁移到另一个客户端/作用域，默认预览，带计划指纹确认；不覆盖已有目录，读回校验，失败回滚，源只归档不删除；放宽作用域需 --allow-widen。\n- 新增 agenthelm dedupe：处置 inventory 报告的重复分组。Skill 副本可保留一份并归档其余（可恢复，不删除）；MCP 副本只给官方手工命令，不编辑配置；全部保留与忽略只写机器级决定文件；另提供只读的 Claude Desktop 配置可粘贴片段。\n- agenthelm relocate 支持 MCP：在 Claude 的 user / local / 项目 .mcp.json 之间复制或迁移条目；预览=应用，不覆盖同名目标，内联密钥值与本机路径不能进入 .mcp.json，只收窄不放宽（放宽需 --allow-widen）。已受管的源条目由 agent-pack 原子改写 ~/.claude.json 并先逐字节备份、可回滚；未受管条目只复制并给手工命令。\n- agenthelm dedupe --keep --retire-others 对 MCP 副本：已受管的条目由 agent-pack 退役（原 JSON 片段存入 0600 恢复目录、先逐字节备份 ~/.claude.json、原子改写、失败按字节回滚）；未受管的条目仍只给官方手工命令；证据不明的成员仍只读，跨客户端同指纹仍只是建议保留。\n\n### agents-init 6.10.0\n\n- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。\n- agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。\n- language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。\n\n### opinion-manager 0.7.0\n\n- 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。\n- 收件箱记录展示快照，采纳预览返回 shown_matches 与 added_lines；新增询问节流 gate（只记账，状态在 .opinion/ask-state.json）。\n- 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。\n- 公开 catalog 新增 1.1.0（31 条规则与 10 个模板）：zh/en 双语文字与 trigger / purpose / exclude，行为语义与 1.0.0 一致；两个场景模板另声明常驻集合与四个按需标签（decisions、files、reports、maintenance），选择它们时 profile 预览生成 schema 2.2 的标签加载声明，经确认后才生效，--no-tags 保持完整读取。既有项目不会自动变化，可用 updates 查看并经完整预览确认升级。\n- 公开规则与模板支持 {zh, en} 双语字段与可选的 trigger / purpose / exclude；profile、compose 按项目语言选取文字，en 项目选用缺译文的公开规则时预览给出 untranslated 警告（不阻断）。\n- 收件箱新增只读 check（报告缺条件/目的的候选与 OPINION.md 行）、revise（修订候选并留痕）和机械关系提示（relations，仅供参考）。\n- opinion 规则可以路由到某个 skill：inbox add / revise 新增 --route-skill、--route-when、--route-final、--route-on，渲染成 OPINION.md 自定义段里带机器可读标记的一行，并自动追加「skill 自身执行时不再触发」与「skill 不可用时降级」两条约束；新增只读 inbox routes list 列出路由并做机械检查。路由只能提高调用概率，不能保证。\n- 新增 opinion_manager.py migrate：把用户现有的 Opinion（Profile 2.0 / 2.1）迁移到标签选择加载。默认预览（零写入，失败路径也一样），--apply --confirm <指纹> 才写入；写入前备份到 .opinion/backups/<时间戳>-migrate/ 并写 manifest，复用 profile → compose → verify 的原子写与读回，失败按备份逐字节还原；--rollback 只在当前状态等于迁移后状态时还原。用户的 custom 段与手工追加的内容原样保留、常驻，不替用户猜标签；2.1 默认不动，--tags 才改用标签。另新增 catalog 1.1.0 的体积守卫测试。既有项目不会自动变化。\n- opinion-manager 新增标签选择引擎（Profile schema 2.2）：一条规则可带多个标签，context select --tag 按标签并集读取规则，core 输出常驻规则与标签索引，check 由标签派生交付信号；自定义规则可用 [tags …] 行尾标记带标签，inbox add / revise 新增 --tag。既有 2.0 与 2.1 的 Profile 与 OPINION.md 字节不变。\n- opinion-manager 的 lifecycle 支持 Profile schema 2.2 的标签记账：use 事件新增 loaded_tags 与 routing_miss_tags，取值校验自 loading.tags；有标签漏读的使用与规则束漏读一样阻断转正式；status 对标签输出 loaded_in、exercised_in、routing_misses 与 unused_tags。2.1 的 loaded_bundles、routing_miss、bundles 输出不变。\n\n### project-orchestrator 1.12.0\n\n- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。\n- 技能与 MCP 清单向 agenthelm inventory 要求全部客户端，包含只读的 Claude Desktop 条目，并在按项目看里归入「仅 Desktop 应用」。\n- 技能与 MCP 视图：英文措辞不再依赖数量（修正「1 groups」），缺失的 Claude Desktop 配置不再计为未知项；新增用真实 agenthelm inventory 的端到端测试。\n- 项目菜单新增第 9 屏「技能与 MCP」（只读）：按客户端、按项目、按重复查看与技能体检；检查屏对重复发现增加跳转；原有 1–8 号不变。\n- 新增 agenthelm project extensions list / dups / show / check：只读地列出技能与 MCP、重复组、条目详情与机械体检；数据来自 agenthelm inventory，能力状态里增加 extensions 一项。\n- 新增 agenthelm project extensions move / dedupe / scope：默认预览、--apply 才写。move 与 dedupe 转发 agenthelm relocate / dedupe 并原样展示其计划，应用时用 --expect-plan 回传同一摘要，摘要不一致即拒绝；scope 把生效范围写成 Project Profile 的 mcp_scope / skill_scope 声明（先备份、原子写入）。写入后重新读取 inventory 与计划比对。\n- 菜单第 9 屏的「移动或复制」「设置生效范围」成为真实向导，条目详情与重复组里新增 m / s / d / p：选条目、选目标、预览（计划、blocked、将进入项目目录的提示）、输入 yes（放宽另需键入条目名）、执行、再取 inventory 读回；读回不一致显示「读回失败」与恢复目录，菜单退出码为 1。证据未知的条目与 MCP 条目只给手工命令与可粘贴片段；没有对应 agenthelm dedupe 分组的重复只读展示。\n- language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。\n\n### suite 6.14.0\n\n- 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。\n- 设计文档：公开规则的渐进式加载（标签选择、读取时切片、体积测算、兼容与迁移契约）；运行时与公开 catalog 的实现见 opinion-manager 条目。\n- 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。\n",
+  "explain": [
+    {
+      "fragment": "118-confirm-frequency.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "118-confirm-frequency.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "118-confirm-frequency.json",
+      "scope": "suite",
+      "level": "patch"
+    },
+    {
+      "fragment": "118-opinion-shown-gate.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "120-opinion-fields.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "120-opinion-fields.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "121-catalog-tags-loading.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "121-opinion-bilingual-catalog.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "121-opinion-check-revise.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "121-opinion-skill-routes.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "134-client-drivers.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "64-check-opinion-migrate-hint.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "64-opinion-loading-design-614.json",
+      "scope": "suite",
+      "level": "patch"
+    },
+    {
+      "fragment": "64-opinion-migrate.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "64-opinion-tags-engine.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "64-opinion-tags-lifecycle.json",
+      "scope": "opinion-manager",
+      "level": "minor"
+    },
+    {
+      "fragment": "67-inventory-observe.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "69-claude-desktop-readonly.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-docs-614.json",
+      "scope": "suite",
+      "level": "patch"
+    },
+    {
+      "fragment": "82-docs-614.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "82-docs-614.json",
+      "scope": "agents-init",
+      "level": "patch"
+    },
+    {
+      "fragment": "82-docs-614.json",
+      "scope": "project-orchestrator",
+      "level": "patch"
+    },
+    {
+      "fragment": "82-extensions-desktop-client.json",
+      "scope": "project-orchestrator",
+      "level": "patch"
+    },
+    {
+      "fragment": "82-extensions-followup.json",
+      "scope": "project-orchestrator",
+      "level": "patch"
+    },
+    {
+      "fragment": "82-extensions-menu-screen.json",
+      "scope": "project-orchestrator",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-extensions-readonly-commands.json",
+      "scope": "project-orchestrator",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-extensions-write-commands.json",
+      "scope": "project-orchestrator",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-extensions-write-wizard.json",
+      "scope": "project-orchestrator",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-wa1-scope-declaration.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-wa1-scope-declaration.json",
+      "scope": "agents-init",
+      "level": "patch"
+    },
+    {
+      "fragment": "82-wa2-claude-local-mcp-json.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-wa3-project-skills-migration.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-wb1-relocate.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-wb2-dedupe.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-wc1-mcp-relocate.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "82-wc2-mcp-retire.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "s1-en-project-leaks.json",
+      "scope": "agents-init",
+      "level": "minor"
+    },
+    {
+      "fragment": "s1-en-project-leaks.json",
+      "scope": "project-orchestrator",
+      "level": "patch"
+    }
+  ],
+  "removed": [],
+  "overrides": {},
+  "date": "2026-11-20",
+  "source_files": {
+    ".github/workflows/pages.yml": {
+      "sha256": "5af7d749068cd4ce58970efffed508a9e315587c88c44a890e360b7a8a528603",
+      "kind": "file"
+    },
+    ".github/workflows/release.yml": {
+      "sha256": "b2bf83f9cc1f1eb0dcedda4636eb708fb02c7cdc8970ceed2326cd466097703c",
+      "kind": "file"
+    },
+    ".github/workflows/tests.yml": {
+      "sha256": "dfc810a970716c0ff664cdc909d1d23c1f1ad63b1630f6008297187b45397869",
+      "kind": "file"
+    },
+    ".gitignore": {
+      "sha256": "53f0c100a33a56ebada040287b3d0f5dbab21c6ec6b66209fec5515c508f1144",
+      "kind": "file"
+    },
+    ".nojekyll": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "file"
+    },
+    "CONTRIBUTING.md": {
+      "sha256": "05e94b560f1e2fea08662998de11f354d91203f4fdb5708b6e909801745f7ab6",
+      "kind": "file"
+    },
+    "INSTALL.md": {
+      "sha256": "bc7a8b2e0b0347c27c2fdf9fdf11af958cb368955db2b8422a747ab981daf21d",
+      "kind": "file"
+    },
+    "LICENSE": {
+      "sha256": "430a287aadb76895d8cc8adbc378a6353d1d9fb8405edb338a6f718299fa2593",
+      "kind": "file"
+    },
+    "MIGRATION.md": {
+      "sha256": "56c1d7594ec816bf3a830fcf11fce092abd339f0ea15c863655f417fa3fdbdc8",
+      "kind": "file"
+    },
+    "README.md": {
+      "sha256": "dac31fb0f0e67d6317dfeb325f80c313b4a700461e77a901edeeea42032d87e1",
+      "kind": "file"
+    },
+    "archive/README.md": {
+      "sha256": "166e4a791fdd957b115b557426af71671cd7cf650b091232566a89d560a877d3",
+      "kind": "file"
+    },
+    "docs/ci-version-audit.md": {
+      "sha256": "4241ccf6a09e38eb4f56e10c96f078546be054de544a6a7d30928e223dd731c6",
+      "kind": "file"
+    },
+    "docs/design/case-state-authority.md": {
+      "sha256": "b38bd6d22f9bdffc7b7fca53024447309e60cb7cd3234841eff8b7aa0f4707ad",
+      "kind": "file"
+    },
+    "docs/design/client-drivers.md": {
+      "sha256": "42a198bc09132ccca17b61eb49522887493fcc2cd585da91051e2f3298b93940",
+      "kind": "file"
+    },
+    "docs/design/mcp-skill-multi-project.md": {
+      "sha256": "bf5558f3e2a0124ad4ddf59f6070f65d8c83f470f649533480ce694e0c072134",
+      "kind": "file"
+    },
+    "docs/design/opinion-progressive-loading.md": {
+      "sha256": "5a359d6f43546c5ab86759b77041b6b46adb5ecc6216f242872c5e22e0c7d8b5",
+      "kind": "file"
+    },
+    "docs/design/opinion-skill-import.md": {
+      "sha256": "87b63547b0e34320422e63946f31205825b5fc651da33a6b1dd632dd27c090ec",
+      "kind": "file"
+    },
+    "docs/design/opinion-skill-routing.md": {
+      "sha256": "07e8d164f54d9be3d401d7de453e4f79d5ccabcc54a975537ca308673380bfe2",
+      "kind": "file"
+    },
+    "docs/design/progressive-loading.md": {
+      "sha256": "83e3a19aa4ffed0c886b5d029f041d22f1f06da28c4a48ff61d378f8070bf3ea",
+      "kind": "file"
+    },
+    "docs/design/release-hardening.md": {
+      "sha256": "5cf1811293b73687cb7be7545743f7b2a4cde1577534af99b171c6ccdfbc6e13",
+      "kind": "file"
+    },
+    "docs/design/skills-mcp-menu.md": {
+      "sha256": "23a8049ee9ada24c7b83d5939b748c18d0a8b2d3a97f436a937fc514458b54a7",
+      "kind": "file"
+    },
+    "docs/i18n-policy.en.md": {
+      "sha256": "bec12a49bff3a6c0a3cf64de1e0767cca0e74c0f7984ccc452a3f58c14eca4b0",
+      "kind": "file"
+    },
+    "docs/i18n-policy.md": {
+      "sha256": "b817232b83c689d249de9def6b9aaee43868e3544171183b232c64c85b4a87c4",
+      "kind": "file"
+    },
+    "docs/release-acceptance.md": {
+      "sha256": "72bf0d3a0022622521d2bed37d8fffaa7fa91def10c118fb583775d7abe9d205",
+      "kind": "file"
+    },
+    "docs/write-commands.md": {
+      "sha256": "5e0207ff21a382c03a6182c0d72100efe9920f0ead205f7f60ced46c487f2796",
+      "kind": "file"
+    },
+    "index.html": {
+      "sha256": "a757638345c525565f691b3c85daf9adfdf3d424dcec610adf805b4631c8487c",
+      "kind": "file"
+    },
+    "index.json": {
+      "sha256": "3b8d56607504a5ab0fe60186467f6d35eebfaf315032b59954e7fc8a4f5857ea",
+      "kind": "file"
+    },
+    "llms.txt": {
+      "sha256": "4c26140f5cb1a3d9481a39217321f4d511f2627386cb1bbb9c8673408dd05b5a",
+      "kind": "file"
+    },
+    "packages/cli/.gitignore": {
+      "sha256": "6aeb32af681a9f4cd292a1fb8393c7d7b815736c1118ba5c3865e92c7e7616d7",
+      "kind": "file"
+    },
+    "packages/cli/README.md": {
+      "sha256": "69883fb98f57f086e47325145a4cc8f2760542b6358e4ead22a997af4ec95579",
+      "kind": "file"
+    },
+    "packages/cli/README.zh-CN.md": {
+      "sha256": "480963974304cecd8aa0f38e687569a0e1287f5af4013f41b3ce659e9fcc6da1",
+      "kind": "file"
+    },
+    "packages/cli/bin/agenthelm.js": {
+      "sha256": "2a5b874d97c4ce4b4f52ea48d0bd6d9f19671420322b145498d546fe0f67e54f",
+      "kind": "executable"
+    },
+    "packages/cli/package.json": {
+      "sha256": "67071e30a726ba5497df616c90317050c763524f24d706323185a7552d742406",
+      "kind": "file"
+    },
+    "packages/cli/scripts/sync-runtime.mjs": {
+      "sha256": "b682f28676b226cacb3cf018f8df1e386d2c19ed8b14edc6ea379280e244c319",
+      "kind": "file"
+    },
+    "plugins/agent-pack/.codex-plugin/plugin.json": {
+      "sha256": "85f6793795f2b94546fd449e5c43e1b645eda7818593f6350dad40e725cbc041",
+      "kind": "file"
+    },
+    "plugins/agent-pack/.mcp.json": {
+      "sha256": "ea7e3368798d7387bba1989b732c47a39d5fad07cd951ad3b0be0ba05a370d46",
+      "kind": "file"
+    },
+    "plugins/agent-pack/hooks/hooks.json": {
+      "sha256": "866f39c2f7447c9dd9b32f654962207bfc87c3ca907f21e5abfa0b292a939cdf",
+      "kind": "file"
+    },
+    "plugins/agent-pack/mcp.json": {
+      "sha256": "b9d6fdc0edaeca21c5b6ecacde6973f23da33da2508f27694a209b0ad475e7e0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/plugin.json": {
+      "sha256": "660da81a61a929be20fdc3af37f1ef264bee624ef24d4ebe6807175da9ab1623",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/capability-config.md": {
+      "sha256": "19079a9752e8cb9669a0188130fb02bcbd2ea2a87f3d1799a0f77c67f3e35c88",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/check-opinion-migrate.en.md": {
+      "sha256": "a278058cbb6b9c5231d04c9e41b578c8b5002a841ab0040330b46f830d0cc5df",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/check-opinion-migrate.md": {
+      "sha256": "5d54267b5a0793463cb027816492bbec88a8bb066a4300362b7ea9cfc42ddd05",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/dedupe-contract.en.md": {
+      "sha256": "5df3bc3ba160636b367b14af3c55ca0054944bab5c4d0d51070727668d0ba40a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/dedupe-contract.md": {
+      "sha256": "deb429cb0e48a05aa8c309a5abf2f4b2257847a5c064591853e7113a9a800292",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/inventory-contract.en.md": {
+      "sha256": "40bda9e400fcde8a4b4ecb08cc46682a7c8d39193436fa7723fc597b65a74abd",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/inventory-contract.md": {
+      "sha256": "119cbc70910ea3ef9775676bfd8015390e75f6222ef6811670e0b99a24b9b452",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/local-only.md": {
+      "sha256": "8672e4f1809de5b16c8586e3ea0b0ba1ce740b4315f3b1192797da818d55bdfe",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/nudge.en.md": {
+      "sha256": "54c0d60dc21f485182c378775aa4e32478a24f0573a5d23fd2fcb2bd4a517a15",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/nudge.md": {
+      "sha256": "7311485f159ae7e8035be5baa1509f476870e32c5aa78d1296456467a4c35b5e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/relocate-contract.en.md": {
+      "sha256": "587435b6adde58a2c5a25b59c3c79489a9cc75c5a8792444e359736c585e16db",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/relocate-contract.md": {
+      "sha256": "a1a1d579c5fcff24b38221a0428f4b5194f5d961809906790a3b94bacbe671cf",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_claude.py": {
+      "sha256": "3c70a1e43b0b05651bab3118961cc4ae1cce6d8400e085f60a08ce46c06c36c0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_clients.py": {
+      "sha256": "e850306c316df5538fd4353eb10b2d110d5940f260afb06f3d4308a027243a01",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_codex_mcp.py": {
+      "sha256": "e2f82b1a049545dfd26e82dd6eee754ec88745b8789d139f3664506e59e480a9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_config.py": {
+      "sha256": "e317d2c7695aafbbb38cb79da9eb24298b3e45a46ab9341de30522d404092bef",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_dedupe.py": {
+      "sha256": "4fb1e923b7ef1b130160a38c3611e64f31f55a3aa439bbf08be1cedb103f48fc",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_desktop.py": {
+      "sha256": "d5771e4600c7b68491c541a9346cde4ed19b7576747bd769794e1f2cc1c000ed",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_ext_common.py": {
+      "sha256": "973550396dcf005d8d6546d27a2aba3612f13c3ad6b3a0e40ffe52f18d630c0c",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_inventory.py": {
+      "sha256": "44c0892d84c5a76c39db9abb08da276914cee9ff1a53db6d1905032ba9026224",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_mcp_write.py": {
+      "sha256": "231d1bb5aed8ef823c657debd2909c71632ecc82ed3c199c21389334d3fd1752",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_nudge.py": {
+      "sha256": "a5b748b1bf311c73a320cd33eec4cfcda594b225bd322ce44109599ca58a860b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_relocate.py": {
+      "sha256": "2f966dab15e62b71e661a622681fcfe98331432d210af36c6b48629120d571b6",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_scope.py": {
+      "sha256": "d9b0f90c53c582bee537478e7a08953efb95762d92838fa73b6f759f5ac73744",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agenthelm.py": {
+      "sha256": "927a54b451a69c8fa82108fbcb95e38448a7793093ca23bf20079ee0a4f890e0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agenthelm_runtime.py": {
+      "sha256": "f6b55f6514005771b6c3cb31093bc7ae0cddf8bd254a57c266dbb1c78b98d8e6",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/i18n_agent_pack.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/local_only.py": {
+      "sha256": "20719347faec39b2420b2afdb60953024e7e4022f5b6a737b6ffe02089e6b5a9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/locale/en.json": {
+      "sha256": "a94d21aa8cec059c2b10f1e4838ba01eb0144dff1391047f8719fa6e66273599",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/mcp_env_launcher.py": {
+      "sha256": "3ee9eca4cca44d82bf83a96f038f8562d10d872d3bd93c2ef89ff6ef19dcb11d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/mcp_server.py": {
+      "sha256": "7f645ef6f11fae67cb25b71e99ab999c18f44b6daa12fc04c5595c4df2cb3ab8",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/nudge_text.py": {
+      "sha256": "1922b5c421b88dbaa5dc729a49d1bd1bb8c8d95054203da998a73ed0363f06e7",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/user_settings.py": {
+      "sha256": "cac8a33bf6c8ae0ae132a5aebff1d6c060238d3fd1b3210b1da2103e1e6e422b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/skills/agent-pack/SKILL.md": {
+      "sha256": "10cb9146b5ba52e7b8ecf5fc6c00ec27e1cf180d5b556dd07733eeb35ab93a38",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_claude.py": {
+      "sha256": "ef3f0c6bd7537239fe9d8fc2a647ae9a1876aab5f139e6737d7c64cb98ac5256",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_config.py": {
+      "sha256": "32871ccd59c60b5a26fa8e9848fd81b038a5e2fc82fb5d8093ba46aeea01c0ab",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_nudge.py": {
+      "sha256": "cc062b38de2b4f61f2348d5426cae135d583410556b65e9491702d3bf31bc651",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm.py": {
+      "sha256": "155ee36dd74202e3e302080bb5f92b9c08d497857fd0832212fbb2fefd2a973c",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_check_opinion_migrate.py": {
+      "sha256": "90e0e6782f7de22318390c335c9f30661c546f8ebc9788c9dec9b4a26561742e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_check_output.py": {
+      "sha256": "355cd7e3de621d2a13ee46a72799eaaddeed7da19208155b4f3bbbfec2424c16",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_companion.py": {
+      "sha256": "a33eaf61a9b56c7a2681051636c9bd28024df9546726c572a65f34adab1961d2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_lock_errors.py": {
+      "sha256": "c8c6cde5b14c25e7934b6293a4730a65cf1bb5709da5f7811cdf5191374507ca",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_merge.py": {
+      "sha256": "3f05cd318a3d366199cb329b5a685e6c5029c7edc3984bb4c531eed60418f334",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_cursor_release.py": {
+      "sha256": "4e6ed28217694e4f24eff93aef394253190424b112fca0149a733fce4af1a684",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_install_state.py": {
+      "sha256": "24d65a7afb78cd3564ff1a7f0a1186c48db751c83b555379be5f375c8f70ee45",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_language_drift.py": {
+      "sha256": "350f5a45415f9ee17c01307d4791a924350cfd4a6a40913cbb87a792267cc74a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_region_restore.py": {
+      "sha256": "bc0b94f43e546c91d15eb8633f821983d41802468c7fb28ffd04679ceb2c03ee",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_reporting.py": {
+      "sha256": "6b43db0895d67f4adfa6a7bb01574006604e2488ef80f5464e57511fadae05ff",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_runtime.py": {
+      "sha256": "92fb92cdcb1aa49a4a150e79f15ddc23c43763b9c6c0b53dbf043116aa2d132a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_scaffold.py": {
+      "sha256": "19e04bb6b12b103cc46572ee7240aff6763a4d677a60d1ccec8321de579b18ec",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_update_path.py": {
+      "sha256": "cbffc0f20d5c0c13e4af69c1af675c82e7e973a09d1f342909260556c4d2753b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_update_wording.py": {
+      "sha256": "66e7b8816d45daff8f0160b7b55cb7e8c2b68effe57bea70a23b37fd69f4e54b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_version.py": {
+      "sha256": "c778a3a9e48b622a24f17ec752b90ab2e0d1254c5e91a21c8b74ed21d39ce06e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_client_drivers.py": {
+      "sha256": "ce219bc88278106735d865fc34ea56e5ac908e3d6469971a6d6f3802a8576d05",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_dedupe.py": {
+      "sha256": "a957c7571dd36a78bba94257e8a128eb5374eae6b1bee94be94e415ffe9fe6f1",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_dedupe_mcp.py": {
+      "sha256": "1eb9465ad8729cf01a7dbfd28579931e9bbed5906a44bfa4ba6ec8fefa0afd8f",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_hook_capability_clients.py": {
+      "sha256": "6cd7ac94e247d73219f7906eaadb6ce7287da03026b88f4abe74f5a23ee925d2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_install_residuals.py": {
+      "sha256": "c4cc457b9601a0885d02a0dcd3622f8cf36e519b61eb1e285a330084e501555d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_inventory_desktop.py": {
+      "sha256": "d5748ec3814b3af21f8e2e41e7f5b7775251628570bac7cfea8392caf0f232d9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_inventory_observe.py": {
+      "sha256": "83886448931baa944e542e07fb5f8c1d1fdc50e8bfe6d24edf56bba2c48b5abc",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_isolated_entry.py": {
+      "sha256": "db0987dfb110f61c4a39b01a4c64d18ffeb0c3af75087d625b26adfe4a3c1bc4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_launcher_plugin_root.py": {
+      "sha256": "fc72812cd3de695362346919e1da84ca0b3eab99b39f0282c08d7c6e224782b3",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_local_only.py": {
+      "sha256": "7612c56891324e2965d1078e3ebe2baa01963a6524ed95d2b3d12c9920b4fa23",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_mcp_placeholders.py": {
+      "sha256": "d1b45a6359260eff244fc69eb8f5d124d59da35c2eeee3ed44bdb78d4464f574",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_confirm.py": {
+      "sha256": "3710d8c92bad6668bcd786370c66549ed5380418d62727fdc0187145b3a26b83",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_shell_quoting.py": {
+      "sha256": "83de3394ecf30806c12c0829a0f8be0076119de595b0fb277f3081a447cf1aa4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_stable_hook.py": {
+      "sha256": "3de1dac8252dbf976664fc92c5ac77b6b1ee435b8108f15755cb876cdcca34fe",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_project_skills.py": {
+      "sha256": "e7a9fff0810f05fc07784836cc18bba0d75619d09e3db5bf639b8f67db4f5c84",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_project_store_write.py": {
+      "sha256": "cbe56e1f73252b9918a049c18683943b75722350ecc9d354291eab32e2fe113d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_rc_acceptance_polish.py": {
+      "sha256": "7c1d7ccd9e70a801f512accc1082d454e083121e3fb560b5b2da4596f562a987",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_relocate.py": {
+      "sha256": "06882a24a1a39667b42c34e527c01cba2f3dbd0cb8a984cc4f8dcf1de0041173",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_relocate_mcp.py": {
+      "sha256": "b5e0f2877cd8fd52649b591e5bdd59b7d43c7528f3c797c5569b68567c217b5b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_remote_mcp.py": {
+      "sha256": "55817a2153460a302131161db67e7e2acf798ec7b5031afbd5ac2cccc75570ed",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_retire_residuals.py": {
+      "sha256": "0af321a9e695ae8e99383b667ca279ba32d354ecb1b9401438ee6f12fd75f5ae",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_scope_declaration.py": {
+      "sha256": "2416029f47302de2e04aa8ba56cd4bcf40792560ad839af9ef668d18243ea708",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_only.py": {
+      "sha256": "e950c59d80d6e8a4ce57102146194e6e50e3769d831094fdc47ec612d5653817",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_preview_parity.py": {
+      "sha256": "7d353fca28be8509a220c34299787ffabf6610418edf16646b8ddaee2bdec69a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_user_settings.py": {
+      "sha256": "1256bac96fb5d8a0bbc7ecb6c2a5dfb9b884f935146c2ffd88004269c0054a19",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_w1b_upgrade_path.py": {
+      "sha256": "ad5b47c1bfcbed4d73c32a613393bd39058047c6b7bf50964d52ffbd316d5f08",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_w3g_followups.py": {
+      "sha256": "a554b3343c0f6e679d2ff3264da7ffaa7494f391efa71053f7c1f42bfc2fbb17",
+      "kind": "file"
+    },
+    "plugins/agents-init/.codex-plugin/plugin.json": {
+      "sha256": "4291dda69ad0990db34dc75b81fe1197b89017cbb5a493a1375b1a471baa5f03",
+      "kind": "file"
+    },
+    "plugins/agents-init/content.json": {
+      "sha256": "00d8c5614fdb6b9139651e7c59cb3324070b34e5e40a67ba0f9c725f6b366fd3",
+      "kind": "file"
+    },
+    "plugins/agents-init/plugin.json": {
+      "sha256": "7c59c3de2f075e1e3c594f0182d780790a919f66e2ba4b91a4398c9eb329623d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/AGENT.template.md": {
+      "sha256": "4fe1115569c12ab007cd7d388f49c2a4c579864d5c0bf04a3180ea4b0796220d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/SKILL.md": {
+      "sha256": "b2ee1720fa53837e418e7920209dde7a301fb298ed3f1ff5e85510e662285cb0",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/index.html": {
+      "sha256": "bb92e5c822332097a54e61bed39eeb4346676e0eb0b9870fb96352fe9ef02620",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/launcher.en.sh": {
+      "sha256": "105a8800889d4479b1ccb3cfe3ac7e1d92cb4b9c7642a089d64c297eb80e8189",
+      "kind": "executable"
+    },
+    "plugins/agents-init/skills/agents-init/launcher.sh": {
+      "sha256": "cf27d6cca786905a192446ea4eefe5635942914c3358c78d12117af912107cad",
+      "kind": "executable"
+    },
+    "plugins/agents-init/skills/agents-init/project.schema.json": {
+      "sha256": "bc0c0ca3a6cccf1afcb114669dec3d2d83a3b41e26527b541c5820e6b4312e5a",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/adopt.py": {
+      "sha256": "fdcec0b047eb06fdf88b6b72c84348b61e2cac24e5511277e81e9c240e2446dd",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/baseline.py": {
+      "sha256": "b48b6768cc2f0afcee5d17ed8f0ba1627837196066f956f43afe22a4d8cfd690",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/i18n_init.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/init_project.py": {
+      "sha256": "d25792aec86c2eea0de8b08b09459b51900f42524956f52f201ac582db68ee10",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/locale/en.json": {
+      "sha256": "7179c0c73f096c3397244a8e679dddbc47d95c25e3b6cb8d7cd2e63f663a1d34",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/merge3.py": {
+      "sha256": "85bf4fffa61dce7186904244ea38744ff4c9d345438300d8cd5ca433d6084ae2",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/regions.py": {
+      "sha256": "70cd90d25a96cffdb7705566ed3a2fccf036bff88c4180505993837458e11591",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/scaffold.py": {
+      "sha256": "52c087e2b4f5ff2dbee3816159218449d7138b87bdcd53f15957d10c9f19f641",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_adopt.py": {
+      "sha256": "868e42c3b734fa4398095fd6fdcd42056c607ecb60bdb0183917e67dee9b940b",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_adopt_recovery_preview.py": {
+      "sha256": "c0787e2cfaa07efd1353dee448534293b49b16b874476e5154fa9b3c18a65506",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_ai_contract.py": {
+      "sha256": "fa9f4aece53a8558da67e16b5dcb3c50c29533d2a36b7378a49093747d522a4c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_fixtures.py": {
+      "sha256": "5348ead601c632264ba2ca9772eaf5d39d4020b5e260b0d9636e43059bd36407",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_init_project.py": {
+      "sha256": "ea118234609079fcbe171b9a459a788e096a297fdadb5139d2da417eb837978d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_launcher_language.py": {
+      "sha256": "0cf1b35102bb79d72a94a7470e143c9f85b51b41e8291a8fd3a152a3610997ba",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_merge.py": {
+      "sha256": "940079db6033784251141703272984ebabd700dd03c5fd006cf8265660e47f7b",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_multi_value_options.py": {
+      "sha256": "327711530005de38042eff0d3aafa09ab4b70f8f994524c2293230968364c320",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_rc1_to_rc2_rehearsal.py": {
+      "sha256": "bc6b686cb14c9a53729fbfaddfd6eaaf8cb773ff070ccbf3c647985618d5ee3c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_scaffold.py": {
+      "sha256": "49331cc57e0f8dceeb58ba7a90502f712c43ac21cc15dbde5ad3f2673ac59b2c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_upgrade_matrix.py": {
+      "sha256": "bb09538abda7ff2c753423d0859be05c0b9f26ebbe87911447480c2591f8266e",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/skeleton.json": {
+      "sha256": "4a7c2ccaed293bc63ae2f3b3e6c8fa5e906292462f81c41a0fc88fcb22a3eeeb",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/skill.json": {
+      "sha256": "0d84645a5e755ae8b59e40e289b4830ee690a52ac13d8d9dd56587d1297a32a4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/.codex-plugin/plugin.json": {
+      "sha256": "1db7c1e901bd077b7d27bb40e2889e88cdba3fdc4a40a81b9c24efd337d102e6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/README.md": {
+      "sha256": "246b5c9896eb0b8a1187626ecabb113aec48de0060e6f8f3612cc1a8e04d970c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/.gitkeep": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.align-requirements/versions/1.0.0.json": {
+      "sha256": "26b95f2edce0d4942b3652c624b270a29fd75caa1fc5717debdffca126241091",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.align-requirements/versions/1.1.0.json": {
+      "sha256": "13b83b21cf168b7aac9324f119781f8a7ef167817fccfc344248c06ad0b55042",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.assumptions-authority/versions/1.0.0.json": {
+      "sha256": "85b02b03bbf8447f703820026d9ebe6e9ac1182000c90451dad4c81cd23c23d6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.assumptions-authority/versions/1.1.0.json": {
+      "sha256": "9b09876d87f31e96e6fc72327b00f42ef33a75ced6a90aa8056c1c4a853891a5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.batch-questions/versions/1.0.0.json": {
+      "sha256": "2cad060df9195bf6f47083b0443fb92a9e1735989991aab34aae0c2651d18337",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.batch-questions/versions/1.1.0.json": {
+      "sha256": "3a94132fb0b3c2ddde4d475460eb27eee07de016474ecdb71ee79f80d80720d2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.bilingual-terms/versions/1.0.0.json": {
+      "sha256": "420531760d1ab5ffe52395a680597cb652574027e542fd4684b7166e14918c39",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.bilingual-terms/versions/1.1.0.json": {
+      "sha256": "a4088be89abc358e845ede0059d48e561e88db32244f3ff61e5f95315137712f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.calculations/versions/1.0.0.json": {
+      "sha256": "e54f87a7993d5908a1adfff07534b85af96a317d90b6eda6b84d3f8701331a18",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.calculations/versions/1.1.0.json": {
+      "sha256": "a63091197230f82018cb0d806cf316f047f56e45f3a60e4ddfea4704792d9244",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.chinese-response/versions/1.0.0.json": {
+      "sha256": "6bd3337a65a81251fad64555a7702016807c64e78aeb9709cb50cdc7325662c5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.chinese-response/versions/1.1.0.json": {
+      "sha256": "096dc9a1446ef259349f0cd26b284cfa62a3ce3dab445e7a0bcd44cdb0386c65",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.clean-deliverable/versions/1.0.0.json": {
+      "sha256": "f0af00b2666ca7146447f17c8e13ca01c9e0d73c01883797787b44c045b06df2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.clean-deliverable/versions/1.1.0.json": {
+      "sha256": "8d75b649d05a5c774ccde496708ec52fa369e1843d7138985585e8d9f04ec033",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.complete-options/versions/1.0.0.json": {
+      "sha256": "ef9ee103ee35dea554ae5d72735ebdeb7b0e16bf707b2362ef31be004c63110b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.complete-options/versions/1.1.0.json": {
+      "sha256": "61f68e08a26a7f05df0d93b784135d5f45883c025b14049e50ca076c6c4f3000",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.conclusion-first/versions/1.0.0.json": {
+      "sha256": "2c0975c3fba8d4553b69a714fd324a1240c10ba0429904740db853cf10d8f8d3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.conclusion-first/versions/1.1.0.json": {
+      "sha256": "56fb508b615bfcd87ccb3fe28e7a3ad8e3214ecf98b8a10d0c3e8ff1158963bc",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.concrete-titles/versions/1.0.0.json": {
+      "sha256": "019d017fc9181339f1f969fd3e81323761e28b755c4ef434fb6af4d55925f538",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.concrete-titles/versions/1.1.0.json": {
+      "sha256": "0b73490415ee802a7f56210f95fb4a16aadf317b3d7b0a1b454c8668d4b58c3a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.consistent-items/versions/1.0.0.json": {
+      "sha256": "dd7030332d69d2eb91a7b1af34a3ac37d49e4018365da1e7a2d10afd71ed66f0",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.consistent-items/versions/1.1.0.json": {
+      "sha256": "469d766d152c5e6016b40f819210def87431513d02c6af156dcf547c146e7070",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.device-readable/versions/1.0.0.json": {
+      "sha256": "0afce0068b778ffa8c623cc1ff208192f70e03434f0ace4fd303565ba728a75b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.device-readable/versions/1.1.0.json": {
+      "sha256": "4119293934f793261f9de6c0b284eaecfbbc631f097d962c5fef033f00acbabb",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.editable-diagrams/versions/1.0.0.json": {
+      "sha256": "68d293ebd061527d948e892b9f4503a74043ed37ecf2a922cdd9047f508e2ed8",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.editable-diagrams/versions/1.1.0.json": {
+      "sha256": "d99260419700ca8470f2d2aea5833e8fd3250c1565ee8aad22c9491a271a3d29",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.evidence-inference/versions/1.0.0.json": {
+      "sha256": "01593b17d08a67ee41b28d96e454b25d752fd5eccc341476a75d2bfb541884f2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.evidence-inference/versions/1.1.0.json": {
+      "sha256": "f44065db407191f229375f1a76a282468618e5dbd39dd014c4bbc6a33856b60c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-chinese/versions/1.0.0.json": {
+      "sha256": "6a6659917a0bccda3750f79727ea433eb63d40426aa2a212b65499a8160fc181",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-chinese/versions/1.1.0.json": {
+      "sha256": "a2ba7d257ec73f3ff8aae12407aab79e0f76e2c58ac30fd2607b14b0939f0218",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-project-language/versions/1.0.0.json": {
+      "sha256": "c29d447ac315533a52a6c242d7cc52b1668d9945c87c1f922dce261872730235",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-project-language/versions/1.1.0.json": {
+      "sha256": "ce1cbd2b5cf976dbb618ff2b0a03fd4a2c75ea7cd90fd9cf5b3f4e7ea97f4504",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.markdown-structure/versions/1.0.0.json": {
+      "sha256": "3647daeb2f4e4f532c8f77a033703bd3b36bbdd355a1f1f6ce8ac1e19afb66d7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.markdown-structure/versions/1.1.0.json": {
+      "sha256": "5e026f87da514f3bdb3c883bc1cd202e0414dc656f0021e35b47223b76f48a9a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.portable-files/versions/1.0.0.json": {
+      "sha256": "f638ce7554a11e8f793b63ee01ea0ca65a8df405b3ca34da1ad8865960908057",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.portable-files/versions/1.1.0.json": {
+      "sha256": "d2af355593b8fffba6d19b558bb1edf23bf367f647af2d938d3cb9b1565ef0f1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-context/versions/1.0.0.json": {
+      "sha256": "c423df33e1ad8dbf7d060b15fb23b35b68ebf924beb76ac129b346e5cf46c917",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-context/versions/1.1.0.json": {
+      "sha256": "4c6f467b8fe75f878d4f946f8a8f88049d3a28dddbc18368c5705f84e4b47cb2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-formats/versions/1.0.0.json": {
+      "sha256": "1fa5a40415061366227cdba554bc811bfabdc764b110adfdfedf5935e2239774",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-formats/versions/1.1.0.json": {
+      "sha256": "9ad59f85e307b0db19bdfb0d8bc31e26d39fb70523ea246980e7ab00a70f1e09",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-review/versions/1.0.0.json": {
+      "sha256": "054ebce7547cf7254a0d9d03af8b651daf6ae6361c921e3fa111aea7f9d96d4e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-review/versions/1.1.0.json": {
+      "sha256": "c607bd8730f9a48fa7dd0be4d7c404454618eb8f0340b698c3c3acec0784cb91",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-brief/versions/1.0.0.json": {
+      "sha256": "1d64ac6bedde9fd7205c6e517bb484acebedd08fe82f06aa761cf04bf010414a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-brief/versions/1.1.0.json": {
+      "sha256": "f50c23c0f658e9a2d14f491413e3f2819fba1eb4d8e5ba6610c166bc89b6da22",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-dense/versions/1.0.0.json": {
+      "sha256": "5dda9f066dae841df986a190f00ea0bc56c0d3b0ce42ebffa9b2e1910dc0c4b9",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-dense/versions/1.1.0.json": {
+      "sha256": "d77749efa3632c92ff4578b2c5fac0ec4f0e5d11649898a0e4a81908e212be26",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.rules-tools/versions/1.0.0.json": {
+      "sha256": "6f0657b70bd2e15e0dc68b95a9ef77234cd4af79d40a9a9f8a8158da16323a8d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.rules-tools/versions/1.1.0.json": {
+      "sha256": "230320a6db7fa104d10397835144980b2bb6f2d9764e1f61896e4a4fecd71575",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.semantic-wrap/versions/1.0.0.json": {
+      "sha256": "77890d37d6e21bf0568df250d5ec6398699c595728decf624d2f6ac8887802d7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.semantic-wrap/versions/1.1.0.json": {
+      "sha256": "109922c31ce787651ce8bdacb417d2a55eb59207b82a665a7867634bfbb899a6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-proportional/versions/1.0.0.json": {
+      "sha256": "4ba50387659bc4e4593026a2ab253abda0f9d0e8e959063957dc58d72dbd5dac",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-proportional/versions/1.1.0.json": {
+      "sha256": "270405661e4e8bc4e553da72cbd0b101c2b2dad83deb121e657f2f64612f81c3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-three-level/versions/1.0.0.json": {
+      "sha256": "c9c2c2bad29e79a649ce04c95c9a2cb5a7ba6b92e5318878d7d5a40e50df7b6d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-three-level/versions/1.1.0.json": {
+      "sha256": "e092af0ea720db5d59d727e778a01f1251aa8dd69a3f1cb1d4f3befd783b2838",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-compact/versions/1.0.0.json": {
+      "sha256": "0822de141431d920e6bf8ae0cc7a07641ad34e4248d252133f5a488fc17610f4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-compact/versions/1.1.0.json": {
+      "sha256": "d292b63d74d8dcb83516b9031afe4f60402b2e4e4c1db8bc2f9275431988dd02",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-list-first/versions/1.0.0.json": {
+      "sha256": "8e4d9f8d0382ca9a4a06a31e64bc402bfe1d2f8fd80f576670d28de26565fe15",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-list-first/versions/1.1.0.json": {
+      "sha256": "27a37e8d5265f16aabed620bb4b6084707b5bd8412f3c7d55ad420ffd6cec1da",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.test-evidence/versions/1.0.0.json": {
+      "sha256": "5fb88ea8478601128a5662077beb8180126c3c7529a9e54fa4b324a47e1b9304",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.test-evidence/versions/1.1.0.json": {
+      "sha256": "e326dc4f447ff22ee270b7271bb9dc3414888b4e7f2c5ae3a889be58102ac630",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.versioned-files/versions/1.0.0.json": {
+      "sha256": "b5cc996847cf20f4764be135c4a5189a30f16dd26d4eaeda38bf6318820c256c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.versioned-files/versions/1.1.0.json": {
+      "sha256": "3e8cbf610d5d5e1db63bf5c8fc5b32adf1d0489216cfc3248146a688fe17bb2d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/.gitkeep": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/compact-tables/versions/1.0.0.json": {
+      "sha256": "b0d988b5e62017ce4784466f590fdc3ac3693412541ab71f788beac0658c25e1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/compact-tables/versions/1.1.0.json": {
+      "sha256": "f0b724526a56c6aa9f22388a2696c093ae6d33fb7c04325413818def2008dd03",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/list-first/versions/1.0.0.json": {
+      "sha256": "3ea2774fb2f3fb5943d83eae3d36c637b4bcc6bbc45c54cf4428de0db1c4240f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/list-first/versions/1.1.0.json": {
+      "sha256": "f998047856cf540ea66ef67146c10d4562f16d0e97b90d00184538fe97548034",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/chinese-maintenance/versions/1.0.0.json": {
+      "sha256": "3d268a6a323d4bac1afcd5b8539b65f4019ab112850b223c61ee06615840248d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/chinese-maintenance/versions/1.1.0.json": {
+      "sha256": "8e2cb128b93efc3e6c04c418fc68a16c32eb200b7231d3829b3a4c3423cd17d3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/project-language/versions/1.0.0.json": {
+      "sha256": "6f2d69873b198ce0cf7fac509cbb8f4702de37c8d98ff3c5ec31578022e0d990",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/project-language/versions/1.1.0.json": {
+      "sha256": "5f0e8750efdabbf4b3de84258c1f978d103d60afcc157798b4271468595239fe",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/brief-chinese/versions/1.0.0.json": {
+      "sha256": "951aacd484989835be5811730510a103d2efe044342f275066f64765d747448b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/brief-chinese/versions/1.1.0.json": {
+      "sha256": "6e1fd5bf2d343ae3f769ba5df60e2a9754a147935a3fbd12272ff2488d956264",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/dense-chinese/versions/1.0.0.json": {
+      "sha256": "72479e811a3db0a9c50401a60f0c06694e00014a558ad1c20ed78945e99edcfa",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/dense-chinese/versions/1.1.0.json": {
+      "sha256": "8c2a06377aba9876ab875c32e9df33cf508dc2b5ac05b10d3363c68c07c36b26",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/concise-project/versions/1.0.0.json": {
+      "sha256": "efa1adfed739a206699cd6ae34b620d8c4717343959ffe63fe7ecc0456b16614",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/concise-project/versions/1.1.0.json": {
+      "sha256": "6ead723134faf73b2c63ea5f73b89b460bdade4a6c850ad50459450da152fcea",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/reviewed-project/versions/1.0.0.json": {
+      "sha256": "4b51fcccb57c237eee3fff56b2a73c86252bb7ee9cb5e71d1aa2cfc0d6062aa1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/reviewed-project/versions/1.1.0.json": {
+      "sha256": "056c2da8c8bcacfce3fe4da1c41e4c0c1715b1c8a5121a102e23b0b772359b26",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/proportional/versions/1.0.0.json": {
+      "sha256": "e73ea29f532d09813b00ed161e9beb7ab079eb56dda5ecffda1c30cc630d0bd8",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/proportional/versions/1.1.0.json": {
+      "sha256": "12724039f6f7a45d9846549a638c6db78daba3b156fd0bde5d4704687c951cf1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/three-level/versions/1.0.0.json": {
+      "sha256": "0fa27605f23901f7d120d5d6c4ee63f14dbe12c4da53b1e3287da3d4b68da5ef",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/three-level/versions/1.1.0.json": {
+      "sha256": "1d594f1d70693d5c2a7498293c08b81d32cc23fa8609da3f163802f57f60976f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/content.json": {
+      "sha256": "36b7de66c932af3858c4a7e44915785296db8e3e5ed68ffeee846979f6046f7a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/plugin.json": {
+      "sha256": "16959a54d3b05d264e8c495ae0f5fc96cfcd1b8946ae1cce9f3ea967c0b0669a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/inbox.en.md": {
+      "sha256": "10139eca11e316a551cb4fde94439b9332be1d5b468b0e0e12371c9715ef187f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/inbox.md": {
+      "sha256": "c220215aa606a6e6627ae16bcb6bfb40a1439a4f4de7c0d0b992c3550b7364a0",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/lock.schema.json": {
+      "sha256": "17c317f70cb7f79a2c8e3bbecd89349cca989ab28d9bf63205ba71a7f92d6393",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/onboarding.md": {
+      "sha256": "715f3c6f1854447c89d96a22ba52bc7f069ab24858bbdf0a0509ebec341f35cc",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/profile.schema.json": {
+      "sha256": "fd74b5ed85339f0d63fd73a7d37867744eb1a029afd1d3321a9fcd3e6e4edd15",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/rule.schema.json": {
+      "sha256": "fdfe071a982ffaa8406a17bf843b62feb495a1afe33c3e8ebbabdcaba37abd4c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/template.schema.json": {
+      "sha256": "e09d817be51125ee766a703fc6c8a6d327ef3974e2d2a63c7cd5c5c64845b7f5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/versioned-template.schema.json": {
+      "sha256": "0fccaa0024b5505c7d575bec69e68e037792fec291f36fe7177e4790d85bf242",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/versioning.md": {
+      "sha256": "62a6b2a42080bcc1c57c2eaf9a6d9914f5383c6aa9474887e7c4ae686bc3c921",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/constants.py": {
+      "sha256": "e2cad8fc6a6b5f1163ecbe5cc18f59b1fd21bd09830f3878009399a0678551b6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/context.py": {
+      "sha256": "7553cd632c70c9aad064fdc525eca97dd678af7f8558349cf025d3205b4cd870",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/i18n_opinion.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox.py": {
+      "sha256": "f37eaf50cfd5adef104674b7847026cb9bdb210825b5ee8f6daa88bd4f13cb65",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox_relations.py": {
+      "sha256": "c6fc83e1856fffe30d23eb7aecb9953cc0cbb0659f9aee3c1217f56bb243fe38",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox_routes.py": {
+      "sha256": "ba269a9eb62afa74425b51a795d7a134196ca2c6bae0160eecf9368e53a2a783",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox_text.py": {
+      "sha256": "addd949e0eb169b18bcaf8ae46747ba47a60a3e7c865690418716f71c8a40d6a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/lifecycle.py": {
+      "sha256": "5bfe536405cd7e8205e5a2124c43ae29599cd063e874a6b4516ebcbcd89ebf62",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/locale/en.json": {
+      "sha256": "b57e7bfe7215e44485f6c92976564842448d0807b630fab75cc8d7e2017b6fd6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/migrate.py": {
+      "sha256": "908a5e296f3508a6bf26536db48736a4dd1d43a71f29d28d7bce9191bee9cbea",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/opinion_manager.py": {
+      "sha256": "7082cc87e0a0836e36599673c1a5d688546fd0a06042d060592db9049bb3e38d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/rule_lines.py": {
+      "sha256": "81d6ec2ffaaf7bbbf10fda030424d712feb97ba6dfaee4064fbcb9908a2acb43",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/tags.py": {
+      "sha256": "02aa32551716b2f2e0882a2b105d99653992aa610f4f238d7c998321154f7111",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/versioned.py": {
+      "sha256": "4fba5eee05f1828e67d2fcdbc4ccb048b9510ca6357f60be0c278cac6aaa2a77",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/skills/opinion-manager/SKILL.md": {
+      "sha256": "feb5ded33914eea55a92a5b1635bd22a32a5be009e5700aa0398c2f4d92609c9",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/skills/opinion-manager/agents/openai.yaml": {
+      "sha256": "0ee12b199e78e0456d95ea69ede4476eab507360a7f377f366e76b365e557a0e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/templates/.gitkeep": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.opinion/inbox.json": {
+      "sha256": "9b7c2b6d7bb373743311ee1ad3629638cd76a5660e33e18891afd8e2fbf3690b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "7574036e82e77b4aff6fe1e76000358fdcd18df9d032f57d31012c6feca6867f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.opinion/profiles/private.my-opinion/versions/1.0.1.json": {
+      "sha256": "2f7cf3893b11ee99842bad4f2cc8f95fdedec491057962c8b1699f7534b342f1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/OPINION.md": {
+      "sha256": "a4ac717a5616b77b41c4aac0aa8ede75492b9292a7fa4d650a06b742b8154ee4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/opinion.lock.json": {
+      "sha256": "47c9b96970ad744b2eafa371c04ca5bbf4b7d4c26d162793e7132771524c779d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "6983cae7f399458cec5870190a7f8b2aee9c182c07104161b21d32135304a8f6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/OPINION.md": {
+      "sha256": "13f520d10006d6b94d1a1259baedb83751c7834f418e6ca3e7e58818267a3aa1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/opinion.lock.json": {
+      "sha256": "b31f4d2820c7b398da56241be6c203e890ecdab9ae3eb4a016cf0200f149dceb",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/blank/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/blank/OPINION.md": {
+      "sha256": "f1bb28acabba80bd125632ffeb9eea7c9fed97e7abc66fbfa0471550671cfb2a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "473b933a131cc8c03a2f773f689ab9ebba02ddc72b671dcfa6a71ec6b00b1eca",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/OPINION.md": {
+      "sha256": "10df8c6c49e28193750324df2a7a604b71926597117636f6b7b9ec6c4299629e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/opinion.lock.json": {
+      "sha256": "9d0896ae9c15235f2d7a2fe14d081a2d1b5cb0cc08537fa6ac9e3009634b6fb0",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "7574036e82e77b4aff6fe1e76000358fdcd18df9d032f57d31012c6feca6867f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/OPINION.md": {
+      "sha256": "419b89d3be5310024bad2e5478135907283f246590b2888dbccb0b247219a818",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/opinion.lock.json": {
+      "sha256": "6502107d363f7af5bf92a32280d9e8b0435fea32a9b32c5adb6b13e0e81a0946",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "7574036e82e77b4aff6fe1e76000358fdcd18df9d032f57d31012c6feca6867f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/OPINION.md": {
+      "sha256": "da0fa79a99898839c39bfdaccfec4ac34c89cda75145a054418b0a5af6d0fc9b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/opinion.lock.json": {
+      "sha256": "6502107d363f7af5bf92a32280d9e8b0435fea32a9b32c5adb6b13e0e81a0946",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_catalog_bilingual.py": {
+      "sha256": "7c1660faad62a8ced515b18f3f24bb7fb1ca0f8496614c94a0b7c59e409cfa09",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_catalog_no_routes.py": {
+      "sha256": "19f9523517b3e814d5317bac1a2447512d691a46130c379823bda49913cf5285",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_context.py": {
+      "sha256": "8b6d72db88a7868d4e75fa86ba4a6acbc907bd63bda52e4127879aadbc1420c3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox.py": {
+      "sha256": "05fd733bb67ebad281c7587054e0cb0610f013e1d45226146b0dd52932cd61b4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_check_revise.py": {
+      "sha256": "fa6ab890e74a5fcbdd5645b3069b0d6df729282705fadd2136f3af8daf3b39bf",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_confirm_modes.py": {
+      "sha256": "199a52eea7906f07d65469cc7962eca0f9ce46559daa31b7526d646e2f1c1118",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_fields.py": {
+      "sha256": "ccfe99148abd7f9813b00a3f40f7db1e3a2cf8673a866e060dc93a4366144aac",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_routes.py": {
+      "sha256": "8947f516aa12abfd50fedca9e8445cf27dc217da9f04f5e909998086dccb13b1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_shown_gate.py": {
+      "sha256": "ca010d47cc7c95c019a7e221b17680a5fa6136a97faf8c9eed05eb66b5e85c16",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_lifecycle.py": {
+      "sha256": "0f0de228a46f9919efdb469a45c403a1caf21265885d0cbb98365b4c963b58cf",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_loading_budget.py": {
+      "sha256": "d58c1fca96bf5b3fe94153c6cc6eac7bdec3ae32d1402a7f6cc30f74e1be8661",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_migrate.py": {
+      "sha256": "b03ebf1ce563c26f7803b79eccadfe5e00cf841af2dc1b4147a30337b683fa11",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_onboarding.py": {
+      "sha256": "699263ac8a49481fb4743bf01f950c481f68018c461e4b637644fefcf2979bfb",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_opinion_manager.py": {
+      "sha256": "51cb89d66aeb5089805c716e9957773816b8955e89903df66b8979326c1cde9b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_shell_quoting.py": {
+      "sha256": "fbcf26c48b9fcac33b2d5cb7564986b6601edaa2cce36bc285771e0cd4fef081",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_tags.py": {
+      "sha256": "9f745577856e0934926caf00a5119e48498a042fa46c7a8dcc40f52fca4d6309",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_template_loading.py": {
+      "sha256": "43542a9d9faf07b162ac3192431b138ae1236ad19ab11e05aa5da762a174a522",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_versioned.py": {
+      "sha256": "a36fa6ea911566c55b58f479acb6175eb354862d1180fd31c990cdbdfca8c99e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/.codex-plugin/plugin.json": {
+      "sha256": "712714a3bf16baa2bdea2e6b791342744169b024689bfaed04fa35b3f204ab10",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/content.json": {
+      "sha256": "2afd0e96724349adba7804a131de66066721d17fc3df8fe2003d8264eb4d02b7",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/plugin.json": {
+      "sha256": "4e6836fb55958f78b4961746a810779930e90ff075c9a329576329d10f482ab6",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/asset-synonyms.example.json": {
+      "sha256": "a3338b98addd2b0fa386829850e0dd2667dff593ac7aa7f8e70b91372b3439c9",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/case-workspaces.md": {
+      "sha256": "27ba4ff53c6896412112dafe645fdcb448ac97b996c193e36ceec3de910e7527",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/case.schema.json": {
+      "sha256": "ecb37f084b901786bdc878cdc7f1e5d74c2eb31722d6a10fe24f6d88768bcbde",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/sop-interview.md": {
+      "sha256": "de211d3c6466d2f5f83b0e8fea1fc571e7ba2b248f40c1e2346b0da4598904c0",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/sop.md": {
+      "sha256": "a9755250b97677d51d65a21beb4d5c375c1a8d4029cd752d80c4bc1bbd9f9f49",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/assets.py": {
+      "sha256": "75790f302e97137ec97a85f6867590e556e5f14360567641cd710b3a645eb8f5",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case.py": {
+      "sha256": "60eb7768e8479d647665b9808652c6f70065dcfebf7c233fd42ddc9c5555f7bd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case_structure.py": {
+      "sha256": "f03107f3faf3f0e8f843537d1d861638e3cf9999b01796dce462ae67d23351d3",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case_workspace.py": {
+      "sha256": "ac1eb90fe13059f9ef9433f9529c040536eb11ecf77fba1d9298ee2f327ebeea",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/i18n_orchestrator.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/locale/en.json": {
+      "sha256": "53389b1e11c1074dff88fa7b2b82237cfd3f463e810e1fc2c24ff95f80d7ec68",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/memory.py": {
+      "sha256": "6a1d12d3dd91135d30f97317f75819948ee5fea1b0c5f858aafe12c9c2ba1a50",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/private_paths.py": {
+      "sha256": "e1b30a7a237f6689a68180bba4efa08805792d8b97c0d44a02801559e092628f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_base.py": {
+      "sha256": "14ce5a6d08c86d8aacfd931cc1a538aaa28f37e73a71701bb0733b63b7cc6cd0",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_cli.py": {
+      "sha256": "d2402c3aac8b5f988473be57f3190fcd5e44c588aee7206573fe0edb0dd8c0f7",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_demo.py": {
+      "sha256": "4990d51f20956fc8dc75b7018daeacac85210385369d136e8b64db8cbab8af8c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_ext_actions.py": {
+      "sha256": "0c8aae248f83ced569f80038509903e263463aefd0e243ebda49d79d8ccdf78a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_extensions.py": {
+      "sha256": "f739420d7d9832a44ba2dfffd5a1aa10a0bdeac8912cd7a0f4e1ba0cd86055a1",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_extensions_demo.py": {
+      "sha256": "878a43bfeba9e28beba3568f52b54704f3336269ce6e532453bec2543153e5f2",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_maintain.py": {
+      "sha256": "da0e19b1c024b618fe2b9e8d35fa188a4dbd6a26f638f06fb858a04c39a6e168",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_menu.py": {
+      "sha256": "571a75667491b80f6ec606e30ad7333040903a686f082d441faa26948dc0b5b1",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_real.py": {
+      "sha256": "142899ec815feadd7da6e51cfad853233c43feab98e4b09f4a157fdd4a5f6537",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_write.py": {
+      "sha256": "55cfcabf352fadea335039d3080786633aac2da577a62cb262bd7d87de62bb01",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/sop.py": {
+      "sha256": "d4e074ef9ef09bd1e9cf7b63b140d91f0ec694f28e4f2f3d66c8c6fa91d3d740",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/sop_structure.py": {
+      "sha256": "7b91baece98838f8a99d50170562a66ec5a3ae76200bd8f81dba0ab59f4368ac",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/wf.py": {
+      "sha256": "8eaf856175e3a59a70b263a385d0d835213a43df429201c86ce274f40dcd63ed",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/skills/project-orchestrator/SKILL.md": {
+      "sha256": "b39e0a5ce10c60dd8925832ff5f8cc9a851b92ee000f515d55e84bec6dcefc02",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/skills/project-orchestrator/agents/openai.yaml": {
+      "sha256": "8f6f8fa7ff4a6d79ff5b417e19eeef2f83272a4d45df17fcd0764bc1af2c42eb",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/blank/SOP.en.md": {
+      "sha256": "f7929e5840f1a4ea7cb832d949237be43328c662c690fcc2e204bb36233940fa",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/blank/SOP.md": {
+      "sha256": "efec23ad29102590bdd16268c79222eb6f14fa8a1352deb27a5e55d35c413704",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/SOP.en.md": {
+      "sha256": "e30bb6fb0282f23e326e70404ac66e4419c99a53a2e3eb2cabfdffa5c2754e55",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/SOP.md": {
+      "sha256": "eaa8d7eb2338fe71b7a05fec662230a7e0b2e36f4727657558f2b51ed0a98027",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/templates/digest.en.md": {
+      "sha256": "9461e971a40307434d5460b12cf0938038ab6af2b2c98ce5a02260d816bc9d7a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/templates/digest.md": {
+      "sha256": "0741e5a8008119528c5fc71cc9c3c8064dc1173d61465643e8dc5745883ccb9a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/video-to-transcript/SOP.en.md": {
+      "sha256": "5c5797eed4fdadaec4089b43843bc43287d68cc6699e9fafd1803aa8e8e253a4",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/video-to-transcript/SOP.md": {
+      "sha256": "b8dfb1ecb0e2cf2a13d4acad78ee759f6c402776443cf5a70e2d6390a120ba4e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/SOP.en.md": {
+      "sha256": "fd9734078467066463c8005c459a9c3885236545e622b1219c52cf5633045de8",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/SOP.md": {
+      "sha256": "9dee7bcbf351e395a66e042929eede0bb425a92a88db14944b4348f2de656b1b",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/templates/review.en.md": {
+      "sha256": "ba727876879208caad46c6ce9c51411e1f451e72003572ccd18de9ef6f55811e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/templates/review.md": {
+      "sha256": "cf8321a1739cecf6286d591e88a6af86831b01c12e77834a873ea497a5db127c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/templates/CASE.en.md": {
+      "sha256": "4aec0fab19c83bb5c2b72a31bbedb3425c82efb13e5d436f5cee35496d6eab74",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/templates/CASE.md": {
+      "sha256": "a33ffcec5c239cbcf4c0828f08336c578d6d184363b01db1419f74fcdc9e1086",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/fixtures/extensions_inventory.json": {
+      "sha256": "bc78fb276af8b1a989b3b22bb423412503fc76e0768013862ed796660d7fbaae",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_assets.py": {
+      "sha256": "e08e18906c08abac45826701760a7b01d79054ebea0f9bbb8a7b69f6c96ae85f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case.py": {
+      "sha256": "1bd82c2a9594c5ecc4d52a71f8cb4f5b2b093e0050fa082cef9b59aed3496eeb",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case_language.py": {
+      "sha256": "9383165cdf7241a55c359949bfe2e96b978db8f7c36dfa41ec99deae04c65a37",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case_workspace.py": {
+      "sha256": "737bfcf11beeebd1621200111eb62ca4efe76d3468dab034c798b469f7266db6",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_content_change_labels.py": {
+      "sha256": "9b3caf6974026a652de3915d5452c65cfd3a5d72d2c14814938adcd808b74565",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_content_merge_fix.py": {
+      "sha256": "fab2054c638d41ba7e96600fa34fc1ea3e26362b0c088ea72f6a596ce8822e5a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_memory.py": {
+      "sha256": "6c8ba9ce14543f50b128f20ac431b4d442b7f6c28d8e2acadc75a58551fa4834",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_private_decisions.py": {
+      "sha256": "697b3cd8bfdf60c08c53251170de13014ecd2a9919d9023341e6c1f950f096d2",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_private_paths.py": {
+      "sha256": "e6f3834105be1522c9ecc5636cd6fcd0bef52c9683eb8ac5c6d496b3cc4f0708",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_cli.py": {
+      "sha256": "31afb9754705caf19678c7969ae7557c00915e025083c61c3a6c23d466357528",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions.py": {
+      "sha256": "9bbe0069a5c7b1b104c5c9a3d5d271a0810a50543bc0a0eb660efd6c0f8fba26",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_actions.py": {
+      "sha256": "c346b09ff68142d9582dcc9eb2575def22f6614749c3bf338020fa8237f787bd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_menu.py": {
+      "sha256": "1115c9befc6b7c4ca8f2a359f85f1a69fe8aae8043bb7f9fd6a5fe9eb11503e7",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_real.py": {
+      "sha256": "4f51779f42491a7ab37c0105563df9fde393190a3cb97bde89ed2af0c6efd30f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_wizard.py": {
+      "sha256": "d9dfca301caa02b1cc5fe4d88d04863a50d13f736a89c31b61050e54fffa1e1a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_health_merge.py": {
+      "sha256": "acb804e2ebac91b4206e92a1b934a04211fe15a4b659403266d6d00f813e7469",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_maintain_clients.py": {
+      "sha256": "009c34fee60e7244954caf3ad6882e0b9e73af1a4c44be4a06cbbfc6ef76ef06",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_maintain_source.py": {
+      "sha256": "c457cddf455892379e596bf4f4776ff1bfa152f30f841dd27d6edcf2dab31b59",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_real.py": {
+      "sha256": "498fb73af412094ab4a63164be9d18b780ff468690e4b2bd8e3a466679fcd03f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_scaffold.py": {
+      "sha256": "b0e75a99729daf7fe015f7d8e4f94d9449054f2a84c846fee40dbaee7dfc49dd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_sop.py": {
+      "sha256": "a6c90be646cdac82a8794f120c6a4f713702992fc8df76ff085f1a9a5266a21c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_sop_language.py": {
+      "sha256": "c35eae551920ba4e780327cb2e47c4930788484bdbfac0e8c41e8cd5f108d391",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_wf.py": {
+      "sha256": "52728951ac69ebf6dd1064e2deb99b621570dd39cf380222fc59026773aebe59",
+      "kind": "file"
+    },
+    "release/ACCEPTANCE.md": {
+      "sha256": "f81ad319b4e799e7ba95d9a5dbbcac5c9c02df8d1782cc58c281ca47d5f39ad0",
+      "kind": "file"
+    },
+    "release/VERSIONING.md": {
+      "sha256": "277a5f4404acd5ece7c089344df0a2c6ab7694b112c7d37eca5bc1e4abe279ef",
+      "kind": "file"
+    },
+    "release/acceptance/extract_blocks.py": {
+      "sha256": "a10e913206d1062176385e2a566b77837c569f4acb1a5376bbc685c33c95b89b",
+      "kind": "file"
+    },
+    "release/acceptance/mkfixture.py": {
+      "sha256": "0324cb2ad6c5ecfbab03eb3c99d7c064d1eae22cd17003161c95da57b518a518",
+      "kind": "file"
+    },
+    "scripts/attach_release.py": {
+      "sha256": "2605d94fe6a58ea882c74f7a536179214cdefd1de266c3c95d5206a56f1da935",
+      "kind": "file"
+    },
+    "scripts/bootstrap_and_init.py": {
+      "sha256": "f17bb5fc38810f42cbf0f53b1aaa784cdbbfb1272da2349f6f875c0a8cbd688f",
+      "kind": "file"
+    },
+    "scripts/ci_gate.py": {
+      "sha256": "d8b5d8a9c25144573088f25eed8e057aa9bb682146bd809c6912a3d2d1cd10d2",
+      "kind": "file"
+    },
+    "scripts/release_meta.py": {
+      "sha256": "80da3c920396ee767336351da69d6e6d60c9b877d3f3476d7cd950b4eb45fb36",
+      "kind": "file"
+    },
+    "scripts/release_model.py": {
+      "sha256": "eabb798332f8434b163dabb7a231aa25f569939a00adbf5e53f01b9a83bfceb3",
+      "kind": "file"
+    },
+    "scripts/release_notes.py": {
+      "sha256": "4285cbf1b5c0f3c8c9c87977563856d0a3a9950a388f1936a1302c3ba5a02198",
+      "kind": "file"
+    },
+    "scripts/release_workflow.py": {
+      "sha256": "8bcf102bb4537c45fad3b425b516498b3277097d211ec262dd98882b53b975e6",
+      "kind": "file"
+    },
+    "scripts/validate_release.py": {
+      "sha256": "6324fc7d4d666093d73b99a7be0cc743305cb84949bafae850bf472861d09db1",
+      "kind": "file"
+    },
+    "tests/i18n-policy.json": {
+      "sha256": "bc461d5cc416ec1c95761e4343ab8270f95079ad9d31c7f672e4d64e21cbef75",
+      "kind": "file"
+    },
+    "tests/test_acceptance_extract_blocks.py": {
+      "sha256": "7bc30987c7be60e63b5ed8e9b2b3ce3b9922336c96d8e13daa49988c8430073e",
+      "kind": "file"
+    },
+    "tests/test_acceptance_fixture.py": {
+      "sha256": "54dde85b349fdf9ae8711ef6d65296e508d0d410f345ba6e79a84ccdf42c58bb",
+      "kind": "file"
+    },
+    "tests/test_bootstrap_and_init.py": {
+      "sha256": "2f9ad976ca6da11993294538aa56d8b8fb8de35e4831bebedf67d5a060e6e420",
+      "kind": "file"
+    },
+    "tests/test_ci_gate.py": {
+      "sha256": "c220479d8ae13d736b015713631d4d9d6bf341208b22f52e7176c63cc7a60633",
+      "kind": "file"
+    },
+    "tests/test_cli_package.py": {
+      "sha256": "c0846ae0d35068074dc7a30f1fdc8edb84b9d2b0c397d96847d6f6620cfbe59c",
+      "kind": "file"
+    },
+    "tests/test_i18n.py": {
+      "sha256": "bb6a1a304bb8082497d7353fb18c9a73a9610c81a48325dd9a7caa3d9f9e9680",
+      "kind": "file"
+    },
+    "tests/test_i18n_commands.py": {
+      "sha256": "5a20558f3fb6079372d873cdefbb28482cd2f11380b6b6208172736a1f9bfdbd",
+      "kind": "file"
+    },
+    "tests/test_i18n_lint.py": {
+      "sha256": "f1e80dea6d0525a76f672024851cdc6648c046dc71e1bc614d677c7aeb34d5c2",
+      "kind": "file"
+    },
+    "tests/test_i18n_plural.py": {
+      "sha256": "15d39a92278eeb82cb9212e61f723144da8617691e0dc3afa1bc428fea0b0b3a",
+      "kind": "file"
+    },
+    "tests/test_i18n_policy.py": {
+      "sha256": "81a83c43b451e3130b855579f1475dece285a295f82bdbd4a364a5dbc7bc4b08",
+      "kind": "file"
+    },
+    "tests/test_plugin_e2e.py": {
+      "sha256": "626e56b9fc02d7ffbfe866d30ca0231ce1243a11125379cc68ba4c1a463abbbb",
+      "kind": "file"
+    },
+    "tests/test_private_paths_sync.py": {
+      "sha256": "400383be08de137fad480842eefd080da227ce3f0252be1081a662abadcdb3c7",
+      "kind": "file"
+    },
+    "tests/test_profile_reads_guard.py": {
+      "sha256": "097d5c96264bb652f689164f8d3d626100c416b9033c5bc1eaa6bdab8b460209",
+      "kind": "file"
+    },
+    "tests/test_project_file_language.py": {
+      "sha256": "ce61d34a7ac14869cb3f23df3311e37fe073aa0f81254432680ed15c1de55966",
+      "kind": "file"
+    },
+    "tests/test_project_file_language_audit.py": {
+      "sha256": "d5ede8c7d28a9ef16e12eec9d4057636904473e23dfcf3f977f37641fd45dd4b",
+      "kind": "file"
+    },
+    "tests/test_project_launcher.py": {
+      "sha256": "0b6ef157065aebf4b98fe4de8266dfce9a1d015ae0caafd0c11719967187eb04",
+      "kind": "file"
+    },
+    "tests/test_public_metadata.py": {
+      "sha256": "e2c5b65bb100393dd407cc759af14cc1bce47548f799f352da7df601ba518e5b",
+      "kind": "file"
+    },
+    "tests/test_public_privacy.py": {
+      "sha256": "e83215e2d87105fb99a4af7b799931c0bd4fad789c364f21c720e686ac180899",
+      "kind": "file"
+    },
+    "tests/test_release_meta.py": {
+      "sha256": "8c2f0e97dee3904feea5a9fca84d06e76648b83f39d8b78030fa36c7eb3e1d38",
+      "kind": "file"
+    },
+    "tests/test_release_workflow.py": {
+      "sha256": "b581b4aad62070ca464798e2e85cdd2c23192331e7a37ad6c5affac15f3a0576",
+      "kind": "file"
+    },
+    "tests/test_site_release.py": {
+      "sha256": "60936c5a46b74ff33953939fcf2a148447140003f3f4af4e0cfdc9221ecd089f",
+      "kind": "file"
+    },
+    "tests/test_validate_release.py": {
+      "sha256": "558bae0d2b5219bd72a9169d9a17e6b2ca4a47f76bff2b7a269eefcac68efc41",
+      "kind": "file"
+    }
+  }
+}
