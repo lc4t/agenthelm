@@ -1,0 +1,34 @@
+{
+  "id": "om.rules-tools",
+  "version": "1.1.0",
+  "slot": "om.rules-tools",
+  "level": "required",
+  "title": {
+    "zh": "规则、模板与工具 Skill 分工",
+    "en": "Division of labour among rules, templates and tool Skills"
+  },
+  "text": {
+    "zh": "表达、写作、工作方法、审美和交付规范保存在规则与场景模板中。Skill（技能包）保留工具入口、输入输出、接口、操作、权限和失败处理等职责，不作为审美偏好的权威来源。仅包含邮件或报告写作规范的内容归入模板；模板使用精确版本引用，选择或派生均保留来源。",
+    "en": "Expression, writing, working methods, aesthetics and delivery standards are kept in rules and scenario templates. A Skill (skill package) keeps the responsibilities of tool entry points, inputs and outputs, interfaces, operations, permissions and failure handling, and is not the authority for aesthetic preferences. Content that only holds email or report writing standards belongs to a template; templates reference exact versions, and selecting or deriving keeps the source."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "判断表达、写作、工作方法、审美和交付规范该保存在哪里时；编写 Skill、规则或模板时",
+    "en": "When deciding where expression, writing, working-method, aesthetic and delivery standards belong; when writing Skills, rules or templates"
+  },
+  "purpose": {
+    "zh": "让规则与模板成为偏好的来源，Skill 只承担工具职责，并保持来源可追溯",
+    "en": "Make rules and templates the source of preferences, keep Skills to tool responsibilities and keep sources traceable"
+  },
+  "exclude": {
+    "zh": "工具入口、输入输出、接口、操作、权限和失败处理（属 Skill 职责）",
+    "en": "Tool entry points, inputs and outputs, interfaces, operations, permissions and failure handling (Skill responsibilities)"
+  }
+}

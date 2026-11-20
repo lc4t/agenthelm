@@ -1,0 +1,50 @@
+{
+  "family": "scenario",
+  "variant": "reviewed-project",
+  "version": "1.1.0",
+  "name": {
+    "zh": "完整分析与项目交付组合",
+    "en": "Complete analysis with project delivery"
+  },
+  "description": {
+    "zh": "用途：需要完整分析、版本化交付及中文维护的项目任务。 不适用：未选择此偏好的项目；需要专属业务模板的任务。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: project tasks needing complete analysis, versioned delivery and Chinese maintenance. Not for: projects that did not choose this preference; tasks needing business-specific templates. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "需要完整分析、版本化交付及中文维护的项目任务。"
+    ],
+    "en": [
+      "Project tasks needing complete analysis, versioned delivery and Chinese maintenance."
+    ]
+  },
+  "rules": [
+    "om.conclusion-first@1.1.0",
+    "om.chinese-response@1.1.0",
+    "om.bilingual-terms@1.1.0",
+    "om.markdown-structure@1.1.0",
+    "om.clean-deliverable@1.1.0",
+    "om.concrete-titles@1.1.0",
+    "om.response-dense@1.1.0",
+    "om.evidence-inference@1.1.0",
+    "om.test-evidence@1.1.0",
+    "om.calculations@1.1.0",
+    "om.complete-options@1.1.0",
+    "om.align-requirements@1.1.0",
+    "om.batch-questions@1.1.0",
+    "om.assumptions-authority@1.1.0",
+    "om.solutions-three-level@1.1.0",
+    "om.versioned-files@1.1.0",
+    "om.device-readable@1.1.0",
+    "om.semantic-wrap@1.1.0",
+    "om.editable-diagrams@1.1.0",
+    "om.consistent-items@1.1.0",
+    "om.report-context@1.1.0",
+    "om.report-formats@1.1.0",
+    "om.report-review@1.1.0",
+    "om.tables-list-first@1.1.0",
+    "om.portable-files@1.1.0",
+    "om.rules-tools@1.1.0",
+    "om.maintenance-chinese@1.1.0"
+  ]
+}

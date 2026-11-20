@@ -1,0 +1,32 @@
+{
+  "family": "delivery-standard",
+  "variant": "compact-tables",
+  "version": "1.1.0",
+  "name": {
+    "zh": "完整交付与简短表格",
+    "en": "Complete delivery with compact tables"
+  },
+  "description": {
+    "zh": "用途：需要简短表格辅助比较的文件或汇报交付。 不适用：宽表、长文本单元格、移动端横向滚动或禁止表格的载体。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: file or report deliveries that benefit from short tables for comparison. Not for: wide tables, long text cells, mobile horizontal scrolling, or media that forbid tables. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "需要简短表格辅助比较的文件或汇报交付。"
+    ],
+    "en": [
+      "File or report deliveries that benefit from short tables for comparison."
+    ]
+  },
+  "rules": [
+    "om.versioned-files@1.1.0",
+    "om.device-readable@1.1.0",
+    "om.semantic-wrap@1.1.0",
+    "om.editable-diagrams@1.1.0",
+    "om.consistent-items@1.1.0",
+    "om.report-context@1.1.0",
+    "om.report-formats@1.1.0",
+    "om.report-review@1.1.0",
+    "om.tables-compact@1.1.0"
+  ]
+}

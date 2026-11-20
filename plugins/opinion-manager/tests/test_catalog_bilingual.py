@@ -286,6 +286,14 @@ class BilingualCatalogTests(unittest.TestCase):
         profile = self.profile("--template", "fixture/alpha@1.0.0", "--overrides-file", overrides)
         self.assertIn("## 我的", self.command("compose", "--project", self.project, "--profile", profile["path"])["content"])
 
+    def test_catalog_markdown_lists_bilingual_public_templates_in_the_interface_language(self) -> None:
+        for language, expected in (("en", "## Evidence checks with three-level solutions `work-method/three-level@1.1.0`"),
+                                   ("zh", "## 证据核验与三层方案 `work-method/three-level@1.1.0`")):
+            result = subprocess.run([sys.executable, str(SCRIPT), "catalog", "--output", "markdown"],
+                                    capture_output=True, text=True, check=False, env={**os.environ, "AGENTHELM_LANG": language})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(expected, result.stdout)
+
     def test_the_lock_of_an_en_project_round_trips_through_verify(self) -> None:
         self.publish(self.rule())
         self.publish(self.template(["fixture.alpha@1.0.0"]))

@@ -1,0 +1,32 @@
+{
+  "family": "delivery-standard",
+  "variant": "list-first",
+  "version": "1.1.0",
+  "name": {
+    "zh": "完整交付与列表优先",
+    "en": "Complete delivery with lists first"
+  },
+  "description": {
+    "zh": "用途：文件、图文及汇报交付。 不适用：已明确采用其他载体规范的交付；企业专属 PPT 或邮件规则。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: file, text-and-image and report deliveries. Not for: deliveries that already follow another medium's standard; enterprise-specific PPT or email rules. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "文件、图文及汇报交付。"
+    ],
+    "en": [
+      "File, text-and-image and report deliveries."
+    ]
+  },
+  "rules": [
+    "om.versioned-files@1.1.0",
+    "om.device-readable@1.1.0",
+    "om.semantic-wrap@1.1.0",
+    "om.editable-diagrams@1.1.0",
+    "om.consistent-items@1.1.0",
+    "om.report-context@1.1.0",
+    "om.report-formats@1.1.0",
+    "om.report-review@1.1.0",
+    "om.tables-list-first@1.1.0"
+  ]
+}

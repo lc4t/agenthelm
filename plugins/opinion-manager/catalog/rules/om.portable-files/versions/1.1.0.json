@@ -1,0 +1,34 @@
+{
+  "id": "om.portable-files",
+  "version": "1.1.0",
+  "slot": "om.portable-files",
+  "level": "required",
+  "title": {
+    "zh": "Markdown 与阅读工具边界",
+    "en": "Markdown and the boundary of reading tools"
+  },
+  "text": {
+    "zh": "文档同时服务人类阅读和 Agent 检索。项目结构、档案及稳定记录由文件与项目契约维护，阅读工具只作为前端。核心结构和导航不依赖某个阅读器或社区插件；确有展示需要时可使用插件辅助，但正常使用不得依赖它。",
+    "en": "Documents serve both human reading and agent retrieval. Project structure, archives and stable records are maintained by files and the project contract; reading tools are only a front end. The core structure and navigation must not depend on one reader or community plugin; a plugin may assist where display genuinely needs it, but normal use must not depend on it."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "设计或维护项目文档、档案及导航结构时",
+    "en": "When designing or maintaining project documents, archives and navigation"
+  },
+  "purpose": {
+    "zh": "让文档同时服务人类阅读与 Agent 检索，不绑定某个阅读器",
+    "en": "Let documents serve both human reading and agent retrieval without binding to one reader"
+  },
+  "exclude": {
+    "zh": "确有展示需要时才辅助使用的阅读器或插件功能（正常使用不得依赖）",
+    "en": "Reader or plugin features used only where display genuinely needs them (normal use must not depend on them)"
+  }
+}

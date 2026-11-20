@@ -1,0 +1,34 @@
+{
+  "id": "om.consistent-items",
+  "version": "1.1.0",
+  "slot": "om.consistent-items",
+  "level": "required",
+  "title": {
+    "zh": "同类条目的结构与状态表达一致",
+    "en": "Consistent structure and status for items of the same kind"
+  },
+  "text": {
+    "zh": "同一组中承担相同展示目的的同类条目，采用一致的信息结构、字段顺序、排版样式和状态表达方式。示例或具体内容不同，不应造成无必要的结构变化。\n\n状态的名称、含义和视觉表达保持一致，实际状态如实呈现；不同条目可以具有不同状态，不为了外观统一而把状态改成相同。不同类型或承担不同展示目的的内容可以采用对应结构。",
+    "en": "Items of the same kind in one group that serve the same display purpose use a consistent information structure, field order, layout style and way of expressing status. Different examples or specific contents should not cause needless structural changes.\n\nKeep the name, meaning and visual expression of each status consistent, and present the actual status truthfully; different items may have different statuses, and a status must not be changed to look uniform. Content of a different type or with a different display purpose may use a corresponding structure."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "同一组内有多个承担相同展示目的的同类条目时",
+    "en": "When one group contains several items of the same kind that serve the same display purpose"
+  },
+  "purpose": {
+    "zh": "降低读者对比与理解成本，并保证状态如实呈现",
+    "en": "Lower the reader's cost of comparing and understanding while keeping statuses truthful"
+  },
+  "exclude": {
+    "zh": "不同类型或承担不同展示目的的内容（可采用对应结构）",
+    "en": "Content of a different type or with a different display purpose (which may use its own structure)"
+  }
+}

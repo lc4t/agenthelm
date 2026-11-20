@@ -84,7 +84,8 @@ class VersionedOpinionTests(unittest.TestCase):
                 selected = {row["ref"] for row in preview["profile"]["sources"]["rules"]}
                 self.assertEqual(selected, set(template["rules"]))
                 for rule_ref in selected:
-                    self.assertIn(by_ref[rule_ref]["text"], preview["content"])
+                    text = by_ref[rule_ref]["text"]
+                    self.assertIn(text["zh"] if isinstance(text, dict) else text, preview["content"])
                 self.assertFalse((self.project / ".opinion").exists())
 
     def test_missing_exact_version_fails_without_writes(self) -> None:

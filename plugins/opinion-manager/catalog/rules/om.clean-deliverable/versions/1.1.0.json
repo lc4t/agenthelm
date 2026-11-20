@@ -1,0 +1,34 @@
+{
+  "id": "om.clean-deliverable",
+  "version": "1.1.0",
+  "slot": "om.clean-deliverable",
+  "level": "required",
+  "title": {
+    "zh": "自然表达与最终材料内容边界",
+    "en": "Natural expression and final-material boundaries"
+  },
+  "text": {
+    "zh": "禁止使用“不是／不会……，而……”及其变体和生硬转折。叙述文字不使用破折号，避免无明确语义的装饰符号和空洞套话。\n\n代码、文案、PPT、HTML 等最终交付材料只呈现完成后的内容。严禁夹入本次制作过程中的指导、讨论、模型错误、用户纠偏、被放弃的尝试或走过的弯路；不得把用户纠正时的措辞直接搬入最终材料。必要的决策及核验记录单独保存，协作回复中的错误说明按对应规则处理。",
+    "en": "Do not use the contrast construction \"not X, but Y\" (including \"does not … but …\" and its variants) or stiff transitions. Do not use dashes in narrative text; avoid decorative symbols with no clear meaning and empty boilerplate.\n\nFinal deliverables such as code, copy, PPT and HTML present only the finished content. Never include guidance, discussion, model errors, user corrections, abandoned attempts or detours from the making of this piece; never carry the user's wording of a correction into the final material. Keep necessary decision and verification records separately; error notes in collaborative replies follow the corresponding rule."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "撰写叙述文字时；制作代码、文案、PPT、HTML 等最终交付材料时",
+    "en": "When writing narrative text; when producing final deliverables such as code, copy, PPT and HTML"
+  },
+  "purpose": {
+    "zh": "让表达自然，并使最终材料只呈现完成后的内容",
+    "en": "Keep the expression natural and let final materials show only the finished content"
+  },
+  "exclude": {
+    "zh": "协作回复中对错误的说明（按对应规则处理）；单独保存的决策与核验记录",
+    "en": "Error notes in collaborative replies (handled by the corresponding rule); decision and verification records kept separately"
+  }
+}

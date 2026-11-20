@@ -1,0 +1,26 @@
+{
+  "family": "development-standard",
+  "variant": "chinese-maintenance",
+  "version": "1.1.0",
+  "name": {
+    "zh": "工具职责与中文维护",
+    "en": "Tool responsibilities with Chinese maintenance"
+  },
+  "description": {
+    "zh": "用途：中文维护的第一方 Skill 与项目文档。 不适用：修改第三方上游、企业私有接口或任意替代项目治理契约。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: first-party Skills and project docs maintained in Chinese. Not for: modifying third-party upstream, enterprise-private interfaces, or replacing project governance contracts arbitrarily. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "中文维护的第一方 Skill 与项目文档。"
+    ],
+    "en": [
+      "First-party Skills and project docs maintained in Chinese."
+    ]
+  },
+  "rules": [
+    "om.portable-files@1.1.0",
+    "om.rules-tools@1.1.0",
+    "om.maintenance-chinese@1.1.0"
+  ]
+}

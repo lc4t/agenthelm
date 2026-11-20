@@ -1,0 +1,34 @@
+{
+  "id": "om.maintenance-project-language",
+  "version": "1.1.0",
+  "slot": "om.maintenance-language",
+  "level": "required",
+  "title": {
+    "zh": "按项目约定维护语言",
+    "en": "Maintenance language by project convention"
+  },
+  "text": {
+    "zh": "第一方 Skill、模板和维护文档采用项目明确约定的主要语言；约定缺失时先对齐维护者需求。协议字段、命令、文件名和代码标识符遵循工具契约。第三方上游材料保持原文；本地派生版记录来源和维护边界，翻译不改变运行契约。",
+    "en": "First-party Skills, templates and maintenance docs use the main language the project explicitly agreed on; when no convention exists, align with the maintainer first. Protocol fields, commands, file names and code identifiers follow the tool contract. Keep third-party upstream material in its original language; record the source and maintenance boundary of a local derivative, and a translation must not change the runtime contract."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "编写、维护或翻译第一方 Skill、模板与维护文档时",
+    "en": "When writing, maintaining or translating first-party Skills, templates and maintenance docs"
+  },
+  "purpose": {
+    "zh": "按项目约定的语言统一维护，并保证翻译不改变运行契约",
+    "en": "Maintain consistently in the project's agreed language and make sure translation does not change the runtime contract"
+  },
+  "exclude": {
+    "zh": "协议字段、命令、文件名和代码标识符（遵循工具契约）；第三方上游材料",
+    "en": "Protocol fields, commands, file names and code identifiers (they follow the tool contract); third-party upstream material"
+  }
+}

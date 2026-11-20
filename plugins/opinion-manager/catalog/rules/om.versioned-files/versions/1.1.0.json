@@ -1,0 +1,34 @@
+{
+  "id": "om.versioned-files",
+  "version": "1.1.0",
+  "slot": "om.versioned-files",
+  "level": "required",
+  "title": {
+    "zh": "文件交付、版本命名与交付节奏",
+    "en": "File delivery, version naming and delivery rhythm"
+  },
+  "text": {
+    "zh": "修改类任务优先交付完整可用文件；根据用户意图直接修改原文件或交付新版本。只有用户明确要求查看原文与具体改动时，才以修改片段作为所要求的交付形式。全文排查并修复同类问题。\n\n文件命名必须说明版本；修复版本还应能识别修复内容。不得仅以 new、fixed 等无具体含义的后缀区分版本；使用 fix 或 fixed 时必须结合可理解的修复说明和版本标识。保留历史版本，避免意外覆盖。普通交付物命名与工具内部规则版本分别遵循其各自契约。\n\n完整系统按 MVP（Minimum Viable Product，最小可行产品）、完整骨架、细节完善的节奏推进，明确各阶段交付边界和待补内容。邮件、PPT、HTML 等汇报材料应在约定范围内一次交付完整版本，发布前补齐内容与呈现细节，不以初版遗漏要求来制造反复沟通；实际缺失且会改变交付的信息在制作前集中确认。",
+    "en": "For modification tasks, prefer delivering a complete usable file; edit the original file directly or deliver a new version according to the user's intent. Deliver edit fragments only when the user explicitly asks to see the original and the specific changes. Check the whole text and fix problems of the same kind.\n\nFile names must state the version; a fixed version should also show what was fixed. Do not tell versions apart only by meaningless suffixes such as new or fixed; when using fix or fixed, combine it with an understandable fix description and a version marker. Keep historical versions and avoid accidental overwrites. The naming of ordinary deliverables and the versions of the tool's internal rules each follow their own contracts.\n\nA complete system proceeds in the rhythm of MVP (Minimum Viable Product), full skeleton, then detail refinement, with the delivery boundary and pending parts of each stage stated. Report materials such as email, PPT and HTML should be delivered as a complete version in one go within the agreed scope, with content and presentation details completed before release, and an incomplete first version must not create repeated communication; information that is actually missing and would change the delivery is confirmed in one batch before making."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "修改文件、为文件命名版本、推进完整系统，或制作邮件、PPT、HTML 等汇报材料时",
+    "en": "When modifying files, naming file versions, advancing a complete system, or producing report materials such as email, PPT and HTML"
+  },
+  "purpose": {
+    "zh": "交付完整可用且版本可识别的文件，节奏清楚，不以初版遗漏制造反复沟通",
+    "en": "Deliver complete, usable and identifiable versions at a clear rhythm, without an incomplete first version causing repeated communication"
+  },
+  "exclude": {
+    "zh": "普通交付物命名与工具内部规则版本（各自遵循其契约）；用户明确要求只看修改片段的情形",
+    "en": "Naming of ordinary deliverables and versions of the tool's internal rules (each follows its own contract); when the user explicitly asks to see only the edit fragments"
+  }
+}

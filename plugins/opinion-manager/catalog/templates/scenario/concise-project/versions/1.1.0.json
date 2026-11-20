@@ -1,0 +1,50 @@
+{
+  "family": "scenario",
+  "variant": "concise-project",
+  "version": "1.1.0",
+  "name": {
+    "zh": "简明沟通与项目交付组合",
+    "en": "Concise communication with project delivery"
+  },
+  "description": {
+    "zh": "用途：需要简明沟通、按需分析和项目语言维护的任务。 不适用：已要求完整固定分析框架的任务。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: tasks needing concise communication, on-demand analysis and maintenance in the project language. Not for: tasks that already require a fixed, complete analysis framework. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "需要简明沟通、按需分析和项目语言维护的任务。"
+    ],
+    "en": [
+      "Tasks needing concise communication, on-demand analysis and maintenance in the project language."
+    ]
+  },
+  "rules": [
+    "om.conclusion-first@1.1.0",
+    "om.chinese-response@1.1.0",
+    "om.bilingual-terms@1.1.0",
+    "om.markdown-structure@1.1.0",
+    "om.clean-deliverable@1.1.0",
+    "om.concrete-titles@1.1.0",
+    "om.response-brief@1.1.0",
+    "om.evidence-inference@1.1.0",
+    "om.test-evidence@1.1.0",
+    "om.calculations@1.1.0",
+    "om.complete-options@1.1.0",
+    "om.align-requirements@1.1.0",
+    "om.batch-questions@1.1.0",
+    "om.assumptions-authority@1.1.0",
+    "om.solutions-proportional@1.1.0",
+    "om.versioned-files@1.1.0",
+    "om.device-readable@1.1.0",
+    "om.semantic-wrap@1.1.0",
+    "om.editable-diagrams@1.1.0",
+    "om.consistent-items@1.1.0",
+    "om.report-context@1.1.0",
+    "om.report-formats@1.1.0",
+    "om.report-review@1.1.0",
+    "om.tables-compact@1.1.0",
+    "om.portable-files@1.1.0",
+    "om.rules-tools@1.1.0",
+    "om.maintenance-project-language@1.1.0"
+  ]
+}

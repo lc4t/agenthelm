@@ -1,0 +1,34 @@
+{
+  "id": "om.report-review",
+  "version": "1.1.0",
+  "slot": "om.report-review",
+  "level": "required",
+  "title": {
+    "zh": "汇报逐项质量检查",
+    "en": "Item-by-item report quality check"
+  },
+  "text": {
+    "zh": "汇报交付前检查中心结论、论据覆盖、标题主线、因果关系、数字及公式、来源时点、信息密度、受众适配、明确行动和责任。检查字体、图表、配色、留白、目标设备可读性、敏感信息授权与承诺边界。确定性问题先修正，再复查受影响部分与整体一致性；核验记录单独保存，不默认塞入最终汇报。",
+    "en": "Before delivering a report, check the central conclusion, evidence coverage, the headline main line, causal relations, numbers and formulas, source dates, information density, audience fit, and clear actions and responsibilities. Check fonts, charts, colour, white space, readability on the target device, authorization for sensitive information and the boundary of commitments. Fix definite problems first, then recheck the affected parts and overall consistency; keep verification records separately and do not put them into the final report by default."
+  },
+  "scopes": {
+    "zh": [
+      "仅在制作或检查汇报时适用"
+    ],
+    "en": [
+      "Only when producing or reviewing reports"
+    ]
+  },
+  "trigger": {
+    "zh": "汇报交付前",
+    "en": "Before delivering a report"
+  },
+  "purpose": {
+    "zh": "在交付前发现并修正内容、呈现与授权方面的问题",
+    "en": "Find and fix problems of content, presentation and authorization before delivery"
+  },
+  "exclude": {
+    "zh": "核验记录（单独保存，默认不放入最终汇报）",
+    "en": "Verification records (kept separately, not in the final report by default)"
+  }
+}

@@ -17,7 +17,7 @@ import inbox
 import lifecycle
 import versioned
 from constants import KNOWN_PLACEHOLDERS
-from i18n_opinion import _  # noqa: E402
+from i18n_opinion import _, resolve_language  # noqa: E402
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -317,14 +317,15 @@ def catalog_markdown(catalog: OrderedDict[str, dict[str, Any]]) -> str:
     if not catalog:
         lines.append(_("当前没有已批准的公开模板。"))
         return "\n".join(lines).rstrip() + "\n"
+    language = resolve_language()
     for template in catalog.values():
         identity = f"{template['family']}/{template['variant']}" if "family" in template else template["id"]
         lines.extend((
-            f"## {template['name']} `{identity}@{template['version']}`",
+            f"## {versioned.pick(template['name'], language)[0]} `{identity}@{template['version']}`",
             "",
-            template["description"],
+            versioned.pick(template["description"], language)[0],
             "",
-            _("规则数量：{0}；适用场景：{1}。").format(len(template['rules']), _('、').join(template['scopes'])),
+            _("规则数量：{0}；适用场景：{1}。").format(len(template['rules']), _('、').join(versioned.pick(template['scopes'], language)[0])),
             "",
         ))
     return "\n".join(lines).rstrip() + "\n"
