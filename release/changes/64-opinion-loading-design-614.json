@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "summary": {
-    "zh": "设计文档：公开规则的渐进式加载（规则组声明、读取时切片、体积测算、兼容与实施拆分），不改任何运行时代码与发布内容。",
-    "en": "Design document: progressive loading of public rules (rule-group declarations, read-time slicing, size measurements, compatibility and implementation split); no runtime code or release content changes."
+    "zh": "设计文档：公开规则的渐进式加载（标签选择、读取时切片、体积测算、兼容与迁移契约）；运行时与公开 catalog 的实现见 opinion-manager 条目。",
+    "en": "Design document: progressive loading of public rules (tag selection, read-time slicing, size measurements, compatibility and the migration contract); the runtime and public catalog implementation are described under the opinion-manager entries."
   },
   "changes": [
     {
