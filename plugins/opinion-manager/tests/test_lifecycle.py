@@ -106,6 +106,50 @@ class LifecycleReducerTests(unittest.TestCase):
         state = lifecycle.reduce(self.state, {**base, "results": {"fixture@1.0.0": "passed"}, "date": "2026-01-01"}, self.lock)
         self.assertEqual(state["rollouts"]["fixture@1.0.0"]["blockers"], [])
 
+    def tag_lock(self) -> dict:
+        label = {"zh": "Z", "en": "E"}
+        loading = {"always": [], "members": {}, "tags": [{"id": name, "name": label, "trigger": label, "exclude": label} for name in ("alpha", "beta")]}
+        profile = {**self.lock["profile"], "loading": loading}
+        return {**self.lock, "profile": profile}
+
+    def tag_use(self, lock: dict, **extra: object) -> dict:
+        return lifecycle.reduce(self.state, {"kind": "use", "occurrence": "tasks/one/result.md", "evidence": "proof", "evidence_sha256": "snapshot",
+                                             "rules": ["fixture@1.0.0"], "passed": True, "user_changed": False, **extra}, lock)
+
+    def test_tag_use_records_and_validates_tags(self) -> None:
+        lock = self.tag_lock()
+        self.state = lifecycle.reduce(self.state, {"kind": "adopt", "human_confirmed": True, "profile_sha256": "profile", "evidence": "approval"}, lock)
+        state = self.tag_use(lock, loaded_tags=["beta", "alpha"], routing_miss_tags=[])
+        rollout = state["rollouts"]["fixture@1.0.0"]
+        self.assertEqual(rollout["uses"][0]["loaded_tags"], ["beta", "alpha"])
+        self.assertEqual(rollout["blockers"], [])
+        for extra in ({"loaded_tags": ["missing"]}, {"routing_miss_tags": ["alpha", "alpha"]}, {"loaded_tags": "alpha"},
+                      {"loaded_tags": [1]}, {"routing_miss_tags": None}, {"loaded_tags": ["alpha", "nope"]}):
+            with self.subTest(extra=extra), self.assertRaises(lifecycle.LifecycleError):
+                self.tag_use(lock, **extra)
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "有效标签：alpha、beta"):
+            self.tag_use(lock, loaded_tags=["missing"])
+        for old, new in (("loaded_bundles", "loaded_tags"), ("routing_miss", "routing_miss_tags")):
+            with self.subTest(old=old), self.assertRaisesRegex(lifecycle.LifecycleError, new):
+                self.tag_use(lock, **{old: []})
+
+    def test_tag_fields_need_a_tag_profile_and_misses_block(self) -> None:
+        self.adopt()
+        for field in ("loaded_tags", "routing_miss_tags"):
+            with self.subTest(field=field), self.assertRaisesRegex(lifecycle.LifecycleError, field):
+                lifecycle.reduce(self.state, {"kind": "use", "occurrence": "tasks/one/r.md", "evidence": "p", "evidence_sha256": "s",
+                                              "rules": ["fixture@1.0.0"], "passed": True, "user_changed": False, field: []}, self.lock)
+        bundled = {**self.lock, "profile": {**self.lock["profile"], "loading": {"core": [], "signals": {}, "bundles": [{"family": "scene"}]}}}
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "loaded_tags"):
+            self.tag_use(bundled, loaded_tags=[])
+        lock = self.tag_lock()
+        self.state = lifecycle.reduce(self.state, {"kind": "adopt", "human_confirmed": True, "profile_sha256": "profile", "evidence": "approval"}, lock)
+        rollout = self.tag_use(lock, routing_miss_tags=["alpha"])["rollouts"]["fixture@1.0.0"]
+        self.assertEqual(len(rollout["blockers"]), 1)
+        fixture = self.tag_use(lock, routing_miss_tags=["alpha"], fixture=True)["rollouts"]["fixture@1.0.0"]
+        self.assertEqual(fixture["blockers"], [])
+        self.assertFalse(lifecycle.successful(rollout["uses"][0]))
+
 
 class LifecycleCommandTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -261,6 +305,62 @@ class LifecycleCommandTests(unittest.TestCase):
         self.assertIsNone(status["coverage"])
         self.assertIn("private.fixture@1.0.0", status["value"])
         self.event({"kind": "use", "occurrence": "tasks/one/result.md", "rules": ["fixture.alpha@1.0.0"], "passed": True, "user_changed": False}, code=2)
+
+    def adopt_tags(self) -> None:
+        label = {"zh": "Z", "en": "E"}
+        loading = {"always": ["fixture.alpha"], "members": {"fixture.beta": ["scene", "extra"]},
+                   "tags": [{"id": name, "name": label, "trigger": label, "exclude": label} for name in ("scene", "extra")]}
+        arguments = ["profile", "--catalog", self.catalog, "--project", self.project, "--id", "private.fixture", "--version", "1.0.0",
+                     "--template", "base/default@1.0.0", "--template", "scene/default@1.0.0", "--loading-file", self.file("loading.json", loading)]
+        saved = self.confirmed(*arguments)
+        self.confirmed("compose", "--project", self.project, "--profile", saved["path"])
+        lock = json.loads((self.project / "opinion.lock.json").read_text(encoding="utf-8"))
+        self.event({"kind": "adopt", "human_confirmed": True, "profile_sha256": lock["profile_sha256"]})
+
+    def test_tags_are_recorded_counted_and_block_on_misses_with_a_long_path(self) -> None:
+        self.project = self.root / ("p" * 60) / ("q" * 60) / "project"
+        for name in ("one", "two", "three"):
+            (self.project / "tasks" / name).mkdir(parents=True)
+        self.assertGreaterEqual(len(str(self.project)), 138)
+        self.seed()
+        self.adopt_tags()
+        alpha, beta = "fixture.alpha@1.0.0", "fixture.beta@1.0.0"
+        coverage = self.lifecycle("status")["coverage"]
+        self.assertEqual(coverage["unused_tags"], ["scene", "extra"])
+        self.assertNotIn("bundles", coverage)
+        self.use("tasks/one/result.md", [alpha, beta], loaded_tags=["scene"])
+        self.use("tasks/two/result.md", [alpha], loaded_tags=["extra"])
+        coverage = self.lifecycle("status")["coverage"]
+        self.assertEqual(coverage["tags"], [{"tag": "scene", "kind": "tag", "loaded_in": 1, "exercised_in": 1, "routing_misses": 0},
+                                            {"tag": "extra", "kind": "tag", "loaded_in": 1, "exercised_in": 1, "routing_misses": 0}])
+        self.assertEqual(coverage["unused_tags"], [])
+        for bad in ({"loaded_tags": ["nope"]}, {"routing_miss_tags": ["scene", "scene"]}, {"loaded_tags": "scene"},
+                    {"loaded_bundles": []}, {"routing_miss": ["scene"]}):
+            self.event({"kind": "use", "occurrence": "tasks/three/x.md", "rules": [alpha], "passed": True, "user_changed": False, **bad}, code=2)
+        error = self.event({"kind": "use", "occurrence": "tasks/three/x.md", "rules": [alpha], "passed": True, "user_changed": False,
+                            "loaded_bundles": []}, code=2)
+        self.assertIn("loaded_tags", error["error"])
+        self.assertTrue(self.lifecycle("status")["value"]["private.fixture@1.0.0"]["ready_for_review"])
+        self.use("tasks/three/result.md", [alpha], routing_miss_tags=["scene"])
+        status = self.lifecycle("status")
+        rollout = status["value"]["private.fixture@1.0.0"]
+        self.assertEqual(len(rollout["blockers"]), 1)
+        self.assertFalse(rollout["ready_for_review"])
+        self.assertEqual(status["coverage"]["tags"][0]["routing_misses"], 1)
+        lock = json.loads((self.project / "opinion.lock.json").read_text(encoding="utf-8"))
+        self.event({"kind": "formalize", "human_confirmed": True, "profile_sha256": lock["profile_sha256"]}, code=2)
+
+    def test_bundle_status_output_is_unchanged_for_schema_21(self) -> None:
+        self.seed()
+        self.adopt("1.0.0")
+        self.use("tasks/one/result.md", ["fixture.alpha@1.0.0"], loaded_bundles=["scene"])
+        coverage = self.lifecycle("status")["coverage"]
+        self.assertEqual(list(coverage["bundles"][0]), ["family", "loaded_in", "exercised_in", "routing_misses"])
+        self.assertNotIn("tags", coverage)
+        self.assertNotIn("unused_tags", coverage)
+        self.assertEqual(coverage["unused_bundles"], ["scene"])
+        self.event({"kind": "use", "occurrence": "tasks/two/result.md", "rules": ["fixture.alpha@1.0.0"], "passed": True,
+                    "user_changed": False, "loaded_tags": []}, code=2)
 
 
 if __name__ == "__main__":

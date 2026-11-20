@@ -36,7 +36,7 @@
 - **声明的存储与指纹。** `loading` 属于 Profile，带声明时 `schema_version` 为 2.1，不带为 2.0。`OPINION.md` 元数据里的 `sha256` 是 Profile 指纹，锁校验基于 `OPINION.md` 全文 SHA-256（`verify_project`）。
 - **模板字段严格。** `TEMPLATE_FIELDS` 固定为 `family, variant, version, name, description, scopes, rules`，目前无处声明标签；本版也不改它（模板声明属后续任务）。
 - **用户采纳的规则落在 `custom` 段。** `inbox adopt` 把 `candidate_rule()` 生成的行追加到 Profile 的 `custom` 文本，并以 `from_profile` 继承原 Profile，`loading_file=None` 时原声明被沿用。`rule_lines.parse_line` 只认本工具渲染的两种格式，认不出的行报告为“未结构化”。
-- **使用记账以“规则束”为键。** `lifecycle.py` 校验 `loaded_bundles`、`routing_miss` 取自 `loading.bundles[].family`；`routing_miss` 使该次使用记为阻断，阻断的版本不能转正式。标签声明没有 `bundles`，本版对 2.2 的处理是“不记账、不崩溃”（`loaded_bundles` 与 `routing_miss` 只接受空列表），完整记账属 T3。
+- **使用记账以“规则束”为键。** `lifecycle.py` 校验 `loaded_bundles`、`routing_miss` 取自 `loading.bundles[].family`；`routing_miss` 使该次使用记为阻断，阻断的版本不能转正式。标签声明没有 `bundles`，2.2 改用 `loaded_tags` 与 `routing_miss_tags`（见 9.4）；2.2 下写旧字段会报错并指向新字段。
 - **会话开始钩子已存在。** `plugins/agent-pack/hooks/hooks.json` 在 `SessionStart`（含 `compact`）调用 `nudge hook`，通过子进程调用 opinion-manager，用 `additionalContext` 注入文字。
 
 ---
@@ -303,7 +303,9 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 ### 9.4 `routing_miss` 记账（T3）
 
 - 记账者是写 `lifecycle event`（`use` 类型）的一方：Agent 自述，或复盘者发现应读未读后补记。运行时不据此阻断，只在转正式前阻断。
-- 2.2 的变更（T3）：`loaded_bundles`、`routing_miss` 的合法集合扩展为标签 id；`status` 增加 `kind: "family" | "tag"`；从未被读取的标签出现在 `unused_bundles`。本版对 2.2 只保证不崩溃。
+- 2.2 的记账字段：`use` 事件用 `loaded_tags`（本次读取的标签）与 `routing_miss_tags`（本应读取却没读取的标签）。取值必须是 `loading.tags[].id` 的不重复列表，未声明的标签、重复、非列表一律拒绝并列出有效标签；2.2 下写 `loaded_bundles` / `routing_miss` 报错并指向新字段，2.1 下写标签字段同理，2.1 的字段与语义不变。
+- `routing_miss_tags` 非空的真实使用与 `routing_miss` 一样记为阻断，有阻断的版本不能转正式。
+- `status` 的覆盖视图对 2.2 输出 `tags`（每项 `kind: "tag"`、`loaded_in`、`exercised_in`、`routing_misses`）与 `unused_tags`；2.1 的 `bundles` 与 `unused_bundles` 输出不变，条目不带 `kind`。
 
 ---
 
@@ -348,7 +350,7 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 
 ### T3 记账与文档同步
 
-- `lifecycle` 接受标签 id、`status` 的 `kind` 与 `unused_bundles`；`SKILL.md`、`AGENT.template.md` 措辞；英文镜像与 i18n 守卫。
+- `lifecycle` 接受标签字段（`loaded_tags`、`routing_miss_tags`），`status` 输出 `tags` 与 `unused_tags`；`SKILL.md`、`AGENT.template.md` 措辞；英文镜像与 i18n 守卫。
 
 ### T4 体积守卫与 catalog 重做
 

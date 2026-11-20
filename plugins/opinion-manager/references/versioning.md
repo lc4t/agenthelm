@@ -150,6 +150,7 @@ Agent 为适用范围与候选含义做判断；scopes 只提供元数据。工�
 - `always` 列出常驻规则；没有任何标签的规则同样常驻；规则同时在 `always` 与标签里时归常驻。悬空规则编号、未知标签、重复项、没有成员的标签都在预览阶段被拒绝。
 - `context core` 输出常驻规则与标签索引；`context select --tag A --tag B` 输出标签并集的规则（不含常驻规则，去重）；`context index` 给出逐标签的规则数与字节数；`context check --tag A [--loaded A]` 由声明的标签算出应读取的规则并核对已读取，缺失退出码 1。未知标签、空选择、全部常驻的标签都会报错并列出有效标签。2.2 声明下 `context bundle` 报错并指向 `select`。
 - 自定义段的规则可以在行尾带 ` [tags a b]`（纯 ASCII、字母序；与路由并存时写作 `[route …] [tags …]`），所有标签都在词表内的行按标签按需读取；没有标记、手写、认不出或带词表外标签的行永远常驻。`inbox add` 与 `inbox revise` 用 `--tag`（可重复）指定标签并对照词表校验，`revise --tag-clear` 清空。
+- 回退与 2.1 一致：核对失败、没有声明或 `opinion.loading_mode` 为 `full` 时，`core`、`select`、`index`、`check` 都返回 `fallback`，改为完整读取 `OPINION.md`。使用记账见「候选、灰度与使用记录」的 `loaded_tags` 与 `routing_miss_tags`。
 - 带标签声明的 Profile 使用 `schema_version` 2.2。旧版本工具读它会报字段集合不符并回退为完整读取，`OPINION.md` 仍是完整正文；2.0、2.1 的 Profile、正文与锁字节不变。
 
 ### 模板声明与预览物化（catalog 1.1.0）
@@ -201,8 +202,10 @@ python3 plugins/opinion-manager/runtime/opinion_manager.py lifecycle event --pro
 5. `adopt`：`human_confirmed: true`、当前 `profile_sha256`。先通过 `verify`，随后该 Profile 版本记为灰度。
 6. `use`：`occurrence`、`rules`（当前 Profile 的精确规则引用）、`passed`、`user_changed`、`fixture`。可选字段：
    - `results`：为每条规则给出 `passed`、`not-applicable` 或 `violated`；
-   - `loaded_bundles`：本次读取的按需规则束；
-   - `routing_miss`：本应读取却没有读取的规则束；
+   - `loaded_bundles`：本次读取的按需规则束（schema 2.1）；
+   - `routing_miss`：本应读取却没有读取的规则束（schema 2.1）；
+   - `loaded_tags`：本次读取的标签（schema 2.2，如 `context select --tag` 的取值）；
+   - `routing_miss_tags`：本应读取却没有读取的标签（schema 2.2）；
    - `date`：`YYYY-MM-DD`，用于显示规则最近一次使用。
 7. `formalize`：`human_confirmed: true`、当前 `profile_sha256`。只改变上线标签，不改规则正文。
 
@@ -211,10 +214,11 @@ python3 plugins/opinion-manager/runtime/opinion_manager.py lifecycle event --pro
 - `occurrence` 是项目内工作记录的相对路径，按前两级目录归为一个独立场景，同一任务的多个阶段只计一次。默认接受 `tasks`、`cases`、`reviews`、`projects`、`journal` 五个顶层目录，可用 `--occurrence-root` 改写。
 - `fixture: true` 的记录不计入任何成熟度。
 - 候选每新增一次独立真实发生次数 n，推荐信用增加 n/(n+1)，达到 1 时标记待推荐，展示后扣 1。出现 `failed` 的候选显示为待处理。这是默认参数，没有经过大量使用验证。
-- `use` 未通过、用户改动了结果、或存在 `routing_miss` 时记为阻断；有阻断的版本不能转正式，须在新版本中解决。
+- 标签字段只在 schema 2.2 的 Profile 下可用，取值必须是 `loading.tags[].id` 的不重复列表，未声明的标签、重复项、非列表都会被拒绝并列出有效标签；2.2 下写 `loaded_bundles` 或 `routing_miss` 会报错并指向新字段，2.1 下写标签字段同理。2.1 的字段与语义不变。
+- `use` 未通过、用户改动了结果、或存在 `routing_miss` / `routing_miss_tags` 时记为阻断；有阻断的版本不能转正式，须在新版本中解决。
 - 至少两个独立的真实成功使用且无阻断时，`status` 标记 `ready_for_review`。它只表示可以提交复盘，不会自动转正式。
 
-`status` 在当前正文通过核验时附带覆盖视图：每条规则的独立成功使用次数、违反次数与最近使用日期，从未使用的规则；Profile 声明了分层加载时，还包括每个规则束被读取和实际用到的次数、漏读次数，以及从未用到的规则束。复盘时据此判断「正式」覆盖到了哪些规则。
+`status` 在当前正文通过核验时附带覆盖视图：每条规则的独立成功使用次数、违反次数与最近使用日期，从未使用的规则；Profile 声明了分层加载时，还包括每个规则束被读取和实际用到的次数、漏读次数，以及从未用到的规则束。2.2 的标签单独列在 `tags` 中，每项带 `kind: "tag"`、`loaded_in`、`exercised_in`、`routing_misses`（`exercised_in` 为用到该标签任一成员规则的独立成功使用次数），从未用到的标签列在 `unused_tags`；2.1 的 `bundles` 与 `unused_bundles` 输出不变（条目不带 `kind`，视为规则束）。复盘时据此判断「正式」覆盖到了哪些规则。
 
 同一 Profile 编号发布新版本后，旧版本的使用记录在其全部规则指纹未变时沿用到新版本，并计入独立成功使用次数；规则被修改或个人修订后，相关记录不再沿用。沿用需要读取旧版本的 Profile 文件并核对指纹，默认位置为项目的 `.opinion/profiles`，可用 `--profiles-root` 指定；找不到或指纹不符时不沿用，并在 `not_carried` 中列出。旧版本的阻断不沿用，但违反记录仍可在覆盖视图中看到。
 

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "opinion-manager 的 lifecycle 支持 Profile schema 2.2 的标签记账：use 事件新增 loaded_tags 与 routing_miss_tags，取值校验自 loading.tags；有标签漏读的使用与规则束漏读一样阻断转正式；status 对标签输出 loaded_in、exercised_in、routing_misses 与 unused_tags。2.1 的 loaded_bundles、routing_miss、bundles 输出不变。",
+    "en": "opinion-manager lifecycle now records tags for Profile schema 2.2: use events gain loaded_tags and routing_miss_tags, validated against loading.tags; a use with a missed tag blocks formalization just like a missed bundle; status reports loaded_in, exercised_in, routing_misses and unused_tags per tag. The 2.1 loaded_bundles, routing_miss and bundles output are unchanged."
+  },
+  "changes": [{
+    "scope": "opinion-manager",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [".opinion/lifecycle"],
+    "default_for_existing": "advisory",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
