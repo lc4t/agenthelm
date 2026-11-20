@@ -100,14 +100,31 @@ def record_use(event: dict[str, Any], lock: dict[str, Any], roots: tuple[str, ..
         if use["passed"] and "violated" in results.values():
             fail(_("存在违反的规则时 passed 不能为 true"))
         use["results"] = results
-    bundles = {bundle["family"] for bundle in profile["loading"].get("bundles", [])} if "loading" in profile else None
+    loading = profile.get("loading")
+    tag_ids = [tag["id"] for tag in loading["tags"]] if isinstance(loading, dict) and "tags" in loading else None
+    bundles = {bundle["family"] for bundle in loading.get("bundles", [])} if tag_ids is None and loading else None
     for key in ("loaded_bundles", "routing_miss"):
         if key in event:
+            if tag_ids is not None:
+                fail(_("当前 Profile 使用标签声明（schema 2.2），请改用 {0}").format("loaded_tags" if key == "loaded_bundles" else "routing_miss_tags"))
             if bundles is None:
                 fail(_("当前 Profile 未声明分层加载，不能记录 {0}").format(key))
             if not isinstance(event[key], list) or not set(event[key]) <= bundles or len(event[key]) != len(set(event[key])):
                 fail(_("{0} 必须是已声明规则束的不重复列表").format(key))
             use[key] = event[key]
+    for key in ("loaded_tags", "routing_miss_tags"):
+        if key in event:
+            if tag_ids is None:
+                fail(_("当前 Profile 未声明标签（schema 2.2），不能记录 {0}；规则束声明请用 loaded_bundles 与 routing_miss").format(key))
+            names = event[key]
+            if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+                fail(_("{0} 必须是标签 id 的列表").format(key))
+            if len(names) != len(set(names)):
+                fail(_("{0} 含有重复标签").format(key))
+            unknown = [name for name in names if name not in tag_ids]
+            if unknown:
+                fail(_("{0} 含有未声明的标签：{1}；有效标签：{2}").format(key, _("、").join(unknown), _("、").join(tag_ids)))
+            use[key] = names
     if "date" in event:
         if not isinstance(event["date"], str) or not DATE.fullmatch(event["date"]):
             fail(_("date 必须为 YYYY-MM-DD"))
@@ -181,7 +198,7 @@ def reduce(state: dict[str, Any], event: dict[str, Any], lock: dict[str, Any] | 
             fail(_("use 指向的 Opinion 内容已经变化"))
         use = record_use(event, lock, roots)
         rollout["uses"].append(use)
-        if not use["fixture"] and (not use["passed"] or use["user_changed"] or use.get("routing_miss")):
+        if not use["fixture"] and (not use["passed"] or use["user_changed"] or use.get("routing_miss") or use.get("routing_miss_tags")):
             rollout["blockers"].append(event_hash)
     elif kind == "formalize":
         rollout = result["rollouts"][profile_ref(lock["profile"])]
@@ -215,7 +232,7 @@ def evidence_valid(root: Path, state: dict[str, Any]) -> None:
 
 
 def successful(use: dict[str, Any]) -> bool:
-    return not use["fixture"] and use["passed"] and not use["user_changed"] and not use.get("routing_miss")
+    return not use["fixture"] and use["passed"] and not use["user_changed"] and not use.get("routing_miss") and not use.get("routing_miss_tags")
 
 
 def carried_uses(state: dict[str, Any], profile: dict[str, Any], profiles_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -261,7 +278,20 @@ def coverage_view(state: dict[str, Any], profile: dict[str, Any], profiles_root:
               "carried_uses": len([use for use in carried if not use["fixture"]]), "not_carried": skipped,
               "distinct_successful_uses": len({use["occurrence"] for use in uses if successful(use)}),
               "rules": rules, "unused_rules": [item["ref"] for item in rules if not item["distinct_successful_uses"]]}
-    if "loading" in profile:
+    if "loading" in profile and "tags" in profile["loading"]:
+        members = profile["loading"]["members"]
+        tags = []
+        for tag in profile["loading"]["tags"]:
+            name = tag["id"]
+            owned = {rule for rule, names in members.items() if name in names}
+            good = [use for use in uses if successful(use)]
+            tags.append({"tag": name, "kind": "tag",
+                         "loaded_in": len({use["occurrence"] for use in good if name in use.get("loaded_tags", [])}),
+                         "exercised_in": len({use["occurrence"] for use in good if owned & {ref.rsplit("@", 1)[0] for ref in use["rules"]}}),
+                         "routing_misses": sum(1 for use in uses if not use["fixture"] and name in use.get("routing_miss_tags", []))})
+        result["tags"] = tags
+        result["unused_tags"] = [item["tag"] for item in tags if not item["exercised_in"]]
+    elif "loading" in profile:
         bundles = []
         for bundle in profile["loading"].get("bundles", []):
             family = bundle["family"]
