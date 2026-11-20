@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "设计文档：公开规则的渐进式加载（规则组声明、读取时切片、体积测算、兼容与实施拆分），不改任何运行时代码与发布内容。",
+    "en": "Design document: progressive loading of public rules (rule-group declarations, read-time slicing, size measurements, compatibility and implementation split); no runtime code or release content changes."
+  },
+  "changes": [
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
