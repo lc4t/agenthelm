@@ -342,9 +342,9 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 - 内容：`loading` 的 2.2 数据模型与校验；`context core|select|index|check`；`rule_lines` 的标签标记；`inbox add|revise --tag`；`lifecycle` 对 2.2 的容错；本设计文档定稿；`profile.schema.json` 与 `versioning.md` 同步。
 - 测试：`plugins/opinion-manager/tests/test_tags.py`（黄金、校验失败路径、并集与去重、常驻不重复、`check` 缺失与退出码、en 无中文、custom 往返、长路径 `--project`、旧工具读 2.2）。
 
-### T2 模板声明与预览物化
+### T2 模板声明与预览物化（已实现）
 
-- `TEMPLATE_FIELDS` 增加可选 `tags`、`always`；`profile` 预览物化 `loading`；`--no-tags`；`updates` 预览显示 `loading` 变化。已有手写 `loading` 只给建议。
+见第 13 节：模板可选 `loading`，`profile` 预览物化 Profile 的 2.2 `loading`，`--no-tags`，`updates` 显示声明变化，已有手写 `loading` 只给建议；catalog 1.1.0 的两个场景模板声明了常驻集合与标签。
 
 ### T3 记账与文档同步
 
@@ -369,6 +369,43 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 - “常驻 / 按需”指读取时机：常驻随 `context core` 输出，按需须命中触发条件后读取。
 - “标签（tag）”是读取单元的成员关系；“规则组”等同于具名的标签集合；“规则束（bundle）”是 2.1 声明下系列级读取单元的叫法，`context bundle` 命令名不变。
 - 体积一律为 UTF-8 字节，另标字符数的地方明确写“字符”。
+
+---
+
+## 13. 模板声明与预览物化
+
+### 13.1 模板的 `loading`
+
+- 模板在 `TEMPLATE_FIELDS` 之外新增可选字段 `loading`，形态与 Profile 2.2 的 `loading`（第 4.1 节）一致：`always` 列规则编号（不带版本），`tags` 为封闭词表，`members` 把规则编号映射到标签。校验与 Profile 共用 `check_tag_loading`，区别只在可引用的规则：模板只能引用自己 `rules` 里的规则编号（悬空编号、未知标签、重复、孤儿标签、非 ASCII 标签 id、缺 zh 或 en 的文字都在 `publish` 与 `catalog` 加载时被拒绝）。
+- 没有 `loading` 的模板：物化后它的规则全部常驻，读取行为与此前相同。
+- `loading` 属于模板内容，参与模板指纹（`digest`），因此只能随模板新版本发布；patch 版本不能改变它（与「patch 不能改变有效规则、适用范围」同一类约束）。1.0.0 文件不变。
+- `references/versioned-template.schema.json` 增加 `loading`，引用 `profile.schema.json` 的 `tagLoading`。
+
+### 13.2 合并语义（`template_loading`）
+
+选择了多个模板时，按模板引用排序后合并：
+
+- 词表按 id 合并，同一 id 的 `name`、`trigger`、`exclude` 必须逐字相同，否则预览报「标签定义冲突」，并列出每个冲突标签的来源模板。
+- `always` 取并集；`members` 按规则编号取并集；没有声明的模板，其规则一律加入 `always`（任一模板要求常驻则常驻）；同一规则同时在 `always` 与标签里时归常驻，成员全部常驻的标签不收录，没有任何按需标签时不生成声明。
+- 直接选择的原子规则和 `overrides` 停用或修订的规则：成员关系按规则编号，不受影响；停用后标签为空集，沿用第 4.2 节的 `empty` 语义。
+
+### 13.3 预览物化
+
+- `profile` 预览在新建 Profile 或模板选择变化时，由所选模板生成 Profile 的 `loading`（schema 2.2），结果出现在 `changes.loading_changed`、`changes.loading.before/after`，并通过 `loading_source` 标明来源。仍然是「预览 → 用户确认指纹 → 写入」，确认前不生效；`OPINION.md` 的正文不变，声明只进入 Profile 与锁。
+- 模板选择不变的修订沿用原声明，不重新物化（不会因为一次无关修订改变读取行为）。
+- 用户已有手写 `loading` 的 Profile：原声明与旧模板物化结果相同时随新模板更新；否则保持不变，只在预览的 `loading_suggestion` 与警告里给出建议，需要时用 `--loading-file` 整体写入。
+- `--no-tags` 保持完整读取，不物化模板声明（取名与 Profile 的「标签」术语一致；设计首版曾拟用 `--no-groups`，规则组在本版只是具名标签集合，沿用「标签」避免两个名字指同一件事）。`--loading-file`、`--remove-loading` 与 `opinion.loading_mode=full` 的行为不变。
+- `updates` 对每个可升级的模板给出各版本的声明摘要；`compare` 沿用 `loading_changed` 与 `loading.before/after`。从 1.0.0 升到 1.1.0 时，旧 Profile 为 2.0 无声明，预览物化出 2.2；手工修改过 `OPINION.md` 时 `compose` 阻断，纳入后用 `--accept-current` 确认，升级后 `verify` 通过。
+- `untranslated` 的范围包含标签的 `name`、`trigger`、`exclude`；Profile 2.2 的词表要求 zh 与 en 俱全，本版 catalog 全部双语，缺译文只会出现在非 zh/en 完整的手写数据上，且只警告不阻断。
+
+### 13.4 catalog 1.1.0 的声明
+
+两个场景模板声明相同的四个按需标签与不同的常驻集合（规则编号以各自 1.1.0 引用的规则为准）：
+
+- `reviewed-project` 常驻 10 条：`om.chinese-response`、`om.conclusion-first`、`om.response-dense`、`om.evidence-inference`、`om.bilingual-terms`、`om.markdown-structure`、`om.batch-questions`、`om.align-requirements`、`om.clean-deliverable`、`om.tables-list-first`。
+- `concise-project` 常驻 9 条：把 `om.response-dense` 换为 `om.response-brief`，不含表格规则；`om.tables-compact` 归 `files`（与附录 A 一致）。
+- 标签：`decisions`（5 条）、`files`（reviewed 4 条、concise 5 条）、`reports`（6 条）、`maintenance`（2 条）。规则文件不改，标签成员关系只在模板里。
+- 实测（`context index` 的真实输出，字节）：reviewed zh 完整 21,225、`core_bytes` 8,208；reviewed en 完整 26,281、`core_bytes` 10,059；concise zh 完整 20,687、`core_bytes` 7,181；concise en 完整 25,710、`core_bytes` 8,853。四个标签的 `index_bytes` 为 zh 126–148、en 139–182，均在 160 / 200 的守卫内；按需标签数 4。
 
 ---
 

@@ -152,6 +152,17 @@ Agent 为适用范围与候选含义做判断；scopes 只提供元数据。工�
 - 自定义段的规则可以在行尾带 ` [tags a b]`（纯 ASCII、字母序；与路由并存时写作 `[route …] [tags …]`），所有标签都在词表内的行按标签按需读取；没有标记、手写、认不出或带词表外标签的行永远常驻。`inbox add` 与 `inbox revise` 用 `--tag`（可重复）指定标签并对照词表校验，`revise --tag-clear` 清空。
 - 带标签声明的 Profile 使用 `schema_version` 2.2。旧版本工具读它会报字段集合不符并回退为完整读取，`OPINION.md` 仍是完整正文；2.0、2.1 的 Profile、正文与锁字节不变。
 
+### 模板声明与预览物化（catalog 1.1.0）
+
+公开模板可以带可选的 `loading`，形态与上面的 2.2 声明相同，只能引用本模板的规则编号；它参与模板指纹，只能随模板新版本发布（patch 版本不能改变它）。`scenario/reviewed-project` 与 `scenario/concise-project` 的 1.1.0 声明了常驻集合和四个标签（`decisions`、`files`、`reports`、`maintenance`）；其余模板没有声明，物化后规则全部常驻。
+
+- `profile` 预览选择带声明的模板时，自动生成 Profile 的 `loading`（schema 2.2），在 `changes.loading_changed` 与 `changes.loading.before/after` 中展示，预览输出的 `loading_source` 标明来源（`template`、`inherited`、`file`、`removed`、`none`）。沿用「预览 → 确认指纹 → 写入」，确认前不生效。
+- 只在新建 Profile 或模板选择发生变化（例如从 1.0.0 升到 1.1.0）时物化；模板不变的修订沿用原声明。原声明恰好等于旧模板物化的结果时，随模板更新；原声明是用户手写的，不自动合并，只在预览的 `loading_suggestion` 里给出建议，需要时用 `--loading-file` 整体写入。
+- 多个模板同时声明时：标签词表按 id 合并，同一 id 的定义必须逐字相同，否则预览报「标签定义冲突」并列出来源；`always` 与 `members` 取并集；没有声明的模板，其规则全部常驻；规则同时在 `always` 与标签里时归常驻。直接选择的原子规则、`overrides` 停用或修订的规则，按规则编号沿用成员关系；停用后标签没有有效规则时，读取侧按「空」处理。
+- `--no-tags` 不物化模板声明，保持完整读取（schema 2.0）；`--loading-file`、`--remove-loading` 的行为不变，二者与 `--no-tags` 不能同时用于整体写入。已经选择了带声明模板、又用 `--no-tags` 写入的 Profile，在下次改变模板选择时会再次得到物化预览，仍可再加 `--no-tags`。
+- `updates` 对每个可升级的模板列出各版本的声明摘要（`loading`，没有声明为 `null`）；升级预览走 `profile --template <新版本>`，`compose` 仍会因人工修改阻断，需读取并纳入后用 `--accept-current` 确认。
+- `untranslated` 的范围包含标签的 `name`、`trigger`、`exclude`；缺译文只警告，不阻断。
+
 读取与核对使用只读的 `context` 命令：
 
 ```bash

@@ -220,5 +220,12 @@
  "loading.members 引用了不存在的规则：{0}": "loading.members refers to a rule that does not exist: {0}",
  "loading.members 使用了未知标签：{0}；有效标签：{1}": "loading.members uses unknown tags: {0}; valid tags: {1}",
  "标签 id（schema 2.2），select 与 check 使用，可重复，取并集": "Tag id (schema 2.2) for select and check; repeatable, takes the union",
- "该 Profile 使用规则束声明（schema 2.1），请用 context bundle；select 与 --tag 只用于标签声明（schema 2.2）": "This Profile uses a bundle declaration (schema 2.1); use context bundle; select and --tag only work with a tag declaration (schema 2.2)"
+ "该 Profile 使用规则束声明（schema 2.1），请用 context bundle；select 与 --tag 只用于标签声明（schema 2.2）": "This Profile uses a bundle declaration (schema 2.1); use context bundle; select and --tag only work with a tag declaration (schema 2.2)",
+ "标签定义冲突：{0}": "Conflicting tag definitions: {0}",
+ "{0}（来源：{1}）": "{0} (sources: {1})",
+ "--no-tags 与 --loading-file 不能同时使用": "--no-tags and --loading-file cannot be used together",
+ "不由所选模板物化标签加载声明，保持完整读取（schema 2.0）": "Do not materialize the tag-loading declaration from the selected templates; keep full reading (schema 2.0)",
+ "所选模板声明了标签加载，但本 Profile 已有手写的 loading，未自动合并；建议声明见 loading_suggestion，需要时用 --loading-file 整体写入": "The selected templates declare tag loading, but this Profile already has a hand-written loading, so nothing was merged automatically; see loading_suggestion for the proposed declaration and write it as a whole with --loading-file if wanted",
+ "patch 版本不能改变加载声明": "A patch version cannot change the loading declaration",
+ "；": "; "
 }

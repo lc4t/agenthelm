@@ -46,5 +46,136 @@
     "om.portable-files@1.1.0",
     "om.rules-tools@1.1.0",
     "om.maintenance-project-language@1.1.0"
-  ]
+  ],
+  "loading": {
+    "always": [
+      "om.chinese-response",
+      "om.conclusion-first",
+      "om.response-brief",
+      "om.evidence-inference",
+      "om.bilingual-terms",
+      "om.markdown-structure",
+      "om.batch-questions",
+      "om.align-requirements",
+      "om.clean-deliverable"
+    ],
+    "tags": [
+      {
+        "id": "decisions",
+        "name": {
+          "zh": "方案与论证",
+          "en": "Options and reasoning"
+        },
+        "trigger": {
+          "zh": "给方案、做比较、算数字、转述实测或依赖假设时",
+          "en": "Proposing or comparing options, computing numbers, relaying test results, or relying on assumptions"
+        },
+        "exclude": {
+          "zh": "纯执行类回复",
+          "en": "Pure execution"
+        }
+      },
+      {
+        "id": "files",
+        "name": {
+          "zh": "文件与条目",
+          "en": "Files and items"
+        },
+        "trigger": {
+          "zh": "改文件、命名版本、拟标题、做表格对比或整理文档时",
+          "en": "Editing or versioning files, writing titles, comparison tables, or organizing documents"
+        },
+        "exclude": {
+          "zh": "对话回复",
+          "en": "Chat replies"
+        }
+      },
+      {
+        "id": "reports",
+        "name": {
+          "zh": "汇报材料",
+          "en": "Report materials"
+        },
+        "trigger": {
+          "zh": "制作或审查汇报、PPT、HTML，含图表与排版时",
+          "en": "Producing or reviewing reports, decks or HTML with charts and layout"
+        },
+        "exclude": {
+          "zh": "闲聊与纯代码任务",
+          "en": "Chat and pure coding tasks"
+        }
+      },
+      {
+        "id": "maintenance",
+        "name": {
+          "zh": "规则与模板维护",
+          "en": "Rule and template upkeep"
+        },
+        "trigger": {
+          "zh": "编写或维护 Skill、规则、模板时",
+          "en": "Writing or maintaining skills, rules or templates"
+        },
+        "exclude": {
+          "zh": "代码与命令标识符",
+          "en": "Code and command identifiers"
+        }
+      }
+    ],
+    "members": {
+      "om.calculations": [
+        "decisions"
+      ],
+      "om.complete-options": [
+        "decisions"
+      ],
+      "om.solutions-proportional": [
+        "decisions"
+      ],
+      "om.assumptions-authority": [
+        "decisions"
+      ],
+      "om.test-evidence": [
+        "decisions"
+      ],
+      "om.versioned-files": [
+        "files"
+      ],
+      "om.concrete-titles": [
+        "files"
+      ],
+      "om.portable-files": [
+        "files"
+      ],
+      "om.consistent-items": [
+        "files"
+      ],
+      "om.tables-compact": [
+        "files"
+      ],
+      "om.report-context": [
+        "reports"
+      ],
+      "om.report-formats": [
+        "reports"
+      ],
+      "om.report-review": [
+        "reports"
+      ],
+      "om.device-readable": [
+        "reports"
+      ],
+      "om.semantic-wrap": [
+        "reports"
+      ],
+      "om.editable-diagrams": [
+        "reports"
+      ],
+      "om.rules-tools": [
+        "maintenance"
+      ],
+      "om.maintenance-project-language": [
+        "maintenance"
+      ]
+    }
+  }
 }

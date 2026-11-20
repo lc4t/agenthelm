@@ -22,6 +22,7 @@ EDITABLE = {"title", "level", "scopes", "text"}
 RULE_FIELDS = EDITABLE | {"id", "version", "slot"}
 RULE_OPTIONAL_FIELDS = {"trigger", "purpose", "exclude"}  # 可选：何时适用、为什么、何时不适用（可本地化）
 TEMPLATE_FIELDS = {"family", "variant", "version", "name", "description", "scopes", "rules"}
+TEMPLATE_OPTIONAL_FIELDS = {"loading"}  # 可选：本模板规则的标签选择声明（与 Profile 2.2 的 loading 同形，只涉及本模板的规则）
 PROFILE_FIELDS = {"schema_version", "id", "version", "templates", "rules", "sources", "overrides", "custom", "derived_from"}
 PROFILE_OPTIONAL_FIELDS = {"loading"}
 LOADING_FIELDS = {"core", "signals", "bundles"}
@@ -165,7 +166,7 @@ def validate_release(value: Any) -> str:
     if not isinstance(value, dict):
         fail(_("发布内容必须是对象"))
     kind = "rules" if "id" in value else "templates"
-    fields(value, RULE_FIELDS if kind == "rules" else TEMPLATE_FIELDS, _("发布内容"), optional=RULE_OPTIONAL_FIELDS if kind == "rules" else frozenset())
+    fields(value, RULE_FIELDS if kind == "rules" else TEMPLATE_FIELDS, _("发布内容"), optional=RULE_OPTIONAL_FIELDS if kind == "rules" else TEMPLATE_OPTIONAL_FIELDS)
     version(value["version"])
     if kind == "rules":
         identifier(value["id"])
@@ -180,6 +181,8 @@ def validate_release(value: Any) -> str:
         strings(value["rules"], "rules")
         for ref in value["rules"]:
             parse_ref(ref, "rules")
+        if "loading" in value:
+            check_tag_loading(value["loading"], {parse_ref(ref, "rules")[0] for ref in value["rules"]})
     return kind
 
 
@@ -317,9 +320,12 @@ def tag_text(value: Any, label: str) -> None:
 
 def validate_tag_loading(profile: dict[str, Any]) -> None:
     """schema 2.2 的 loading。停用规则使标签没有有效规则不算校验失败（读取时该标签不可用）。"""
-    loading = profile["loading"]
+    check_tag_loading(profile["loading"], set(base_rules(profile)))
+
+
+def check_tag_loading(loading: Any, known: set[str]) -> None:
+    """标签声明的结构校验；Profile 与模板共用，known 是声明可以引用的规则编号。"""
     fields(loading, TAG_LOADING_FIELDS, "loading")
-    known = base_rules(profile)
     strings(loading["always"], "loading.always", empty=True)
     for identity in loading["always"]:
         if identity not in known:
@@ -349,6 +355,41 @@ def validate_tag_loading(profile: dict[str, Any]) -> None:
     unused = [name for name in tags if name not in used]
     if unused:
         fail(_("标签没有任何成员规则：{0}").format(_("、").join(unused)))
+
+
+def template_loading(sources: dict[str, Any]) -> dict[str, Any] | None:
+    """由所选模板声明合并出 Profile 的标签 loading；没有任何模板声明（或合并后没有按需标签）返回 None，保持完整读取。
+
+    词表按 id 合并，同一 id 的定义必须逐字相同；always 与 members 取并集；没有声明的模板，其规则全部常驻
+    （同一规则同时被其他模板标记时归常驻）；规则同时在 always 与标签里时归常驻，标签因此没有成员则不收录。
+    """
+    templates = sorted(sources["templates"], key=lambda source: source["ref"])
+    declared = [source for source in templates if "loading" in source["value"]]
+    if not declared:
+        return None
+    definitions: dict[str, tuple[dict[str, Any], list[str]]] = {}
+    conflicts: list[str] = []
+    for source in declared:
+        for tag in source["value"]["loading"]["tags"]:
+            known = definitions.setdefault(tag["id"], (tag, []))
+            known[1].append(source["ref"])
+            if known[0] != tag and tag["id"] not in conflicts:
+                conflicts.append(tag["id"])
+    if conflicts:
+        fail(_("标签定义冲突：{0}").format(_("；").join(_("{0}（来源：{1}）").format(name, _("、").join(definitions[name][1])) for name in conflicts)))
+    always = {identity for source in declared for identity in source["value"]["loading"]["always"]}
+    always |= {parse_ref(ref, "rules")[0] for source in templates if "loading" not in source["value"] for ref in source["value"]["rules"]}
+    members: dict[str, list[str]] = {}
+    for source in declared:
+        for identity, names in source["value"]["loading"]["members"].items():
+            if identity not in always:
+                members[identity] = members.get(identity, []) + [name for name in names if name not in members.get(identity, [])]
+    tags = [tag for name, (tag, _refs) in definitions.items() if any(name in names for names in members.values())]
+    if not tags:
+        return None
+    ordered = [identity for source in declared for identity in source["value"]["loading"]["always"]]
+    resident = [identity for identity in dict.fromkeys(ordered)] + sorted(always - set(ordered))
+    return {"always": resident, "tags": tags, "members": members}
 
 
 def profile_schema(loading: Any) -> str:
@@ -486,6 +527,28 @@ def confirm(args: argparse.Namespace, fingerprint: str) -> None:
         fail(_("请先审阅预览，再使用 --confirm {0} --apply").format(fingerprint))
 
 
+def choose_loading(args: argparse.Namespace, old: dict[str, Any] | None, templates: list[str], sources: dict[str, Any]) -> tuple[Any, str, Any]:
+    """profile 预览的 loading 来源：(声明, 来源标记, 建议)。只在模板选择变化（或新建）时由模板物化；
+    --loading-file、--remove-loading、--no-tags 之外，用户手写的声明不被覆盖，只给出建议。"""
+    inherited = None if not old else old.get("loading")
+    if args.loading_file:
+        if args.no_tags:
+            fail(_("--no-tags 与 --loading-file 不能同时使用"))
+        return read_object(args.loading_file), "file", None
+    if args.remove_loading:
+        return None, "removed", None
+    if args.no_tags or (old and templates == old["templates"]):
+        return inherited, ("inherited" if inherited is not None else "none"), None
+    proposed = template_loading(sources)
+    try:
+        derived = template_loading(old["sources"]) if old else None
+    except OpinionVersionError:
+        derived = None
+    if inherited is None or inherited == derived:
+        return proposed, ("template" if proposed is not None else "none"), None
+    return inherited, "inherited", (proposed if proposed not in (None, inherited) else None)
+
+
 def profile_command(args: argparse.Namespace) -> dict[str, Any]:
     root = safe_path(args.project)
     if not root.is_dir():
@@ -519,16 +582,19 @@ def profile_command(args: argparse.Namespace) -> dict[str, Any]:
     if args.loading_file and args.remove_loading:
         fail(_("--loading-file 与 --remove-loading 不能同时使用"))
     # 加载声明整体替换；未提供时沿用原 Profile，保证未变更的声明不会在修订中丢失。
-    loading = read_object(args.loading_file) if args.loading_file else (None if args.remove_loading or not old else old.get("loading"))
+    sources = resolve(catalog, templates, rules)
+    loading, loading_source, suggestion = choose_loading(args, old, templates, sources)
     value = {
         "schema_version": profile_schema(loading), "id": args.id, "version": args.version,
-        "templates": templates, "rules": rules, "sources": resolve(catalog, templates, rules),
+        "templates": templates, "rules": rules, "sources": sources,
         "overrides": dict(old["overrides"]) if old else {}, "custom": custom,
         "derived_from": {"id": old["id"], "version": old["version"], "sha256": digest(old)} if old else None,
     }
     if loading is not None:
         value["loading"] = loading
     changes = comparison(old, value) if old else {"conflicts": []}
+    if not old and loading is not None:
+        changes.update({"loading_changed": True, "loading": {"before": None, "after": loading}})
     resolutions = read_object(args.resolutions_file) if args.resolutions_file else {}
     conflict_ids = {item["id"] for item in changes["conflicts"]}
     if set(resolutions) - conflict_ids:
@@ -561,7 +627,10 @@ def profile_command(args: argparse.Namespace) -> dict[str, Any]:
     path = root / ".opinion" / "profiles" / args.id / "versions" / f"{args.version}.json"
     fingerprint = digest(value)
     result = {"ok": True, "status": "preview", "path": str(path), "profile": value, "content": render(value, project_language(root)), "effective_rules": list(effective_rules(value).values()), "changes": changes, "unresolved": sorted(unresolved), "confirmation_sha256": fingerprint,
-              **untranslated_report(value, project_language(root))}
+              "loading_source": loading_source, **untranslated_report(value, project_language(root))}
+    if suggestion is not None:
+        result["loading_suggestion"] = suggestion
+        result.setdefault("warnings", []).append(_("所选模板声明了标签加载，但本 Profile 已有手写的 loading，未自动合并；建议声明见 loading_suggestion，需要时用 --loading-file 整体写入"))
     if args.apply:
         if unresolved:
             fail(_("升级存在未确认的冲突：{0}").format(sorted(unresolved)))
@@ -588,6 +657,8 @@ def publish_command(args: argparse.Namespace) -> dict[str, Any]:
             if kind == "templates":
                 if latest["scopes"] != value["scopes"]:
                     fail(_("patch 版本不能改变适用范围"))
+                if latest.get("loading") != value.get("loading"):
+                    fail(_("patch 版本不能改变加载声明"))
                 a = resolve(catalog, [release_ref(latest, kind)], [])
                 prospective = {**catalog, "templates": {**catalog["templates"], ref: value}}
                 b = resolve(prospective, [ref], [])
@@ -658,6 +729,11 @@ def untranslated(profile: dict[str, Any], language: str) -> list[dict[str, Any]]
             fields_ = [name for name in ("name",) if not pick(source["value"][name], language)[1]]
             if fields_:
                 missing.append({"ref": source["ref"], "kind": "template", "fields": fields_})
+        if isinstance(profile["loading"], dict):
+            for tag in profile["loading"].get("tags", []):
+                fields_ = [name for name in ("name", "trigger", "exclude") if not pick(tag[name], language)[1]]
+                if fields_:
+                    missing.append({"ref": tag["id"], "kind": "tag", "fields": fields_})
     return missing
 
 
@@ -780,6 +856,14 @@ def verify_project(project: Path) -> dict[str, Any]:
     return {"ok": True, "status": "verified", "profile": f"{lock['profile']['id']}@{lock['profile']['version']}", "profile_sha256": lock["profile_sha256"], "opinion_sha256": lock["opinion_sha256"]}
 
 
+def loading_summary(template: dict[str, Any] | None) -> dict[str, Any] | None:
+    """updates 里每个模板版本的标签声明摘要；没有声明为 None（物化后完整读取）。"""
+    loading = (template or {}).get("loading")
+    if loading is None:
+        return None
+    return {"always": len(loading["always"]), "tags": [tag["id"] for tag in loading["tags"]], "on_demand_rules": len(loading["members"])}
+
+
 def updates_command(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
     catalog = load_catalog(args.catalog)
@@ -794,7 +878,10 @@ def updates_command(args: argparse.Namespace) -> dict[str, Any]:
             identity, current = parse_ref(ref, kind)
             candidates = [candidate for candidate in catalog[kind] if parse_ref(candidate, kind)[0] == identity and version(parse_ref(candidate, kind)[1]) > version(current)]
             if candidates:
-                updates.append({"kind": kind, "current": ref, "available": sorted(candidates, key=lambda candidate: version(parse_ref(candidate, kind)[1]))})
+                entry = {"kind": kind, "current": ref, "available": sorted(candidates, key=lambda candidate: version(parse_ref(candidate, kind)[1]))}
+                if kind == "templates":
+                    entry["loading"] = {item: loading_summary(catalog["templates"].get(item)) for item in [ref, *entry["available"]]}
+                updates.append(entry)
     return {"ok": True, "updates": updates, "applied": False}
 
 
@@ -827,6 +914,7 @@ def add_commands(subparsers: Any, compose: argparse.ArgumentParser, catalog: arg
     profile.add_argument("--resolutions-file", type=Path)
     profile.add_argument("--loading-file", type=Path, help=_("完整的分层加载声明 JSON；整体替换原声明"))
     profile.add_argument("--remove-loading", action="store_true", help=_("移除分层加载声明，恢复为完整读取"))
+    profile.add_argument("--no-tags", action="store_true", help=_("不由所选模板物化标签加载声明，保持完整读取（schema 2.0）"))
     publish = subparsers.add_parser("publish", help=_("预览或发布规则、模板版本"))
     options(publish, catalog=True, mutation=True)
     publish.add_argument("--file", required=True, type=Path)
