@@ -1,0 +1,70 @@
+{
+  "schema_version": "2.0",
+  "renderer_version": "2.0",
+  "profile": {
+    "schema_version": "2.0",
+    "id": "private.my-opinion",
+    "version": "1.0.0",
+    "templates": [],
+    "rules": [
+      "om.conclusion-first@1.0.0",
+      "om.chinese-response@1.0.0",
+      "om.calculations@1.0.0"
+    ],
+    "sources": {
+      "templates": [],
+      "rules": [
+        {
+          "ref": "om.conclusion-first@1.0.0",
+          "sha256": "e15c6e85c97e14f73f1991c629e591d010a5d990ca12a149194ea1eb449f2d8b",
+          "value": {
+            "id": "om.conclusion-first",
+            "version": "1.0.0",
+            "slot": "om.conclusion-first",
+            "title": "结论优先与信息密度",
+            "level": "required",
+            "scopes": [
+              "选择本模板的环境；按正文条件适用"
+            ],
+            "text": "先给出主要结论，再按清楚的主线展开依据和细节。用金字塔结构组织信息，按任务需要检查条目是否相互独立、覆盖完整；保持高信息密度，禁止重复复述、无意义过渡句和车轱辘话。"
+          }
+        },
+        {
+          "ref": "om.chinese-response@1.0.0",
+          "sha256": "8f6b305dca736a4ffad6ee52253bd2d9aa21703e32774c613fee8c6d276af816",
+          "value": {
+            "id": "om.chinese-response",
+            "version": "1.0.0",
+            "slot": "om.chinese-response",
+            "title": "中文回复",
+            "level": "required",
+            "scopes": [
+              "选择本模板的环境；按正文条件适用"
+            ],
+            "text": "使用中文回复。引用外文资料时保留必要的原文术语，并给出中文释义。用户明确要求其他语言的交付时，遵循该交付要求。"
+          }
+        },
+        {
+          "ref": "om.calculations@1.0.0",
+          "sha256": "19eb9659f08b47e55f4698743fe83ebfde77f0c7e3f0c4c5e2f57b2fc0d132a4",
+          "value": {
+            "id": "om.calculations",
+            "version": "1.0.0",
+            "slot": "om.calculations",
+            "title": "数字复算、脚本核算与总成本",
+            "level": "required",
+            "scopes": [
+              "选择本模板的环境；按正文条件适用"
+            ],
+            "text": "关键数字附可复算的推导公式与适用场景；比较方案前先量化双方总成本，再讨论体验与取舍。复杂或较长的计算必须通过实际执行的脚本或代码复算，核对输入、公式、单位和结果，不能只依赖语言模型心算或生成未经运行的代码。保留可复现的计算依据；无法完成复算时明确标记未验证。"
+          }
+        }
+      ]
+    },
+    "overrides": {},
+    "custom": null,
+    "derived_from": null
+  },
+  "profile_sha256": "5a8491fc5e88784d961c587118aba5b8eb690942e36b200fea0f0573bb9b9ccb",
+  "opinion_sha256": "13f520d10006d6b94d1a1259baedb83751c7834f418e6ca3e7e58818267a3aa1"
+}

@@ -1,6 +1,6 @@
 # 公开规则的标签选择加载设计（Issue #64，6.14.0）
 
-- 状态：已定稿（6.14.0）。引擎与数据结构随本文所在的实施 PR 落地（任务 T1）；模板声明、预览物化、catalog 1.1.0 内容、迁移命令、记账、Skill 与 AGENTS 文案、体积守卫是后续任务（第 11 节）。
+- 状态：已定稿（6.14.0）。引擎与数据结构（T1）、模板声明与预览物化（T2）、catalog 1.1.0 内容、迁移命令与体积守卫（T4、T5）已实现；记账、Skill 与 AGENTS 文案见第 11 节。
 - 基线：`origin/dev` 的 `5c6d28e`。体积数据来自 PR #151（`1e41ae5`）里 catalog 1.1.0 的真实规则与模板，用 `versioned.render_rule`、`context.core_text`、`context.bundle_text` 的真实函数在独立 worktree 中计算（该设计的首版为 PR #152）。
 - 读者：仓库维护者与贡献者。术语首次出现标注中英对照，文末有术语对照表。
 - 与 `docs/design/progressive-loading.md` 的分工：那篇处理项目入口文件与 Skill 的体积分层；本文只处理 `OPINION.md` 里公开规则的读取分层。
@@ -18,7 +18,7 @@
 7. **体积守卫（数值已定，测试在 T4）：** reviewed 项目 zh 的 `core` 输出 ≤ 9,000 B、en ≤ 11,000 B；按需标签 ≤ 6 个；索引每个按需标签 ≤ 160 B（zh）、200 B（en）。引擎的 `context index` 输出逐标签给出这些数值（第 4.6 节）。
 8. **常驻集合由 catalog 重做时声明。** 本版只提供机制与测试夹具。
 9. **Profile 版本：** 带标签声明时写 `schema_version` 2.2，其余情形保持 2.0 与 2.1。2.0、2.1 的 Profile、`OPINION.md`、锁一字节不变（黄金测试固定了六个 SHA-256）。
-10. **迁移由后续任务的 `opinion_manager.py migrate` 完成。** 契约见第 7 节：默认预览，`--apply --confirm <指纹>` 才写入，写入前备份且可回滚。
+10. **迁移由 `opinion_manager.py migrate` 完成（已实现）。** 契约见第 7 节：默认预览，`--apply --confirm <指纹>` 才写入，写入前备份且可回滚；实现与契约的差异见第 7.6 节。
 11. **发布等级：** 本 PR 的 `opinion-manager` 为 minor，`default_for_existing` 为 `advisory`（既有项目不自动变化）；`agents-init`、`project-orchestrator` 不改模板正文。
 
 ---
@@ -198,7 +198,7 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 
 ---
 
-## 7. 迁移（契约；`opinion_manager.py migrate` 由后续任务实现）
+## 7. 迁移（契约；`opinion_manager.py migrate` 已实现，见 `runtime/migrate.py`）
 
 ### 7.1 输入与目标
 
@@ -241,6 +241,22 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 - 任一写入或读回失败：自动按备份还原，输出失败原因与还原结果；还原本身失败时保留备份目录并给出手工还原命令。
 - 重复执行：已是目标状态时返回 `unchanged`，不产生新备份。
 
+### 7.6 实现与契约的差异
+
+实现遵循 7.1–7.5；以下是契约没有写明、实现时作出的取舍。
+
+- **命令签名：** `migrate --project P [--tags] [--skip ID]… [--resolutions-file F] [--output json|markdown]`；`--apply --confirm <指纹>` 写入；`--rollback <备份目录>` 回滚（直接执行，没有单独预览）。输出默认可读文字，`--output json` 给出结构化结果。
+- **手工修改的 `OPINION.md`：** 契约写“沿用 `compose` 的阻断与 `--accept-current`”。实现在预览阶段把当前正文与锁渲染的正文逐行比较：自定义规则小节内的任何改动、其他位置的纯追加并入新 Profile 的 `custom`（原样、常驻），并在内部用与 `--accept-current` 相同的确认；改写或删除了生成内容（规则正文、元数据）无法并入，状态 `cannot-migrate`（`manual-edit-conflict`），不会静默覆盖。因此“锁与正文不一致”只在无法并入时才是无法迁移的情形。
+- **声明的来源：** 实现先取升级后的来源，再由 `template_loading` 合并出声明，并作为显式的 `--loading-file` 交给 `profile`，不依赖 `profile` 对“模板选择是否变化”的判断；因此模板已是 1.1.0、但此前用 `--no-tags` 保持完整读取的 2.0 项目，迁移同样会物化声明，并在预览的 `notes` 里说明。
+- **无声明可物化：** 没有选用公开模板、只选了原子规则或模板版本不带标签，状态为 `nothing-to-migrate`（`no-tag-declaration`），保持完整读取，退出码 0。
+- **状态与退出码：** 0（`preview`、`migrated`、`unchanged`、`nothing-to-migrate`、`rolled-back`）、2（用法与 I/O 错误）、3（`cannot-migrate`）、4（`refused`）、5（`failed`）；原因代码见 `references/versioning.md` 的“迁移”一节。
+- **确认指纹的覆盖面：** 新 Profile 与 `compose` 预览的指纹、分类结果，以及收件箱文件的 SHA-256；catalog 变化通过新 Profile 内嵌的来源指纹覆盖。
+- **备份内容：** `OPINION.md`、锁、原 Profile 文件（存在时）与收件箱文件；收件箱只留底，迁移不改写它，回滚也不还原它（以免覆盖后续的候选变更）。`manifest.json` 另记录迁移后的三个文件指纹，回滚据此判断“当前状态等于迁移后状态”。
+- **失败后的清理：** 备份、写入、读回任一步失败并成功还原后，删除本次产生的备份目录与新建目录，项目文件树与迁移前相同（不变量 1 对失败的应用也成立）；还原失败时保留备份目录。
+- **回滚幂等：** 当前状态已等于迁移前返回 `unchanged`。
+- **行尾：** 以 `versioned` 的读取方式（通用换行）比较与写入；CRLF 的正文可迁移，迁移后统一为 LF，回滚逐字节还原。
+- **局部升级：** `--skip` 只升级部分模板可能让共享规则落在两个版本上，`profile` 的校验会拒绝，迁移报 `draft-failed` 且零写入。
+
 ---
 
 ## 8. 体积（沿用 #152 的实测数据，注明来源）
@@ -273,6 +289,15 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 - 收益有硬下限：常驻集合 5–7 KB 加框架与索引，典型读取不会低于约 8 KB（zh）。
 - 与 1.0.0 对照：1.0.0 完整 14,767 B；宽集合目标版的典型读取（11,682 B）低于该值。
 - 字符数与注入上限：zh 宽集合 `core_out` 4,177 字符；en 宽集合上界版 12,445 字符，目标版约 10.1K 字符，可能超过 Claude Code `additionalContext` 的 10,000 字符上限（见第 9.3 节）。
+
+### 8.4 体积守卫实测（T4）
+
+`tests/test_loading_budget.py` 读取 `plugins/opinion-manager/catalog`，对 `scenario/reviewed-project@1.1.0` 与 `scenario/concise-project@1.1.0` 在 zh、en 项目里用 `context index` 的真实输出断言（字节，Profile 编号 `private.budget@1.0.0`）：
+
+- reviewed zh：`core_bytes` 8,221（≤ 9,000）、完整 21,238、常驻 7,496（35.3%）、`core_bytes` 占比 38.7%；索引行 148、126、141、138（≤ 160）；各标签 `bytes` 之和 13,750，加 `core_bytes` 减完整 = 733（≤ 1,200）。
+- reviewed en：`core_bytes` 10,051（≤ 11,000）、完整 26,294、常驻 9,247（35.2%）、占比 38.2%；索引行 183、140、157、152（≤ 200）；差 783。
+- concise zh：`core_bytes` 7,194、完整 20,700、占比 34.8%；差 752。concise en：`core_bytes` 8,845、完整 25,723、占比 34.4%；差 803。
+- 按需标签 4 个（≤ 6）。常驻占比上限 40% 对 zh 与 en 都成立，未调整任何数值；`core_bytes` 随 Profile 编号长度略有变化（Profile 行），守卫留有余量。
 
 ---
 
@@ -330,7 +355,7 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 - 字节到 token 的换算（未测量）。
 - 其他客户端对 `additionalContext` 的体积上限（仅核实 Claude Code，抓取日期 2026-11-20）。
 - 灰度期 `routing_miss` 的真实分布。
-- 索引每标签 ≤ 160 B（zh）在真实 catalog 上的可行性（第 4.6 节）。
+- 索引每标签 ≤ 160 B（zh）在真实 catalog 上的可行性：已验证（`tests/test_loading_budget.py`，实测 zh 126–148、en 139–183，见第 8.4 节）。
 - 英文界面与 zh 界面的框架长度差（实测 31 B，已计入）；其他语言未测。
 
 ---
@@ -352,13 +377,13 @@ T4 的守卫测试读取 `context index` 的 JSON：`core_bytes` ≤ 9,000（zh�
 
 - `lifecycle` 接受标签字段（`loaded_tags`、`routing_miss_tags`），`status` 输出 `tags` 与 `unused_tags`；`SKILL.md`、`AGENT.template.md` 措辞；英文镜像与 i18n 守卫。
 
-### T4 体积守卫与 catalog 重做
+### T4 体积守卫与 catalog 重做（已实现）
 
 - `tests/test_loading_budget.py`：读取 `plugins/opinion-manager/catalog` 固定路径，zh、en 各一遍，断言第 4.6 节的数值；catalog 1.1.0 声明常驻集合与标签。
 
-### T5 迁移命令
+### T5 迁移命令（已实现）
 
-- `opinion_manager.py migrate`，按第 7 节的契约；含零写入与回滚的反例测试。
+- `opinion_manager.py migrate`，按第 7 节的契约；含零写入与回滚的反例测试。夹具由 v6.13.1 标签的真实运行时生成（`plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/`，生成方法写在 `tests/test_migrate.py` 文件头）；不变量 1–6 与失败注入、回滚拒绝、长路径、CRLF、en 项目的测试见 `tests/test_migrate.py`。
 
 ### 排到 6.15
 

@@ -1,0 +1,99 @@
+{
+  "candidates": {
+    "cand-20261120-001": {
+      "client": "claude",
+      "created_at": "2026-11-20T18:15:38Z",
+      "digest": "806a2ff01997845c8aac97e2cf2a550c89941715882cc8a03bb43f4fbf526052",
+      "history": [
+        {
+          "at": "2026-11-20T18:15:38Z",
+          "note": "captured",
+          "to": "pending"
+        },
+        {
+          "at": "2026-11-20T18:15:39Z",
+          "note": "adopted:private.my-opinion@1.0.1",
+          "to": "formal"
+        }
+      ],
+      "id": "cand-20261120-001",
+      "last_action_at": "2026-11-20T18:15:39Z",
+      "presented": 0,
+      "presented_at": null,
+      "quotes": [
+        "用户原话"
+      ],
+      "scopes": [
+        "技术文档"
+      ],
+      "session": "",
+      "status": "formal",
+      "text": "专业术语首次出现时给出英文全称与缩写。",
+      "title": "术语首次出现标注中英对照",
+      "trial_since": null,
+      "updated_at": "2026-11-20T18:15:39Z"
+    },
+    "cand-20261120-002": {
+      "client": "claude",
+      "created_at": "2026-11-20T18:15:38Z",
+      "digest": "ab5a05116a4e93f150acde7b33b873ca372247bf09412eddaf58a46774e5fc4b",
+      "history": [
+        {
+          "at": "2026-11-20T18:15:38Z",
+          "note": "captured",
+          "to": "pending"
+        },
+        {
+          "at": "2026-11-20T18:15:39Z",
+          "note": "adopted:private.my-opinion@1.0.1",
+          "to": "formal"
+        }
+      ],
+      "id": "cand-20261120-002",
+      "last_action_at": "2026-11-20T18:15:39Z",
+      "presented": 0,
+      "presented_at": null,
+      "quotes": [
+        "用户原话"
+      ],
+      "scopes": [
+        "调研报告"
+      ],
+      "session": "",
+      "status": "formal",
+      "text": "引用外部资料时写明版本号与日期。",
+      "title": "引用来源写明版本",
+      "trial_since": null,
+      "updated_at": "2026-11-20T18:15:39Z"
+    },
+    "cand-20261120-003": {
+      "client": "claude",
+      "created_at": "2026-11-20T18:15:39Z",
+      "digest": "e5f37b58dea88ccc84621cc848741447326a470ae4d3e1f395cb88700f4a4fc1",
+      "history": [
+        {
+          "at": "2026-11-20T18:15:39Z",
+          "note": "captured",
+          "to": "pending"
+        }
+      ],
+      "id": "cand-20261120-003",
+      "last_action_at": "2026-11-20T18:15:39Z",
+      "presented": 0,
+      "presented_at": null,
+      "quotes": [
+        "用户原话"
+      ],
+      "scopes": [
+        "长文本回答"
+      ],
+      "session": "",
+      "status": "pending",
+      "text": "超过三屏的回答先给目录。",
+      "title": "长回答先给目录",
+      "trial_since": null,
+      "updated_at": "2026-11-20T18:15:39Z"
+    }
+  },
+  "schema_version": 1
+}

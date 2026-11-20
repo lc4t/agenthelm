@@ -24,6 +24,7 @@
 | `opinion_manager.py inbox check / routes list`、`agenthelm inventory / clients`、`agenthelm project extensions list/dups/show/check` | 只读，零写入 | 无写入 |
 | `opinion_manager.py inbox adopt` | 默认预览（零写入）；`--apply --confirm <预览指纹>` 才写 Profile、`OPINION.md`、锁并读回，失败回滚 | 预览指纹即确认；不使用 `--confirmed` |
 | `case_workspace.py migrate` | 默认预览 | `--apply` |
+| `opinion_manager.py migrate`（把现有 Opinion 迁移到标签选择加载） | 默认预览（零写入，失败路径也一样）；`--apply --confirm <预览指纹>` 才写入：先备份到 `.opinion/backups/<时间戳>-migrate/`（含 `manifest.json`），再走 `profile` → `compose` → `verify` 并读回，失败按备份逐字节还原；`--rollback <备份目录>` 只在当前状态等于迁移后状态时还原 | 预览指纹即确认；已是目标状态返回 `unchanged`，不产生备份 |
 | `opinion_manager.py compose` 与 versioned Profile/发布操作 | 默认预览 | `--apply`，不可变发布还需 `--confirm` 指纹 |
 | `init_project.py` 初始化、接管、刷新、区块等写入模式 | 默认预览 | `--apply` |
 | `agent_pack_config.py transfer/sync/bootstrap/reconcile`（亦经 MCP 提供） | 默认预览 | `--apply`；MCP `apply: true` |

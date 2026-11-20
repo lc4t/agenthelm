@@ -87,6 +87,7 @@ PREVIEW: dict[str, list[str]] = {
     "agenthelm install": ["--latest", "{latest}"],
     "agenthelm update": ["--no-project", "--latest", "{latest}"],
     "agenthelm migrate": ["--latest", "{latest}"],
+    "opinion migrate": P,
     "agenthelm fix": [*P, "--no-input"],
     "agenthelm relocate": ["skill:missing@claude:user", "--to", "codex:user", *P],  # a missing source is a blocked preview; the writing paths are covered by plugins/agent-pack/tests/test_relocate.py
     "agenthelm dedupe": ["g-none", "--keep-all", "--note", "reason", *P],  # an unknown group is a blocked preview; the writing paths are covered by plugins/agent-pack/tests/test_dedupe.py

@@ -181,6 +181,48 @@ python3 plugins/opinion-manager/runtime/opinion_manager.py context check --proje
 
 判断任务属于哪个场景、声明哪些信号，始终由 Agent 负责；判断不清时一并读取。维护规则本身的任务读取完整正文。
 
+## 迁移
+
+`migrate` 把用户**现有**的 Profile（2.0 或 2.1）迁移到带标签声明的 2.2，并把 1.0.0 的公开模板与规则升级到 1.1.0。默认只读预览；写入前备份；失败自动还原；可回滚。不迁移则项目保持原样，2.0 与 2.1 的 Profile、正文与锁字节不变。
+
+```bash
+python3 plugins/opinion-manager/runtime/opinion_manager.py migrate --project /path/to/project [--tags] [--skip 模板或规则编号]… [--resolutions-file 冲突处理.json] [--output json|markdown]
+python3 plugins/opinion-manager/runtime/opinion_manager.py migrate --project /path/to/project [--tags] --apply --confirm <预览指纹>
+python3 plugins/opinion-manager/runtime/opinion_manager.py migrate --project /path/to/project --rollback .opinion/backups/<时间戳>-migrate
+```
+
+**流程。** 1. 预览：零写入（文件树哈希前后相同，失败路径也一样），输出分类表与 `confirmation_sha256`；2. 向用户展示完整预览并取得明确确认；3. `--apply --confirm <指纹>`：指纹覆盖新 Profile、渲染后的 `OPINION.md`、分类结果与收件箱文件指纹，预览之后 Profile、`OPINION.md`、收件箱或 catalog 任何变化都使它失效，必须重新预览；4. 写入前把 `OPINION.md`、`opinion.lock.json`、原 Profile、收件箱文件原样备份到 `.opinion/backups/<UTC 时间戳>-migrate/files/`，并写 `manifest.json`（相对路径、SHA-256、是否随回滚还原、迁移后的状态）；5. 复用 `profile` → `compose` → `verify` 的原子写，再读回核对 `OPINION.md` 与 Profile；备份、写入、读回任一步失败，按备份逐字节还原并删除本次产生的备份与新目录，项目与迁移前相同（还原本身失败时保留备份目录并给出 `--rollback` 命令）。
+
+**分类（预览逐项列出）。**
+
+- Profile 版本与来源模板版本；可升级的模板与规则沿用 `updates` 的预览，默认升级到最新版本，`--skip` 保持某项不升级，升级冲突沿用 `keep-local` / `use-upstream`（`--resolutions-file`），未处理的冲突阻止写入。只升级一部分模板可能让共享规则落在两个版本上，预览会报错，不写入。
+- 2.0：由升级后模板携带的标签声明物化为 2.2。所选模板组合没有可物化的声明（没有选用公开模板、只选了原子规则、模板版本不带标签）：状态 `nothing-to-migrate`，保持完整读取。曾用 `--no-tags` 保持完整读取的 2.0，迁移会再次物化声明，预览的 `notes` 会说明；不迁移保持原样，迁移后可用回滚或 `profile --remove-loading` 恢复完整读取。
+- 2.1：默认保持不动（`unchanged`，`context bundle` 继续可用）；加 `--tags` 才改写为 2.2，规则束声明整体替换为标签声明（二者互斥，改写后不再有 `bundles`）。2.2：`unchanged`。
+- `OPINION.md` 是否被手工修改（与锁里的正文指纹比较）：自定义规则小节内的任何改动、其他位置的纯追加，原样并入新 Profile 的 `custom`（不改写任何字节，常驻），预览给出追加与改动的行数；改写或删除了生成内容（规则正文、元数据）无法并入，状态 `cannot-migrate`，原因 `manual-edit-conflict`；删除了全部自定义规则同样拒绝，不让已删除的行复活。迁移内部使用与 `compose --accept-current` 相同的确认。CRLF 行尾的正文可迁移，迁移后的正文统一为 LF，回滚逐字节还原原文件。
+- `custom` 段逐行归类：`tagged`（已带词表内有效标签，保持原样、按需加载）；`suggest`（带“条件”的结构化行，只在预览里列出，由用户决定是否手工在行尾加 ` [tags …]`）；`resident`（没有标记、手写、认不出、标记损坏或含词表外标签，保持原样，永远常驻）。迁移不替用户猜标签。
+- 收件箱：缺 `trigger` / `purpose` 的旧候选只列出，不改写、不阻断迁移；收件箱存储格式、已采纳的行都不改动。
+- `loading` 前后对照（`loading.before/after` 摘要与 `changes.loading` 完整声明）、新旧正文差异行数、完整的新 `OPINION.md`（JSON 的 `content`）。
+
+**状态与退出码。**
+
+- 0：`preview`、`migrated`、`unchanged`、`nothing-to-migrate`、`rolled-back`。空白 `OPINION.md`（不存在、空文件或初始化占位且没有锁）是 `nothing-to-migrate`，不是错误。
+- 2：用法或 I/O 错误（例如 `--confirm` 没有 `--apply`、未知的 `--skip`）。
+- 3：`cannot-migrate`，零写入，输出 `reason` 与 `next`：`no-project`、`no-lock`（没有锁但正文有内容）、`lock-invalid`（锁或 Profile 损坏）、`opinion-missing`、`opinion-unreadable`（符号链接、非普通文件、不可读）、`manual-edit-conflict`、`catalog-conflict`、`draft-failed`、`tag-conflict`、`compose-failed`。
+- 4：`refused`，零写入：`confirm-required`、`stale-confirmation`、`unresolved-conflicts`、`blocked`；回滚时为 `not-a-backup`、`manifest-invalid`、`incomplete-backup`、`backup-damaged`、`state-changed`。
+- 5：`failed`：`apply-failed`（已还原，`restored: true`，`phase` 为 `backup`、`write`、`read-back` 或 `manifest`）、`restore-failed`（自动还原失败，保留备份目录）、`rollback-failed`（已恢复到回滚前）。
+
+**回滚。** `--rollback <备份目录>` 只接受本项目 `.opinion/backups/` 下的 `*-migrate` 目录，核对 `manifest.json` 与备份文件的 SHA-256；只在当前 `OPINION.md`、锁与迁移写入的 Profile 都等于迁移后的状态时还原 `OPINION.md`、锁与原 Profile，并删除迁移写入的新 Profile，回滚后与迁移前逐字节相同；迁移之后任一文件又被修改则拒绝（`state-changed`，列出文件），不丢后续修改；当前已等于迁移前返回 `unchanged`。回滚直接执行，没有单独的预览。收件箱文件只留底，迁移不改写它，回滚也不还原它。
+
+**不变量（测试逐条断言，见 `tests/test_migrate.py`）。** 预览与失败的应用零写入；用户手工修改的每个字节与 `custom` 的每一行在迁移后仍在 `core` ∪ 全部 `select` 的并集里；没有标记与认不出的行常驻且往返不变；迁移后 `verify` 通过，未选择迁移的 2.0/2.1 字节不变；回滚后 Profile、`OPINION.md`、锁与迁移前逐字节相同；迁移不触碰 `.agents/` 与收件箱的候选内容。重复执行：已是目标状态返回 `unchanged`，不产生新备份。
+
+**已知限制。**
+
+- 用户在“用户自定义规则”小节之外手工追加的小节（含二级标题），迁移后落在 `custom` 段里（该段内的 `## ` 标题保留原样，常驻读取）；`inbox` 按行号读取自定义段时只看到第一个 `## ` 之前的部分。
+- 迁移用 `project.json` 的 `language` 渲染新正文：项目语言与旧锁的语言不一致时，新正文换用项目语言。
+- 备份目录 `.opinion/backups/` 含原 Profile 与正文，随项目私有保存；是否纳入版本控制由用户决定，迁移不修改 `.gitignore`。
+- 只升级一部分模板（`--skip`）可能因共享规则的版本不一致而报 `draft-failed`；这时全部升级，或全部 `--skip`。
+- `migrate` 只迁移用户的 Profile 与正文，不触碰 `agents-init` 的项目入口文件。
+
 ## 候选、灰度与使用记录
 
 `lifecycle` 命令在项目内的私有目录保存候选、证据快照、人工裁决和灰度使用记录。它只记账，不写 `OPINION.md`、规则目录或 Profile；每个项目各自维护状态，互不引用。
