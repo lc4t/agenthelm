@@ -124,7 +124,42 @@ def parse_marker(line: str) -> tuple[dict[str, Any] | None, str | None]:
     return route, None
 
 
+# 标签（自定义规则按标签按需加载）：行末的纯 ASCII 标记 ` [tags a b]`，标签按字母序、不重复；与项目语言无关。
+# 同时有路由时顺序固定为 `[route …] [tags …]`。没有标记的行与手写行永远常驻。
+TAGS_MARKER = re.compile(r"^(?P<head>.*) \[tags (?P<body>[^\[\]]*)\]$")
+MAX_TAG = 32
+
+
+def tags_marker(tags: list[str]) -> str:
+    return "[tags " + " ".join(sorted(set(tags))) + "]"
+
+
+def tag_problem(tags: Any) -> str | None:
+    """标签列表的形式校验：返回第一个问题的代码（empty / form），没有问题为 None。"""
+    if not isinstance(tags, list) or not tags:
+        return "empty"
+    if len(tags) != len(set(tags)) or any(not isinstance(tag, str) or len(tag) > MAX_TAG or not SKILL_NAME.match(tag) for tag in tags):
+        return "form"
+    return None
+
+
+def split_tags(line: str) -> tuple[list[str] | None, str | None, str]:
+    """行末标签标记 -> (标签, 错误, 去掉标记后的行)。没有标记为 (None, None, 原行)；标记损坏为 (None, 原因, 原行)。"""
+    matched = TAGS_MARKER.match(line.rstrip())
+    if not matched:
+        return None, ("marker_damaged" if re.search(r"\[tags\b", line) else None), line
+    tags = matched["body"].split(" ")
+    if tag_problem(tags):
+        return None, "marker_damaged", line
+    return tags, None, matched["head"]
+
+
 def candidate_rule(candidate: dict[str, Any], language: str = "zh") -> str:
+    line = _candidate_rule(candidate, language)
+    return f"{line} {tags_marker(candidate['tags'])}" if candidate.get("tags") else line
+
+
+def _candidate_rule(candidate: dict[str, Any], language: str = "zh") -> str:
     words = RULE_WORDS[language]
     route = candidate.get("route")
     if not route:
@@ -160,7 +195,19 @@ def custom_section_lines(content: str) -> list[tuple[int, str]]:
 
 
 def parse_line(line: str) -> dict[str, Any] | None:
-    """按两种渲染格式解析一行；不是本工具渲染的格式返回 None（调用方标「未结构化」）。"""
+    """按两种渲染格式解析一行；不是本工具渲染的格式返回 None（调用方标「未结构化」）。
+    行末的标签标记先剥离；没有标记的行结果与旧版逐字节相同（不含 tags 键）。"""
+    tags, problem, body = split_tags(line)
+    parsed = _parse_line(body)
+    if parsed is not None:
+        if tags:
+            parsed["tags"] = tags
+        elif problem:
+            parsed["tags_error"] = problem
+    return parsed
+
+
+def _parse_line(line: str) -> dict[str, Any] | None:
     for language, pattern in LINE_PATTERNS.items():
         matched = pattern.match(line)
         if not matched:

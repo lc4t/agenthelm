@@ -216,6 +216,26 @@ def route_from_args(args: argparse.Namespace, existing: dict[str, Any] | None = 
     return {key: route[key] for key in ("skill", "when", "final", "on")}
 
 
+def tag_vocabulary(root: Path) -> list[str] | None:
+    """项目当前生效 Profile 的标签词表；没有锁或没有标签声明为 None。"""
+    path = root / "opinion.lock.json"
+    if not versioned.safe_path(path).is_file():
+        return None
+    loading = versioned.read_object(path).get("profile", {}).get("loading")
+    return [tag["id"] for tag in loading["tags"]] if isinstance(loading, dict) and isinstance(loading.get("tags"), list) else None
+
+
+def check_tags(root: Path, tags: list[str]) -> list[str]:
+    """候选标签对照词表：规范为排序去重的列表；没有词表或含未知标签都报错并列出有效标签。"""
+    vocabulary = tag_vocabulary(root)
+    if vocabulary is None:
+        fail("err_tag_none")
+    unknown = [tag for tag in tags if tag not in vocabulary]
+    if unknown:
+        fail("err_tag_unknown", value=say("sep").join(unknown), valid=say("sep").join(vocabulary))
+    return sorted(set(tags))
+
+
 def route_warnings(candidate: dict[str, Any], root: Path) -> list[str]:
     if not candidate.get("route"):
         return []
@@ -240,6 +260,8 @@ def add(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     route = route_from_args(args)
     if route:
         extras["route"] = route
+    if getattr(args, "tag", None):
+        extras["tags"] = check_tags(root, args.tag)
     if is_global(extras["trigger"]) and not quote:
         fail("err_global_quote")
     absent = [name for name in REQUIRED_FIELDS if not extras[name]]
@@ -290,6 +312,12 @@ def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
     for name in FIELDS:
         if getattr(args, name, None) is not None:
             changes[name] = field_value(getattr(args, name), name)
+    if getattr(args, "tag", None) and getattr(args, "tag_clear", False):
+        fail("err_tag_clear_exclusive")
+    if getattr(args, "tag", None):
+        changes["tags"] = check_tags(root, args.tag)
+    elif getattr(args, "tag_clear", False):
+        changes["tags"] = []
     quote = clean(args.quote, "label_quote", MAX_QUOTE, required=False)
     clearing = bool(getattr(args, "route_clear", False))
     routing = any(getattr(args, name, None) is not None for name in ("route_skill", "route_when", "route_on")) or bool(getattr(args, "route_final", False))
@@ -307,7 +335,7 @@ def revise(root: Path, args: argparse.Namespace) -> dict[str, Any]:
             fail("err_revise_confirm", status=candidate["status"])
         if routing:
             changes["route"] = None if clearing else route_from_args(args, candidate.get("route"))
-        blank = lambda name: [] if name == "scopes" else (None if name == "route" else "")  # noqa: E731
+        blank = lambda name: [] if name in ("scopes", "tags") else (None if name == "route" else "")  # noqa: E731
         previous = {name: candidate.get(name, blank(name)) for name, value in changes.items()
                     if candidate.get(name, blank(name)) != value}
         quotes = list(candidate["quotes"]) + ([quote] if quote and quote not in candidate["quotes"] else [])
@@ -411,9 +439,11 @@ def fingerprint_input(item: dict[str, Any]) -> list[Any]:
     """采纳指纹里每条候选的输入；没有新字段的旧记录与旧版指纹一致。"""
     base = [item["title"], item["text"], item["scopes"]]
     extras = [item.get(name) or "" for name in ("trigger", "purpose", "exclude")]
-    route = item.get("route")
-    if route:
-        return [item["id"], versioned.digest(base + extras + [route])]
+    tail = [item["route"]] if item.get("route") else []
+    if item.get("tags"):
+        tail.append({"tags": sorted(item["tags"])})
+    if tail:
+        return [item["id"], versioned.digest(base + extras + tail)]
     return [item["id"], versioned.digest(base + extras if any(extras) else base)]
 
 
@@ -455,6 +485,9 @@ def adopt_plan(root: Path, items: list[dict[str, Any]], workdir: Path) -> dict[s
     current_lock = versioned.file_state(lock_path)
     previous = versioned.validate_lock(json.loads(current_lock))["profile"] if current_lock is not None else None
     language = versioned.project_language(root)
+    for item in items:
+        if item.get("tags"):
+            check_tags(root, item["tags"])
     custom = "\n\n".join(part for part in ((previous or {}).get("custom"), "\n".join(candidate_rule(item, language) for item in items)) if part)
     custom_file = workdir / "custom.md"
     custom_file.write_text(custom + "\n", encoding="utf-8")
@@ -661,6 +694,8 @@ def view(candidate: dict[str, Any]) -> dict[str, Any]:
     shown["global"] = is_global(candidate.get("trigger") or "")
     if candidate.get("route"):
         shown["route"] = candidate["route"]
+    if candidate.get("tags"):
+        shown["tags"] = candidate["tags"]
     return shown
 
 
@@ -684,6 +719,8 @@ def field_lines(item: dict[str, Any]) -> list[str]:
             lines.append(say(f"list_{name}", value=value, mark=mark))
     if item.get("route"):
         lines.append(say("list_route", value=inbox_routes.route_text(item["route"], say)))
+    if item.get("tags"):
+        lines.append(say("list_tags", value=say("sep").join(item["tags"])))
     missing = missing_fields(item)
     if missing:
         lines.append(say("list_incomplete", fields=say("sep").join(say(f"label_{name}") for name in missing)))
@@ -816,6 +853,8 @@ def add_command(subparsers: Any) -> None:
     parser.add_argument("--route-final", action="store_true", help="add / revise: the routed skill is the last step before delivery (implies --route-when after)")
     parser.add_argument("--route-on", help="add / revise: a short tag (lowercase letters, digits, hyphens) for mechanical comparison between routes")
     parser.add_argument("--route-clear", action="store_true", help="revise: remove the whole route (cannot be combined with the other --route-* options)")
+    parser.add_argument("--tag", action="append", default=[], help="add / revise: load this rule on demand under a tag of the project's closed tag vocabulary (repeatable; revise replaces the whole set)")
+    parser.add_argument("--tag-clear", action="store_true", help="revise: remove all tags (the rule becomes always loaded; cannot be combined with --tag)")
     parser.add_argument("--client", help="source client: claude / codex / cursor")
     parser.add_argument("--session", help="source session id; lets the end-of-task confirmation cover only this session's candidates")
     parser.add_argument("--status", help="list: comma-separated status filter")

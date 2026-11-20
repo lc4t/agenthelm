@@ -26,6 +26,13 @@ PROFILE_FIELDS = {"schema_version", "id", "version", "templates", "rules", "sour
 PROFILE_OPTIONAL_FIELDS = {"loading"}
 LOADING_FIELDS = {"core", "signals", "bundles"}
 BUNDLE_FIELDS = {"family", "trigger", "exclude", "routes"}
+# schema 2.2：标签选择声明。loading 只含这三项；与 2.1 的 core / signals / bundles 互斥。
+TAG_LOADING_FIELDS = {"always", "tags", "members"}
+TAG_FIELDS = {"id", "name", "trigger", "exclude"}
+TAG_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")  # 纯 ASCII；中文只能写在 name / trigger / exclude 里
+RESERVED_TAGS = ("core", "none", "all")
+MAX_TAG = 32
+PROFILE_SCHEMAS = ("2.0", "2.1", "2.2")
 
 
 class OpinionVersionError(RuntimeError):
@@ -293,11 +300,69 @@ def validate_loading(profile: dict[str, Any]) -> None:
                     fail(_("路由使用了未声明的信号：{0}.{1}").format(family, key))
 
 
+def tag_identifier(value: Any, label: str) -> None:
+    if not isinstance(value, str) or len(value) > MAX_TAG or not TAG_ID.fullmatch(value):
+        fail(_("{0} 必须是 ASCII 标签 id（小写字母、数字、连字符，1 到 {1} 字符）：{2!r}").format(label, MAX_TAG, value))
+    if value in RESERVED_TAGS:
+        fail(_("{0} 不能使用保留名：{1}").format(label, _("、").join(RESERVED_TAGS)))
+
+
+def tag_text(value: Any, label: str) -> None:
+    """标签的 name / trigger / exclude：必须同时给出 zh 与 en 两种语言的非空文字。"""
+    if not isinstance(value, dict) or set(value) != {"zh", "en"}:
+        fail(_("{0} 必须是只含 zh、en 的对象").format(label))
+    for text in value.values():
+        string(text, label)
+
+
+def validate_tag_loading(profile: dict[str, Any]) -> None:
+    """schema 2.2 的 loading。停用规则使标签没有有效规则不算校验失败（读取时该标签不可用）。"""
+    loading = profile["loading"]
+    fields(loading, TAG_LOADING_FIELDS, "loading")
+    known = base_rules(profile)
+    strings(loading["always"], "loading.always", empty=True)
+    for identity in loading["always"]:
+        if identity not in known:
+            fail(_("loading.always 引用了不存在的规则：{0}").format(identity))
+    if not isinstance(loading["tags"], list) or not loading["tags"]:
+        fail(_("loading.tags 至少包含一个标签"))
+    tags: list[str] = []
+    for tag in loading["tags"]:
+        fields(tag, TAG_FIELDS, _("loading.tags 项"))
+        tag_identifier(tag["id"], "loading.tags.id")
+        if tag["id"] in tags:
+            fail(_("标签 id 重复：{0}").format(tag["id"]))
+        tags.append(tag["id"])
+        for name in ("name", "trigger", "exclude"):
+            tag_text(tag[name], f"loading.tags.{name}")
+    if not isinstance(loading["members"], dict):
+        fail(_("loading.members 必须是对象"))
+    used: set[str] = set()
+    for identity, names in loading["members"].items():
+        if identity not in known:
+            fail(_("loading.members 引用了不存在的规则：{0}").format(identity))
+        strings(names, f"loading.members.{identity}")
+        unknown = [name for name in names if name not in tags]
+        if unknown:
+            fail(_("loading.members 使用了未知标签：{0}；有效标签：{1}").format(_("、").join(unknown), _("、").join(tags)))
+        used.update(names)
+    unused = [name for name in tags if name not in used]
+    if unused:
+        fail(_("标签没有任何成员规则：{0}").format(_("、").join(unused)))
+
+
+def profile_schema(loading: Any) -> str:
+    """没有声明为 2.0；规则束声明为 2.1；标签声明才写 2.2。2.0 与 2.1 的 Profile 字节因此保持不变。"""
+    if loading is None:
+        return "2.0"
+    return "2.2" if isinstance(loading, dict) and "tags" in loading else "2.1"
+
+
 def validate_profile(value: Any) -> dict[str, Any]:
-    tiered = isinstance(value, dict) and value.get("schema_version") == "2.1"
-    fields(value, PROFILE_FIELDS | PROFILE_OPTIONAL_FIELDS if tiered else PROFILE_FIELDS, "Profile")
-    if value["schema_version"] not in ("2.0", "2.1"):
-        fail(_("Profile schema_version 必须为 2.0 或 2.1"))
+    schema = value.get("schema_version") if isinstance(value, dict) else None
+    fields(value, PROFILE_FIELDS | PROFILE_OPTIONAL_FIELDS if schema in ("2.1", "2.2") else PROFILE_FIELDS, "Profile")
+    if schema not in PROFILE_SCHEMAS:
+        fail(_("Profile schema_version 必须为 2.0、2.1 或 2.2"))
     identifier(value["id"])
     version(value["version"])
     strings(value["templates"], "templates", empty=True)
@@ -337,8 +402,13 @@ def validate_profile(value: Any) -> dict[str, Any]:
             fail(_("derived_from 指纹无效"))
     if not effective_rules(value) and not value["custom"]:
         fail(_("Profile 至少需要一条有效规则或自定义内容"))
-    if tiered:
-        validate_loading(value)
+    if "loading" in value:
+        if schema == "2.2":
+            validate_tag_loading(value)
+        elif isinstance(value["loading"], dict) and "tags" in value["loading"]:
+            fail(_("loading.tags 声明需要 schema_version 2.2"))
+        else:
+            validate_loading(value)
     return value
 
 
@@ -451,7 +521,7 @@ def profile_command(args: argparse.Namespace) -> dict[str, Any]:
     # 加载声明整体替换；未提供时沿用原 Profile，保证未变更的声明不会在修订中丢失。
     loading = read_object(args.loading_file) if args.loading_file else (None if args.remove_loading or not old else old.get("loading"))
     value = {
-        "schema_version": "2.0" if loading is None else "2.1", "id": args.id, "version": args.version,
+        "schema_version": profile_schema(loading), "id": args.id, "version": args.version,
         "templates": templates, "rules": rules, "sources": resolve(catalog, templates, rules),
         "overrides": dict(old["overrides"]) if old else {}, "custom": custom,
         "derived_from": {"id": old["id"], "version": old["version"], "sha256": digest(old)} if old else None,

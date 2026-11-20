@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "id", "version", "templates", "rules", "sources", "overrides", "custom", "derived_from"],
   "properties": {
-    "schema_version": {"enum": ["2.0", "2.1"]},
+    "schema_version": {"enum": ["2.0", "2.1", "2.2"]},
     "id": {"$ref": "rule.schema.json#/properties/id"},
     "version": {"$ref": "rule.schema.json#/properties/version"},
     "templates": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*/[a-z0-9]+(?:[.-][a-z0-9]+)*@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"}},
@@ -23,7 +23,8 @@
     "loading": {"$ref": "#/$defs/loading"}
   },
   "allOf": [
-    {"if": {"properties": {"schema_version": {"const": "2.1"}}}, "then": {"required": ["loading"]}, "else": {"not": {"required": ["loading"]}}}
+    {"if": {"properties": {"schema_version": {"enum": ["2.1", "2.2"]}}}, "then": {"required": ["loading"]}, "else": {"not": {"required": ["loading"]}}},
+    {"if": {"properties": {"schema_version": {"const": "2.2"}}}, "then": {"properties": {"loading": {"$ref": "#/$defs/tagLoading"}}}, "else": {"properties": {"loading": {"$ref": "#/$defs/loading"}}}}
   ],
   "$defs": {
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -35,6 +36,22 @@
         "bundles": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle"}}
       }
     },
+    "tagLoading": {
+      "type": "object", "additionalProperties": false, "required": ["always", "tags", "members"],
+      "properties": {
+        "always": {"type": "array", "uniqueItems": true, "items": {"$ref": "rule.schema.json#/properties/id"}},
+        "tags": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/tag"}},
+        "members": {"type": "object", "propertyNames": {"$ref": "rule.schema.json#/properties/id"}, "additionalProperties": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/tag/properties/id"}}}
+      }
+    },
+    "tag": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "trigger", "exclude"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^(?!(?:core|none|all)$)[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 32},
+        "name": {"$ref": "#/$defs/zhEn"}, "trigger": {"$ref": "#/$defs/zhEn"}, "exclude": {"$ref": "#/$defs/zhEn"}
+      }
+    },
+    "zhEn": {"type": "object", "additionalProperties": false, "required": ["zh", "en"], "properties": {"zh": {"type": "string", "pattern": "\\S"}, "en": {"type": "string", "pattern": "\\S"}}},
     "bundle": {
       "type": "object", "additionalProperties": false, "required": ["family", "trigger", "exclude", "routes"],
       "properties": {
