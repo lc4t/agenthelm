@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agenthelm check 对有 opinion.lock.json 的项目运行一次只读的 opinion-manager migrate 预览（5 秒超时、零写入）：有可迁移到标签按需加载的内容时给出一条建议（目标 Profile、更新摘要、未完成的收件箱记录数与可直接复制的预览命令），手工改动或 catalog 冲突时给一条简短说明，其余情况一律静默。建议项不改退出码、不计入 up_to_date；会话开始的 hook 与 nudge 不调用 migrate；check --output json 在有提示时多一个 opinion_migrate 数组，既有字段不变。不迁移则保持原样，不影响现有行为。",
+    "en": "agenthelm check now runs one read-only opinion-manager migrate preview (5 s timeout, zero writes) for projects that have opinion.lock.json. When content can move to on-demand tag loading it prints one advisory line (target profile, update summary, unfinished inbox records and a copyable preview command); a manual-edit or catalog conflict gets a short note; every other case stays silent. The advisory does not change the exit code or up_to_date; the session-start hook and the nudge never call migrate; check --output json gains an opinion_migrate array only when a hint is shown, existing fields unchanged. If you do not migrate, nothing changes and current behaviour is unaffected."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

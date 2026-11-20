@@ -880,5 +880,12 @@
  "目标 <客户端>:<作用域>，如 codex:project；MCP 的作用域为 user|local|project": "Target <client>:<scope>, e.g. codex:project; MCP scopes are user|local|project",
  "把一个 Skill 或 MCP 复制或迁移到另一个客户端/作用域（默认预览；--apply --expect-plan <指纹> 才写入）": "Copy or move one Skill or MCP entry to another client/scope (preview by default; --apply --expect-plan <digest> writes)",
  "{0} 自上次同步后被改过：仍按受管处理，原片段会完整存入恢复目录": "{0} was edited after the last sync: it is still treated as managed and the full original fragment goes to the recovery directory",
- "从 agent-pack 的归属记录里去掉 {name}": "Drop {name} from the agent-pack ownership record"
+ "从 agent-pack 的归属记录里去掉 {name}": "Drop {name} from the agent-pack ownership record",
+ "  [Opinion·可迁移] 该项目的 opinion 有可迁移到标签按需加载的内容：目标 {0}（schema {1}）": "  [Opinion migration] this project's opinion has content that can move to on-demand tag loading: target {0} (schema {1})",
+ "，{0} 项更新": ", updates: {0}",
+ "，{0} 条收件箱记录未完成": ", unfinished inbox records: {0}",
+ "等": " and more",
+ "\n      查看迁移预览（只读）：{0}\n      确认后再执行；不迁移则保持原样，不影响现有行为。": "\n      Preview the migration (read-only): {0}\n      Run it only after you confirm; if you do not migrate, nothing changes and current behaviour is unaffected.",
+ "  [Opinion·可迁移] 迁移预览发现手工改动与迁移冲突，需要你先处理 OPINION.md 的改动。\n      查看详情（只读）：{0}": "  [Opinion migration] the preview found manual edits that conflict with the migration; resolve the OPINION.md changes first.\n      Details (read-only): {0}",
+ "  [Opinion·可迁移] 迁移预览发现公开 catalog 与 Profile 记录的来源不一致，暂时无法迁移。\n      查看详情（只读）：{0}": "  [Opinion migration] the preview found the public catalog disagrees with the source recorded in the Profile, so it cannot migrate for now.\n      Details (read-only): {0}"
 }
