@@ -25,49 +25,7 @@ CJK = re.compile(r"[一-鿿　-〿＀-￯]")
 
 # 存量：公开 catalog 里尚未提供 trigger / purpose / exclude 与 zh / en 双语文字的 1.0.0 发布。维护者改写内容时（升到更高版本）
 # 同步从这里删除；新增的 1.0.0 发布若不在此表，必须自带全部字段与双语文字。
-LEGACY_UNTRANSLATED = (
-    "delivery-standard/compact-tables@1.0.0",
-    "delivery-standard/list-first@1.0.0",
-    "development-standard/chinese-maintenance@1.0.0",
-    "development-standard/project-language@1.0.0",
-    "om.align-requirements@1.0.0",
-    "om.assumptions-authority@1.0.0",
-    "om.batch-questions@1.0.0",
-    "om.bilingual-terms@1.0.0",
-    "om.calculations@1.0.0",
-    "om.chinese-response@1.0.0",
-    "om.clean-deliverable@1.0.0",
-    "om.complete-options@1.0.0",
-    "om.conclusion-first@1.0.0",
-    "om.concrete-titles@1.0.0",
-    "om.consistent-items@1.0.0",
-    "om.device-readable@1.0.0",
-    "om.editable-diagrams@1.0.0",
-    "om.evidence-inference@1.0.0",
-    "om.maintenance-chinese@1.0.0",
-    "om.maintenance-project-language@1.0.0",
-    "om.markdown-structure@1.0.0",
-    "om.portable-files@1.0.0",
-    "om.report-context@1.0.0",
-    "om.report-formats@1.0.0",
-    "om.report-review@1.0.0",
-    "om.response-brief@1.0.0",
-    "om.response-dense@1.0.0",
-    "om.rules-tools@1.0.0",
-    "om.semantic-wrap@1.0.0",
-    "om.solutions-proportional@1.0.0",
-    "om.solutions-three-level@1.0.0",
-    "om.tables-compact@1.0.0",
-    "om.tables-list-first@1.0.0",
-    "om.test-evidence@1.0.0",
-    "om.versioned-files@1.0.0",
-    "response-style/brief-chinese@1.0.0",
-    "response-style/dense-chinese@1.0.0",
-    "scenario/concise-project@1.0.0",
-    "scenario/reviewed-project@1.0.0",
-    "work-method/proportional@1.0.0",
-    "work-method/three-level@1.0.0",
-)
+LEGACY_UNTRANSLATED: tuple[str, ...] = ()
 THREE = ("trigger", "purpose", "exclude")
 
 

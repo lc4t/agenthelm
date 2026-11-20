@@ -1,0 +1,34 @@
+{
+  "id": "om.response-dense",
+  "version": "1.1.0",
+  "slot": "om.response-depth",
+  "level": "required",
+  "title": {
+    "zh": "完整分析与高信息密度",
+    "en": "Complete analysis and high information density"
+  },
+  "text": {
+    "zh": "回答长度不限，以完成任务和支持判断为准。复杂问题完整展开关键证据、推导、取舍和边界；保持高信息密度，不为篇幅短而删去必要条件，也不重复已经说明的内容。",
+    "en": "Answer length is unlimited and is set by completing the task and supporting the judgment. For a complex question, fully develop the key evidence, derivation, trade-offs and boundaries; keep information density high, neither dropping necessary conditions for the sake of brevity nor repeating what has already been said."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "回答复杂问题或需要分析推导的问题时",
+    "en": "When answering complex questions or ones that need analysis and derivation"
+  },
+  "purpose": {
+    "zh": "完整支撑判断，同时保持高信息密度",
+    "en": "Fully support the judgment while keeping information density high"
+  },
+  "exclude": {
+    "zh": "无需展开推导即可完成的简单回答",
+    "en": "Simple answers that need no derivation"
+  }
+}

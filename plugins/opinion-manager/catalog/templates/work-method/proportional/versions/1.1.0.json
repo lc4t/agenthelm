@@ -1,0 +1,31 @@
+{
+  "family": "work-method",
+  "variant": "proportional",
+  "version": "1.1.0",
+  "name": {
+    "zh": "证据核验与按需分析",
+    "en": "Evidence checks with proportional analysis"
+  },
+  "description": {
+    "zh": "用途：按影响和复杂度选择分析深度的问题解决。 不适用：用户已要求固定层次或完整框架的任务。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: problem solving where analysis depth follows impact and complexity. Not for: tasks where the user already asked for fixed levels or a complete framework. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "按影响和复杂度选择分析深度的问题解决。"
+    ],
+    "en": [
+      "Problem solving where analysis depth follows impact and complexity."
+    ]
+  },
+  "rules": [
+    "om.evidence-inference@1.1.0",
+    "om.test-evidence@1.1.0",
+    "om.calculations@1.1.0",
+    "om.complete-options@1.1.0",
+    "om.align-requirements@1.1.0",
+    "om.batch-questions@1.1.0",
+    "om.assumptions-authority@1.1.0",
+    "om.solutions-proportional@1.1.0"
+  ]
+}

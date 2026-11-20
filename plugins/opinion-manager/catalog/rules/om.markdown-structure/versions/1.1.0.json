@@ -1,0 +1,34 @@
+{
+  "id": "om.markdown-structure",
+  "version": "1.1.0",
+  "slot": "om.markdown-structure",
+  "level": "required",
+  "title": {
+    "zh": "标题层级与主题分隔",
+    "en": "Heading levels and topic separation"
+  },
+  "text": {
+    "zh": "多层次内容使用 Markdown 标题分级，关键术语和结论加粗，独立主题之间使用分隔线。",
+    "en": "Use Markdown headings to level multi-layered content, bold key terms and conclusions, and separate independent topics with horizontal rules."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "输出多层次内容时",
+    "en": "When producing multi-layered content"
+  },
+  "purpose": {
+    "zh": "让层次、重点与主题边界一目了然",
+    "en": "Make the levels, the key points and the topic boundaries obvious at a glance"
+  },
+  "exclude": {
+    "zh": "单层、简短、无需分级的内容",
+    "en": "Single-level, short content that needs no levels"
+  }
+}

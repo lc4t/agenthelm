@@ -1,0 +1,30 @@
+{
+  "family": "response-style",
+  "variant": "brief-chinese",
+  "version": "1.1.0",
+  "name": {
+    "zh": "中文简明表达",
+    "en": "Brief expression in Chinese"
+  },
+  "description": {
+    "zh": "用途：需要简明结论的中文沟通。 不适用：必须完整展开推导或已约定详尽交付的任务。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: Chinese communication that needs concise conclusions. Not for: tasks that must spell out the full derivation or have agreed an exhaustive deliverable. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "需要简明结论的中文沟通。"
+    ],
+    "en": [
+      "Chinese communication that needs concise conclusions."
+    ]
+  },
+  "rules": [
+    "om.conclusion-first@1.1.0",
+    "om.chinese-response@1.1.0",
+    "om.bilingual-terms@1.1.0",
+    "om.markdown-structure@1.1.0",
+    "om.clean-deliverable@1.1.0",
+    "om.concrete-titles@1.1.0",
+    "om.response-brief@1.1.0"
+  ]
+}

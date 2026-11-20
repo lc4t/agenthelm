@@ -1,0 +1,34 @@
+{
+  "id": "om.report-context",
+  "version": "1.1.0",
+  "slot": "om.report-context",
+  "level": "required",
+  "title": {
+    "zh": "汇报情境与输入",
+    "en": "Report context and inputs"
+  },
+  "text": {
+    "zh": "制作汇报前明确主题、受众及知识水平、沟通或决策目的、时长和已有素材。已有信息不重复询问；缺失且会改变结果的信息一次集中确认。提炼核心信息、期望行动和关键证据，不能凭空假定主题或编造素材。需要采用默认条件时先说明条件及其依据。",
+    "en": "Before making a report, clarify the topic, the audience and their knowledge level, the communication or decision purpose, the duration and the existing material. Do not ask again for information you already have; confirm missing information that would change the result in one batch. Distil the core message, the expected action and the key evidence; never assume a topic out of thin air or invent material. When default conditions have to be used, state the conditions and their basis first."
+  },
+  "scopes": {
+    "zh": [
+      "仅在制作或检查汇报时适用"
+    ],
+    "en": [
+      "Only when producing or reviewing reports"
+    ]
+  },
+  "trigger": {
+    "zh": "制作汇报前",
+    "en": "Before making a report"
+  },
+  "purpose": {
+    "zh": "明确汇报情境并基于真实素材提炼，避免凭空假定主题或编造素材",
+    "en": "Clarify the context and distil from real material, avoiding an assumed topic or invented material"
+  },
+  "exclude": {
+    "zh": "已经掌握的信息（不重复询问）",
+    "en": "Information already available (do not ask again)"
+  }
+}
