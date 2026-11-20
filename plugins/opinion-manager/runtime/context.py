@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import tags
 import versioned
 from i18n_opinion import _, N_  # noqa: E402
 
@@ -159,8 +160,9 @@ def check(profile: dict[str, Any], signals: list[str], loaded: list[str]) -> dic
 
 def add_command(subparsers: Any) -> None:
     parser = subparsers.add_parser("context", help=_("按已确认的加载声明只读切分正文，并核对交付信号"))
-    parser.add_argument("action", choices=("core", "bundle", "index", "check"))
+    parser.add_argument("action", choices=("core", "bundle", "select", "index", "check"))
     parser.add_argument("names", nargs="*", help=_("bundle 的模板系列或精确模板引用"))
+    parser.add_argument("--tag", action="append", default=[], help=_("标签 id（schema 2.2），select 与 check 使用，可重复，取并集"))
     parser.add_argument("--project", type=Path)
     parser.add_argument("--profile", type=Path, help=_("用候选或已保存的 Profile 预览，不读取项目锁"))
     parser.add_argument("--signal", action="append", default=[], help=_("交付信号，格式为 键=值，可重复"))
@@ -172,6 +174,10 @@ def execute(args: argparse.Namespace) -> tuple[int, str]:
     try:
         profile, lock = load(args)
         language = lock.get("language", "zh") if lock else (versioned.project_language(versioned.safe_path(args.project)) if args.project else "zh")
+        if tags.is_tag_profile(profile):
+            return tags.execute(args, profile, lock, language)
+        if args.action == "select" or args.tag:
+            versioned.fail(_("该 Profile 使用规则束声明（schema 2.1），请用 context bundle；select 与 --tag 只用于标签声明（schema 2.2）"))
         if args.action == "core":
             return EXIT_OK, core_text(profile, lock, language)
         if args.action == "bundle":

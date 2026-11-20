@@ -100,7 +100,7 @@ def record_use(event: dict[str, Any], lock: dict[str, Any], roots: tuple[str, ..
         if use["passed"] and "violated" in results.values():
             fail(_("存在违反的规则时 passed 不能为 true"))
         use["results"] = results
-    bundles = {bundle["family"] for bundle in profile["loading"]["bundles"]} if "loading" in profile else None
+    bundles = {bundle["family"] for bundle in profile["loading"].get("bundles", [])} if "loading" in profile else None
     for key in ("loaded_bundles", "routing_miss"):
         if key in event:
             if bundles is None:
@@ -263,7 +263,7 @@ def coverage_view(state: dict[str, Any], profile: dict[str, Any], profiles_root:
               "rules": rules, "unused_rules": [item["ref"] for item in rules if not item["distinct_successful_uses"]]}
     if "loading" in profile:
         bundles = []
-        for bundle in profile["loading"]["bundles"]:
+        for bundle in profile["loading"].get("bundles", []):
             family = bundle["family"]
             members = {rule for rule, owner in families.items() if owner == family}
             good = [use for use in uses if successful(use)]

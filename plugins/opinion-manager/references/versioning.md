@@ -132,6 +132,26 @@ Agent 为适用范围与候选含义做判断；scopes 只提供元数据。工�
 
 修订时未提供 `--loading-file` 则沿用原声明；`--remove-loading` 移除声明并恢复完整读取。移除了声明中引用的模板系列时，必须同时提供新的声明文件。
 
+### 标签选择（schema 2.2）
+
+规则较多且横跨多个场景时，可以改用标签声明：一条规则带多个标签，按需读取标签的并集。设计与决定见 `docs/design/opinion-progressive-loading.md`。声明同样用 `profile --loading-file` 整体写入，`loading` 只含三项，与上面的 `core` / `signals` / `bundles` 互斥：
+
+```json
+{
+  "always": ["om.chinese-response"],
+  "tags": [{"id": "decisions", "name": {"zh": "方案与论证", "en": "Options"},
+            "trigger": {"zh": "给出方案或比较时", "en": "When proposing or comparing options"},
+            "exclude": {"zh": "纯执行", "en": "Pure execution"}}],
+  "members": {"om.calculations": ["decisions"], "om.complete-options": ["decisions"]}
+}
+```
+
+- 标签词表封闭，标签 id 与规则编号只能是 ASCII（标签 id 为小写字母、数字、连字符，不超过 32 字符，不能取 `core`、`none`、`all`）；中文只写在 `name`、`trigger`、`exclude` 里，且必须同时给出 zh 与 en。
+- `always` 列出常驻规则；没有任何标签的规则同样常驻；规则同时在 `always` 与标签里时归常驻。悬空规则编号、未知标签、重复项、没有成员的标签都在预览阶段被拒绝。
+- `context core` 输出常驻规则与标签索引；`context select --tag A --tag B` 输出标签并集的规则（不含常驻规则，去重）；`context index` 给出逐标签的规则数与字节数；`context check --tag A [--loaded A]` 由声明的标签算出应读取的规则并核对已读取，缺失退出码 1。未知标签、空选择、全部常驻的标签都会报错并列出有效标签。2.2 声明下 `context bundle` 报错并指向 `select`。
+- 自定义段的规则可以在行尾带 ` [tags a b]`（纯 ASCII、字母序；与路由并存时写作 `[route …] [tags …]`），所有标签都在词表内的行按标签按需读取；没有标记、手写、认不出或带词表外标签的行永远常驻。`inbox add` 与 `inbox revise` 用 `--tag`（可重复）指定标签并对照词表校验，`revise --tag-clear` 清空。
+- 带标签声明的 Profile 使用 `schema_version` 2.2。旧版本工具读它会报字段集合不符并回退为完整读取，`OPINION.md` 仍是完整正文；2.0、2.1 的 Profile、正文与锁字节不变。
+
 读取与核对使用只读的 `context` 命令：
 
 ```bash
