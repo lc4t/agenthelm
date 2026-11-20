@@ -15,6 +15,7 @@ from typing import Any
 import context
 import inbox
 import lifecycle
+import migrate
 import versioned
 from constants import KNOWN_PLACEHOLDERS
 from i18n_opinion import _, resolve_language  # noqa: E402
@@ -357,6 +358,7 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_command(subparsers)
     lifecycle.add_command(subparsers)
     inbox.add_command(subparsers)
+    migrate.add_command(subparsers)
     return parser
 
 
@@ -367,6 +369,8 @@ def execute(args: argparse.Namespace) -> tuple[int, str]:
         return lifecycle.execute(args)
     if args.command == "inbox":
         return inbox.execute(args)
+    if args.command == "migrate":
+        return migrate.execute(args)
     if versioned.handles(args):
         return versioned.execute(args)
     catalog = load_catalog()
