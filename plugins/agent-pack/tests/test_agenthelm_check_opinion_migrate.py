@@ -276,7 +276,7 @@ class EnglishTests(Fixture):
         self.stub_manager(PREVIEW)
         _code, text = self.check_text()
         self.assertIn("nothing changes and current behaviour is unaffected", text)
-        self.assertIn("2 unfinished inbox record(s)", text)
+        self.assertIn("unfinished inbox records: 2", text)
 
 
 class RealFixtureTests(Fixture):
