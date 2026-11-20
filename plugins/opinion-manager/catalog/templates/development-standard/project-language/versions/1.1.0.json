@@ -1,0 +1,26 @@
+{
+  "family": "development-standard",
+  "variant": "project-language",
+  "version": "1.1.0",
+  "name": {
+    "zh": "工具职责与项目语言",
+    "en": "Tool responsibilities with project language"
+  },
+  "description": {
+    "zh": "用途：按项目语言维护第一方 Skill 与文档。 不适用：未经授权的上游改写或缺少语言约定却直接翻译。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: maintaining first-party Skills and docs in the project language. Not for: unauthorized rewrites of upstream material, or translating without an agreed language. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "按项目语言维护第一方 Skill 与文档。"
+    ],
+    "en": [
+      "Maintaining first-party Skills and docs in the project language."
+    ]
+  },
+  "rules": [
+    "om.portable-files@1.1.0",
+    "om.rules-tools@1.1.0",
+    "om.maintenance-project-language@1.1.0"
+  ]
+}

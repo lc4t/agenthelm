@@ -1,0 +1,30 @@
+{
+  "family": "response-style",
+  "variant": "dense-chinese",
+  "version": "1.1.0",
+  "name": {
+    "zh": "中文完整分析",
+    "en": "Complete analysis in Chinese"
+  },
+  "description": {
+    "zh": "用途：中文沟通与复杂分析的表达。 不适用：非中文输出、已指定其他写作风格的任务。 这是可选择的行为偏好，不代表普遍最优做法。",
+    "en": "Use: expression for Chinese communication and complex analysis. Not for: non-Chinese output, or tasks that already specify another writing style. This is a selectable behavior preference, not a universally best practice."
+  },
+  "scopes": {
+    "zh": [
+      "中文沟通与复杂分析的表达。"
+    ],
+    "en": [
+      "Expression for Chinese communication and complex analysis."
+    ]
+  },
+  "rules": [
+    "om.conclusion-first@1.1.0",
+    "om.chinese-response@1.1.0",
+    "om.bilingual-terms@1.1.0",
+    "om.markdown-structure@1.1.0",
+    "om.clean-deliverable@1.1.0",
+    "om.concrete-titles@1.1.0",
+    "om.response-dense@1.1.0"
+  ]
+}

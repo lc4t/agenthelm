@@ -1,0 +1,196 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "公开 catalog 新增 1.1.0（31 条规则与 10 个模板）：zh/en 双语文字与 trigger / purpose / exclude，行为语义与 1.0.0 一致；两个场景模板另声明常驻集合与四个按需标签（decisions、files、reports、maintenance），选择它们时 profile 预览生成 schema 2.2 的标签加载声明，经确认后才生效，--no-tags 保持完整读取。既有项目不会自动变化，可用 updates 查看并经完整预览确认升级。",
+    "en": "The public catalog gains 1.1.0 (31 rules and 10 templates): zh/en text with trigger / purpose / exclude, behaviourally identical to 1.0.0. The two scenario templates also declare a resident set and four on-demand tags (decisions, files, reports, maintenance); selecting them makes the profile preview generate a schema 2.2 tag-loading declaration that only takes effect after confirmation, and --no-tags keeps full reading. Existing projects do not change automatically; updates lists the new versions and the upgrade needs a full preview and confirmation."
+  },
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [
+        {
+          "what": "可选：运行 opinion_manager.py updates 查看公开规则与模板的 1.1.0，需要时按完整预览确认升级（手工修改会保留；场景模板的标签加载声明随预览一并生成，不需要时加 --no-tags）",
+          "session": "current"
+        }
+      ],
+      "touches": [
+        "opinion.lock.json"
+      ],
+      "default_for_existing": "advisory",
+      "template_changes": [
+        {
+          "path": "catalog/README.md",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.align-requirements/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.assumptions-authority/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.batch-questions/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.bilingual-terms/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.calculations/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.chinese-response/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.clean-deliverable/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.complete-options/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.conclusion-first/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.concrete-titles/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.consistent-items/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.device-readable/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.editable-diagrams/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.evidence-inference/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.maintenance-chinese/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.maintenance-project-language/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.markdown-structure/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.portable-files/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.report-context/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.report-formats/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.report-review/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.response-brief/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.response-dense/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.rules-tools/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.semantic-wrap/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.solutions-proportional/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.solutions-three-level/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.tables-compact/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.tables-list-first/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.test-evidence/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/rules/om.versioned-files/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/delivery-standard/compact-tables/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/delivery-standard/list-first/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/development-standard/chinese-maintenance/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/development-standard/project-language/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/response-style/brief-chinese/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/response-style/dense-chinese/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/scenario/concise-project/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/scenario/reviewed-project/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/work-method/proportional/versions/1.1.0.json",
+          "class": "semantic"
+        },
+        {
+          "path": "catalog/templates/work-method/three-level/versions/1.1.0.json",
+          "class": "semantic"
+        }
+      ],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

@@ -1,0 +1,34 @@
+{
+  "id": "om.report-formats",
+  "version": "1.1.0",
+  "slot": "om.report-formats",
+  "level": "required",
+  "title": {
+    "zh": "多格式内容与演讲备注",
+    "en": "Multi-format content and speaker notes"
+  },
+  "text": {
+    "zh": "同一汇报的 PPT、HTML、Markdown 保持核心事实、结论和结构主线一致，按载体调整详略。PPT 内容页提供讲解要点及必要的页间衔接，逐页检查。Markdown 用标题、列表和必要引用组织内容；表格遵循当前所选表格规则。最终材料不夹入制作或纠错过程。",
+    "en": "The PPT, HTML and Markdown versions of one report keep the same core facts, conclusions and structural main line, with detail adjusted to the medium. Content slides of a PPT provide talking points and the necessary transitions between slides, checked slide by slide. Markdown uses headings, lists and necessary quotations to organize content; tables follow the currently selected table rule. Final materials do not include the making or correction process."
+  },
+  "scopes": {
+    "zh": [
+      "仅在制作或检查汇报时适用"
+    ],
+    "en": [
+      "Only when producing or reviewing reports"
+    ]
+  },
+  "trigger": {
+    "zh": "同一汇报同时制作 PPT、HTML、Markdown 等多种载体时",
+    "en": "When one report is produced in several media such as PPT, HTML and Markdown"
+  },
+  "purpose": {
+    "zh": "让各载体的事实、结论与主线一致，并便于讲解",
+    "en": "Keep facts, conclusions and the main line consistent across media and make the report easy to present"
+  },
+  "exclude": {
+    "zh": "制作或纠错过程（不进入最终材料）",
+    "en": "The making or correction process (it stays out of final materials)"
+  }
+}

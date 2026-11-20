@@ -1,0 +1,34 @@
+{
+  "id": "om.chinese-response",
+  "version": "1.1.0",
+  "slot": "om.chinese-response",
+  "level": "required",
+  "title": {
+    "zh": "中文回复",
+    "en": "Respond in Chinese"
+  },
+  "text": {
+    "zh": "使用中文回复。引用外文资料时保留必要的原文术语，并给出中文释义。用户明确要求其他语言的交付时，遵循该交付要求。",
+    "en": "Respond in Chinese. When citing foreign-language sources, keep the necessary original terms and give a Chinese explanation. When the user explicitly asks for a deliverable in another language, follow that requirement."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "向用户回复时",
+    "en": "When replying to the user"
+  },
+  "purpose": {
+    "zh": "统一以中文沟通，同时保留外文术语的原意",
+    "en": "Communicate in Chinese consistently while keeping the original meaning of foreign terms"
+  },
+  "exclude": {
+    "zh": "用户明确要求以其他语言交付的内容",
+    "en": "Deliverables the user explicitly asks for in another language"
+  }
+}

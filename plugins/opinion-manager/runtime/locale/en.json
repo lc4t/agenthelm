@@ -225,5 +225,12 @@
  "当前 Profile 未声明标签（schema 2.2），不能记录 {0}；规则束声明请用 loaded_bundles 与 routing_miss": "This Profile declares no tags (schema 2.2), so {0} cannot be recorded; for a bundle declaration use loaded_bundles and routing_miss",
  "{0} 必须是标签 id 的列表": "{0} must be a list of tag ids",
  "{0} 含有重复标签": "{0} contains a duplicate tag",
- "{0} 含有未声明的标签：{1}；有效标签：{2}": "{0} contains undeclared tags: {1}; valid tags: {2}"
+ "{0} 含有未声明的标签：{1}；有效标签：{2}": "{0} contains undeclared tags: {1}; valid tags: {2}",
+ "标签定义冲突：{0}": "Conflicting tag definitions: {0}",
+ "{0}（来源：{1}）": "{0} (sources: {1})",
+ "--no-tags 与 --loading-file 不能同时使用": "--no-tags and --loading-file cannot be used together",
+ "不由所选模板物化标签加载声明，保持完整读取（schema 2.0）": "Do not materialize the tag-loading declaration from the selected templates; keep full reading (schema 2.0)",
+ "所选模板声明了标签加载，但本 Profile 已有手写的 loading，未自动合并；建议声明见 loading_suggestion，需要时用 --loading-file 整体写入": "The selected templates declare tag loading, but this Profile already has a hand-written loading, so nothing was merged automatically; see loading_suggestion for the proposed declaration and write it as a whole with --loading-file if wanted",
+ "patch 版本不能改变加载声明": "A patch version cannot change the loading declaration",
+ "；": "; "
 }

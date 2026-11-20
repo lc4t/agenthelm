@@ -505,7 +505,7 @@ def adopt_plan(root: Path, items: list[dict[str, Any]], workdir: Path) -> dict[s
         from_profile.write_text(versioned.pretty(previous), encoding="utf-8")
     profile_args = Namespace(project=root, id=identity, version=number, template=[], rule=[], remove_template=[], remove_rule=[],
                              custom_file=custom_file, from_profile=from_profile, overrides_file=None, resolutions_file=None,
-                             loading_file=None, remove_loading=False, catalog=versioned.PUBLIC_CATALOG, apply=False, confirm=None)
+                             loading_file=None, remove_loading=False, no_tags=False, catalog=versioned.PUBLIC_CATALOG, apply=False, confirm=None)
     drafted = versioned.profile_command(profile_args)
     if drafted["unresolved"]:
         fail("err_adopt_unresolved", ids=say("sep").join(drafted["unresolved"]))

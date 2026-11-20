@@ -1,0 +1,34 @@
+{
+  "id": "om.semantic-wrap",
+  "version": "1.1.0",
+  "slot": "om.semantic-wrap",
+  "level": "required",
+  "title": {
+    "zh": "语义换行与认知成本",
+    "en": "Semantic line breaks and cognitive cost"
+  },
+  "text": {
+    "zh": "横向空间足够时禁止把内容断行成短句。PPT、HTML 及其他排版内容必须按完整概念和语义边界设计换行，保持中文词语、成语、固定短语及英文单词的完整性；禁止仅为版式对齐而过早换行、拆散不可分割的语义单元，或制造孤立单字、单词。\n\n排版形式优先服务于内容理解，保持阅读连贯，降低读者的认知负担和理解成本。",
+    "en": "When horizontal space is sufficient, do not break content into short lines. PPT, HTML and other typeset content must be broken at complete concepts and semantic boundaries, keeping Chinese words, idioms and fixed phrases and English words intact; do not break early just to align the layout, split an indivisible semantic unit, or leave an isolated single character or word.\n\nLet layout serve understanding first, keep the reading coherent, and lower the reader's cognitive load and cost of understanding."
+  },
+  "scopes": {
+    "zh": [
+      "选择本模板的环境；按正文条件适用"
+    ],
+    "en": [
+      "Where the template is selected; applies under the conditions in the text"
+    ]
+  },
+  "trigger": {
+    "zh": "设计 PPT、HTML 及其他排版内容的换行时",
+    "en": "When designing line breaks for PPT, HTML and other typeset content"
+  },
+  "purpose": {
+    "zh": "保持语义单元完整，降低读者的认知负担和理解成本",
+    "en": "Keep semantic units intact and lower the reader's cognitive load and cost of understanding"
+  },
+  "exclude": {
+    "zh": "横向空间确实不足、必须换行的位置",
+    "en": "Places where horizontal space is truly insufficient and a break is unavoidable"
+  }
+}

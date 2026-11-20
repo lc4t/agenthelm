@@ -84,7 +84,8 @@ class VersionedOpinionTests(unittest.TestCase):
                 selected = {row["ref"] for row in preview["profile"]["sources"]["rules"]}
                 self.assertEqual(selected, set(template["rules"]))
                 for rule_ref in selected:
-                    self.assertIn(by_ref[rule_ref]["text"], preview["content"])
+                    text = by_ref[rule_ref]["text"]
+                    self.assertIn(text["zh"] if isinstance(text, dict) else text, preview["content"])
                 self.assertFalse((self.project / ".opinion").exists())
 
     def test_missing_exact_version_fails_without_writes(self) -> None:
@@ -383,7 +384,7 @@ class VersionedOpinionTests(unittest.TestCase):
 
     def test_versioned_schema_contracts_match_runtime_fields(self) -> None:
         references = SCRIPT.parents[1] / "references"
-        for filename, expected, optional in (("rule.schema.json", versioned.RULE_FIELDS, versioned.RULE_OPTIONAL_FIELDS), ("versioned-template.schema.json", versioned.TEMPLATE_FIELDS, set()), ("profile.schema.json", versioned.PROFILE_FIELDS, versioned.PROFILE_OPTIONAL_FIELDS)):
+        for filename, expected, optional in (("rule.schema.json", versioned.RULE_FIELDS, versioned.RULE_OPTIONAL_FIELDS), ("versioned-template.schema.json", versioned.TEMPLATE_FIELDS, versioned.TEMPLATE_OPTIONAL_FIELDS), ("profile.schema.json", versioned.PROFILE_FIELDS, versioned.PROFILE_OPTIONAL_FIELDS)):
             schema = json.loads((references / filename).read_text())
             self.assertEqual(set(schema["required"]), expected)
             self.assertEqual(set(schema["properties"]), expected | optional)
