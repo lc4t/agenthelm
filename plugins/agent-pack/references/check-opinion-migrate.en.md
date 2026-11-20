@@ -1,5 +1,7 @@
 # The Opinion migration hint in check
 
+中文：[check-opinion-migrate.md](check-opinion-migrate.md)
+
 Since 6.14.0 opinion-manager supports on-demand tag loading and `opinion_manager.py migrate`. An existing project's opinion never changes by itself; `agenthelm check` only tells the user that there is something to migrate. The user previews and confirms with `migrate` themselves.
 
 ## When it runs, and how it is ranked

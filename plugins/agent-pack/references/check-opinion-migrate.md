@@ -1,5 +1,7 @@
 # check 的 Opinion 迁移提示
 
+English: [check-opinion-migrate.en.md](check-opinion-migrate.en.md)
+
 6.14.0 起 opinion-manager 支持标签按需加载与 `opinion_manager.py migrate`。已有项目的 opinion 不会自动变化；`agenthelm check` 只负责告诉用户“有可迁移的内容”，预览与确认由用户用 `migrate` 自己完成。
 
 ## 触发与分级

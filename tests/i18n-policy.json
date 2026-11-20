@@ -18,6 +18,10 @@
       "plugins/agent-pack/references/dedupe-contract.en.md"
     ],
     [
+      "plugins/agent-pack/references/check-opinion-migrate.md",
+      "plugins/agent-pack/references/check-opinion-migrate.en.md"
+    ],
+    [
       "plugins/opinion-manager/references/inbox.md",
       "plugins/opinion-manager/references/inbox.en.md"
     ],
