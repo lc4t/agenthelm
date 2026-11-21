@@ -8,6 +8,7 @@
 - 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。
 - 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。
 - 新增声明式客户端驱动注册表（agent_pack_clients）：claude / codex / cursor 与只读的 claude-desktop 由数据声明，客户端名单与 --client 选项改为从注册表派生（既有输出不变）；新增只读命令 agenthelm clients 列出各驱动的检测结果、分发驱动类型与能力标志；预留 ~/.config/agenthelm/clients.d/*.json 用户声明文件，本版只校验，不执行其中任何内容，也不据此安装。
+- agent-pack 的“旧运行时”回归测试只取早于被测提交的正式发布 tag：候选 tag（含指向被测提交的 -rc.N）不再被当作旧运行时，避免打 rc tag 后 Release 工作流的测试步骤失败。
 - agenthelm check 对有 opinion.lock.json 的项目运行一次只读的 opinion-manager migrate 预览（5 秒超时、零写入）：有可迁移到标签按需加载的内容时给出一条建议（目标 Profile、更新摘要、未完成的收件箱记录数与可直接复制的预览命令），手工改动或 catalog 冲突时给一条简短说明，其余情况一律静默。建议项不改退出码、不计入 up_to_date；会话开始的 hook 与 nudge 不调用 migrate；check --output json 在有提示时多一个 opinion_migrate 数组，既有字段不变。不迁移则保持原样，不影响现有行为。
 - 新增只读命令 agenthelm inventory：列出各客户端能看到的 Skill 与 MCP（含 ~/.agents/skills、项目级与 Claude 本地级存储）、重复、description 字节数与可识别来源，输出带 schema_version 的稳定 JSON。
 - inventory 与 doctor 以独立目标 claude-desktop 只读 Claude Desktop 的 claude_desktop_config.json（须点名或用 --client all，不在默认客户端内）；doctor --client claude 对同名条目给建议级 shadowed-by 提示。
