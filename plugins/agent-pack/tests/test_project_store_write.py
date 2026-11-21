@@ -197,8 +197,10 @@ def older_runtime_runs(test: "ScopeBase") -> None:
     base = Path(os.environ["AGENTHELM_OLD_RUNTIME"]) if os.environ.get("AGENTHELM_OLD_RUNTIME") else None
     if base is None:
         root = TESTS.parents[2]
-        tag = subprocess.run(["git", "-C", str(root), "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
-                             capture_output=True, text=True, check=False).stdout.strip()
+        # The latest *official* release strictly before the commit under test: candidate tags (vX.Y.Z-rc.N), including one
+        # that points at this very commit, are not "older", so they are excluded, and the search starts at HEAD^.
+        tag = subprocess.run(["git", "-C", str(root), "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*",
+                              "--exclude", "v*-*", "HEAD^"], capture_output=True, text=True, check=False).stdout.strip()
         if not tag:
             test.skipTest("no release tag to take an older runtime from")
         scratch = Path(tempfile.mkdtemp(dir=test.root))
