@@ -1,7 +1,7 @@
 # 更新记录
 
 <!-- release-plan:start -->
-## 2026-11-20 — agenthelm 6.14.0
+## 2026-11-21 — agenthelm 6.14.0
 
 ### agent-pack 1.14.0
 
@@ -36,6 +36,7 @@
 - 收件箱新增只读 check（报告缺条件/目的的候选与 OPINION.md 行）、revise（修订候选并留痕）和机械关系提示（relations，仅供参考）。
 - opinion 规则可以路由到某个 skill：inbox add / revise 新增 --route-skill、--route-when、--route-final、--route-on，渲染成 OPINION.md 自定义段里带机器可读标记的一行，并自动追加「skill 自身执行时不再触发」与「skill 不可用时降级」两条约束；新增只读 inbox routes list 列出路由并做机械检查。路由只能提高调用概率，不能保证。
 - 新增 opinion_manager.py migrate：把用户现有的 Opinion（Profile 2.0 / 2.1）迁移到标签选择加载。默认预览（零写入，失败路径也一样），--apply --confirm <指纹> 才写入；写入前备份到 .opinion/backups/<时间戳>-migrate/ 并写 manifest，复用 profile → compose → verify 的原子写与读回，失败按备份逐字节还原；--rollback 只在当前状态等于迁移后状态时还原。用户的 custom 段与手工追加的内容原样保留、常驻，不替用户猜标签；2.1 默认不动，--tags 才改用标签。另新增 catalog 1.1.0 的体积守卫测试。既有项目不会自动变化。
+- opinion-manager 的主 Skill 说明按 Profile 版本区分读取命令：2.1 声明用 context bundle，2.2 标签声明用 context select --tag；保留 fallback 时完整读取的条件。
 - opinion-manager 新增标签选择引擎（Profile schema 2.2）：一条规则可带多个标签，context select --tag 按标签并集读取规则，core 输出常驻规则与标签索引，check 由标签派生交付信号；自定义规则可用 [tags …] 行尾标记带标签，inbox add / revise 新增 --tag。既有 2.0 与 2.1 的 Profile 与 OPINION.md 字节不变。
 - opinion-manager 的 lifecycle 支持 Profile schema 2.2 的标签记账：use 事件新增 loaded_tags 与 routing_miss_tags，取值校验自 loading.tags；有标签漏读的使用与规则束漏读一样阻断转正式；status 对标签输出 loaded_in、exercised_in、routing_misses 与 unused_tags。2.1 的 loaded_bundles、routing_miss、bundles 输出不变。
 
