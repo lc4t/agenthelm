@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "opinion-manager 的主 Skill 说明按 Profile 版本区分读取命令：2.1 声明用 context bundle，2.2 标签声明用 context select --tag；保留 fallback 时完整读取的条件。",
+    "en": "The opinion-manager Skill now tells agents which read command to use per Profile version: context bundle for 2.1 declarations, context select --tag for 2.2 tag declarations; the full-read fallback conditions are unchanged."
+  },
+  "changes": [{
+    "scope": "opinion-manager",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
