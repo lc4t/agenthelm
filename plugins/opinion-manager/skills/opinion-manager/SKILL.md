@@ -49,7 +49,7 @@ description: Generate, compose, review and maintain behavior rules between the u
 
 ## 交付物审查与旧格式
 
-实施前完整读取当前项目 `OPINION.md`，按条件选择适用条款；交付前逐条检查并修正明确问题。Profile 声明了分层加载时，改为先运行 `context core` 读取核心规则与规则束索引，任务命中触发条件或判断不清时用 `context bundle` 读取对应规则束，交付前用 `context check` 核对；命令返回 `fallback` 时完整读取正文。维护规则本身时始终完整读取。冲突改变交付时集中请用户裁决。用户反馈只形成候选，经确认才能发布新版本。项目需记录候选发生次数、灰度使用与规则覆盖时，用 `lifecycle` 命令在项目私有目录记账：任务结束后提交 `use` 事件，如实记录适用规则、逐条结果、读取的规则束或标签及漏读；测试与演示标为 `fixture`。工具只记账，不后台学习，不自动晋升候选或转正，这些裁决来自用户。工作中的低成本暂存使用 `inbox`（见下文），`lifecycle` 保留给带证据的灰度与覆盖记账。
+实施前完整读取当前项目 `OPINION.md`，按条件选择适用条款；交付前逐条检查并修正明确问题。Profile 声明了分层加载时，改为先运行 `context core` 读取核心规则与规则束索引，命中触发条件或判断不清时，2.1 用 `context bundle`、2.2 用 `context select --tag` 读规则束/标签，交付前用 `context check` 核对；命令返回 `fallback` 时完整读取正文。维护规则本身时始终完整读取。冲突改变交付时集中请用户裁决。用户反馈只形成候选，经确认才能发布新版本。项目需记录候选发生次数、灰度使用与规则覆盖时，用 `lifecycle` 命令在项目私有目录记账：任务结束后提交 `use` 事件，如实记录适用规则、逐条结果、读取的规则束或标签及漏读；测试与演示标为 `fixture`。工具只记账，不后台学习，不自动晋升候选或转正，这些裁决来自用户。工作中的低成本暂存使用 `inbox`（见下文），`lifecycle` 保留给带证据的灰度与覆盖记账。
 
 旧格式 `templates/*.json`、`compose --template`、`compose --rule` 与 `compose --custom-file` 保持兼容。有锁项目必须使用版本化 Profile 流程，禁止用旧格式写入绕过核验；新项目优先使用版本化 catalog。
 
