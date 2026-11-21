@@ -4,15 +4,17 @@
     "zh": "新增 agenthelm relocate：把一个 Skill 复制或迁移到另一个客户端/作用域，默认预览，带计划指纹确认；不覆盖已有目录，读回校验，失败回滚，源只归档不删除；放宽作用域需 --allow-widen。",
     "en": "Add agenthelm relocate: copy or move one Skill to another client/scope. Preview by default, confirmed with a plan digest; never overwrites an existing directory, reads back and verifies, rolls back on failure and only archives (never deletes) the source; widening the scope needs --allow-widen."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "off",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

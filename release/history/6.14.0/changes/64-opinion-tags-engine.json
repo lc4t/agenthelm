@@ -4,15 +4,20 @@
     "zh": "opinion-manager 新增标签选择引擎（Profile schema 2.2）：一条规则可带多个标签，context select --tag 按标签并集读取规则，core 输出常驻规则与标签索引，check 由标签派生交付信号；自定义规则可用 [tags …] 行尾标记带标签，inbox add / revise 新增 --tag。既有 2.0 与 2.1 的 Profile 与 OPINION.md 字节不变。",
     "en": "opinion-manager gains a tag selection engine (Profile schema 2.2): a rule can carry several tags, context select --tag reads the union of the chosen tags, core prints the always-loaded rules with a tag index, and check derives delivery signals from tags; custom rules can carry tags through a trailing [tags …] marker, and inbox add / revise gain --tag. Existing 2.0 and 2.1 Profiles and OPINION.md bytes are unchanged."
   },
-  "changes": [{
-    "scope": "opinion-manager",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [".opinion/profiles", "opinion.lock.json"],
-    "default_for_existing": "advisory",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "opinion-manager",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        ".opinion/profiles",
+        "opinion.lock.json"
+      ],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

@@ -4,15 +4,17 @@
     "zh": "技能与 MCP 视图：英文措辞不再依赖数量（修正「1 groups」），缺失的 Claude Desktop 配置不再计为未知项；新增用真实 agenthelm inventory 的端到端测试。",
     "en": "Skills & MCP views: English wording no longer depends on a count (fixes \"1 groups\"), a missing Claude Desktop config is no longer counted as an unknown item; adds an end-to-end test against the real agenthelm inventory."
   },
-  "changes": [{
-    "scope": "project-orchestrator",
-    "level": "patch",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "on",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

@@ -4,15 +4,17 @@
     "zh": "新增 agenthelm dedupe：处置 inventory 报告的重复分组。Skill 副本可保留一份并归档其余（可恢复，不删除）；MCP 副本只给官方手工命令，不编辑配置；全部保留与忽略只写机器级决定文件；另提供只读的 Claude Desktop 配置可粘贴片段。",
     "en": "Add agenthelm dedupe: handle the duplicate groups inventory reports. Skill copies can be kept once with the rest archived (recoverable, never deleted); MCP copies get only the official manual command and no config is edited; keep-all and ignore write only a machine-level decision file; plus a read-only paste-ready Claude Desktop config snippet."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "off",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

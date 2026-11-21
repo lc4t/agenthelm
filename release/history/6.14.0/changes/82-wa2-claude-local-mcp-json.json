@@ -4,15 +4,20 @@
     "zh": "agent-pack 支持把声明为 project 的 MCP 写到 Claude 项目级存储：默认 local（~/.claude.json 里该项目路径下，写前备份、保持权限、失败回滚），或用 --project-store file 写项目根 .mcp.json（含机器路径的条目被拒绝）。目标不可写或结构无法识别时跳过并警告，不回退写用户级。",
     "en": "agent-pack can write MCP servers declared project-level to Claude's project stores: local by default (under the project's path in ~/.claude.json, backed up first, permissions kept, rolled back on failure) or, with --project-store file, the project's .mcp.json (entries tied to this machine are refused). An unwritable or unrecognized target is skipped with a warning, never written to the user level instead."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": ["capabilities.mcp_scope", "capabilities.default_scope"],
-    "default_for_existing": "off",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [
+        "capabilities.mcp_scope",
+        "capabilities.default_scope"
+      ],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

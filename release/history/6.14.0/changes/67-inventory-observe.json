@@ -4,15 +4,17 @@
     "zh": "新增只读命令 agenthelm inventory：列出各客户端能看到的 Skill 与 MCP（含 ~/.agents/skills、项目级与 Claude 本地级存储）、重复、description 字节数与可识别来源，输出带 schema_version 的稳定 JSON。",
     "en": "Add the read-only command agenthelm inventory: list the Skills and MCP servers each client can see (including ~/.agents/skills, project-level and Claude local-level stores), duplicates, description bytes and recognizable origin, as stable JSON carrying schema_version."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "advisory",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

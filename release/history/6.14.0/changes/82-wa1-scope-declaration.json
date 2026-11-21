@@ -10,7 +10,11 @@
       "level": "minor",
       "actions": [],
       "user_action_required": [],
-      "touches": ["capabilities.default_scope", "capabilities.mcp_scope", "capabilities.skill_scope"],
+      "touches": [
+        "capabilities.default_scope",
+        "capabilities.mcp_scope",
+        "capabilities.skill_scope"
+      ],
       "default_for_existing": "off",
       "template_changes": [],
       "contracts": []
@@ -20,7 +24,11 @@
       "level": "patch",
       "actions": [],
       "user_action_required": [],
-      "touches": ["capabilities.default_scope", "capabilities.mcp_scope", "capabilities.skill_scope"],
+      "touches": [
+        "capabilities.default_scope",
+        "capabilities.mcp_scope",
+        "capabilities.skill_scope"
+      ],
       "default_for_existing": "off",
       "template_changes": [],
       "contracts": []

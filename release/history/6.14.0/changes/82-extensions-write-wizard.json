@@ -4,15 +4,17 @@
     "zh": "菜单第 9 屏的「移动或复制」「设置生效范围」成为真实向导，条目详情与重复组里新增 m / s / d / p：选条目、选目标、预览（计划、blocked、将进入项目目录的提示）、输入 yes（放宽另需键入条目名）、执行、再取 inventory 读回；读回不一致显示「读回失败」与恢复目录，菜单退出码为 1。证据未知的条目与 MCP 条目只给手工命令与可粘贴片段；没有对应 agenthelm dedupe 分组的重复只读展示。",
     "en": "The Move or copy and Set the effective scope items of menu screen 9 become real wizards, and the entry detail and duplicate groups gain m / s / d / p: pick an entry, pick a target, preview (plan, blocked, the notice that content enters the project), type yes (widening also needs the entry name), run, then read the inventory back; a mismatch shows read-back failed with the recovery directory and the menu exits with 1. Entries with unknown evidence and MCP entries only get manual commands and paste-ready snippets; duplicates without a matching agenthelm dedupe group are shown read-only."
   },
-  "changes": [{
-    "scope": "project-orchestrator",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "off",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "project-orchestrator",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

@@ -4,15 +4,17 @@
     "zh": "agent-pack 的“旧运行时”回归测试只取早于被测提交的正式发布 tag：候选 tag（含指向被测提交的 -rc.N）不再被当作旧运行时，避免打 rc tag 后 Release 工作流的测试步骤失败。",
     "en": "The agent-pack older-runtime regression test now takes only the latest official release tag strictly before the commit under test: candidate tags, including an -rc.N tag on that very commit, are no longer mistaken for an older runtime, so the Release workflow's test step no longer fails once an rc tag exists."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "patch",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "on",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

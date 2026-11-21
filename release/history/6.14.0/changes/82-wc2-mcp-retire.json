@@ -4,15 +4,17 @@
     "zh": "agenthelm dedupe --keep --retire-others 对 MCP 副本：已受管的条目由 agent-pack 退役（原 JSON 片段存入 0600 恢复目录、先逐字节备份 ~/.claude.json、原子改写、失败按字节回滚）；未受管的条目仍只给官方手工命令；证据不明的成员仍只读，跨客户端同指纹仍只是建议保留。",
     "en": "agenthelm dedupe --keep --retire-others now retires managed MCP copies itself (original JSON fragment into a 0600 recovery directory, byte-exact backup of ~/.claude.json first, atomic edit, byte-exact rollback); unmanaged copies still get only the official manual command; members with unknown evidence stay read-only and cross-client same-fingerprint copies remain keep-recommended advice."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "off",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

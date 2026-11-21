@@ -4,15 +4,17 @@
     "zh": "新增声明式客户端驱动注册表（agent_pack_clients）：claude / codex / cursor 与只读的 claude-desktop 由数据声明，客户端名单与 --client 选项改为从注册表派生（既有输出不变）；新增只读命令 agenthelm clients 列出各驱动的检测结果、分发驱动类型与能力标志；预留 ~/.config/agenthelm/clients.d/*.json 用户声明文件，本版只校验，不执行其中任何内容，也不据此安装。",
     "en": "Adds a declarative client-driver registry (agent_pack_clients): claude / codex / cursor and the read-only claude-desktop are declared as data, and the client lists and --client choices derive from it (existing output unchanged). New read-only command agenthelm clients lists each driver's detection result, distribution driver type and capability flags. Reserves user declarations in ~/.config/agenthelm/clients.d/*.json: this version only validates them, never executes anything in them and never installs from them."
   },
-  "changes": [{
-    "scope": "agent-pack",
-    "level": "minor",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "off",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

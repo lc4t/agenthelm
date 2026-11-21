@@ -1,6 +1,5 @@
 # 更新记录
 
-<!-- release-plan:start -->
 ## 2026-11-21 — agenthelm 6.14.0
 
 ### agent-pack 1.14.0
@@ -57,7 +56,6 @@
 - 确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。
 - 设计文档：公开规则的渐进式加载（标签选择、读取时切片、体积测算、兼容与迁移契约）；运行时与公开 catalog 的实现见 opinion-manager 条目。
 - 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。
-<!-- release-plan:end -->
 
 
 ## 2026-11-15 — agenthelm 6.13.1
