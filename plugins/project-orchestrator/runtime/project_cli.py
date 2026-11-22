@@ -358,14 +358,16 @@ def render_plan(plan: dict, choices: dict[str, str] | None = None) -> list[str]:
             chosen = (choices or {}).get(item["path"])
             decision = chosen or item["default"]
             if item.get("options"):
-                label = ("" if chosen else _("默认")) + {"accept": _("采用（按模板处理）"), "skip": _("永久跳过（记入决定文件）"),
-                                                    "later": _("稍后（本次不处理）")}.get(decision, decision)
+                label = {"accept": _("采用（按模板处理）"), "skip": _("永久跳过（记入决定文件）"),
+                         "later": _("稍后（本次不处理）")}.get(decision, decision)
             elif item["path"] == "README.md":
-                label = ("" if chosen else _("默认")) + (_("不改") if decision == "keep" else _("追加「怎样使用」"))
+                label = _("不改") if decision == "keep" else _("追加「怎样使用」")
             else:
                 lost = _("（丢弃 {0} 行本地内容）").format(item["lost"]) if decision == "accept" and item.get("lost") else ""
-                label = ("" if chosen else _("默认")) + {"keep": _("保留你的版本"), "append": _("保留你的版本并追加带标记的区块")}.get(
+                label = {"keep": _("保留你的版本"), "append": _("保留你的版本并追加带标记的区块")}.get(
                     decision, _("采用新模板") + lost)
+            if not chosen:  # a whole sentence per language: gluing "默认" in front leaves "defaultkeep your version" in English
+                label = _("默认{0}").format(label)
             lines.append(S.yellow(_("     定制文件：{0}（{1}）→ {2}").format(item['path'], item['state'], label)))
         lines.append(_("     联网：{0} · 恢复：{1}").format(_('需要') if step['network'] else _('不需要'), step['recovery']))
         if step["blocked"]:
