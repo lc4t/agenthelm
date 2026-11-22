@@ -189,6 +189,20 @@ class LocalStoreTests(ProjectStoreBase):
         self.assertIn("claude client only", payload["error"])
 
 
+# The last official release that predates the project-level scope keys (they arrived in 6.14.0). These tests check that a
+# runtime which does not know the scope state leaves it alone, so the baseline is that release and not "the latest release":
+# from 6.14.0 on the latest release already knows the state, so it is no longer the runtime this premise is about.
+PRE_SCOPE_RELEASE = "v6.13.1"
+
+
+def older_runtime_tag(root: Path) -> str:
+    """``PRE_SCOPE_RELEASE`` when the repository has that tag, else '' (the caller skips the test)."""
+    import subprocess
+    found = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"refs/tags/{PRE_SCOPE_RELEASE}"],
+                           capture_output=True, text=True, check=False)
+    return PRE_SCOPE_RELEASE if found.returncode == 0 else ""
+
+
 def older_runtime_runs(test: "ScopeBase") -> None:
     """Run ``sync``, ``reconcile`` and ``doctor`` of the latest released runtime on the test's project: they must not
     fail, and must not remove anything the project-level scope recorded (state keeps it only under ``scopes``)."""
@@ -197,10 +211,7 @@ def older_runtime_runs(test: "ScopeBase") -> None:
     base = Path(os.environ["AGENTHELM_OLD_RUNTIME"]) if os.environ.get("AGENTHELM_OLD_RUNTIME") else None
     if base is None:
         root = TESTS.parents[2]
-        # The latest *official* release strictly before the commit under test: candidate tags (vX.Y.Z-rc.N), including one
-        # that points at this very commit, are not "older", so they are excluded, and the search starts at HEAD^.
-        tag = subprocess.run(["git", "-C", str(root), "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*",
-                              "--exclude", "v*-*", "HEAD^"], capture_output=True, text=True, check=False).stdout.strip()
+        tag = older_runtime_tag(root)
         if not tag:
             test.skipTest("no release tag to take an older runtime from")
         scratch = Path(tempfile.mkdtemp(dir=test.root))
