@@ -322,8 +322,15 @@ def run_tool(provider: Any, tool_id: str, *, capture: bool = True) -> dict:
     try:
         completed = subprocess.run(tool["command"], cwd=provider.root, check=False, timeout=TOOL_TIMEOUT_SECONDS,
                                    capture_output=capture, text=True)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise EntryError(_("“{0}”无法运行：{1}").format(tool['title'], exc), "failed") from exc
+    except subprocess.TimeoutExpired as exc:
+        # The child may have written before the timeout and killing it does not undo that: never report "failed" here,
+        # and never retry.
+        raise EntryError(_("“{0}”运行超过 {1} 秒仍未结束，写入结果未知").format(tool['title'], TOOL_TIMEOUT_SECONDS),
+                         "outcome_unknown",
+                         [_("AgentHelm 已终止它，没有重试；它在超时前可能已经写入"),
+                          _("先核对目标系统，或用该工具已有的只读查询确认结果，再决定是否重跑")]) from exc
+    except OSError as exc:
+        raise EntryError(_("“{0}”没有启动，未写入：{1}").format(tool['title'], exc), "failed") from exc
     output = ((completed.stdout or "") + (completed.stderr or "")).strip() if capture else ""
     if completed.returncode != 0:
         raise EntryError(_("“{0}”运行失败（退出码 {1}）").format(tool['title'], completed.returncode), "failed",
