@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Declarative client-driver registry (#134 Phase 1).
+"""Declarative client-driver registry (#134).
 
 A *driver* describes how a client is recognised and how it takes plugins, as data: detection evidence (executable
 names, configuration directories), the distribution driver type (``marketplace-cli`` | ``directory-dropin`` |
 ``none``), where Skills and MCP servers are stored, and capability flags. Code asks the registry (``default_ids``,
-``supports``, ``detect``) instead of listing client names.
+``supports``, ``detect``, ``store_table``) instead of listing client names.
+
+Built-in drivers are data files, ``drivers/<id>.json`` next to this module (schema_version 1 or 2); this module only
+loads, validates and queries them. A built-in file that is missing or invalid is a programming error and raises
+``DriverDataError`` at import; there is no fallback.
 
 User declarations in ``~/.config/agenthelm/clients.d/*.json`` are read and validated only. They never run a command,
 never write a file and never enter the ``--client`` set in this version; an invalid one is a warning and is ignored.
@@ -14,7 +18,6 @@ Standard library only, so every entry point can import it.
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any, Callable
@@ -25,46 +28,105 @@ DISTRIBUTIONS = ("marketplace-cli", "directory-dropin", "none")
 SCOPES = ("user", "local", "project")
 FORMATS = ("json", "toml", "dir")
 CAPABILITIES = ("default_set", "read_only", "project_mcp_write")
+LIFECYCLES = ("active", "deprecated")
+STORE_STATUSES = ("observed", "documented", "undetermined")
+SCHEMA_VERSIONS = (1, 2)
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
+STORE_KEYS = {"scope", "path", "format", "status", "write_target"}
+DRIVERS_DIR = Path(__file__).resolve().parent / "drivers"
 
 
-def _store(scope: str, path: str, fmt: str) -> dict:
-    return {"scope": scope, "path": path, "format": fmt}
+class DriverDataError(RuntimeError):
+    """A built-in driver data file is missing, unreadable or invalid. A programming error: never swallowed."""
 
 
-def _driver(id_: str, display: str, executables: list[str], dirs: list[dict], distribution: str,
-            skills: list[dict], mcp: list[dict], *, default: bool = True, read_only: bool = False,
-            project_mcp: bool = False) -> dict:
-    return {
-        "schema_version": 1, "id": id_, "display": display,
-        "detect": {"executables": executables, "dirs": dirs},
-        "distribution": distribution,
-        "stores": {"skills": skills, "mcp": mcp},
-        "capabilities": {"default_set": default, "read_only": read_only, "project_mcp_write": project_mcp},
-    }
+def _is_text(value: Any, limit: int = 64) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= limit and not any(ord(c) < 32 for c in value)
 
 
-# Order is the order the previous hard-coded tuple had; claude-desktop follows the default set.
-# ``project_mcp_write`` mirrors what agenthelm writes today (Claude only); W-a reads it as the single source.
-BUILTIN: tuple[dict, ...] = (
-    _driver("claude", "Claude Code", ["claude"], [{"path": "~/.claude", "env": "CLAUDE_CONFIG_DIR"}], "marketplace-cli",
-            [_store("user", "~/.claude/skills", "dir"), _store("project", "<project>/.claude/skills", "dir")],
-            [_store("user", "~/.claude.json", "json"), _store("local", "~/.claude.json#projects", "json"),
-             _store("project", "<project>/.mcp.json", "json")], project_mcp=True),
-    _driver("codex", "Codex", ["codex"], [{"path": "~/.codex", "env": "CODEX_HOME"}], "marketplace-cli",
-            [_store("user", "~/.codex/skills", "dir"), _store("user", "~/.agents/skills", "dir"),
-             _store("project", "<project>/.agents/skills", "dir")],
-            [_store("user", "~/.codex/config.toml", "toml"), _store("project", "<project>/.codex/config.toml", "toml")]),
-    _driver("cursor", "Cursor", [], [{"path": "~/.cursor"}], "directory-dropin",
-            [_store("user", "~/.cursor/skills", "dir"), _store("user", "~/.agents/skills", "dir"),
-             _store("project", "<project>/.cursor/skills", "dir"), _store("project", "<project>/.agents/skills", "dir")],
-            [_store("user", "~/.cursor/mcp.json", "json"), _store("project", "<project>/.cursor/mcp.json", "json")]),
-    _driver("claude-desktop", "Claude Desktop", [],
-            [{"path": "~/Library/Application Support/Claude"}, {"path": "~/.config/Claude"}], "none",
-            [], [_store("user", "<per-platform>/claude_desktop_config.json", "json")], default=False, read_only=True),
-)
+# ---------------------------------------------------------------- built-in drivers (data files, strict)
+
+def _check(condition: Any, source: str, message: str) -> None:
+    if not condition:
+        raise DriverDataError(f"driver data {source}: {message}")
+
+
+def _check_stores(entries: Any, source: str, kind: str) -> None:
+    _check(isinstance(entries, list), source, f"stores.{kind} must be a list")
+    for entry in entries:
+        _check(isinstance(entry, dict) and {"scope", "path", "format"} <= set(entry) <= STORE_KEYS, source,
+               f"stores.{kind}[] needs scope, path, format (optional: status, write_target)")
+        _check(entry["scope"] in SCOPES, source, f"stores.{kind}[].scope must be one of {', '.join(SCOPES)}")
+        _check(entry["format"] in FORMATS, source, f"stores.{kind}[].format must be one of {', '.join(FORMATS)}")
+        _check(_is_text(entry["path"], 200), source, f"stores.{kind}[].path must be a one-line string")
+        _check(entry.get("status", "observed") in STORE_STATUSES, source,
+               f"stores.{kind}[].status must be one of {', '.join(STORE_STATUSES)}")
+        _check(isinstance(entry.get("write_target", False), bool), source, f"stores.{kind}[].write_target must be a boolean")
+        _check(not entry.get("write_target") or kind == "skills", source, "write_target applies to skills stores only")
+
+
+def validate_builtin(data: Any, source: str) -> dict:
+    """Return ``data`` when it is a valid built-in driver; raise ``DriverDataError`` naming ``source`` otherwise."""
+    _check(isinstance(data, dict), source, "the top level must be an object")
+    _check(set(data) <= DECLARATION_KEYS | {"lifecycle"} and DECLARATION_KEYS <= set(data), source,
+           f"keys must be {', '.join(sorted(DECLARATION_KEYS))} (+ lifecycle); got {', '.join(sorted(data))}")
+    _check(data["schema_version"] in SCHEMA_VERSIONS and not isinstance(data["schema_version"], bool), source,
+           f"schema_version must be one of {', '.join(map(str, SCHEMA_VERSIONS))}")
+    _check(isinstance(data["id"], str) and ID_PATTERN.match(data["id"]) is not None and data["id"] != "all", source,
+           "id must match ^[a-z][a-z0-9-]{0,31}$")
+    _check(_is_text(data["display"]), source, "display must be a one-line string")
+    _check(data.get("lifecycle", "active") in LIFECYCLES, source, f"lifecycle must be one of {', '.join(LIFECYCLES)}")
+    detect_part = data["detect"]
+    _check(isinstance(detect_part, dict) and set(detect_part) <= {"executables", "dirs"}, source,
+           "detect must be an object with executables / dirs")
+    executables, dirs = detect_part.get("executables", []), detect_part.get("dirs", [])
+    _check(isinstance(executables, list) and all(isinstance(x, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", x)
+                                                 for x in executables), source, "detect.executables must be file names")
+    _check(isinstance(dirs, list), source, "detect.dirs must be a list")
+    for item in dirs:
+        _check(isinstance(item, dict) and {"path"} <= set(item) <= {"path", "env"} and _is_text(item["path"], 200)
+               and (item.get("env") is None or _is_text(item["env"])), source, "detect.dirs[] needs path (optional env)")
+    _check(executables or dirs, source, "detect needs at least one fact")
+    _check(data["distribution"] in DISTRIBUTIONS, source, f"distribution must be one of {', '.join(DISTRIBUTIONS)}")
+    stores = data["stores"]
+    _check(isinstance(stores, dict) and set(stores) == {"skills", "mcp"}, source, "stores must have exactly skills and mcp")
+    for kind in ("skills", "mcp"):
+        _check_stores(stores[kind], source, kind)
+    for scope in SCOPES:  # at most one write target per scope: relocate has to pick one
+        _check(sum(1 for e in stores["skills"] if e["scope"] == scope and e.get("write_target")) <= 1, source,
+               f"more than one skills write_target for scope {scope}")
+    capabilities = data["capabilities"]
+    _check(isinstance(capabilities, dict) and set(capabilities) == set(CAPABILITIES)
+           and all(isinstance(v, bool) for v in capabilities.values()), source,
+           f"capabilities must hold exactly the booleans {', '.join(CAPABILITIES)}")
+    return data
+
+
+def load_builtin(directory: Path | None = None) -> tuple[dict, ...]:
+    """Load ``<directory>/*.json`` (default: the ``drivers`` directory shipped next to this file).
+
+    Order: the default set first, then the others, each group by id. A missing directory, no files, a file that is
+    not valid JSON, an invalid driver or a file whose name differs from its id raises ``DriverDataError``;
+    there is no fallback."""
+    folder = Path(directory) if directory is not None else DRIVERS_DIR
+    _check(folder.is_dir(), str(folder), "the drivers directory is missing")
+    drivers = []
+    for path in sorted(folder.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise DriverDataError(f"driver data {path.name}: cannot read: {error}") from error
+        validate_builtin(data, path.name)
+        _check(data["id"] == path.stem, path.name, f"the file name must be {data['id']}.json")
+        drivers.append(data)
+    _check(bool(drivers), str(folder), "no driver files (*.json)")
+    _check(len({item["id"] for item in drivers}) == len(drivers), str(folder), "duplicate driver ids")
+    return tuple(sorted(drivers, key=lambda item: (not item["capabilities"]["default_set"], item["id"])))
+
+
+BUILTIN: tuple[dict, ...] = load_builtin()
 BUILTIN_IDS = tuple(item["id"] for item in BUILTIN)
 
 
@@ -89,6 +151,28 @@ def supports(client: str, capability: str) -> bool:
     """Capability flag of a built-in driver; an unknown client or flag is ``False``."""
     driver = get(client)
     return bool(driver and driver["capabilities"].get(capability))
+
+
+def store_table(kind: str) -> dict[str, tuple[tuple[str, str], ...]]:
+    """``{client: ((scope, path), ...)}`` for ``kind`` (``skills`` | ``mcp``), in declaration order, for the clients that
+    declare at least one such store. ``<project>`` stays a placeholder."""
+    return {item["id"]: tuple((store["scope"], store["path"]) for store in item["stores"][kind])
+            for item in BUILTIN if item["stores"][kind]}
+
+
+def skill_write_targets() -> dict[tuple[str, str], str]:
+    """``{(client, scope): path}``: the skills store a ``relocate`` writes to (the entry marked ``write_target``)."""
+    return {(item["id"], store["scope"]): store["path"]
+            for item in BUILTIN for store in item["stores"]["skills"] if store.get("write_target")}
+
+
+def primary_skill_stores() -> dict[tuple[str, str], str]:
+    """``{(client, scope): path}``: the first declared skills store of each scope (refs in other stores get a suffix)."""
+    table: dict[tuple[str, str], str] = {}
+    for item in BUILTIN:
+        for store in item["stores"]["skills"]:
+            table.setdefault((item["id"], store["scope"]), store["path"])
+    return table
 
 
 # ---------------------------------------------------------------- detection (facts, not names)
@@ -117,10 +201,6 @@ def detect(driver: dict, home: Path, getenv: Callable[[str], str | None],
 def declaration_dir(home: Path, getenv: Callable[[str], str | None]) -> Path:
     base = getenv("XDG_CONFIG_HOME")
     return (Path(base) if base else home / ".config") / "agenthelm" / "clients.d"
-
-
-def _is_text(value: Any, limit: int = 64) -> bool:
-    return isinstance(value, str) and 0 < len(value) <= limit and not any(ord(c) < 32 for c in value)
 
 
 def validate_declaration(data: Any) -> str | None:

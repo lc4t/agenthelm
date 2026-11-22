@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "id": "cursor",
+  "display": "Cursor",
+  "detect": {
+    "executables": [],
+    "dirs": [
+      {
+        "path": "~/.cursor"
+      }
+    ]
+  },
+  "distribution": "directory-dropin",
+  "stores": {
+    "skills": [
+      {
+        "scope": "user",
+        "path": "~/.cursor/skills",
+        "format": "dir",
+        "write_target": true
+      },
+      {
+        "scope": "user",
+        "path": "~/.agents/skills",
+        "format": "dir"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.cursor/skills",
+        "format": "dir"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.agents/skills",
+        "format": "dir",
+        "write_target": true
+      }
+    ],
+    "mcp": [
+      {
+        "scope": "user",
+        "path": "~/.cursor/mcp.json",
+        "format": "json"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.cursor/mcp.json",
+        "format": "json"
+      }
+    ]
+  },
+  "capabilities": {
+    "default_set": true,
+    "read_only": false,
+    "project_mcp_write": false
+  }
+}

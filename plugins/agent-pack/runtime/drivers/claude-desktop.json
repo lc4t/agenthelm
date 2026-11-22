@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "id": "claude-desktop",
+  "display": "Claude Desktop",
+  "detect": {
+    "executables": [],
+    "dirs": [
+      {
+        "path": "~/Library/Application Support/Claude"
+      },
+      {
+        "path": "~/.config/Claude"
+      }
+    ]
+  },
+  "distribution": "none",
+  "stores": {
+    "skills": [],
+    "mcp": [
+      {
+        "scope": "user",
+        "path": "<per-platform>/claude_desktop_config.json",
+        "format": "json"
+      }
+    ]
+  },
+  "capabilities": {
+    "default_set": false,
+    "read_only": true,
+    "project_mcp_write": false
+  }
+}

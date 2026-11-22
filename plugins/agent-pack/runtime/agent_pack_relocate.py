@@ -23,16 +23,13 @@ if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
+import agent_pack_clients as client_registry  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
-# The one data table of target stores (no per-client branches elsewhere in this module): where a Skill for
-# ``client:scope`` is written. ``codex:user`` / ``cursor:project`` use the shared ``.agents/skills``
-# (decision D-CB11); a Skill already sitting in a store that client reads natively is a zero-write ``native`` plan.
-TARGET_STORE = {
-    ("claude", "user"): "~/.claude/skills", ("claude", "project"): f"{inv.PROJECT}/.claude/skills",
-    ("codex", "user"): "~/.agents/skills", ("codex", "project"): f"{inv.PROJECT}/.agents/skills",
-    ("cursor", "user"): "~/.cursor/skills", ("cursor", "project"): f"{inv.PROJECT}/.agents/skills",
-}
+# Where a Skill for ``client:scope`` is written: the skills store each driver marks ``write_target`` (decision
+# D-CB11: ``codex:user`` / ``cursor:project`` use the shared ``.agents/skills``). A Skill already sitting in a store
+# that client reads natively is a zero-write ``native`` plan.
+TARGET_STORE = client_registry.skill_write_targets()
 WIDEN_WARNING = N_("放宽：这个 Skill 之后在所有项目里可见")
 RANK = {"project": 0, "user": 1}  # scope breadth: moving to a higher rank widens
 

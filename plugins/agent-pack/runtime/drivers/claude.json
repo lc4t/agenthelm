@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "id": "claude",
+  "display": "Claude Code",
+  "detect": {
+    "executables": [
+      "claude"
+    ],
+    "dirs": [
+      {
+        "path": "~/.claude",
+        "env": "CLAUDE_CONFIG_DIR"
+      }
+    ]
+  },
+  "distribution": "marketplace-cli",
+  "stores": {
+    "skills": [
+      {
+        "scope": "user",
+        "path": "~/.claude/skills",
+        "format": "dir",
+        "write_target": true
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.claude/skills",
+        "format": "dir",
+        "write_target": true
+      }
+    ],
+    "mcp": [
+      {
+        "scope": "user",
+        "path": "~/.claude.json",
+        "format": "json"
+      },
+      {
+        "scope": "local",
+        "path": "~/.claude.json#projects",
+        "format": "json"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.mcp.json",
+        "format": "json"
+      }
+    ]
+  },
+  "capabilities": {
+    "default_set": true,
+    "read_only": false,
+    "project_mcp_write": true
+  }
+}
