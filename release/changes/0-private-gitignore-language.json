@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "refresh 与 entry 在 private/.gitignore 是另一种语言的工具原文时，预览中列出并在 --apply 时先备份再换成项目文件语言的版本；check 给出信息级提示。",
+    "en": "refresh and entry list a private/.gitignore that holds the tool's text in the other language and, on --apply, back it up and replace it with the project file language's version; check reports it as information."
+  },
+  "changes": [{
+    "scope": "agents-init",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": ["private/.gitignore"],
+    "default_for_existing": "advisory",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
