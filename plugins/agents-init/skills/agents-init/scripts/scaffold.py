@@ -551,6 +551,34 @@ def _conflict(dotted: str, key: str, prefix: str, expected: str, value: Any, nod
                 dotted, _json_kind(value), expected, json.dumps(example, ensure_ascii=False), rename_to)}
 
 
+# 内容锁的 render_inputs 里，值来自 Profile 且没有别的检查覆盖的字段。
+# slug 来自 .agents/plugin.json（中文名项目检查时用占位值）；entry_launcher 与 privacy_declared 的变化已分别由
+# skeleton-missing 与 privacy-contract-* 报告，这里不重复。
+RENDER_INPUT_FIELDS = ("name", "project_type", "stack", "vcs", "runtime", "agent_cli", "work_mode", "language")
+
+
+def _render_input_drift(ctx: Context, pack_entry: dict | None) -> list[dict]:
+    """Profile fields that no longer match the inputs the content lock recorded: information only, exit code unchanged.
+
+    ``--mode refresh`` renders from the Profile, so it does the right thing; ``check`` is what stayed silent.
+    A lock without ``render_inputs`` (older versions) or without one of the keys has nothing to compare.
+    """
+    recorded = (pack_entry or {}).get("render_inputs")
+    if not isinstance(recorded, dict):
+        return []
+    current = _init().render_inputs(ctx.inputs)
+    rows = []
+    for field in RENDER_INPUT_FIELDS:
+        if field not in recorded or recorded[field] == current[field]:
+            continue
+        locked, profile = (json.dumps(value, ensure_ascii=False) for value in (recorded[field], current[field]))
+        rows.append({"id": f"render-inputs:{field}", "kind": "render-inputs-drift", "level": "info", "field": field,
+                     "locked": recorded[field], "profile": current[field],
+                     "message": _("Profile 的 {0} 是 {1}，内容锁记录的渲染输入是 {2}：模板文件仍按旧值渲染。"
+                                  "运行 --mode refresh 预览并同步（不影响退出码）").format(field, profile, locked)})
+    return rows
+
+
 # ---------------------------------------------------------------- decisions
 
 def local_decisions_file(state_dir: Path, root: Path) -> Path:
@@ -960,6 +988,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     extras = [{"path": p, "kind": "legacy"} for p in ctx.manifest.get("legacy_paths", []) if _lstat(root / p)]
     extras += _profile_extras(ctx)
     conflicts = _profile_conflicts(ctx)
+    drift = _render_input_drift(ctx, pack_entry)
 
     decisions = load_decisions(root, state_dir)
     active, skipped = partition(findings, decisions, reprompt=reprompt)
@@ -967,7 +996,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     return {"ok": not active, "required_ok": not any(f["level"] == "must" for f in active), "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
             "project_language": {"declared": declared, "effective": declared or "zh"},
             "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras,
-            "profile_extras": _extras_summary(extras), "profile_conflicts": conflicts, "findings": active, "skipped": skipped,
+            "profile_extras": _extras_summary(extras), "profile_conflicts": conflicts, "render_input_drift": drift, "findings": active, "skipped": skipped,
             "levels": level_counts(active), "categories": summarize(active),
             "decisions": {"path": DECISIONS_PATH.as_posix(), "errors": decisions["errors"],
                           "conflict_copies": decisions["conflict_copies"], "local_path": decisions["local_path"]}}
@@ -1407,6 +1436,8 @@ def render_text(result: dict) -> str:
             reason = item["decision"].get("reason") or _("（未写理由）")
             lines.append(_("  [已跳过 {0}] {1}").format(item['id'], reason))
         for item in result.get("profile_conflicts", []):
+            lines.append(_("  [信息] {0}").format(item["message"]))
+        for item in result.get("render_input_drift", []):
             lines.append(_("  [信息] {0}").format(item["message"]))
         summary = result.get("profile_extras") or {}
         if summary.get("total"):
