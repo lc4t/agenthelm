@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "check 在 Profile 与内容锁记录的渲染输入不一致时给出提示（信息级，不影响退出码）。",
+    "en": "check now reports when the Profile no longer matches the render inputs recorded in the content lock (information only, exit code unchanged)."
+  },
+  "changes": [{
+    "scope": "agents-init",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "advisory",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
