@@ -75,6 +75,8 @@ CI 的各套件和升级矩阵在 Python 设置成功且任务未取消时分别
 5. 维护者将 `main` **快进**到已验证 tag：`git push origin v<套件版本>:main`（不得强推）；该 push 触发 Pages，此时 Release 已可附加到 `latest.json`。维护者须配置 GitHub 分支保护，禁止普通功能 PR 改 `main`；本工具不修改仓库权限或规则。
 6. 把 `main` 合回 `dev`，保证正式基线已集成。
 
+**promote 干跑工作流**：`.github/workflows/promote.yml`（仅 `workflow_dispatch`，输入 `tag`）在第 5 步之前可选运行，只读检查并输出结果，不推送、不打 tag、不分派其他工作流。检查项：tag 为正式 `vX.Y.Z` 且等于套件版本；tag 提交等于 `origin/release/vX.Y.Z` 顶端；`main` 可快进（已相等则报告空操作）；该提交上 `tests.yml` 的 `release/*` push 运行成功；GitHub Release 存在且 `release.json` 的提交一致；npm 已有该版本。任一项失败则作业失败并给出实际值与期望值。检查逻辑在 `scripts/promote_check.py`。工作流文件进入 `main` 后才能分派。通过后真正的 promote 仍是手动 `git push origin v<套件版本>:main`，步骤本身不变。设计见 `docs/design/release-hardening.md`。
+
 发布失败且尚未推进 `main`：客户端不变；修复并使用下一个 patch 版本，已推送 tag 不移动、不删除。推进后出错：向前发布修复并按需要 `npm deprecate`，不强推 `main`。npm 的人工批准尚未完成时，发布停在产物已暂存的状态，不推进 `main`。热修复从 `main` 创建 `release/vX.Y.Z`，沿用片段和同一流程，之后合回 `dev`；目前只支持一个正式主线。
 
 ## 工具失效时

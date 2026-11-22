@@ -1,0 +1,37 @@
+name: Promote dry run
+
+# Checks only. This workflow never pushes, tags or dispatches another workflow; promoting
+# main is still the manual fast-forward push in release/VERSIONING.md.
+# workflow_dispatch only runs once this file is on the default branch (main).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to check, for example v6.14.0"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Checks a to f
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          status=0
+          python3 scripts/promote_check.py --tag "$TAG" --repository "$REPOSITORY" > promote-check.txt || status=$?
+          cat promote-check.txt
+          { echo '```'; cat promote-check.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
