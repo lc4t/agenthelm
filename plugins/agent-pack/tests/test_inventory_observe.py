@@ -19,6 +19,8 @@ import agent_pack_inventory as inv  # noqa: E402
 NEW_SKILL_KEYS = ["description_chars", "when_to_use_chars", "when_to_use_bytes", "skill_md_lines", "dir_bytes", "file_count",
                   "is_symlink", "link_target_kind", "name_matches_dir", "frontmatter_ok", "loaded", "precedence", "shadowed_by", "ref"]
 NEW_MCP_KEYS = ["env_var_names", "has_inline_secret", "fingerprint_fields", "url_host", "loaded", "precedence", "shadowed_by", "ref"]
+DOC_CLAUDE_SKILLS = "https://code.claude.com/docs/en/skills"
+DOC_CLAUDE_MCP = "https://code.claude.com/docs/en/mcp"
 SECRETS = ("sk-abcdefghijklmnopqrstuv", "supersecretvalue", "hunter2token", "Bearer zzzsecret", "qqquerysecret")
 
 
@@ -149,7 +151,7 @@ class SkillTests(Fixture):
         self.assertEqual(groups["same"]["relation"], "identical")
         self.assertEqual(groups["diff"]["relation"], "different")
         self.assertEqual(groups["diff"]["effective"]["store"], "~/.claude/skills")  # Claude: personal over project
-        self.assertEqual(groups["diff"]["effective"]["source_url"], inv.DOC_CLAUDE_SKILLS)
+        self.assertEqual(groups["diff"]["effective"]["source_url"], DOC_CLAUDE_SKILLS)
 
     def test_codex_and_cursor_same_name_make_no_precedence_claim(self) -> None:
         self.skill(self.home / ".agents" / "skills", "dup")
@@ -312,7 +314,7 @@ class MenuFieldTests(Fixture):
         self.assertEqual(by[("claude", "user", "d")]["precedence"], "winner")
         shadowed = by[("claude", "project", "d")]
         self.assertEqual((shadowed["precedence"], shadowed["shadowed_by"]["store"]), ("shadowed", "~/.claude/skills"))
-        self.assertEqual(shadowed["shadowed_by"]["source_url"], inv.DOC_CLAUDE_SKILLS)
+        self.assertEqual(shadowed["shadowed_by"]["source_url"], DOC_CLAUDE_SKILLS)
         self.assertEqual(by[("codex", "user", "e")]["precedence"], "both-load")
         self.assertEqual(by[("cursor", "user", "e")]["precedence"], "unknown")
         self.assertIsNone(by[("cursor", "user", "e")]["shadowed_by"])
@@ -378,7 +380,7 @@ class McpTests(Fixture):
         self.claude_fixture()
         group = next(item for item in self.observe()["duplicates"]["mcps"] if item["kind"] == "same-name")
         self.assertEqual(group["effective"]["store"], "~/.claude.json#projects")
-        self.assertEqual(group["effective"]["source_url"], inv.DOC_CLAUDE_MCP)
+        self.assertEqual(group["effective"]["source_url"], DOC_CLAUDE_MCP)
         self.assertEqual(group["relation"], "different")
         # project vs user: the winner depends on the .mcp.json approval, which this version does not read
         only = self.observe(scope="user")

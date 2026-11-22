@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "客户端读取侧改为读驱动声明：优先级、读取格式与受管条目进入声明；0 字节的 MCP 配置文件不再被判为损坏。",
+    "en": "The read side now follows the client driver declarations: precedence, read formats and managed entries are declared data, and a 0-byte MCP configuration file is no longer reported as corrupt."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

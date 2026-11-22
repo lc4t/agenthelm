@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "候选版场景下，runtime status 提示的下一条命令带上 --latest。",
+    "en": "In a candidate (-rc.N) scenario, the next command that runtime status suggests carries --latest."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

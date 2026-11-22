@@ -178,7 +178,7 @@
  "当前运行时：{0}（{1}）": "Current runtime: {0} ({1})",
  "当前运行时：未安装": "Current runtime: not installed",
  "本次命令来自：{0}": "This command comes from: {0}",
- "有新版本 {0}：agenthelm runtime update 预览": "New version {0} available: preview with agenthelm runtime update",
+ "有新版本 {0}：{1} 预览": "New version {0} available: preview with {1}",
  "安装：agenthelm runtime install（预览）→ 加 --apply 执行": "Install: agenthelm runtime install (preview) → add --apply to run it",
  "已切换": "Switched",
  "将切换": "Will switch",

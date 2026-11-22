@@ -14,6 +14,13 @@
     ]
   },
   "distribution": "marketplace-cli",
+  "runtime_cache": [
+    {
+      "base": "~/.codex",
+      "env": "CODEX_HOME",
+      "glob": "plugins/cache/agenthelm/<plugin>/*"
+    }
+  ],
   "stores": {
     "skills": [
       {
@@ -38,12 +45,15 @@
       {
         "scope": "user",
         "path": "~/.codex/config.toml",
-        "format": "toml"
+        "format": "toml",
+        "root_key": "mcp_servers"
       },
       {
         "scope": "project",
         "path": "<project>/.codex/config.toml",
-        "format": "toml"
+        "format": "toml",
+        "root_key": "mcp_servers",
+        "trust_required": true
       }
     ]
   },
@@ -51,5 +61,19 @@
     "default_set": true,
     "read_only": false,
     "project_mcp_write": false
-  }
+  },
+  "precedence": [
+    {
+      "kind": "skills",
+      "rule": "both-load",
+      "evidence": "file",
+      "source_url": "https://learn.chatgpt.com/docs/build-skills"
+    },
+    {
+      "kind": "mcp",
+      "rule": "project-trust-unknown",
+      "evidence": "unknown",
+      "source_url": "https://learn.chatgpt.com/docs/extend/mcp?surface=cli"
+    }
+  ]
 }

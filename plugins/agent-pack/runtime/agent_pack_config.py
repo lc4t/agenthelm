@@ -665,27 +665,25 @@ def _claude_user_config(home: Path) -> Path:
     return home / ".claude.json"
 
 
-def _codex_mcps(home: Path) -> dict[str, Any]:
-    path = home / ".codex" / "config.toml"
+def _native_user_mcps(client: str, home: Path) -> dict[str, Any]:
+    """Servers the client itself keeps in its user-level MCP configuration (hand-added ones included).
+
+    Which file, in which format and under which key all come from the driver declaration; the reader is chosen by the
+    store ``format``. A missing, symlinked or unreadable file reads as no servers."""
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file; imported late (python3 -I path set in main)
+    import agent_pack_store_read  # noqa: PLC0415
+
+    declared = next((store for store in agent_pack_clients.stores(client, "mcp") if store["scope"] == "user"), None)
+    if declared is not None:
+        path, fmt, root_key = home / declared["path"][2:], declared["format"], declared["root_key"]
+    elif client == "codebuddy":  # not a registered client: read-only inventory support kept as it was
+        path, fmt, root_key = home / ".codebuddy" / "mcp.json", "json", "mcpServers"
+    else:
+        return {}
     if not path.is_file() or path.is_symlink():
         return {}
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
-        return {}
-    servers = data.get("mcp_servers", {})
-    return servers if isinstance(servers, dict) else {}
-
-
-def _json_client_mcps(path: Path) -> dict[str, Any]:
-    if not path.is_file() or path.is_symlink():
-        return {}
-    try:
-        data = _read_json(path)
-    except AgentPackError:
-        return {}
-    servers = data.get("mcpServers", {})
-    return servers if isinstance(servers, dict) else {}
+    data, _reason = agent_pack_store_read.read_object(fmt, path)
+    return agent_pack_store_read.servers(data, root_key) or {}
 
 
 def inventory_client(client: str, home: Path | None = None) -> Inventory:
@@ -718,14 +716,7 @@ def inventory_client(client: str, home: Path | None = None) -> Inventory:
                 child.name, str(child), inventory.source, not issues, issues
             ))
             known.add(resolved)
-    if client == "codex":
-        servers = _codex_mcps(home)
-    elif client == "cursor":
-        servers = _json_client_mcps(home / ".cursor" / "mcp.json")
-    elif client == "claude":
-        servers = _json_client_mcps(_claude_user_config(home))
-    else:
-        servers = _json_client_mcps(home / ".codebuddy" / "mcp.json")
+    servers = _native_user_mcps(client, home)
     for name, raw in sorted(servers.items()):
         record = _portable_mcp(name, raw)
         inventory.mcps.append(McpRecord(
@@ -1997,7 +1988,7 @@ def client_drift(project: Path, client: str, home: Path | None = None) -> dict[s
                                     if want_mcps[server] != have_mcps[server]]
             if not (report["missing"] or report["stale"] or report["different"]):
                 report["different"].append(f"package {name}: other files differ")
-        native = _codex_mcps(home) if client == "codex" else _json_client_mcps(home / ".cursor" / "mcp.json")
+        native = _native_user_mcps(client, home)
         report["native"] = sorted(native)
     if client == "codex":
         import agent_pack_codex_mcp
