@@ -267,21 +267,22 @@ def _manifest_version(path: Path) -> str | None:
         return None
 
 
-def _claude_records(env: Env) -> dict:
+def _records_json(env: Env, driver: dict) -> dict:
+    """The ``plugins`` mapping of a client's ``installed_plugins.json`` (key ``plugin@market`` -> list of install records)."""
     try:
-        record = read_json(env.claude_dir / "plugins" / "installed_plugins.json").get("plugins", {})
+        record = read_json(client_registry.config_dir(driver, env.home, env.get) / "plugins" / "installed_plugins.json").get("plugins", {})
     except (OSError, ValueError, AttributeError):
         return {}
     return record if isinstance(record, dict) else {}
 
 
-def _local_directory_marketplace(env: Env) -> bool:
-    """True when Claude Code's own record says the ``agenthelm`` marketplace comes from a local directory or file.
+def _local_directory_marketplace(env: Env, driver: dict) -> bool:
+    """True when the client's own record says the ``agenthelm`` marketplace comes from a local directory or file.
 
     Unverified against a real client: this relies on ``plugins/known_marketplaces.json`` keeping a ``source`` object
     whose ``source`` field is ``directory`` or ``file`` for such marketplaces."""
     try:
-        record = read_json(env.claude_dir / "plugins" / "known_marketplaces.json")[MARKETPLACE]
+        record = read_json(client_registry.config_dir(driver, env.home, env.get) / "plugins" / "known_marketplaces.json")[MARKETPLACE]
         return str(record["source"]["source"]) in {"directory", "file"}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return False
@@ -296,12 +297,21 @@ def _dev_reason(path: Path, *, local_marketplace: bool = False) -> str | None:
     return None
 
 
-def installed_plugins(env: Env, names: set[str]) -> list[dict]:
-    """Installs the ``agenthelm`` marketplace manages. A symlinked install, or one from a local-directory marketplace,
-    carries ``dev`` (the reason): it is reported and left alone. Installs from other marketplaces: see ``other_installs``."""
+def _newest_version_dir(directory: Path) -> Path | None:
+    """The version directory (one holding ``plugin.json``) with the highest version name under ``directory``."""
+    versions = [path for path in directory.glob("*") if (path / "plugin.json").is_file()]
+    return max(versions, key=lambda path: version_key(path.name) or (0,)) if versions else None
+
+
+# Installed-state readers, one per layout a client keeps its plugin copies in (``distribution.installed_state``). Each
+# returns the installs the ``agenthelm`` marketplace manages and, apart, those of another marketplace. They are named for
+# the layout, never for a client.
+
+def _installed_records_json(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    """Layout ``records-json``: an ``installed_plugins.json`` record per ``plugin@market`` pointing at the install path."""
     found: list[dict] = []
-    local_marketplace = _local_directory_marketplace(env)
-    for key, entries in sorted(_claude_records(env).items()):
+    local_marketplace = _local_directory_marketplace(env, driver)
+    for key, entries in sorted(_records_json(env, driver).items()):
         plugin, _sep, market = key.partition("@")
         if market != MARKETPLACE or plugin not in names or not isinstance(entries, list):
             continue
@@ -309,47 +319,115 @@ def installed_plugins(env: Env, names: set[str]) -> list[dict]:
             path = Path(str(entry.get("installPath", "")))
             # A git-SHA version means the entry had no version; fall back to the manifest.
             version = entry.get("version") if version_key(str(entry.get("version"))) else _manifest_version(path)
-            item = {"client": "claude", "plugin": plugin, "version": version, "path": str(path),
+            item = {"client": driver["id"], "plugin": plugin, "version": version, "path": str(path),
                     "scope": entry.get("scope")}
             dev = _dev_reason(path, local_marketplace=local_marketplace)
             if dev:
                 item["dev"] = dev
             found.append(item)
-    codex_cache = env.codex_dir / "plugins" / "cache" / MARKETPLACE
+    return found
+
+
+def _others_records_json(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    found: list[dict] = []
+    for key, entries in sorted(_records_json(env, driver).items()):
+        plugin, _sep, market = key.partition("@")
+        if not market or market == MARKETPLACE or plugin not in names or not isinstance(entries, list):
+            continue
+        for entry in entries:
+            path = Path(str(entry.get("installPath", "")))
+            version = entry.get("version") if version_key(str(entry.get("version"))) else _manifest_version(path)
+            found.append({"client": driver["id"], "plugin": plugin, "version": version, "path": str(path),
+                          "scope": entry.get("scope"), "marketplace": market, "dev": "other-marketplace"})
+    return found
+
+
+def _installed_cache_dir_versioned(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    """Layout ``cache-dir-versioned``: ``plugins/cache/<market>/<plugin>/<version>/plugin.json`` under the client's directory."""
+    found: list[dict] = []
+    cache = client_registry.config_dir(driver, env.home, env.get) / "plugins" / "cache" / MARKETPLACE
     for plugin in sorted(names):
-        directories = [path for path in (codex_cache / plugin).glob("*") if (path / "plugin.json").is_file()]
-        if directories:
-            newest = max(directories, key=lambda path: version_key(path.name) or (0,))
-            item = {"client": "codex", "plugin": plugin, "version": _manifest_version(newest), "path": str(newest)}
-            if _dev_reason(newest) or _dev_reason(codex_cache / plugin):
+        newest = _newest_version_dir(cache / plugin)
+        if newest is not None:
+            item = {"client": driver["id"], "plugin": plugin, "version": _manifest_version(newest), "path": str(newest)}
+            if _dev_reason(newest) or _dev_reason(cache / plugin):
                 item["dev"] = "symlink"
             found.append(item)
-    for client, base in (("cursor", env.home / ".cursor" / "plugins" / "local"),
-                         ("legacy", env.home / ".agents" / "plugins" / "plugins"),
-                         ("legacy", env.home / ".claude" / "agent-pack" / "plugins")):
+    return found
+
+
+def _others_cache_dir_versioned(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    found: list[dict] = []
+    cache = client_registry.config_dir(driver, env.home, env.get) / "plugins" / "cache"
+    for market_dir in sorted(path for path in cache.glob("*") if path.is_dir()) if cache.is_dir() else []:
+        if market_dir.name in {MARKETPLACE, "personal"}:  # "personal" is the legacy bootstrap, handled as legacy
+            continue
+        for plugin in sorted(names):
+            newest = _newest_version_dir(market_dir / plugin)
+            if newest is not None:
+                found.append({"client": driver["id"], "plugin": plugin, "version": _manifest_version(newest),
+                              "path": str(newest), "marketplace": market_dir.name, "dev": "other-marketplace"})
+    return found
+
+
+def _installed_dropin_dir(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    """Layout ``dropin-dir``: ``plugins/local/<plugin>/plugin.json`` (what a directory unpack writes). A symlink points at
+    a working copy, a real directory is what ``install`` writes."""
+    found: list[dict] = []
+    base = client_registry.config_dir(driver, env.home, env.get) / "plugins" / "local"
+    for plugin in sorted(names):
+        path = base / plugin
+        if (path / "plugin.json").is_file():
+            item = {"client": driver["id"], "plugin": plugin, "version": _manifest_version(path), "path": str(path)}
+            if path.is_symlink():
+                item["dev"] = "symlink"
+            found.append(item)
+    return found
+
+
+def _no_others(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    return []
+
+
+STATE_READERS = {"records-json": (_installed_records_json, _others_records_json),
+                 "cache-dir-versioned": (_installed_cache_dir_versioned, _others_cache_dir_versioned),
+                 "dropin-dir": (_installed_dropin_dir, _no_others)}
+
+
+def _state_reader(driver: dict, position: int):
+    state = client_registry.distribution(driver).get("installed_state")
+    return STATE_READERS[state][position] if state else None
+
+
+def installed_plugins(env: Env, names: set[str]) -> list[dict]:
+    """Installs the ``agenthelm`` marketplace manages. A symlinked install, or one from a local-directory marketplace,
+    carries ``dev`` (the reason): it is reported and left alone. Installs from other marketplaces: see ``other_installs``."""
+    found: list[dict] = []
+    for driver in client_registry.BUILTIN:
+        reader = _state_reader(driver, 0)
+        if reader:
+            found += reader(env, driver, names)
+    for base in _legacy_roots(env):
         for plugin in sorted(names):
             path = base / plugin
             if (path / "plugin.json").is_file():
-                item = {"client": client, "plugin": plugin, "version": _manifest_version(path), "path": str(path)}
-                # A symlinked Cursor entry points at a working copy; a real directory is what `install` writes.
-                if client == "cursor" and path.is_symlink():
-                    item["dev"] = "symlink"
-                found.append(item)
+                found.append({"client": "legacy", "plugin": plugin, "version": _manifest_version(path), "path": str(path)})
     return found
 
 
 def legacy_owner(env: Env, item: dict) -> str | None:
     """The client a legacy (pre-marketplace) entry belongs to, judged from its recorded path; None when unknown.
 
-    ``~/.claude/...`` is Claude Code's; ``~/.agents/...`` is the Codex personal marketplace the old bootstrap wrote
-    (``[plugins."<name>@personal"]`` in Codex's config). Anything else, or a path that cannot be read, has no owner.
+    A path inside a directory a driver declares as its own (``distribution.owned_dirs``) belongs to that driver: the
+    client's configuration directory, or the personal marketplace directory the old bootstrap wrote for it. Anything
+    else, or a path that cannot be read, has no owner.
     """
     try:
         path = Path(str(item.get("path", ""))).expanduser().resolve()
-        roots = {"claude": [env.home / ".claude", env.claude_dir], "codex": [env.home / ".agents", env.codex_dir]}
-        for client, candidates in roots.items():
+        for driver in client_registry.BUILTIN:
+            candidates = client_registry.owned_dirs(driver, env.home, env.get)
             if any(path == root.resolve() or root.resolve() in path.parents for root in candidates):
-                return client
+                return driver["id"]
     except (OSError, RuntimeError, ValueError):
         pass
     return None
@@ -360,25 +438,10 @@ def other_installs(env: Env, names: set[str]) -> list[dict]:
     local-directory marketplace under its own name). Not found here: a Claude Code ``--plugin-dir`` session (it
     leaves no record we know of — unverified) and how Codex / Cursor record local development installs (unverified)."""
     found: list[dict] = []
-    for key, entries in sorted(_claude_records(env).items()):
-        plugin, _sep, market = key.partition("@")
-        if not market or market == MARKETPLACE or plugin not in names or not isinstance(entries, list):
-            continue
-        for entry in entries:
-            path = Path(str(entry.get("installPath", "")))
-            version = entry.get("version") if version_key(str(entry.get("version"))) else _manifest_version(path)
-            found.append({"client": "claude", "plugin": plugin, "version": version, "path": str(path),
-                          "scope": entry.get("scope"), "marketplace": market, "dev": "other-marketplace"})
-    codex_cache = env.codex_dir / "plugins" / "cache"
-    for market_dir in sorted(path for path in codex_cache.glob("*") if path.is_dir()) if codex_cache.is_dir() else []:
-        if market_dir.name in {MARKETPLACE, "personal"}:  # "personal" is the legacy bootstrap, handled as legacy
-            continue
-        for plugin in sorted(names):
-            directories = [path for path in (market_dir / plugin).glob("*") if (path / "plugin.json").is_file()]
-            if directories:
-                newest = max(directories, key=lambda path: version_key(path.name) or (0,))
-                found.append({"client": "codex", "plugin": plugin, "version": _manifest_version(newest),
-                              "path": str(newest), "marketplace": market_dir.name, "dev": "other-marketplace"})
+    for driver in client_registry.BUILTIN:
+        reader = _state_reader(driver, 1)
+        if reader:
+            found += reader(env, driver, names)
     return found
 
 
@@ -489,12 +552,42 @@ STATE_LABELS = {"none": N_("未安装"), "partial": N_("部分安装"), "marketp
 ORIGIN_LABELS = {"symlink": N_("指向别处的软链"), "local-directory-marketplace": N_("本地目录市场"),
                  "other-marketplace": N_("其他市场")}
 # Where the client keeps what a replacement moves away ("" = nothing is replaced).
+# Keys are the message keys a driver's ``distribution.messages`` names (plus ``legacy``, which belongs to no client); the
+# texts stay here and in ``locale`` so a declaration never carries prose.
 RECOVERY_HINTS = {
-    "claude": N_("Claude Code 升级后把旧版本目录留在 ~/.claude/plugins/cache/agenthelm/<插件>/<旧版本>/（客户端行为，agenthelm 不清理）"),
-    "codex": N_("由 Codex 管理，agenthelm 不备份；需要回退时用 codex 重新安装指定版本"),
-    "cursor": N_("被替换的目录备份在 ~/.agent-pack/recovery/<时间>-cursor-<插件>/replaced-plugin/<插件>/"),
+    "versioned-cache-keeps-old": N_("Claude Code 升级后把旧版本目录留在 ~/.claude/plugins/cache/agenthelm/<插件>/<旧版本>/（客户端行为，agenthelm 不清理）"),
+    "managed-by-client-no-backup": N_("由 Codex 管理，agenthelm 不备份；需要回退时用 codex 重新安装指定版本"),
+    "dropin-backup-folder": N_("被替换的目录备份在 ~/.agent-pack/recovery/<时间>-cursor-<插件>/replaced-plugin/<插件>/"),
     "legacy": N_("旧安装移入 ~/.agent-pack/recovery/<时间>-agenthelm-migrate/（含 migration.json 清单，可按清单恢复）"),
 }
+STEP_TEXTS = {
+    "refresh-own-market": N_("刷新 Claude Code 的 agenthelm 市场"),
+    "update-plugin-to-version": N_("Claude Code 更新 {0} → {1}"),
+    "upgrade-market-and-plugins": N_("Codex 升级 agenthelm 市场与已装插件"),
+    "dropin-into-local-plugins": N_("Cursor {0} {1} 到 ~/.cursor/plugins/local（重启 Cursor 生效）"),
+    "use-source-or-ignore-client": N_("用 --source <本地仓库> 指向本地检出；不使用 Cursor 时用 --client 只选其他客户端，"
+                                      "或长期忽略：{0} config ignore-client cursor --apply"),
+}
+
+
+def driver_text(client: str | None, slot: str, table: dict) -> str | None:
+    """The untranslated text a driver's message ``slot`` points at in ``table`` (None: no driver, no slot, or no such text)."""
+    driver = client_registry.get(client or "")
+    key = client_registry.message_key(driver, slot) if driver else None
+    return table.get(key) if key else None
+
+
+def step_description(client: str, slot: str, fallback: str, *values: Any) -> str:
+    """The description of a step: the text the driver's message ``slot`` names, else the generic ``fallback`` (which takes
+    the display name first, then ``values``)."""
+    text = driver_text(client, slot, STEP_TEXTS)
+    return _(text).format(*values) if text else _(fallback).format(display_name(client), *values)
+
+
+def display_name(client: str) -> str:
+    """The display name of a registered client (the id itself for one the registry does not know)."""
+    driver = client_registry.get(client)
+    return driver["display"] if driver else client
 
 
 def declared_source_text(source: Any) -> str:
@@ -565,7 +658,7 @@ def _origin_text(record: dict) -> str:
 def diagnose_client(client: str, latest: dict, findings: list[dict], others: list[dict], conflict: dict | None,
                     pin: dict | None = None) -> dict:
     names = sorted(latest.get("plugins", {}))
-    legacy = [item for item in findings if item["client"] == "legacy"] if client in {"claude", "codex"} else []
+    legacy = [item for item in findings if item["client"] == "legacy"] if client_registry.supports(client, "legacy_cleanup") else []
     records = [_install_record(item) for item in findings if item["client"] == client]
     records += [_install_record({**item, "status": "dev"}) for item in others if item["client"] == client]
     records += [_install_record(item) for item in legacy]
@@ -614,7 +707,7 @@ def diagnose_client(client: str, latest: dict, findings: list[dict], others: lis
 
 def _advice(diag: dict, client: str) -> dict:
     """The one-sentence conclusion, the next command (a preview), whether it changes an existing install, and where originals go."""
-    name = CLIENT_NAMES[client]
+    name = display_name(client)
     state, base = diag["state"], diag["base_state"]
     missing = _("、").join(diag["missing"])
     install = f"{CLI} install --client {client}"
@@ -629,13 +722,15 @@ def _advice(diag: dict, client: str) -> dict:
         if "agents-init" in diag["installed"]:
             summary += _("agents-init 依赖其余插件，缺失时它无法完整工作。")
         command = install
-        if client == "cursor":  # Cursor's install rewrites every plugin it installs
-            changes, recovery = True, _(RECOVERY_HINTS["cursor"])
+        if client_registry.supports(client, "reinstall_rewrites_all"):  # its install rewrites every plugin it installs
+            text = driver_text(client, "recovery", RECOVERY_HINTS)
+            changes, recovery = True, (_(text) if text else None)
     elif state == "marketplace":
         sub = diag["sub_status"]
         if sub == "behind":
             summary, command, changes = _("{0} 通过 agenthelm 市场安装，有插件落后于云端。").format(name), update, True
-            recovery = _(RECOVERY_HINTS[client])
+            text = driver_text(client, "recovery", RECOVERY_HINTS)
+            recovery = _(text) if text else None
         elif sub == "ahead":
             summary, command = _("{0} 通过 agenthelm 市场安装，版本高于云端（可能是预发布）。").format(name), None
         elif sub == "current":
@@ -701,8 +796,8 @@ def install_state(env: Env, latest: dict, findings: list[dict], others: list[dic
         scoped = [item for item in findings
                   if item["client"] != "legacy" or legacy_owner(env, item) in {client, None}]
         result["clients"][client] = diagnose_client(client, latest, scoped, others,
-                                                    conflict if client == "claude" else None,
-                                                    pin if client == "claude" else None)
+                                                    conflict if client_registry.supports(client, "market_pin") else None,
+                                                    pin if client_registry.supports(client, "market_pin") else None)
     return result
 
 
@@ -1175,7 +1270,7 @@ def capability_findings(env: Env, project: Path | None, clients: list[str] | Non
 def capability_notice(reports: list[dict]) -> str | None:
     if not reports:
         return None
-    clients = _("、").join(CLIENT_NAMES[item["client"]] for item in reports)
+    clients = _("、").join(display_name(item["client"]) for item in reports)
     return _("项目声明的 MCP / Skill 与本机 {0} 不一致；运行 agent-pack doctor --client <客户端> 查看详情。").format(clients)
 
 
@@ -1236,7 +1331,8 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     unavailable: list[dict] = []
     for item in plugins:
         item["unavailable"] = None
-    if any(item["client"] == "cursor" for item in behind):
+    dropin = set(client_registry.ids_of_type("directory-dropin"))
+    if any(item["client"] in dropin for item in behind):
         # Keep the resolved release for the update preview/apply as well: otherwise
         # GitHub's latest release may move between the check and the download.
         if source is None and not latest.get("release"):
@@ -1247,7 +1343,7 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
         else:
             reason = cursor_unavailable(latest, source, timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS)
         for item in behind:
-            if reason and item["client"] == "cursor":
+            if reason and item["client"] in dropin:
                 item["unavailable"] = reason
         unavailable = [item for item in behind if item.get("unavailable")]
         behind = [item for item in behind if not item.get("unavailable")]
@@ -1319,22 +1415,30 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
 
 
 def update_hint(client: str | None) -> str | None:
-    """The command that updates a client's plugins; built when asked so it follows the current ``CLI``."""
-    return {
-        "claude": "claude plugin marketplace update agenthelm && claude plugin update {plugin}@agenthelm",
-        "codex": "codex plugin marketplace upgrade agenthelm",
-        "cursor": f"{CLI} update",
-        "legacy": f"{CLI} migrate --install",
-    }.get(client or "")
+    """The command that updates a client's plugins; built when asked so it follows the current ``CLI``. A client whose
+    plugins agenthelm unpacks itself is updated by ``agenthelm update``; one with a marketplace command line, by that
+    client's own steps (``{plugin}`` stays for the caller to fill in)."""
+    if client == "legacy":
+        return f"{CLI} migrate --install"
+    driver = client_registry.get(client or "")
+    if driver is None:
+        return None
+    if client_registry.distribution_type(driver) == "directory-dropin":
+        return f"{CLI} update"
+    executable = driver["detect"].get("executables", [None])[0]
+    commands = [" ".join(argv) for name in ("update_source", "update")
+                if (argv := client_registry.expand_step(driver, name, cli=executable or driver["id"],
+                                                        marketplace=MARKETPLACE))]
+    return " && ".join(commands) or None
 
 
 def _client_state(name: str, item: dict) -> str:
     if item["behind"]:
-        text = _("{0}：{1} 个可更新").format(CLIENT_NAMES[name], item["behind"])
+        text = _("{0}：{1} 个可更新").format(display_name(name), item["behind"])
     elif item.get("unavailable"):
-        return _("{0}：{1} 个不可用，需 --source 本地源").format(CLIENT_NAMES[name], item["unavailable"])
+        return _("{0}：{1} 个不可用，需 --source 本地源").format(display_name(name), item["unavailable"])
     else:
-        return _("{0}：已是最新").format(CLIENT_NAMES[name])
+        return _("{0}：已是最新").format(display_name(name))
     if item.get("unavailable"):
         text += _("，另有 {0} 个不可用（需 --source 本地源）").format(item["unavailable"])
     return text
@@ -1512,7 +1616,7 @@ def render_install_state(state: dict) -> list[str]:
         label = _(STATE_LABELS[diag["state"]])
         if diag["state"] == "marketplace" and diag.get("sub_status"):
             label += "·" + {"current": _("最新"), "behind": _("落后"), "ahead": _("高于云端"), "unknown": _("版本未知")}[diag["sub_status"]]
-        lines.append(f"  [{CLIENT_NAMES[name]}·{label}] {diag['summary']}")
+        lines.append(f"  [{display_name(name)}·{label}] {diag['summary']}")
         for conflict in diag["conflicts"]:
             for record in [r for r in diag["installs"] if r["plugin"] == conflict["plugin"]]:
                 lines.append(_("      {0} {1}：{2} {3}（{4}）").format(
@@ -1557,10 +1661,10 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         lines.append(note)
     clients = report.get("clients") or {}
     if clients.get("selected"):
-        lines.append(_("只处理所选客户端：{0}").format(_("、").join(CLIENT_NAMES[name] for name in clients["selected"])))
+        lines.append(_("只处理所选客户端：{0}").format(_("、").join(display_name(name) for name in clients["selected"])))
     for name in clients.get("ignored", []):
         shown = [item for item in report.get("ignored_plugins", []) if item["client"] == name]
-        lines.append(_("  [已忽略] {0}（用户配置 ignored_clients；不参与检查与更新）").format(CLIENT_NAMES[name]))
+        lines.append(_("  [已忽略] {0}（用户配置 ignored_clients；不参与检查与更新）").format(display_name(name)))
         if show_skipped:
             for item in shown:
                 lines.append(_("      {0} {1} → {2}（未检查）").format(item["plugin"], item.get("version"), item.get("latest")))
@@ -1921,20 +2025,16 @@ def untouched_steps(env: Env, names: set[str], clients: list[str], kind: str = "
         source = item.get("marketplace")
         origin = _origin_text(_install_record(item))
         steps.append(Step(kind, item["client"], _("{0} {1} {2}（{3}：{4}）").format(
-            CLIENT_NAMES[item["client"]], item["plugin"], item.get("version") or "?", origin, item["path"]) + (f" [{source}]" if source else ""),
+            display_name(item["client"]), item["plugin"], item.get("version") or "?", origin, item["path"]) + (f" [{source}]" if source else ""),
             skipped=_("不会改动：开发版/本地安装默认不被 update / migrate 改动；想纳入市场管理，请自行卸载这处安装后运行 `{0} install`").format(CLI),
             untouched=True))
     return steps
 
 
 def known_cli_locations(env: Env, name: str) -> list[Path]:
-    """Where a client's command line lives when it is not on PATH (GUI apps, per-user installs)."""
-    home = env.home
-    if name == "codex":
-        bundle = "ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
-        return [Path("/Applications") / bundle, home / "Applications" / bundle,
-                home / ".local/bin/codex", Path("/opt/homebrew/bin/codex"), Path("/usr/local/bin/codex")]
-    return [home / ".local/bin" / name, Path("/opt/homebrew/bin") / name, Path("/usr/local/bin") / name]
+    """Where a client's command line lives when it is not on PATH (GUI apps, per-user installs): the places its driver
+    declares (``distribution.cli_locations``), else the usual per-user ones."""
+    return client_registry.cli_locations(name, env.home)
 
 
 def find_cli(env: Env, name: str) -> str | None:
@@ -1951,10 +2051,16 @@ def find_cli(env: Env, name: str) -> str | None:
     return None
 
 
-def _cli(env: Env, name: str, *args: str) -> tuple[list[str], str | None]:
-    """The command (using the resolved executable) and why it cannot run, if it cannot."""
-    found = find_cli(env, name)
-    return [found or name, *args], (None if found else _("未找到 {0} 命令（已查 PATH 与常见安装位置；可用 AGENTHELM_{1} 指定）").format(name, name.upper()))
+def _step_command(env: Env, driver: dict, step: str, **values: str) -> tuple[list[str] | None, str | None]:
+    """The command of a declared step (``{cli}`` resolved to the executable found, as ``_cli`` does) and why it cannot run;
+    ``(None, None)`` when the driver declares no such step."""
+    executable = driver["detect"]["executables"][0]
+    found = find_cli(env, executable)
+    argv = client_registry.expand_step(driver, step, cli=found or executable, **values)
+    if argv is None:
+        return None, None
+    blocked = None if found else _("未找到 {0} 命令（已查 PATH 与常见安装位置；可用 AGENTHELM_{1} 指定）").format(executable, executable.upper())
+    return argv, blocked
 
 
 def installed_versions(env: Env, client: str | None, plugins: list[str], scope: str | None = None) -> dict[str, str | None]:
@@ -1984,14 +2090,16 @@ def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str]
     steps: list[Step] = []
     foreign = {(item["client"], item["plugin"]) for item in other_installs(env, set(plugins))}
     for client in clients:
+        driver = client_registry.get(client)
         present = installed_versions(env, client, plugins)
-        if client in ("claude", "codex"):
-            name = CLIENT_NAMES[client]
-            command, blocked = _cli(env, client, "plugin", "marketplace", "add", slug)
-            steps.append(Step("install", client, _("{0} 添加 agenthelm 市场（{1}）").format(name, slug), command, blocked=blocked))
+        kind = client_registry.distribution_type(driver)
+        if kind == "marketplace-cli":
+            name = display_name(client)
+            command, blocked = _step_command(env, driver, "add_source", slug=slug, marketplace=MARKETPLACE)
+            if command:
+                steps.append(Step("install", client, _("{0} 添加 agenthelm 市场（{1}）").format(name, slug), command, blocked=blocked))
             for plugin in plugins:
-                add = ("plugin", "install") if client == "claude" else ("plugin", "add")
-                command, blocked = _cli(env, client, *add, f"{plugin}@{MARKETPLACE}")
+                command, blocked = _step_command(env, driver, "install", plugin=plugin, marketplace=MARKETPLACE)
                 keep_foreign = (client, plugin) in foreign and not present[plugin]  # nothing runs, so a missing CLI is irrelevant
                 steps.append(Step("install", client, _("{0} 安装 {1}").format(name, plugin), command,
                                   blocked=None if keep_foreign else blocked,
@@ -2000,13 +2108,17 @@ def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str]
                                            _("不会改动：已有来自其他市场的开发版/本地安装，不再重复安装（想改用 agenthelm 市场，请自行卸载后重试）")
                                            if (client, plugin) in foreign else None),
                                   untouched=keep_foreign))
-        elif client == "cursor":
-            steps.append(cursor_step(latest, plugins, source, home, _("安装"), env=env))
+        elif kind == "directory-dropin":
+            steps.append(dropin_step(driver, latest, plugins, source, home, _("安装"), env=env))
     return steps
 
 
-def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Path, verb: str,
+def dropin_step(driver: dict, latest: dict, plugins: list[str], source: Path | None, home: Path, verb: str,
                 env: Env | None = None) -> Step:
+    """The step of a ``directory-dropin`` client: unpack each plugin of the release (or of a local checkout) into the
+    client's plugin directory, backing up what it replaces."""
+    client = driver["id"]
+
     def run(apply: bool, recovery_root: Path | None) -> list[dict]:
         config = _agent_pack_config()
         base = (recovery_root or home / ".agent-pack" / "recovery").expanduser().resolve()
@@ -2014,39 +2126,42 @@ def cursor_step(latest: dict, plugins: list[str], source: Path | None, home: Pat
             root = release_source(latest, Path(temporary), source)
             results = []
             for plugin in plugins:
-                before = set(base.glob(f"*-cursor-{plugin}")) if apply and base.is_dir() else set()
-                outcome = config.install_plugin(root / "plugins" / plugin, "cursor", home=home, apply=apply,
+                before = set(base.glob(f"*-{client}-{plugin}")) if apply and base.is_dir() else set()
+                outcome = config.install_plugin(root / "plugins" / plugin, client, home=home, apply=apply,
                                                 replace=True, recovery_root=recovery_root)
                 replaced = any(op.get("action") == "replace-plugin" for op in outcome.get("operations", []))
                 if replaced and not apply:  # the timestamp is fixed when the replacement runs
-                    outcome["backup"] = {"plugin": plugin, "path": str(base / f"<{_('时间戳')}>-cursor-{plugin}" / "replaced-plugin" / plugin),
+                    outcome["backup"] = {"plugin": plugin, "path": str(base / f"<{_('时间戳')}>-{client}-{plugin}" / "replaced-plugin" / plugin),
                                          "planned": True}
                 elif replaced:
-                    moved = sorted(set(base.glob(f"*-cursor-{plugin}")) - before)
+                    moved = sorted(set(base.glob(f"*-{client}-{plugin}")) - before)
                     if moved:
                         outcome["backup"] = {"plugin": plugin, "path": str(moved[-1] / "replaced-plugin" / plugin), "planned": False}
                 results.append(outcome)
             return results
     note = None
     if env is not None:
-        present = {plugin: version for plugin, version in installed_versions(env, "cursor", plugins).items() if version}
+        present = {plugin: version for plugin, version in installed_versions(env, client, plugins).items() if version}
         if present:
             note = _("已安装 {0}；会用发布包里的版本覆盖它们").format(
                 _("、").join(f"{plugin} {version}" for plugin, version in present.items()))
-    return Step("install", "cursor", _("Cursor {0} {1} 到 ~/.cursor/plugins/local（重启 Cursor 生效）").format(verb, _('、').join(plugins)),
+    return Step("install", client, step_description(client, "describe_dropin", N_("{0} {1} {2} 到它的插件目录"),
+                                                    verb, _('、').join(plugins)),
                 action=run, verify=list(plugins),
                 targets={plugin: latest.get("plugins", {}).get(plugin, {}).get("version") for plugin in plugins}, note=note)
 
 
-def claude_market_sync(env: Env, report: dict, project: Path | None, only: str | None) -> dict | None:
-    """A1: the market problem that would make Claude's update steps fail, found before anything runs."""
-    if only not in (None, "plugins") or not any(item["status"] == "behind" and item["client"] == "claude"
+def market_pin_sync(env: Env, report: dict, project: Path | None, only: str | None) -> dict | None:
+    """A1: the market problem (a declaration of the marketplace that disagrees with the registered one) that would make a
+    market-pinning client's update steps fail, found before anything runs."""
+    pinning = client_registry.ids_with("market_pin")
+    if only not in (None, "plugins") or not any(item["status"] == "behind" and item["client"] in pinning
                                                  for item in report["plugins"]):
         return None
     return market_sync_problem(env, declared_marketplaces(env, project))
 
 
-def codex_pin_advice(latest: dict) -> str:
+def pin_market_ref_advice(latest: dict) -> str:
     """A9: pin Codex's agenthelm marketplace to the release. ``--ref`` and ``owner/repo@ref`` are in the Codex plugin docs
     (developers.openai.com/codex/plugins/build); whether ``add`` replaces an existing same-named market is unconfirmed."""
     try:
@@ -2065,42 +2180,17 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
     steps: list[Step] = []
     behind = [item for item in report["plugins"] if item["status"] == "behind"]
     if only in (None, "plugins"):
-        claude = sorted({item["plugin"] for item in behind if item["client"] == "claude"})
-        if claude:
-            command, blocked = _cli(env, "claude", "plugin", "marketplace", "update", MARKETPLACE)
-            pin = ((report.get("install_state") or {}).get("clients", {}).get("claude") or {}).get("market_conflict")
-            pinned = str(pin["ref"]) if pin and pin.get("reason") == "pinned" and pin.get("ref") else None
-            note = None
-            if pinned:
-                newest = max((entry["latest"] for entry in behind if entry["client"] == "claude" and entry.get("latest")),
-                             key=lambda text: version_key(text) or (0,), default="?")
-                note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（插件最新版本 {1}）。"
-                         "要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。"
-                         ).format(pinned, newest)
-                if release_tag(latest):
-                    note += _("目标 tag：{0}。").format(release_tag(latest))
-                else:
-                    note += _("目标版本未知：latest.json 没有 release.tag，无法判断这个 ref 是否已经是目标版本。")
-            sync = report.get("market_sync")
-            block = dict(blocked=sync["reason"], blocker="market-not-synced", next=sync["next"]) if sync else {}
-            steps.append(Step("update", "claude", _("刷新 Claude Code 的 agenthelm 市场"), command, **{"blocked": blocked, **block},
-                              note=note, pinned=pinned))
-            for item in [entry for entry in behind if entry["client"] == "claude"]:
-                extra = ["--scope", item["scope"]] if item.get("scope") and item["scope"] != "user" else []
-                command, blocked = _cli(env, "claude", "plugin", "update", f"{item['plugin']}@{MARKETPLACE}", *extra)
-                steps.append(Step("update", "claude", _("Claude Code 更新 {0} → {1}").format(item['plugin'], item['latest']),
-                                  command, verify=[item["plugin"]], **{"blocked": blocked, **block},
-                                  targets={item["plugin"]: item["latest"]}, scope=item.get("scope"), pinned=pinned))
-        codex = [item for item in behind if item["client"] == "codex"]
-        if codex:
-            command, blocked = _cli(env, "codex", "plugin", "marketplace", "upgrade", MARKETPLACE)
-            steps.append(Step("update", "codex", _("Codex 升级 agenthelm 市场与已装插件"), command, blocked=blocked,
-                              verify=sorted({item["plugin"] for item in codex}),
-                              targets={item["plugin"]: item["latest"] for item in codex}))
-        cursor = sorted({item["plugin"] for item in behind if item["client"] == "cursor"})
-        if cursor:
-            steps.append(cursor_step(latest, cursor, source, home, _("更新"), env=env))
-            steps[-1].targets = {item["plugin"]: item["latest"] for item in behind if item["client"] == "cursor"}
+        for driver in client_registry.BUILTIN:
+            mine = [item for item in behind if item["client"] == driver["id"]]
+            kind = client_registry.distribution_type(driver)
+            if not mine:
+                continue
+            if kind == "marketplace-cli" and driver["capabilities"].get("marketplace_update"):
+                steps += marketplace_update_steps(env, report, driver, mine)
+            elif kind == "directory-dropin":
+                cursor = sorted({item["plugin"] for item in mine})
+                steps.append(dropin_step(driver, latest, cursor, source, home, _("更新"), env=env))
+                steps[-1].targets = {item["plugin"]: item["latest"] for item in mine}
     if only in (None, "plugins"):
         steps += untouched_steps(env, set(latest.get("plugins", {})), list((report.get("install_state") or {}).get("clients", {})))
     if only in (None, "content") and project is not None:
@@ -2111,6 +2201,47 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
             if item.get("status") not in {"update-available", "conflict"} and not (named and item.get("status") in {"current", "unknown"}):
                 continue
             steps.append(content_step(env, item, report, project, accept, keep, recovery_dir, content_flags=content_flags))
+    return steps
+
+
+def marketplace_update_steps(env: Env, report: dict, driver: dict, behind: list[dict]) -> list[Step]:
+    """Update steps of a ``marketplace-cli`` client from its declared steps. With a per-plugin ``update`` step the market is
+    refreshed first and each plugin updated on its own (in the scope it is installed in); with only ``update_source`` that
+    one command upgrades the market and every installed plugin. A client that pins the marketplace reads the pin from
+    the install state and the market problem found before anything runs."""
+    client = driver["id"]
+    latest = report["_latest"]
+    pinning = bool(driver["capabilities"].get("market_pin"))
+    command, blocked = _step_command(env, driver, "update_source", marketplace=MARKETPLACE)
+    pin = ((report.get("install_state") or {}).get("clients", {}).get(client) or {}).get("market_conflict") if pinning else None
+    pinned = str(pin["ref"]) if pin and pin.get("reason") == "pinned" and pin.get("ref") else None
+    note = None
+    if pinned:
+        newest = max((entry["latest"] for entry in behind if entry.get("latest")),
+                     key=lambda text: version_key(text) or (0,), default="?")
+        note = _("提示：Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，版本可能不会变（插件最新版本 {1}）。"
+                 "要让它跟随新版本：把 settings.json 里 agenthelm 市场声明的 ref 改成目标 tag，或去掉 ref 跟随 main（agenthelm 不会替你改 settings.json）。"
+                 ).format(pinned, newest)
+        if release_tag(latest):
+            note += _("目标 tag：{0}。").format(release_tag(latest))
+        else:
+            note += _("目标版本未知：latest.json 没有 release.tag，无法判断这个 ref 是否已经是目标版本。")
+    sync = report.get("market_sync") if pinning else None
+    block = dict(blocked=sync["reason"], blocker="market-not-synced", next=sync["next"]) if sync else {}
+    refresh = step_description(client, "describe_update_source", N_("{0} 刷新 agenthelm 市场"))
+    if client_registry.expand_step(driver, "update") is None:  # one command updates the market and every plugin in it
+        return [Step("update", client, refresh, command, blocked=blocked,
+                     verify=sorted({item["plugin"] for item in behind}),
+                     targets={item["plugin"]: item["latest"] for item in behind})]
+    steps = [Step("update", client, refresh, command, **{"blocked": blocked, **block}, note=note, pinned=pinned)]
+    flag = client_registry.distribution(driver).get("scope_flag")
+    for item in behind:
+        extra = [flag, item["scope"]] if flag and item.get("scope") and item["scope"] != "user" else []
+        command, blocked = _step_command(env, driver, "update", plugin=item["plugin"], marketplace=MARKETPLACE)
+        steps.append(Step("update", client, step_description(client, "describe_update", N_("{0} 更新 {1} → {2}"),
+                                                             item['plugin'], item['latest']),
+                          [*command, *extra], verify=[item["plugin"]], **{"blocked": blocked, **block},
+                          targets={item["plugin"]: item["latest"]}, scope=item.get("scope"), pinned=pinned))
     return steps
 
 
@@ -2191,7 +2322,7 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
     if stale:
         owner = next((entry["client"] for entry in installed if Path(entry["path"]) == manager), None)
         client = CLIENT_NAMES.get(owner, _("随运行时提供的副本"))
-        updatable = [entry["client"] for entry in installed if entry["client"] in {"claude", "codex"}]
+        updatable = [entry["client"] for entry in installed if client_registry.supports(entry["client"], "marketplace_update")]
         update_client = owner if owner in updatable else next(iter(updatable), None)
         advice = (f"{CLI} update --only plugins --client {update_client}" if update_client
                   else f"{CLI} runtime update{_runtime_latest_option(env, required)} --apply")
@@ -2237,10 +2368,11 @@ def tail_lines(text: str, limit: int = STDERR_LINES) -> str:
 
 
 UNCHANGED_REASONS = {
-    "claude": N_("该客户端的市场条目 version 没有变（Claude Code 只看市场条目的 version 判断是否有更新），或市场没有固定到这个版本"),
-    "codex": N_("该客户端的市场没有固定到此版本（可能在跟随默认分支，升级到的是那里的版本）"),
-    "cursor": N_("发布包里的版本与已装的相同，文件已按发布包重写"),
+    "market-entry-version-same": N_("该客户端的市场条目 version 没有变（Claude Code 只看市场条目的 version 判断是否有更新），或市场没有固定到这个版本"),
+    "market-not-pinned-here": N_("该客户端的市场没有固定到此版本（可能在跟随默认分支，升级到的是那里的版本）"),
+    "release-same-version-rewrote": N_("发布包里的版本与已装的相同，文件已按发布包重写"),
 }
+UNCHANGED_ADVICE = {"pin-market-ref": pin_market_ref_advice}  # message key -> builds the next step from latest.json
 
 
 def verify_step(step: Step, record: dict, before: dict, after: dict) -> None:
@@ -2266,7 +2398,7 @@ def verify_step(step: Step, record: dict, before: dict, after: dict) -> None:
         record["reason"] = _("Claude 的 settings 把 agenthelm 市场固定在 {0}，更新只会跟随这个 ref，所以版本没变；"
                              "把声明里的 ref 改成目标 tag，或去掉 ref 跟随 main。").format(step.pinned)
     else:
-        record["reason"] = _(UNCHANGED_REASONS.get(step.client or "", N_("版本没有变化，原因未知")))
+        record["reason"] = _(driver_text(step.client, "unchanged", UNCHANGED_REASONS) or N_("版本没有变化，原因未知"))
 
 
 def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
@@ -2304,9 +2436,9 @@ def execute_steps(steps: list[Step], *, apply: bool, recovery_root: Path | None,
                             for note in item.get("note", []))
                 except Unavailable as exc:
                     record["status"], record["error"] = "unavailable", str(exc)
-                    if step.client == "cursor":
-                        record["next"] = _("用 --source <本地仓库> 指向本地检出；不使用 Cursor 时用 --client 只选其他客户端，"
-                                           "或长期忽略：{0} config ignore-client cursor --apply").format(CLI)
+                    unavailable_next = driver_text(step.client, "unavailable_next", STEP_TEXTS)
+                    if unavailable_next:
+                        record["next"] = _(unavailable_next).format(CLI)
                 except Exception as exc:  # noqa: BLE001 - report every step, stop nothing silently
                     record["status"], record["error"] = "failed", str(exc)
             elif apply:
@@ -2376,7 +2508,7 @@ def outcome_summary(results: list[dict]) -> dict:
 def render_outcome(results: list[dict]) -> list[str]:
     """The closing lines of an applied run: what took effect, what did not, and which clients are unaffected."""
     summary = outcome_summary(results)
-    names = {**CLIENT_NAMES, "content": _("项目内容")}
+    names = {**{item["id"]: item["display"] for item in client_registry.BUILTIN}, "content": _("项目内容")}
     lines = [_("汇总：")]
     labels = {"ok": _("已完成"), "failed": _("失败"), "unchanged": _("命令成功但版本没有变化"),
               "unavailable": _("不可用"), "blocked": _("未执行（阻塞）"), "skipped": _("无需操作")}
@@ -2388,8 +2520,9 @@ def render_outcome(results: list[dict]) -> list[str]:
         if entry["not_run"]:
             text += _("；其后 {0} 步没有执行").format(entry["not_run"])
         lines.append(text)
-        if name == "claude" and entry["applied"]:
-            lines.append(_(RECOVERY_HINTS["claude"]))
+        applied_recovery = driver_text(name, "applied_recovery", RECOVERY_HINTS)
+        if applied_recovery and entry["applied"]:
+            lines.append(_(applied_recovery))
     bad = [names.get(n, n) for n, e in ordered if e["status"] in {"failed", "unchanged"} or e.get("blocker")]
     good = [names.get(n, n) for n, e in ordered if e["status"] == "ok"]
     if bad:
@@ -2578,7 +2711,7 @@ def doctor(env: Env, report: dict) -> dict:
         by_plugin.setdefault(item["plugin"], []).append(item)
     for plugin, items in sorted(by_plugin.items()):
         clients = [item["client"] for item in items]
-        if "legacy" in clients and any(client in {"claude", "codex"} for client in clients):
+        if "legacy" in clients and any(client_registry.supports(client, "legacy_cleanup") for client in clients):
             issues.append({"plugin": plugin, "issue": "duplicate",
                            "detail": _("同时存在市场安装与旧方式安装，运行 {0} migrate").format(CLI)})
         versions = {item.get("version") for item in items if item["client"] != "legacy"}
@@ -3040,7 +3173,7 @@ def client_hint_text(env: Env, report: dict) -> str:
         pass
     return "".join(_("提示：检测到 {0}，但没有看到你在用它（没有装 agenthelm 插件，或插件都落后）。不使用的话可以忽略它，之后 check / update / "
                      "会话开始提示都不再统计：{1} config ignore-client {2}（预览；加 --apply 写入）。这条提示只显示一次。\n").format(
-        CLIENT_NAMES[name], CLI, name) for name in fresh)
+        display_name(name), CLI, name) for name in fresh)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -3133,14 +3266,15 @@ def main(argv: list[str] | None = None) -> int:
             flags = [value for flag, paths in (("--append", args.append), ("--confirm-discard", args.confirm_discard),
                                                ("--diff", args.diff), ("--merge", args.merge), ("--pick", args.pick))
                      for path in paths for value in (flag, path)]
-            report["market_sync"] = claude_market_sync(env, report, project, args.only)
+            report["market_sync"] = market_pin_sync(env, report, project, args.only)
             steps = update_steps(env, report, project, args.source, home, args.accept, args.keep,
                                  recovery, args.only, content_flags=flags)
             results = execute_steps(steps, apply=args.apply, recovery_root=args.recovery_dir,
                                     child_env=env.child_environment(), env=env)
-            for record in results:  # Codex "no change": say how to pin its marketplace
-                if record["status"] == "unchanged" and record.get("client") == "codex":
-                    record["next"] = codex_pin_advice(latest)
+            for record in results:  # a client whose marketplace can follow the default branch: say how to pin it
+                advice = driver_text(record.get("client"), "unchanged_next", UNCHANGED_ADVICE)
+                if record["status"] == "unchanged" and advice:
+                    record["next"] = advice(latest)
             payload = {"ok": step_outcome_ok(results, blockers=args.apply), "applied": args.apply, "latest": origin,
                        "steps": results, "summary": report["summary"], "market_sync": report["market_sync"]}
             backups = [record["result"] for record in results

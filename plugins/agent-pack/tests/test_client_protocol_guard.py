@@ -26,14 +26,14 @@ EXCLUDED = {"agent_pack_clients.py", "i18n_agent_pack.py"}
 
 # file -> number of client-id string constants it still holds. Each is cleared by the batch named next to it.
 CAPS = {
-    "agenthelm.py": 55,             # install / update / legacy, hooks wiring (batch C)
-    "agent_pack_config.py": 31,     # sync write side, Codex TOML writing, residual cleanup (batches C and D)
-    "agent_pack_claude.py": 12,     # native package construction (batch C)
+    "agent_pack_config.py": 31,     # sync write side, package destinations, Codex TOML writing, residual cleanup (batch D)
+    "agent_pack_claude.py": 12,     # native package construction: the sync write path, not install / update (batch D)
     "agent_pack_nudge.py": 14,      # hook protocol: events and output formats (batch D)
-    "agent_pack_scope.py": 4,       # scope declaration and shadow findings (batch C)
-    "agent_pack_mcp_write.py": 3,   # MCP write side (batch C)
-    "agent_pack_codex_mcp.py": 1,   # Codex native MCP entry (batch C)
+    "agent_pack_scope.py": 4,       # scope declaration and shadow findings: the sync path (batch D)
+    "agent_pack_mcp_write.py": 3,   # MCP write side: the sync path (batch D)
+    "agent_pack_codex_mcp.py": 1,   # Codex native MCP entry: the sync path (batch D)
 }
+DISTRIBUTION_CLEARED = ("agenthelm.py",)  # batch C: install, update, legacy and the install-state readers read the declarations
 READ_SIDE_CLEARED = ("agent_pack_inventory.py", "agent_pack_relocate.py", "agent_pack_dedupe.py", "agent_pack_desktop.py",
                      "agent_pack_ext_common.py")
 
@@ -69,6 +69,13 @@ class ClientNameGuard(unittest.TestCase):
     def test_the_read_side_is_clear(self) -> None:
         found = self.counts()
         for name in READ_SIDE_CLEARED:
+            self.assertIn(name, found)
+            self.assertEqual(found[name], [], name)
+            self.assertNotIn(name, CAPS)
+
+    def test_install_update_and_legacy_are_clear(self) -> None:
+        found = self.counts()
+        for name in DISTRIBUTION_CLEARED:
             self.assertIn(name, found)
             self.assertEqual(found[name], [], name)
             self.assertNotIn(name, CAPS)
