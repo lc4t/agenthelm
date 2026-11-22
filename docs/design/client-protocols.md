@@ -149,6 +149,7 @@
 - `format`：`dir`、`json`、`toml`，另加 `json-hooks`（hook 配置）。
 - `precedence[]`：`{kind, rule, evidence, source_url}`，把 `agent_pack_inventory.py:758-801` 的规则搬进声明；`rule` 取 `local-over-project-over-user`、`personal-over-project`、`both-load`、`precedence-undocumented`、`unknown`。
 - 存储表的**唯一来源**是声明；inventory、relocate、config 读同一份，测试不再对账三份表。
+- **写入目标标记（批 A 已实现）**：`stores.skills[]` 的条目可带 `write_target: true`，表示 `relocate` 把技能写到这个存储；同一客户端同一作用域至多一项，其余条目只供读取。取这个形状的证据：现有 `relocate` 的目标表与 inventory 的读取集合确实不同（Codex 用户级 `relocate` 写 `~/.agents/skills`，inventory 读 `~/.codex/skills` 与 `~/.agents/skills`；Cursor 项目级写 `.agents/skills`），写入目标总是读取集合里的一项，所以用条目上的布尔标记，不另建一张表。按声明顺序的第一项仍是该作用域的「主存储」（inventory 的引用里，其余存储带 `#agents` 后缀；config 的用户级技能根目录也取它），不需要另加标记。`stores[].status` 缺省表示尚未归类（v1 的既有条目），不等同于 `observed`；批 A 的内置条目不写 `status`。`lifecycle` 缺省为 `active`。
 - 共享存储：同一路径可出现在多个驱动里（`~/.agents/skills` 同时是 Codex、Cursor、Gemini 的存储），inventory 去重时按真实路径合并。
 
 ### 4.6 MCP 格式适配

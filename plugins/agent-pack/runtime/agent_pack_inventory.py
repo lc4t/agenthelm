@@ -44,11 +44,8 @@ MAX_CONFIG = 32 * 1024 * 1024
 PROJECT = "<project>"
 DESCRIPTION_LIMIT = 1536  # characters of description text shown with --include-description
 MAX_DIR_FILES = 20000
-PRIMARY_SKILL_STORE = {  # refs of entries in any other store carry a ``#agents`` suffix so a ref stays unique
-    ("claude", "user"): "~/.claude/skills", ("claude", "project"): f"{PROJECT}/.claude/skills",
-    ("codex", "user"): "~/.codex/skills", ("codex", "project"): f"{PROJECT}/.agents/skills",
-    ("cursor", "user"): "~/.cursor/skills", ("cursor", "project"): f"{PROJECT}/.cursor/skills",
-}
+# refs of entries in any store but the first one a client declares per scope carry a ``#agents`` suffix, so a ref stays unique
+PRIMARY_SKILL_STORE = client_registry.primary_skill_stores()
 
 # Official documentation the precedence conclusions rest on (read 2026-11-11, see references/inventory-contract.md).
 DOC_CLAUDE_MCP = "https://code.claude.com/docs/en/mcp"
@@ -64,18 +61,10 @@ DESKTOP_STORES = {  # official documentation (MCP site, read 2026-11-18); Window
     "linux": f"~/.config/Claude/{DESKTOP_FILE}",
 }
 
-# (scope, store) per client, in listing order. ``~`` is the home directory, ``<project>`` the project root.
-SKILL_STORES = {
-    "claude": (("user", "~/.claude/skills"), ("project", f"{PROJECT}/.claude/skills")),
-    "codex": (("user", "~/.codex/skills"), ("user", "~/.agents/skills"), ("project", f"{PROJECT}/.agents/skills")),
-    "cursor": (("user", "~/.cursor/skills"), ("user", "~/.agents/skills"),
-               ("project", f"{PROJECT}/.cursor/skills"), ("project", f"{PROJECT}/.agents/skills")),
-}
-MCP_STORES = {
-    "claude": (("user", "~/.claude.json"), ("local", "~/.claude.json#projects"), ("project", f"{PROJECT}/.mcp.json")),
-    "codex": (("user", "~/.codex/config.toml"), ("project", f"{PROJECT}/.codex/config.toml")),
-    "cursor": (("user", "~/.cursor/mcp.json"), ("project", f"{PROJECT}/.cursor/mcp.json")),
-}
+# (scope, store) per client, in listing order, read from the driver registry. ``~`` is the home directory,
+# ``<project>`` the project root (``PROJECT``).
+SKILL_STORES = client_registry.store_table("skills")
+MCP_STORES = {client: stores for client, stores in client_registry.store_table("mcp").items() if client != DESKTOP}
 SCOPE_ORDER = {"user": 0, "local": 1, "project": 2}
 
 # Reason codes in ``unknown[]`` and per-entry ``issues[]`` / ``notes[]`` stay English identifiers (data); the text

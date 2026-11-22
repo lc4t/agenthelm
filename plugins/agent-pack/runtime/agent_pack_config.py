@@ -607,15 +607,14 @@ def inventory_project(project: Path) -> Inventory:
 
 
 def _client_skill_roots(client: str, home: Path) -> list[Path]:
-    mapping = {
-        "codex": [home / ".codex" / "skills"],
-        "cursor": [home / ".cursor" / "skills"],
-        "claude": [home / ".claude" / "skills"],
-        "codebuddy": [home / ".codebuddy" / "skills"],
-    }
-    if client not in mapping:
-        raise AgentPackError(f"unsupported client: {client}")
-    return mapping[client]
+    """The client's primary user-level Skills directory, from the driver registry (the first user store it declares)."""
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file; imported late (python3 -I path set in main)
+    template = agent_pack_clients.primary_skill_stores().get((client, "user"))
+    if template is not None:
+        return [home / template[2:]]
+    if client == "codebuddy":  # not a registered client: read-only inventory support kept as it was
+        return [home / ".codebuddy" / "skills"]
+    raise AgentPackError(f"unsupported client: {client}")
 
 
 def _client_plugin_roots(client: str, home: Path) -> list[Path]:
@@ -2154,6 +2153,7 @@ def _add_scope_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file; the ``--client`` choices come from its drivers
     parser = argparse.ArgumentParser(prog="agent-pack")
     parser.add_argument("--output", choices=("text", "json"), default="text")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -2164,7 +2164,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = sub.add_parser("doctor")
     doctor_parser.add_argument("--project", type=Path, default=Path.cwd())
-    doctor_parser.add_argument("--client", action="append", default=[], choices=("codex", "cursor", "claude", "claude-desktop"),
+    doctor_parser.add_argument("--client", action="append", default=[], choices=agent_pack_clients.all_ids(),
                                help="also compare this client's installed capabilities with the project (repeatable); "
                                     "claude-desktop only reads claude_desktop_config.json and must be named")
     doctor_parser.add_argument("--home", type=Path)
@@ -2181,7 +2181,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync_parser = sub.add_parser("sync")
     sync_parser.add_argument("--project", type=Path, default=Path.cwd())
-    sync_parser.add_argument("--client", choices=("codex", "cursor", "claude"), required=True)
+    sync_parser.add_argument("--client", choices=agent_pack_clients.default_ids(), required=True)
     sync_parser.add_argument("--home", type=Path)
     sync_parser.add_argument("--apply", action="store_true")
     sync_parser.add_argument("--replace", action="store_true",
@@ -2193,7 +2193,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     bootstrap_parser = sub.add_parser("bootstrap")
     bootstrap_parser.add_argument("--plugin", type=Path, required=True)
-    bootstrap_parser.add_argument("--client", choices=("codex", "cursor", "claude"), required=True)
+    bootstrap_parser.add_argument("--client", choices=agent_pack_clients.default_ids(), required=True)
     bootstrap_parser.add_argument("--home", type=Path)
     bootstrap_parser.add_argument("--apply", action="store_true")
     bootstrap_parser.add_argument("--replace", action="store_true")
@@ -2205,7 +2205,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reconcile_parser = sub.add_parser("reconcile")
     reconcile_parser.add_argument("--project", type=Path, default=Path.cwd())
-    reconcile_parser.add_argument("--client", choices=("codex", "cursor", "claude"), required=True)
+    reconcile_parser.add_argument("--client", choices=agent_pack_clients.default_ids(), required=True)
     reconcile_parser.add_argument("--replace", action="store_true",
                                   help="claude: also replace Skills / MCP entries this package did not install")
     reconcile_parser.add_argument("--reset-overrides", action="store_true",

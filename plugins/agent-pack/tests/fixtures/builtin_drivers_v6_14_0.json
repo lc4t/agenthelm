@@ -1,0 +1,195 @@
+[
+  {
+    "schema_version": 1,
+    "id": "claude",
+    "display": "Claude Code",
+    "detect": {
+      "executables": [
+        "claude"
+      ],
+      "dirs": [
+        {
+          "path": "~/.claude",
+          "env": "CLAUDE_CONFIG_DIR"
+        }
+      ]
+    },
+    "distribution": "marketplace-cli",
+    "stores": {
+      "skills": [
+        {
+          "scope": "user",
+          "path": "~/.claude/skills",
+          "format": "dir"
+        },
+        {
+          "scope": "project",
+          "path": "<project>/.claude/skills",
+          "format": "dir"
+        }
+      ],
+      "mcp": [
+        {
+          "scope": "user",
+          "path": "~/.claude.json",
+          "format": "json"
+        },
+        {
+          "scope": "local",
+          "path": "~/.claude.json#projects",
+          "format": "json"
+        },
+        {
+          "scope": "project",
+          "path": "<project>/.mcp.json",
+          "format": "json"
+        }
+      ]
+    },
+    "capabilities": {
+      "default_set": true,
+      "read_only": false,
+      "project_mcp_write": true
+    }
+  },
+  {
+    "schema_version": 1,
+    "id": "codex",
+    "display": "Codex",
+    "detect": {
+      "executables": [
+        "codex"
+      ],
+      "dirs": [
+        {
+          "path": "~/.codex",
+          "env": "CODEX_HOME"
+        }
+      ]
+    },
+    "distribution": "marketplace-cli",
+    "stores": {
+      "skills": [
+        {
+          "scope": "user",
+          "path": "~/.codex/skills",
+          "format": "dir"
+        },
+        {
+          "scope": "user",
+          "path": "~/.agents/skills",
+          "format": "dir"
+        },
+        {
+          "scope": "project",
+          "path": "<project>/.agents/skills",
+          "format": "dir"
+        }
+      ],
+      "mcp": [
+        {
+          "scope": "user",
+          "path": "~/.codex/config.toml",
+          "format": "toml"
+        },
+        {
+          "scope": "project",
+          "path": "<project>/.codex/config.toml",
+          "format": "toml"
+        }
+      ]
+    },
+    "capabilities": {
+      "default_set": true,
+      "read_only": false,
+      "project_mcp_write": false
+    }
+  },
+  {
+    "schema_version": 1,
+    "id": "cursor",
+    "display": "Cursor",
+    "detect": {
+      "executables": [],
+      "dirs": [
+        {
+          "path": "~/.cursor"
+        }
+      ]
+    },
+    "distribution": "directory-dropin",
+    "stores": {
+      "skills": [
+        {
+          "scope": "user",
+          "path": "~/.cursor/skills",
+          "format": "dir"
+        },
+        {
+          "scope": "user",
+          "path": "~/.agents/skills",
+          "format": "dir"
+        },
+        {
+          "scope": "project",
+          "path": "<project>/.cursor/skills",
+          "format": "dir"
+        },
+        {
+          "scope": "project",
+          "path": "<project>/.agents/skills",
+          "format": "dir"
+        }
+      ],
+      "mcp": [
+        {
+          "scope": "user",
+          "path": "~/.cursor/mcp.json",
+          "format": "json"
+        },
+        {
+          "scope": "project",
+          "path": "<project>/.cursor/mcp.json",
+          "format": "json"
+        }
+      ]
+    },
+    "capabilities": {
+      "default_set": true,
+      "read_only": false,
+      "project_mcp_write": false
+    }
+  },
+  {
+    "schema_version": 1,
+    "id": "claude-desktop",
+    "display": "Claude Desktop",
+    "detect": {
+      "executables": [],
+      "dirs": [
+        {
+          "path": "~/Library/Application Support/Claude"
+        },
+        {
+          "path": "~/.config/Claude"
+        }
+      ]
+    },
+    "distribution": "none",
+    "stores": {
+      "skills": [],
+      "mcp": [
+        {
+          "scope": "user",
+          "path": "<per-platform>/claude_desktop_config.json",
+          "format": "json"
+        }
+      ]
+    },
+    "capabilities": {
+      "default_set": false,
+      "read_only": true,
+      "project_mcp_write": false
+    }
+  }
+]

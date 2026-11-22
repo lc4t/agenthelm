@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import agent_pack_clients
 from agent_pack_config import (
     AgentPackError,
     doctor,
@@ -23,6 +24,7 @@ from agent_pack_config import (
 )
 
 
+DEFAULT_CLIENTS = agent_pack_clients.default_ids()  # the ``client`` choices of the tools below, read from the drivers
 PROTOCOL_VERSION = "2026-07-28"
 LEGACY_VERSION = "2025-06-18"
 def _plugin_version() -> str:
@@ -48,7 +50,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "plugin": {"type": "string"},
-                "client": {"type": "string", "enum": ["codex", "cursor", "claude"]},
+                "client": {"type": "string", "enum": list(DEFAULT_CLIENTS)},
                 "home": {"type": "string"},
                 "apply": {"type": "boolean", "default": False},
                 "replace": {"type": "boolean", "default": False},
@@ -70,7 +72,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
-                "client": {"type": "string", "enum": ["codex", "cursor", "claude"]},
+                "client": {"type": "string", "enum": list(DEFAULT_CLIENTS)},
                 "replace": {"type": "boolean", "default": False},
                 "replaceMcp": {"type": "boolean", "default": False},
                 "replaceSkills": {"type": "boolean", "default": False},
@@ -115,7 +117,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
-                "clients": {"type": "array", "items": {"type": "string", "enum": ["codex", "cursor", "claude"]},
+                "clients": {"type": "array", "items": {"type": "string", "enum": list(DEFAULT_CLIENTS)},
                             "default": []},
                 "home": {"type": "string"},
             },
@@ -168,7 +170,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
-                "client": {"type": "string", "enum": ["codex", "cursor", "claude"]},
+                "client": {"type": "string", "enum": list(DEFAULT_CLIENTS)},
                 "home": {"type": "string"},
                 "apply": {"type": "boolean", "default": False},
                 "replace": {"type": "boolean", "default": False},
