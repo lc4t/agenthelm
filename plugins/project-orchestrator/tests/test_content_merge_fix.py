@@ -50,6 +50,16 @@ class FixUpdateContentTests(unittest.TestCase):
     def tree(self) -> dict[Path, bytes]:
         return {path: path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
 
+    def test_preview_separates_the_default_marker_from_the_action(self) -> None:
+        for lang, expected in (("zh", "→ 默认保留你的版本"), ("en", "→ default: keep your version")):
+            done = self.fix(lang=lang)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertIn(expected, done.stdout)
+            self.assertNotIn("defaultkeep", done.stdout)
+        kept = self.fix("--keep", "AGENTS.md", lang="en")
+        self.assertIn("→ keep your version", kept.stdout)
+        self.assertNotIn("default", kept.stdout.split("Customized file:", 1)[1].splitlines()[0])
+
     def test_diff_prints_only_the_difference(self) -> None:
         before = self.tree()
         for lang in ("zh", "en"):

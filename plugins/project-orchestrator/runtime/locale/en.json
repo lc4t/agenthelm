@@ -364,7 +364,7 @@
  "  含不兼容变更": "  includes breaking changes",
  "     变化：{0}": "     Change: {0}",
  "     将写入：{0}（{1}）": "     Will write: {0} ({1})",
- "默认": "default",
+ "默认{0}": "default: {0}",
  "采用（按模板处理）": "adopt (follow the template)",
  "永久跳过（记入决定文件）": "skip permanently (recorded in the decisions file)",
  "稍后（本次不处理）": "later (not now)",
