@@ -28,7 +28,6 @@ EXCLUDED = {"agent_pack_clients.py", "i18n_agent_pack.py"}
 CAPS = {
     "agent_pack_config.py": 31,     # sync write side, package destinations, Codex TOML writing, residual cleanup (batch D)
     "agent_pack_claude.py": 12,     # native package construction: the sync write path, not install / update (batch D)
-    "agent_pack_nudge.py": 14,      # hook protocol: events and output formats (batch D)
     "agent_pack_scope.py": 4,       # scope declaration and shadow findings: the sync path (batch D)
     "agent_pack_mcp_write.py": 3,   # MCP write side: the sync path (batch D)
     "agent_pack_codex_mcp.py": 1,   # Codex native MCP entry: the sync path (batch D)

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "nudge 与 hook 输出改读客户端声明：事件名映射、输出格式、停止提示默认值与旧安装的载荷嗅探都来自 drivers/*.json，既有三个客户端的输出不变。",
+    "en": "The nudge and hook output now follow the client declarations: event names, output formats, stop-prompt defaults and the legacy payload sniffing come from drivers/*.json; output for the three existing clients is unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

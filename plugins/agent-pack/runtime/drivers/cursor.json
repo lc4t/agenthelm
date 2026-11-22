@@ -93,5 +93,35 @@
       "evidence": "unknown",
       "source_url": null
     }
+  ],
+  "hooks": {
+    "events": {
+      "session-start": "sessionStart",
+      "stop": "stop"
+    },
+    "output": {
+      "session-start": "additional_context",
+      "stop": "followup_message"
+    },
+    "stop_prompt": "off",
+    "stop_status_gated": true,
+    "config": {
+      "format": "flat-event-commands",
+      "user": "~/.cursor/hooks.json",
+      "project": "<project>/.cursor/hooks.json"
+    },
+    "legacy_sniff": {
+      "priority": 1,
+      "payload_keys": [
+        "workspace_roots",
+        "conversation_id"
+      ]
+    }
+  },
+  "unsupported": [
+    {
+      "feature": "hook-event:prompt-submit",
+      "reason": "agenthelm wires no prompt-submit hook for Cursor (unchanged since the first nudge release)"
+    }
   ]
 }

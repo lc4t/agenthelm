@@ -192,6 +192,12 @@
 - `hooks.config`：`{location, format, root_file}`。agy：插件根目录的 `hooks.json`，格式 `group-event-handlers`；Gemini：扩展内 `hooks/hooks.json`；Claude：`hooks/hooks.json`。
 - `hooks.output`：输出格式适配器名。现有三种保持不变（`hookSpecificOutput` 系、Cursor 的 `additional_context` 系、Codex 的 `decision: block`），**新增 `injectSteps`**（agy：`{"injectSteps":[{"systemMessage":{"systemMessage":"…"}}]}`，来自官方文档，**输出是否被接受未验证**）。Gemini 的 `SessionStart` 与 Claude 同为 `hookSpecificOutput.additionalContext`，复用现有适配器。
 - 载荷：hook 命令一律带 `--client <id>`；`detect_client` 的嗅探只保留给已有安装（§2.4）。
+- **批 D1 的落地写法**（以代码为准）：
+  - `hooks.events`：规范事件到原生事件名；某个规范事件要么在 `events` 里，要么在顶层 `unsupported` 里（`feature` 写 `hook-event:<规范事件>`，`reason` 写原因），二者恰有其一，校验强制。Cursor 的 `prompt-submit` 因此写在 `unsupported`。
+  - `hooks.output`：按**规范事件**选适配器（Codex 的 `stop` 用 `decision_block`，其余用 `hookSpecificOutput`），键集必须恰为 `events` 的键。适配器按输出格式命名：`hookSpecificOutput`、`additional_context`、`followup_message`、`decision_block`、`injectSteps`；`injectSteps` 只发给模型的文字（该格式没有用户可见的一行），目前没有内置驱动使用，输出是否被 agy 接受未验证。
+  - 其余声明：`hooks.stop_prompt`（停止提示默认值）、`hooks.shows_system_message`（客户端自己显示 `systemMessage`；不显示的客户端，用户提示改经模型转述）、`hooks.stop_status_gated`（停止事件的载荷带 `status`，且不做完成关键词判断）、`hooks.config`（`group-event-handlers` 随插件、`flat-event-commands` 由 `nudge install-hooks` 写入，后者带 `user` 与 `project` 位置）、`hooks.legacy_sniff`（旧安装的载荷嗅探依据，只给没有 `--client` 的旧命令用）。
+  - **共用的 `hooks/hooks.json` 无法带 `--client`**：Claude 与 Codex 读同一个文件，文件里只有 `${CLAUDE_PLUGIN_ROOT}` 一个路径变量，没有可以表达客户端 id 的变量，不为此拆分文件，所以这两个客户端的随包命令仍靠嗅探（`legacy_sniff`）。`nudge install-hooks` 新写出的命令一律带 `--client`。
+  - 用户级声明含 `hooks`（任意层级）整份拒绝，与 `steps` 同理：用户文件不得决定 hook 运行什么、输出什么。
 
 ### 4.8 能力标志
 
@@ -271,7 +277,7 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 - **批 A（注册表 v2 与单一存储来源）**：`drivers/*.json`、加载与校验、`agent_pack_inventory.py`、`agent_pack_relocate.py`、`agent_pack_config.py` 的存储表改读注册表，`--client` 选项与 `mcp_server.py` 的 `enum` 改读注册表。风险低，其余批的前置。
 - **批 B（检测、inventory、relocate、dedupe、doctor）**（读取侧已完成，见 §4.2、§4.5、§4.6；过渡版守卫 `tests/test_client_protocol_guard.py` 带一张逐文件上限表，上限必须恰好等于当前计数，后续批次减少字面量时同步下调）：`precedence` 与存储进声明，`cli` 探针适配，空文件容忍，共享存储去重。
 - **批 C（install、update、legacy）**：`distribution.steps` 与 `installed_state` 读取器取代 `agenthelm.py:312-380`、`1230-1232`、`1888-2003` 的按名字分支，文案走文案键。风险最高，要求既有三家输出逐字节不变，Cursor 的目录解包与 Codex 的残留清理各有回归用例。**已完成**：`agenthelm.py` 的客户端 id 字面量清零（守卫上限表移除该文件）；`agent_pack_claude.py`、`agent_pack_scope.py`、`agent_pack_mcp_write.py`、`agent_pack_codex_mcp.py` 不在 install、update、legacy 的调用路径上（只被 `sync` 与 `agent_pack_config` 的写入侧使用），改名与字面量清零留给批 D；旧安装清理里 `legacy_artifacts` 与 `retire_legacy` 描述的是预发布时代引导脚本留下的一组固定文件，不按客户端 id 分支，未改。
-- **批 D（nudge 与 hooks）**：事件映射与输出适配器取代 `agent_pack_nudge.py` 的名字分支，hook 命令带 `--client`，保留嗅探给已有安装，新增 `injectSteps` 适配器与 agent-pack 根目录的 `hooks.json`、`mcp_config.json`。
+- **批 D（nudge 与 hooks）**（D1 已完成第一阶段：事件映射、输出适配器、停止提示默认值与嗅探改读声明，`agent_pack_nudge.py` 的客户端 id 字面量清零；根目录 `hooks.json` 与 `mcp_config.json` 属第二阶段，待 agy 实机探测）：事件映射与输出适配器取代 `agent_pack_nudge.py` 的名字分支，hook 命令带 `--client`，保留嗅探给已有安装，新增 `injectSteps` 适配器与 agent-pack 根目录的 `hooks.json`、`mcp_config.json`。
 - **批 E（agy 与 gemini 声明、夹具、守卫收尾）**：两份声明加夹具，守卫一的豁免表只剩 `launcher.sh`，支持矩阵的 `unsupported` 条目与命令输出落地。
 - **并行轨 F（Phase 3，§9）**：运行时解析函数与同级插件查找；与批 A、B 文件不交叠时可并行，与批 C 交叠（`agenthelm.py`）时串行。
 

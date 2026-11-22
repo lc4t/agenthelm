@@ -397,6 +397,7 @@
  "同步目录里用 {0}（{1}）": "The sync folder uses {0} ({1})",
  "同步范围太大会拖慢同步，也容易产生冲突副本": "A sync scope that is too large slows syncing down and makes conflict copies more likely",
  "同级": "same level",
+ "含 hooks（hook 事件与输出格式）：用户声明不能决定 hook 运行什么，只有随包的内置声明可以": "contains hooks (hook events and output formats): a user declaration cannot decide what a hook runs or prints; only the built-in declarations shipped with the plugin can",
  "含 steps（命令步骤）：用户声明不能决定运行什么命令，只有随包的内置声明可以": "contains steps (command steps): a user declaration cannot decide which command runs; only the built-in declarations shipped with the plugin can",
  "含不支持的字段：{0}": "Unsupported fields: {0}",
  "命令成功但版本没有变化": "command succeeded but the version did not change",
