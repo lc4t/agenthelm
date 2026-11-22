@@ -12,11 +12,9 @@ Reuses ``agent_pack_config`` for JSON/TOML readers, the MCP normaliser's secret 
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
@@ -27,11 +25,14 @@ if str(RUNTIME_DIR) not in sys.path:
 import agent_pack_config as core  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 import agent_pack_clients as client_registry  # noqa: E402
+import agent_pack_store_read as store_read  # noqa: E402
 
 SCHEMA_VERSION = 1
 CLIENTS = client_registry.default_ids()
-DESKTOP = "claude-desktop"  # a separate target: the standalone CLI does not read claude_desktop_config.json
-ALL_CLIENTS = client_registry.all_ids()  # the default set is CLIENTS; claude-desktop must be named (or ``all``)
+# A separate, read-only target whose MCP file location depends on the platform (declared as ``<per-platform>/<file>``):
+# the standalone CLI does not read ``claude_desktop_config.json``. Exactly one built-in driver declares such a store.
+DESKTOP = client_registry.per_platform_ids()[0]
+ALL_CLIENTS = client_registry.all_ids()  # the default set is CLIENTS; the read-only DESKTOP target must be named (or ``all``)
 TYPES = ("skills", "mcp", "all")
 SCOPES = ("project", "user", "all")
 EVIDENCE = ("file", "setting", "cli", "unknown")  # setting / cli are reserved: this version never reads them
@@ -40,18 +41,15 @@ AGENTHELM_REPOSITORY = "lc4t/agenthelm"
 OVERLAP_THRESHOLD = 0.8  # token Jaccard similarity; a hint only, never a semantic judgement
 OVERLAP_MIN_TOKENS = 5
 MAX_SKILL_MD = 4 * 1024 * 1024
-MAX_CONFIG = 32 * 1024 * 1024
+MAX_CONFIG = store_read.MAX_CONFIG
 PROJECT = "<project>"
 DESCRIPTION_LIMIT = 1536  # characters of description text shown with --include-description
 MAX_DIR_FILES = 20000
 # refs of entries in any store but the first one a client declares per scope carry a ``#agents`` suffix, so a ref stays unique
 PRIMARY_SKILL_STORE = client_registry.primary_skill_stores()
 
-# Official documentation the precedence conclusions rest on (read 2026-11-11, see references/inventory-contract.md).
-DOC_CLAUDE_MCP = "https://code.claude.com/docs/en/mcp"
-DOC_CLAUDE_SKILLS = "https://code.claude.com/docs/en/skills"
-DOC_CODEX_SKILLS = "https://learn.chatgpt.com/docs/build-skills"
-DOC_CODEX_MCP = "https://learn.chatgpt.com/docs/extend/mcp?surface=cli"
+# The official documentation the precedence conclusions rest on (read 2026-11-11, see references/inventory-contract.md)
+# is the ``source_url`` of the ``precedence`` entries in the driver declarations.
 DOC_DESKTOP_PATHS = "https://modelcontextprotocol.io/docs/develop/connect-local-servers"
 DOC_DESKTOP_MCP = "https://code.claude.com/docs/en/desktop#mcp-servers-from-the-claude-desktop-chat-app"
 DESKTOP_FILE = "claude_desktop_config.json"
@@ -62,9 +60,12 @@ DESKTOP_STORES = {  # official documentation (MCP site, read 2026-11-18); Window
 }
 
 # (scope, store) per client, in listing order, read from the driver registry. ``~`` is the home directory,
-# ``<project>`` the project root (``PROJECT``).
+# ``<project>`` the project root (``PROJECT``). ``*_DECLS`` hold the same stores with all declared attributes
+# (``format``, ``root_key``, ``managed_by``, ``trust_required``): what the readers below act on.
 SKILL_STORES = client_registry.store_table("skills")
 MCP_STORES = {client: stores for client, stores in client_registry.store_table("mcp").items() if client != DESKTOP}
+SKILL_DECLS = {client: client_registry.stores(client, "skills") for client in SKILL_STORES}
+MCP_DECLS = {client: client_registry.stores(client, "mcp") for client in MCP_STORES}
 SCOPE_ORDER = {"user": 0, "local": 1, "project": 2}
 
 # Reason codes in ``unknown[]`` and per-entry ``issues[]`` / ``notes[]`` stay English identifiers (data); the text
@@ -196,43 +197,10 @@ def _digest(*parts: str) -> str:
 
 # ------------------------------------------------------------------ file reading (never raises)
 
-def _read_bytes(path: Path, limit: int) -> tuple[bytes | None, str | None]:
-    try:
-        if path.stat().st_size > limit:
-            return None, "too-large"
-        return path.read_bytes(), None
-    except OSError:
-        return None, "unreadable"
-
-
-def read_json_object(path: Path) -> tuple[dict | None, str | None]:
-    """(object, None) | (None, None) when absent | (None, reason) when present but unusable."""
-    if not path.exists():
-        return None, None
-    if not path.is_file():
-        return None, "unreadable"
-    raw, reason = _read_bytes(path, MAX_CONFIG)
-    if raw is None:
-        return None, reason
-    try:
-        data = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
-        return None, "invalid-json"
-    return (data, None) if isinstance(data, dict) else (None, "unexpected-structure")
-
-
-def read_toml_object(path: Path) -> tuple[dict | None, str | None]:
-    if not path.exists():
-        return None, None
-    if not path.is_file():
-        return None, "unreadable"
-    raw, reason = _read_bytes(path, MAX_CONFIG)
-    if raw is None:
-        return None, reason
-    try:
-        return tomllib.loads(raw.decode("utf-8")), None
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
-        return None, "invalid-toml"
+# Adapters named by format live in ``agent_pack_store_read``; a 0-byte file reads as an empty object.
+_read_bytes = store_read.read_bytes
+read_json_object = store_read.read_json_object
+read_toml_object = store_read.read_toml_object
 
 
 # ------------------------------------------------------------------ skills
@@ -346,7 +314,7 @@ def _git_root(real: Path, home: Path) -> Path | None:
     return None
 
 
-def _skill_origin(entry: Path, client: str, scope: str, name: str, versions: dict[str, tuple[str, ...]],
+def _skill_origin(entry: Path, name: str, versions: dict[str, tuple[str, ...]],
                   state: dict[str, str], home: Path) -> tuple[dict, str | None, Any]:
     """(origin, version, stale): only an entry whose source and version can be read gets a stale verdict."""
     unknown = _origin("unknown", None, "unknown", None, None, "unknown", "unknown")
@@ -361,7 +329,7 @@ def _skill_origin(entry: Path, client: str, scope: str, name: str, versions: dic
         newest = max([*versions.get(plugin, ()), version], key=core._version_tuple)
         stale: Any = core._version_tuple(version) < core._version_tuple(newest)
         return _origin("agenthelm-plugin", f"{plugin}@{version}", "plugin", plugin, version, newest), version, stale
-    if client == "claude" and scope == "user" and name in state and entry.is_symlink():
+    if name in state and entry.is_symlink():  # ``state`` is only handed to a store declared ``managed_by``
         return _origin("state-record", state[name], "unknown", state[name], None, "unknown"), None, "unknown"
     if manifest and isinstance(manifest.get("name"), str) and any(part in real.parts for part in ("cache", "marketplaces")) \
             and "plugins" in real.parts:
@@ -441,7 +409,7 @@ def observe_skill(entry: Path, client: str, scope: str, store: str, home: Path, 
         return record
     if not isdir or not has_md:
         return None
-    record["origin"], record["version"], record["stale"] = _skill_origin(entry, client, scope, name, versions, state, home)
+    record["origin"], record["version"], record["stale"] = _skill_origin(entry, name, versions, state, home)
     record["dir_bytes"], record["file_count"] = _dir_stats(entry.resolve() if link else entry)
     if record["file_count"] is None:
         record["issues"].append("dir-too-large")
@@ -508,8 +476,11 @@ def _names(mapping: Any) -> list[str]:
 
 
 def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home: Path,
-                  state: dict[str, str]) -> dict:
-    """A server entry reduced to what may be shown: no ``env`` / ``headers`` values, no tokens."""
+                  state: dict[str, str], trust_required: bool = False) -> dict:
+    """A server entry reduced to what may be shown: no ``env`` / ``headers`` values, no tokens.
+
+    ``state`` is the sync-state record of a store declared ``managed_by`` (empty otherwise); ``trust_required`` is the
+    store's declaration that the client reads it only in a trusted project."""
     item = raw if isinstance(raw, dict) else {}
     command = item.get("command") if isinstance(item.get("command"), str) else None
     url = item.get("url") if isinstance(item.get("url"), str) else None
@@ -566,68 +537,50 @@ def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home
         "url_host": _host(shown_url) if shown_url and transport != "stdio" else None,
         "loaded": "unknown", "precedence": "unique", "shadowed_by": None,
     }
-    if client == "claude" and scope == "user" and name in state:
+    if name in state:
         record["origin"] = {"kind": "state-record", "detail": state[name]}
-    if client == "codex" and scope == "project":
+    if trust_required:
         record["notes"].append("codex-project-requires-trust")
     if not command and not url:
         record["evidence"] = "unknown"
     return record
 
 
-def _servers(data: dict | None, key: str = "mcpServers") -> dict | None:
-    value = (data or {}).get(key)
-    return value if isinstance(value, dict) else None
+_servers = store_read.servers
 
 
-def _claude_local_servers(data: dict, project: Path) -> tuple[dict | None, str | None]:
-    """Entries kept under the project's own path in ``~/.claude.json`` (``projects[<absolute path>].mcpServers``).
-
-    The documentation says only "under that project's path", so anything else than that shape is ``unknown``.
-    """
-    projects = data.get("projects")
-    if projects is None:
-        return {}, None
-    if not isinstance(projects, dict):
-        return None, "claude-local-structure-unrecognized"
-    for key in dict.fromkeys((str(project), str(project.resolve()))):
-        if key in projects:
-            section = projects[key]
-            if not isinstance(section, dict):
-                return None, "claude-local-structure-unrecognized"
-            servers = section.get("mcpServers", {})
-            if servers is None:
-                return {}, None
-            return (servers, None) if isinstance(servers, dict) else (None, "claude-local-structure-unrecognized")
-    return {}, None
-
-
-def _observe_mcp_store(client: str, scope: str, store: str, home: Path, project: Path | None,
+def _observe_mcp_store(client: str, decl: dict, home: Path, project: Path | None,
                        state: dict[str, str], unknown: list[dict]) -> list[dict]:
+    """Entries of one declared MCP store, read with the adapter of its ``format`` from its ``root_key``.
+
+    A ``#section`` in the path (``~/.file.json#projects``) means the servers are kept per project inside that file:
+    ``data[section][<absolute project path>][root_key]``; any other shape of it is ``unknown``."""
+    scope, store, root_key = decl["scope"], decl["path"], decl["root_key"]
     path = resolve_store(store, home, project)
     if path is None:
         return []
-    if client == "codex":
-        data, reason = read_toml_object(path)
-        servers = _servers(data, "mcp_servers")
-    else:
-        data, reason = read_json_object(path)
-        if scope == "local":
-            if data is None:
-                servers = None
-            else:
-                servers, local_reason = _claude_local_servers(data, project) if project else ({}, None)
-                reason = local_reason or reason
+    data, reason = store_read.read_object(decl["format"], path)
+    section = store.split("#", 1)[1] if "#" in store else None
+    if section:
+        if data is None:
+            servers = None
+        elif project is None:
+            servers = {}
         else:
-            servers = _servers(data)
+            servers, shaped = store_read.section_servers(data, section, project, root_key)
+            reason = reason or (None if shaped else "claude-local-structure-unrecognized")
+    else:
+        servers = _servers(data, root_key)
     if reason:
         unknown.append({"store": store, "client": client, "reason": reason})
         return []
     if servers is None:
-        if data is not None and scope != "local" and (data.get("mcpServers" if client != "codex" else "mcp_servers") is not None):
+        if data is not None and not section and data.get(root_key) is not None:
             unknown.append({"store": store, "client": client, "reason": "unexpected-structure"})
         return []
-    return [normalize_mcp(str(name), raw, client, scope, store, home, state) for name, raw in sorted(servers.items())]
+    scoped = state if decl.get("managed_by") else {}
+    return [normalize_mcp(str(name), raw, client, scope, store, home, scoped, bool(decl.get("trust_required")))
+            for name, raw in sorted(servers.items())]
 
 
 # ------------------------------------------------------------------ Claude Desktop (claude_desktop_config.json)
@@ -662,9 +615,10 @@ def observe_desktop(home: Path, platform: str | None = None) -> tuple[list[dict]
         reason = "not-found"
     if reason:
         return [], [{"store": label, "client": DESKTOP, "reason": reason}]
-    servers = _servers(data)
+    root_key = client_registry.stores(DESKTOP, "mcp")[0]["root_key"]
+    servers = _servers(data, root_key)
     if servers is None:
-        return [], ([{"store": label, "client": DESKTOP, "reason": "unexpected-structure"}] if "mcpServers" in data else [])
+        return [], ([{"store": label, "client": DESKTOP, "reason": "unexpected-structure"}] if root_key in data else [])
     entries = [normalize_mcp(str(name), raw, DESKTOP, "user", label, home, {}) for name, raw in sorted(servers.items())]
     for entry in entries:
         if any("${" in str(value) for value in (entry["command"], entry["url"], *entry["args"])):
@@ -742,16 +696,28 @@ def _real(entry_path: Path | None) -> str | None:
         return None
 
 
-def _skill_effective(client: str, group: list[dict]) -> dict:
+def _effective(client: str, kind: str, group: list[dict]) -> dict:
+    """The precedence conclusion for a same-name group, from the driver's declared ``precedence`` entries.
+
+    Entries of ``kind`` are tried in order; one without ``when`` always applies. ``when`` is ``{scopes, match}``: the
+    group's set of scopes must equal (``exact``) or contain every one of (``includes``) the listed scopes. ``winner``
+    names the scope whose store is the effective one (the first store of that scope in the group). Nothing declared
+    means ``unknown``."""
     scopes = {item["scope"] for item in group}
-    if client == "claude" and scopes == {"user", "project"}:
-        # Claude Code: enterprise > personal > project (enterprise level is not read here).
-        return {"store": next(item["store"] for item in group if item["scope"] == "user"), "rule": "personal-over-project",
-                "evidence": "file", "source_url": DOC_CLAUDE_SKILLS}
-    if client == "codex":
-        return {"store": None, "rule": "both-load", "evidence": "file", "source_url": DOC_CODEX_SKILLS}
-    return {"store": None, "rule": "precedence-undocumented" if client == "cursor" else "unknown",
-            "evidence": "unknown", "source_url": None}
+    for entry in client_registry.precedence(client, kind):
+        when = entry.get("when")
+        if when:
+            wanted = set(when["scopes"])
+            if not (scopes == wanted if when["match"] == "exact" else wanted <= scopes):
+                continue
+        winner = entry.get("winner")
+        store = next(item["store"] for item in group if item["scope"] == winner) if winner else None
+        return {"store": store, "rule": entry["rule"], "evidence": entry["evidence"], "source_url": entry["source_url"]}
+    return {"store": None, "rule": "unknown", "evidence": "unknown", "source_url": None}
+
+
+def _skill_effective(client: str, group: list[dict]) -> dict:
+    return _effective(client, "skills", group)
 
 
 def skill_duplicates(skills: list[dict], real_paths: dict[str, str]) -> list[dict]:
@@ -779,17 +745,7 @@ def skill_duplicates(skills: list[dict], real_paths: dict[str, str]) -> list[dic
 
 
 def _mcp_effective(client: str, group: list[dict]) -> dict:
-    stores = {item["scope"]: item["store"] for item in group}
-    if client == "claude":
-        # Claude Code: local > project > user (entry used whole, no field merge). A project-file winner depends on
-        # the per-project approval (a setting this version does not read), so only a local winner is concluded.
-        if "local" in stores:
-            return {"store": stores["local"], "rule": "local-over-project-over-user", "evidence": "file",
-                    "source_url": DOC_CLAUDE_MCP}
-        return {"store": None, "rule": "project-approval-unknown", "evidence": "unknown", "source_url": DOC_CLAUDE_MCP}
-    if client == "codex":
-        return {"store": None, "rule": "project-trust-unknown", "evidence": "unknown", "source_url": DOC_CODEX_MCP}
-    return {"store": None, "rule": "precedence-undocumented", "evidence": "unknown", "source_url": None}
+    return _effective(client, "mcp", group)
 
 
 def mcp_duplicates(mcps: list[dict]) -> list[dict]:
@@ -882,20 +838,21 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
                 unknown.extend(missing)
             continue
         if want_skills:
-            for item_scope, store in SKILL_STORES[client]:
+            for decl in SKILL_DECLS.get(client, ()):
+                item_scope, store = decl["scope"], decl["path"]
                 root = resolve_store(store, home, project)
                 if root is None or not wanted(item_scope):
                     continue
-                for record in _scan_skill_store(client, item_scope, store, root, home, project, versions, skill_state,
-                                                include_description):
+                for record in _scan_skill_store(client, item_scope, store, root, home, project, versions,
+                                                skill_state if decl.get("managed_by") else {}, include_description):
                     skills.append(record)
                     real = _real(root / record["name"])
                     if real:
                         real_paths[record["path"]] = real
         if want_mcp:
-            for item_scope, store in MCP_STORES[client]:
-                if wanted(item_scope):
-                    mcps.extend(_observe_mcp_store(client, item_scope, store, home, project, mcp_state, unknown))
+            for decl in MCP_DECLS.get(client, ()):
+                if wanted(decl["scope"]):
+                    mcps.extend(_observe_mcp_store(client, decl, home, project, mcp_state, unknown))
     order = {client: index for index, client in enumerate(ALL_CLIENTS)}
     skills.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
     mcps.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
