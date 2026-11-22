@@ -768,11 +768,80 @@ def language_drift(project: Path) -> list[dict]:
     return result
 
 
-def locate_companion(name: str, installed: list[dict], *, excluded: set[Path] | None = None) -> Path | None:
-    """The newest copy of a companion plugin: next to this one or in any client install."""
-    candidates = [PLUGIN_ROOT.parent / name, *(Path(item["path"]) for item in installed if item["plugin"] == name)]
-    candidates = [path for path in candidates if path not in (excluded or set()) and (path / "plugin.json").is_file()]
-    return max(candidates, key=lambda path: version_key(_manifest_version(path) or "") or (0,)) if candidates else None
+@dataclass(frozen=True)
+class Resolution:
+    """Where a sibling plugin was found. ``path`` is ``None`` and ``layer`` is ``not-found`` when no copy qualifies."""
+    path: Path | None
+    layer: str  # sibling | runtime | client-cache | not-found
+
+    @property
+    def found(self) -> bool:
+        return self.path is not None
+
+
+def _newest(paths: list[Path]) -> Path:
+    return max(paths, key=lambda path: version_key(_manifest_version(path) or "") or (0,))
+
+
+def resolve_plugin(name: str, env: Env | None = None, *, installed: list[dict] | None = None,
+                   excluded: set[Path] | None = None, accept: Any = None, minimum: str | None = None,
+                   clients: Any = None) -> Resolution:
+    """The one place that decides which copy of a sibling plugin to use.
+
+    Order: (1) the sibling next to this plugin when it runs from a release (checkout, npm package, tarball),
+    (2) the user-level runtime ``<data>/agenthelm/current/plugins/<name>``, (3) the newest copy in a client's private
+    cache (the ``runtime_cache`` of every driver, plus ``installed``, the installs already read from client records).
+    A copy counts only when it has ``plugin.json`` and passes ``accept`` (a predicate on the directory). Within the
+    last layer the highest manifest version wins. Nothing found: ``Resolution(None, "not-found")``, never an exception.
+    ``installed`` may carry entries of other plugins; they are filtered by name.
+
+    Layers are strictly ordered: a usable copy in an earlier layer wins even when a later layer holds a higher
+    version. Versions are compared only inside a layer (several client caches, several cached versions).
+
+    ``clients`` limits the client-cache layer to those client ids (the caller's client selection).
+
+    ``minimum`` (a version) is for callers that cannot run anything older: a copy below it does not count, so a stale
+    copy in an early layer does not veto a current one in a later layer. When no copy reaches it, the highest-version
+    copy of all layers is returned anyway, so the caller can still name what it found and say it is too old."""
+    import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
+
+    env = env or current_env()
+    skip = excluded or set()
+
+    floor = version_key(minimum or "")
+
+    def usable(path: Path, *, enforce_minimum: bool = True) -> bool:
+        if path in skip or not (path / "plugin.json").is_file() or not (accept is None or accept(path)):
+            return False
+        return not (enforce_minimum and floor is not None) \
+            or (version_key(_manifest_version(path) or "") or (0,)) >= floor
+
+    layers: list[tuple[str, list[Path]]] = []
+    sibling = PLUGIN_ROOT.parent / name
+    layers.append(("sibling", [sibling] if agenthelm_runtime.running_from(env) != "client-plugin" else []))
+    layers.append(("runtime", [agenthelm_runtime.current_link(env) / "plugins" / name]))
+    layers.append(("client-cache", [*(Path(item["path"]) for item in (installed or []) if item["plugin"] == name),
+                                    *client_registry.runtime_cache_copies(env.home, env.get, name, clients)]))
+    for layer, paths in layers:
+        copies = []
+        for path in paths:
+            if path not in copies and usable(path):
+                copies.append(path)
+        if copies:
+            return Resolution(_newest(copies), layer)
+    if floor is not None:  # nothing reaches the minimum: the best copy there is, for the caller to call too old
+        every = [(layer, path) for layer, paths in layers for path in dict.fromkeys(paths)
+                 if usable(path, enforce_minimum=False)]
+        if every:
+            best = _newest([path for _layer, path in every])
+            return Resolution(best, next(layer for layer, path in every if path == best))
+    return Resolution(None, "not-found")
+
+
+def locate_companion(name: str, installed: list[dict], *, excluded: set[Path] | None = None,
+                     env: Env | None = None, minimum: str | None = None, clients: Any = None) -> Path | None:
+    """The copy of a companion plugin to use (see ``resolve_plugin``); ``None`` when there is none."""
+    return resolve_plugin(name, env, installed=installed, excluded=excluded, minimum=minimum, clients=clients).path
 
 
 def opinion_findings(project: Path, installed: list[dict]) -> list[dict]:
@@ -868,13 +937,11 @@ def profile_root(project: Path | None) -> Path | None:
 
 def scaffold_module(env: Env) -> Any | None:
     """agents-init's scaffold module (the sibling copy first, then the newest installed one); None when too old."""
-    installed = installed_plugins(env, {"agents-init"})
-    copies = [PLUGIN_ROOT.parent / "agents-init", *(Path(item["path"]) for item in installed)]
-    usable = [path for path in copies if (path / "skills/agents-init/scripts/scaffold.py").is_file()]
-    if not usable:
+    found = resolve_plugin("agents-init", env, installed=installed_plugins(env, {"agents-init"}),
+                           accept=lambda path: (path / "skills/agents-init/scripts/scaffold.py").is_file())
+    if found.path is None:
         return None
-    sibling = PLUGIN_ROOT.parent / "agents-init"
-    root = sibling if sibling in usable else max(usable, key=lambda p: version_key(_manifest_version(p) or "") or (0,))
+    root = found.path
     scripts = root / "skills/agents-init/scripts"
     key = str(scripts)
     if key not in _SCAFFOLD_CACHE:
@@ -2028,7 +2095,12 @@ def content_companion(env: Env, report: dict) -> tuple[Path | None, list[dict]]:
     # A sibling can itself be an ignored client install (e.g. Cursor's plugins/local).
     # Only independent runtime siblings bypass client selection.
     excluded_paths = {Path(entry["path"]) for entry in installed} - {Path(entry["path"]) for entry in available}
-    return locate_companion("agents-init", available, excluded=excluded_paths), available
+    required = (report.get("_latest") or {}).get("plugins", {}).get("agents-init", {}).get("version")
+    # A copy older than the release needs must not veto a current one in a later layer (#48).
+    allowed = {name for name in client_registry.all_ids()
+               if name not in excluded and (not selected or name in selected)}
+    return locate_companion("agents-init", available, excluded=excluded_paths, env=env, minimum=required,
+                            clients=allowed), available
 
 
 def content_step(env: Env, item: dict, report: dict, project: Path, accept: list[str], keep: list[str],
@@ -2810,19 +2882,17 @@ def run_dedupe(args: argparse.Namespace, env: Env) -> int:
 
 def run_project(argv: list[str]) -> int:
     """``agenthelm project``: hand over to project-orchestrator's project entry, which owns it."""
-    installed = installed_plugins(current_env(), {"project-orchestrator"})
-    copies = [PLUGIN_ROOT.parent / "project-orchestrator", *(Path(item["path"]) for item in installed)]
+    env = current_env()
     # Older copies predate the project entry; only those that ship it count.
-    usable = [path for path in copies if (path / "runtime" / "project_cli.py").is_file()]
-    if not usable:
-        stale = any((path / "plugin.json").is_file() for path in copies)
-        found = _("（已安装的 project-orchestrator 版本过旧）") if stale else ""
-        print(_("agenthelm project 需要 project-orchestrator 的项目入口，但没有找到{0}。\n  · 更新插件：{1} update，或从发布包安装运行时（见 INSTALL.md）").format(found, CLI), file=sys.stderr)
+    found = resolve_plugin("project-orchestrator", env, installed=installed_plugins(env, {"project-orchestrator"}),
+                           accept=lambda path: (path / "runtime" / "project_cli.py").is_file())
+    if found.path is None:
+        stale = resolve_plugin("project-orchestrator", env,
+                               installed=installed_plugins(env, {"project-orchestrator"})).found
+        found_text = _("（已安装的 project-orchestrator 版本过旧）") if stale else ""
+        print(_("agenthelm project 需要 project-orchestrator 的项目入口，但没有找到{0}。\n  · 更新插件：{1} update，或从发布包安装运行时（见 INSTALL.md）").format(found_text, CLI), file=sys.stderr)
         return 3
-    # Prefer the copy shipped next to this agent-pack (same release), then the newest installed one.
-    sibling = PLUGIN_ROOT.parent / "project-orchestrator"
-    newest = sibling if sibling in usable else \
-        max(usable, key=lambda path: version_key(_manifest_version(path) or "") or (0,))
+    newest = found.path
     sys.path.insert(0, str(newest / "runtime"))
     import project_cli  # noqa: PLC0415  located at run time
 

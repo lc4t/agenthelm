@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "同级插件的查找统一为一个解析函数：已装用户级运行时时，优先于客户端缓存里的副本。",
+    "en": "Sibling plugins are now found by one resolver; an installed user-level runtime is preferred over client-cache copies."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

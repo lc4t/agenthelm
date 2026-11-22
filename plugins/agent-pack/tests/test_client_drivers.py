@@ -72,6 +72,7 @@ class RegistryTests(unittest.TestCase):
             driver = json.loads(json.dumps(driver))
             driver["schema_version"] = 1  # the files declare 2 because they use write_target
             driver.pop("lifecycle", None)
+            driver.pop("runtime_cache", None)  # added after 6.14.0 (#134 Phase 3)
             driver.pop("precedence", None)  # read-side data added after the snapshot (see test_registry_read_side)
             for kind in driver["stores"].values():
                 for store in kind:

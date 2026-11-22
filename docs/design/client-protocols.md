@@ -277,7 +277,13 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 
 ### 9.2 方案
 
-- 新增一个解析函数 `resolve_plugin(name)`，顺序：显式覆盖（环境变量）、当前运行的发布包、XDG `current/plugins/<名>`、PATH、驱动声明的 `runtime_cache` 通配（取代硬编码的客户端缓存路径）。`agenthelm.py` 三处与 `agenthelm_runtime.py:97` 改用它。「在客户端里运行」的判断改为读驱动声明里的缓存路径模式。
+- **最终实现（#134 Phase 3）**：`agenthelm.py` 的 `resolve_plugin(name)` 是唯一的同级插件查找，`locate_companion`、`scaffold_module`、`run_project` 都走它。三层按固定顺序，**层与层之间严格按顺序**，一个靠前的层里有可用副本就用它，即使靠后的层版本更高：
+  1. 同级目录 `PLUGIN_ROOT.parent/<名>`，只在当前进程不是从客户端缓存运行时计入（`running_from` 不是 `client-plugin`）。
+  2. 用户级运行时 `${XDG_DATA_HOME:-~/.local/share}/agenthelm/current/plugins/<名>`。
+  3. 客户端私有缓存：各驱动 `runtime_cache` 声明的通配（`env` 覆盖配置目录，默认目录也保留），加上客户端记录里的安装路径。
+  同一层内部才比较版本（清单 `plugin.json` 的 `version`，按数字比较），取最高。副本须有 `plugin.json` 并通过调用方给的 `accept` 判断（例如 `project_cli.py` 是否存在）。找不到返回 `Resolution(None, "not-found")`。需要「不能低于某版本」的调用方（内容刷新，#48）传 `minimum`：低于它的副本不计入，过旧的早层副本不会否决靠后层里够新的副本；都不够时仍返回版本最高的那份，由调用方报告「过旧」。`clients` 参数把第 3 层限制在调用方选定的客户端内。
+  与草案的差异：显式覆盖环境变量与 PATH 两层未实现（运行时之外没有对应的插件目录）；`locate_companion` 原先把同级与各客户端副本混在一起取最高版本，现改为严格分层。
+- 「在客户端里运行」的判断（`running_from`）读驱动 `runtime_cache` 声明的缓存路径模式，取代路径片段 `/plugins/cache/` 与 `/.cursor/plugins/`。
 - hook 与 MCP 命令不改为「运行时优先」：插件目录是随版本固定的，运行时 `current` 可能是别的版本，混用会造成版本错配。agy 的根 `hooks.json` 用相对路径还是 `${PLUGIN_ROOT}`，取决于 agy 对 hook 命令的工作目录与变量展开，**未验证**，列入 §12。
 
 ### 9.3 `launcher.sh` 的例外（D-K3）

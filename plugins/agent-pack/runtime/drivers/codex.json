@@ -14,6 +14,13 @@
     ]
   },
   "distribution": "marketplace-cli",
+  "runtime_cache": [
+    {
+      "base": "~/.codex",
+      "env": "CODEX_HOME",
+      "glob": "plugins/cache/agenthelm/<plugin>/*"
+    }
+  ],
   "stores": {
     "skills": [
       {
