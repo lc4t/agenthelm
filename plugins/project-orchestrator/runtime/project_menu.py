@@ -405,7 +405,10 @@ def tools_screen(provider) -> None:
             continue
         show(cli.render_tools([tool]))
         if confirm():
-            print(provider.run_tool(tool["id"])["message"])
+            try:
+                print(provider.run_tool(tool["id"])["message"])
+            except EntryError as exc:
+                fail(exc)
     if not tools:
         ask(_("回车返回"))
 

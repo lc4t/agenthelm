@@ -414,5 +414,97 @@ elif args[0] == "touch":
         self.assertEqual(code, 1)
 
 
+class ToolOutcomeTests(RealProjectCase):
+    """A write tool that times out may already have written: report an unknown outcome, never "failed", never retry."""
+
+    RUNTIME = PROJECT_CLI.parent
+    WRAPPER = """
+import os, subprocess, sys
+sys.path.insert(0, {runtime!r})
+import project_cli, project_write
+project_write.TOOL_TIMEOUT_SECONDS = 1
+real_run = subprocess.run
+def run(*args, **kwargs):
+    if "tools/slow.py" in str(args[0]) or "tools/quick.py" in str(args[0]):
+        with open({counter!r}, "a") as handle:
+            handle.write("x")
+        if os.environ.get("SIMULATE_NO_START"):
+            raise FileNotFoundError(2, "No such file or directory")
+    return real_run(*args, **kwargs)
+subprocess.run = run
+raise SystemExit(project_cli.main(sys.argv[1:]))
+"""
+
+    def tool_project(self) -> Path:
+        root = self.make_project("tooltimeout", "general")
+        (root / "tools").mkdir()
+        (root / "tools/slow.py").write_text(
+            "import time\nopen('marker', 'w').write('written')\ntime.sleep(30)\n", encoding="utf-8")
+        (root / "tools/quick.py").write_text(
+            "import sys\nopen('marker', 'w').write('written')\nsys.exit(int(sys.argv[1]))\n", encoding="utf-8")
+        (root / ".agents/moe.sakanano.agent-pack/tools.json").write_text(json.dumps({"schema_version": 1, "tools": [
+            {"id": "slow", "title": "Slow", "command": [sys.executable, "tools/slow.py"]},
+            {"id": "ok", "title": "Ok", "command": [sys.executable, "tools/quick.py", "0"]},
+            {"id": "bad", "title": "Bad", "command": [sys.executable, "tools/quick.py", "3"]}]}), encoding="utf-8")
+        return root
+
+    def run_tool(self, root: Path, tool: str, *, language: str = "zh", no_start: bool = False,
+                 output: str = "json") -> tuple[subprocess.CompletedProcess, int]:
+        counter = self.base / "calls"
+        counter.unlink(missing_ok=True)
+        env = {**self.env, "AGENTHELM_LANG": language}
+        if no_start:
+            env["SIMULATE_NO_START"] = "1"
+        script = self.base / "wrapper.py"
+        script.write_text(self.WRAPPER.format(runtime=str(self.RUNTIME), counter=str(counter)), encoding="utf-8")
+        result = subprocess.run([sys.executable, str(script), "--project", str(root), "tools", tool, "--run", "--apply",
+                                 "--output", output], input="", capture_output=True, text=True, check=False, env=env,
+                                timeout=120)
+        return result, len(counter.read_text()) if counter.exists() else 0
+
+    def test_timeout_reports_unknown_outcome_in_json(self) -> None:
+        root = self.tool_project()
+        for language, expected in (("zh", "写入结果未知"), ("en", "outcome of its writes is unknown")):
+            (root / "marker").unlink(missing_ok=True)
+            result, calls = self.run_tool(root, "slow", language=language)
+            payload = json.loads(result.stdout)
+            self.assertEqual((result.returncode, payload["ok"], payload["exit_code"]), (1, False, 1), payload)
+            self.assertEqual(payload["error"]["code"], "outcome_unknown")
+            self.assertIn(expected, payload["error"]["message"])
+            self.assertEqual(len(payload["error"]["next"]), 2)
+            self.assertTrue((root / "marker").is_file(), "the tool wrote before it timed out")
+            self.assertEqual(calls, 1, "the runner never retries")
+
+    def test_timeout_text_output_tells_what_to_check_first(self) -> None:
+        root = self.tool_project()
+        for language, expected in (("zh", ("写入结果未知", "只读查询")), ("en", ("is unknown", "read-only query"))):
+            result, calls = self.run_tool(root, "slow", language=language, output="text")
+            self.assertEqual(result.returncode, 1)
+            for text in expected:
+                self.assertIn(text, result.stderr)
+            self.assertNotIn("运行失败" if language == "zh" else "failed (exit code", result.stderr)
+            self.assertEqual(calls, 1)
+
+    def test_start_failure_stays_distinct_from_timeout(self) -> None:
+        root = self.tool_project()
+        for language, expected in (("zh", "没有启动，未写入"), ("en", "did not start, nothing was written")):
+            result, calls = self.run_tool(root, "slow", language=language, no_start=True)
+            payload = json.loads(result.stdout)
+            self.assertEqual((result.returncode, payload["error"]["code"]), (6, "failed"), payload)
+            self.assertIn(expected, payload["error"]["message"])
+            self.assertNotIn("outcome_unknown", result.stdout)
+            self.assertEqual(calls, 1)
+
+    def test_normal_exit_and_nonzero_exit_are_unchanged(self) -> None:
+        root = self.tool_project()
+        result, _ = self.run_tool(root, "ok")
+        payload = json.loads(result.stdout)
+        self.assertEqual((result.returncode, payload["ok"], payload["data"]["exit_code"]), (0, True, 0))
+        result, _ = self.run_tool(root, "bad")
+        payload = json.loads(result.stdout)
+        self.assertEqual((result.returncode, payload["error"]["code"]), (6, "failed"))
+        self.assertIn("退出码 3", payload["error"]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

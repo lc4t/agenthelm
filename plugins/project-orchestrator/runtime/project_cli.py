@@ -61,7 +61,7 @@ EXIT_BY_CODE = {"usage": EXIT_USAGE, "not-found": EXIT_ATTENTION, "ambiguous": E
                 "runtime-incompatible": EXIT_INCOMPATIBLE, "unavailable": EXIT_UNAVAILABLE,
                 "index-broken": EXIT_UNAVAILABLE, "not-a-project": EXIT_UNAVAILABLE,
                 "profile-invalid": EXIT_UNAVAILABLE, "offline": EXIT_UNAVAILABLE,
-                "conflict": EXIT_CONFLICT, "failed": EXIT_FAILED}
+                "conflict": EXIT_CONFLICT, "failed": EXIT_FAILED, "outcome_unknown": EXIT_ATTENTION}
 GROUPS = (("active", N_("进行中")), ("waiting", N_("等待")), ("captured", N_("待澄清")), ("suspended", N_("挂起")),
           ("done", N_("已完成")), ("abandoned", N_("放弃")), ("other", N_("其他状态")))
 GROUP_LABEL = dict(GROUPS)

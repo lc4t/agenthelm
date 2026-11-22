@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "项目工具超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。",
+    "en": "A project tool that times out is reported as an unknown write outcome, distinct from a failure to start, instead of being treated as not written."
+  },
+  "changes": [{
+    "scope": "project-orchestrator",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "on",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}
