@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。",
+    "en": "The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "agents-init",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "opinion-manager",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
