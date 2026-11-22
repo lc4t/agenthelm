@@ -46,12 +46,14 @@
       {
         "scope": "user",
         "path": "~/.cursor/mcp.json",
-        "format": "json"
+        "format": "json",
+        "root_key": "mcpServers"
       },
       {
         "scope": "project",
         "path": "<project>/.cursor/mcp.json",
-        "format": "json"
+        "format": "json",
+        "root_key": "mcpServers"
       }
     ]
   },
@@ -59,5 +61,19 @@
     "default_set": true,
     "read_only": false,
     "project_mcp_write": false
-  }
+  },
+  "precedence": [
+    {
+      "kind": "skills",
+      "rule": "precedence-undocumented",
+      "evidence": "unknown",
+      "source_url": null
+    },
+    {
+      "kind": "mcp",
+      "rule": "precedence-undocumented",
+      "evidence": "unknown",
+      "source_url": null
+    }
+  ]
 }

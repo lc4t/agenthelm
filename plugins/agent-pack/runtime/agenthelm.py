@@ -784,7 +784,8 @@ def _newest(paths: list[Path]) -> Path:
 
 
 def resolve_plugin(name: str, env: Env | None = None, *, installed: list[dict] | None = None,
-                   excluded: set[Path] | None = None, accept: Any = None, newest: bool = False) -> Resolution:
+                   excluded: set[Path] | None = None, accept: Any = None, minimum: str | None = None,
+                   clients: Any = None) -> Resolution:
     """The one place that decides which copy of a sibling plugin to use.
 
     Order: (1) the sibling next to this plugin when it runs from a release (checkout, npm package, tarball),
@@ -794,42 +795,53 @@ def resolve_plugin(name: str, env: Env | None = None, *, installed: list[dict] |
     last layer the highest manifest version wins. Nothing found: ``Resolution(None, "not-found")``, never an exception.
     ``installed`` may carry entries of other plugins; they are filtered by name.
 
-    ``newest=True`` (``locate_companion``: content refresh must run the newest code) pools the three layers and takes
-    the highest manifest version; equal versions go to the earlier layer."""
+    Layers are strictly ordered: a usable copy in an earlier layer wins even when a later layer holds a higher
+    version. Versions are compared only inside a layer (several client caches, several cached versions).
+
+    ``clients`` limits the client-cache layer to those client ids (the caller's client selection).
+
+    ``minimum`` (a version) is for callers that cannot run anything older: a copy below it does not count, so a stale
+    copy in an early layer does not veto a current one in a later layer. When no copy reaches it, the highest-version
+    copy of all layers is returned anyway, so the caller can still name what it found and say it is too old."""
     import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
 
     env = env or current_env()
     skip = excluded or set()
 
-    def usable(path: Path) -> bool:
-        return path not in skip and (path / "plugin.json").is_file() and (accept is None or accept(path))
+    floor = version_key(minimum or "")
+
+    def usable(path: Path, *, enforce_minimum: bool = True) -> bool:
+        if path in skip or not (path / "plugin.json").is_file() or not (accept is None or accept(path)):
+            return False
+        return not (enforce_minimum and floor is not None) \
+            or (version_key(_manifest_version(path) or "") or (0,)) >= floor
 
     layers: list[tuple[str, list[Path]]] = []
     sibling = PLUGIN_ROOT.parent / name
     layers.append(("sibling", [sibling] if agenthelm_runtime.running_from(env) != "client-plugin" else []))
     layers.append(("runtime", [agenthelm_runtime.current_link(env) / "plugins" / name]))
     layers.append(("client-cache", [*(Path(item["path"]) for item in (installed or []) if item["plugin"] == name),
-                                    *client_registry.runtime_cache_copies(env.home, env.get, name)]))
-    pooled: list[tuple[str, Path]] = []
+                                    *client_registry.runtime_cache_copies(env.home, env.get, name, clients)]))
     for layer, paths in layers:
         copies = []
         for path in paths:
             if path not in copies and usable(path):
                 copies.append(path)
-        if copies and not newest:
+        if copies:
             return Resolution(_newest(copies), layer)
-        pooled += [(layer, path) for path in copies]
-    if pooled:
-        best = max(version_key(_manifest_version(path) or "") or (0,) for _layer, path in pooled)
-        layer, path = next(item for item in pooled if (version_key(_manifest_version(item[1]) or "") or (0,)) == best)
-        return Resolution(path, layer)
+    if floor is not None:  # nothing reaches the minimum: the best copy there is, for the caller to call too old
+        every = [(layer, path) for layer, paths in layers for path in dict.fromkeys(paths)
+                 if usable(path, enforce_minimum=False)]
+        if every:
+            best = _newest([path for _layer, path in every])
+            return Resolution(best, next(layer for layer, path in every if path == best))
     return Resolution(None, "not-found")
 
 
 def locate_companion(name: str, installed: list[dict], *, excluded: set[Path] | None = None,
-                     env: Env | None = None) -> Path | None:
+                     env: Env | None = None, minimum: str | None = None, clients: Any = None) -> Path | None:
     """The copy of a companion plugin to use (see ``resolve_plugin``); ``None`` when there is none."""
-    return resolve_plugin(name, env, installed=installed, excluded=excluded, newest=True).path
+    return resolve_plugin(name, env, installed=installed, excluded=excluded, minimum=minimum, clients=clients).path
 
 
 def opinion_findings(project: Path, installed: list[dict]) -> list[dict]:
@@ -2083,7 +2095,12 @@ def content_companion(env: Env, report: dict) -> tuple[Path | None, list[dict]]:
     # A sibling can itself be an ignored client install (e.g. Cursor's plugins/local).
     # Only independent runtime siblings bypass client selection.
     excluded_paths = {Path(entry["path"]) for entry in installed} - {Path(entry["path"]) for entry in available}
-    return locate_companion("agents-init", available, excluded=excluded_paths), available
+    required = (report.get("_latest") or {}).get("plugins", {}).get("agents-init", {}).get("version")
+    # A copy older than the release needs must not veto a current one in a later layer (#48).
+    allowed = {name for name in client_registry.all_ids()
+               if name not in excluded and (not selected or name in selected)}
+    return locate_companion("agents-init", available, excluded=excluded_paths, env=env, minimum=required,
+                            clients=allowed), available
 
 
 def content_step(env: Env, item: dict, report: dict, project: Path, accept: list[str], keep: list[str],

@@ -27,7 +27,8 @@
         "scope": "user",
         "path": "~/.claude/skills",
         "format": "dir",
-        "write_target": true
+        "write_target": true,
+        "managed_by": "agent-pack-state"
       },
       {
         "scope": "project",
@@ -40,17 +41,21 @@
       {
         "scope": "user",
         "path": "~/.claude.json",
-        "format": "json"
+        "format": "json",
+        "root_key": "mcpServers",
+        "managed_by": "agent-pack-state"
       },
       {
         "scope": "local",
         "path": "~/.claude.json#projects",
-        "format": "json"
+        "format": "json",
+        "root_key": "mcpServers"
       },
       {
         "scope": "project",
         "path": "<project>/.mcp.json",
-        "format": "json"
+        "format": "json",
+        "root_key": "mcpServers"
       }
     ]
   },
@@ -58,5 +63,40 @@
     "default_set": true,
     "read_only": false,
     "project_mcp_write": true
-  }
+  },
+  "precedence": [
+    {
+      "kind": "skills",
+      "rule": "personal-over-project",
+      "evidence": "file",
+      "source_url": "https://code.claude.com/docs/en/skills",
+      "when": {
+        "scopes": [
+          "user",
+          "project"
+        ],
+        "match": "exact"
+      },
+      "winner": "user"
+    },
+    {
+      "kind": "mcp",
+      "rule": "local-over-project-over-user",
+      "evidence": "file",
+      "source_url": "https://code.claude.com/docs/en/mcp",
+      "when": {
+        "scopes": [
+          "local"
+        ],
+        "match": "includes"
+      },
+      "winner": "local"
+    },
+    {
+      "kind": "mcp",
+      "rule": "project-approval-unknown",
+      "evidence": "unknown",
+      "source_url": "https://code.claude.com/docs/en/mcp"
+    }
+  ]
 }

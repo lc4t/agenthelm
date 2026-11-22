@@ -127,13 +127,30 @@ class ResolverTests(unittest.TestCase):
         found = self.resolve()
         self.assertEqual((found.path, found.layer), (runtime, "runtime"))
 
-    def test_newest_mode_pools_the_layers_and_ties_go_to_the_earlier_one(self) -> None:
-        self.sibling("1.0.0"), self.xdg("1.0.0")
-        cache = self.claude_cache("2.0.0")
-        self.assertEqual(self.resolve(newest=True).path, cache)
-        self.assertEqual(agenthelm.locate_companion("agents-init", [], env=self.env), cache)
-        cache.joinpath("plugin.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
-        self.assertEqual(self.resolve(newest=True).layer, "sibling")
+    def test_the_newest_version_is_chosen_only_inside_a_layer(self) -> None:
+        self.claude_cache("1.2.0")
+        newest = self.claude_cache("1.10.0")
+        plugin(self.home / ".cursor/plugins/local/agents-init", "agents-init", "1.3.0")
+        self.assertEqual(self.resolve().path, newest)
+        runtime = self.xdg("0.1.0")  # an earlier layer wins whatever the versions are
+        self.assertEqual(self.resolve().path, runtime)
+        self.assertEqual(agenthelm.locate_companion("agents-init", [], env=self.env), runtime)
+
+    def test_minimum_skips_a_stale_early_copy_and_falls_back_to_the_best_one(self) -> None:
+        sibling = self.sibling("1.0.0")
+        cache = self.claude_cache("3.0.0")
+        self.assertEqual(self.resolve(minimum="2.0.0").path, cache)  # the stale sibling does not veto
+        self.assertEqual(self.resolve(minimum="1.0.0").path, sibling)  # a sufficient early copy still wins
+        self.assertEqual(self.resolve(minimum="9.0.0").path, cache)  # nothing reaches it: the best copy, to be called too old
+
+    def test_clients_limit_the_cache_layer(self) -> None:
+        self.claude_cache("1.0.0")
+        self.assertFalse(self.resolve(clients={"codex"}).found)
+        self.assertTrue(self.resolve(clients={"claude"}).found)
+
+    def test_locate_companion_and_resolve_plugin_agree(self) -> None:
+        self.sibling("1.0.0"), self.xdg("2.0.0"), self.claude_cache("3.0.0")
+        self.assertEqual(agenthelm.locate_companion("agents-init", [], env=self.env), self.resolve().path)
 
 
 class RunningFromTests(unittest.TestCase):
