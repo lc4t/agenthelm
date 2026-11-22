@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。",
+    "en": "When check finds duplicate Skill / MCP groups, it adds one line pointing at inventory, dedupe and relocate."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "advisory",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

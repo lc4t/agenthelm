@@ -1179,6 +1179,30 @@ def capability_notice(reports: list[dict]) -> str | None:
     return _("项目声明的 MCP / Skill 与本机 {0} 不一致；运行 agent-pack doctor --client <客户端> 查看详情。").format(clients)
 
 
+def inventory_hint(env: Env, project: Path | None, active: list[str]) -> dict | None:
+    """Duplicate Skill / MCP groups worth sorting out (``{"duplicate_groups": n}``), or None when there are none.
+
+    Read-only and local; a group that is one file seen twice (``same-file``) or that the user already decided on
+    (``dedupe --keep-all`` / ``--ignore``, unchanged since) does not count. Any failure means no hint."""
+    try:
+        sys.path.insert(0, str(RUNTIME_DIR))
+        import agent_pack_dedupe  # noqa: PLC0415 - shipped next to this file
+        import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
+
+        clients = [name for name in active if name in agent_pack_inventory.ALL_CLIENTS] or None
+        found = agent_pack_inventory.observe(env.home, project, clients, "all", "all")
+        decided = agent_pack_dedupe.read_decisions(env.home)["decisions"]
+        open_groups = []
+        for group in agent_pack_dedupe.list_groups(found):
+            decision = decided.get(group["id"])
+            settled = bool(decision) and decision.get("members_digest") == agent_pack_dedupe.members_digest(group)
+            if group["relation"] != "same-file" and not settled:
+                open_groups.append(group)
+        return {"duplicate_groups": len(open_groups)} if open_groups else None
+    except Exception:  # noqa: BLE001 - an advisory line must never break check
+        return None
+
+
 def run_check(env: Env, project: Path | None, *, latest_source: str | None = None, offline: bool = False,
               max_age: int = CACHE_TTL_SECONDS, hook_mode: bool = False, reprompt: bool = False,
               clients: list[str] | None = None, source: Path | None = None, migrate_hint: bool = False) -> dict:
@@ -1288,6 +1312,9 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     }
     if opinion_migrate:  # advisory: not in summary, not in up_to_date, absent when silent so existing output is unchanged
         report["opinion_migrate"] = opinion_migrate
+    tidy = inventory_hint(env, project, selection["active"]) if migrate_hint and not hook_mode else None  # explicit check only
+    if tidy:  # advisory like opinion_migrate: its own key, not in summary or up_to_date, so the exit code cannot change
+        report["inventory_hint"] = tidy
     return report
 
 
@@ -1597,6 +1624,9 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
     lines += render_opinion_migrate(report.get("opinion_migrate") or [])
     lines += render_scaffold(report, show_skipped, details, show_extras)
     lines += render_machine(report, details=details)
+    if report.get("inventory_hint"):
+        lines.append(_("  [整理] 有 {0} 组重复的 Skill / MCP：{1} inventory 查看，{1} dedupe 处置，{1} relocate 迁移到其他客户端或作用域。").format(
+            report["inventory_hint"]["duplicate_groups"], CLI))
     lines += [_("  [语言] {0}").format(hint) for hint in (report.get("language") or {}).get("hints", [])]
     if not report["plugins"]:
         lines.append(_("运行 `{0} install` 预览安装。").format(CLI))

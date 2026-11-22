@@ -63,6 +63,7 @@
  "运行 `{0} install` 预览安装。": "Run `{0} install` to preview the installation.",
  "旧方式安装可用 `{0}` 预览迁移。": "Run `{0}` to preview migrating the legacy installs.",
  "全部为最新。": "Everything is up to date.",
+ "  [整理] 有 {0} 组重复的 Skill / MCP：{1} inventory 查看，{1} dedupe 处置，{1} relocate 迁移到其他客户端或作用域。": "  [Tidy] Duplicate Skill / MCP groups: {0}. See {1} inventory, resolve with {1} dedupe, move with {1} relocate.",
  "{0} 个插件缺少发布信息，无法判断是否已是最新（见上）。": "Cannot tell whether everything is up to date: plugins without release information: {0} (see above).",
  "latest.json 的 repository 不是 GitHub 仓库：{0}": "latest.json's repository is not a GitHub repository: {0}",
  "发布包含越界路径：{0}": "The release contains a path that escapes the target: {0}",
