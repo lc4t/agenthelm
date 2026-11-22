@@ -118,6 +118,7 @@
 
 - `detect.executables`、`detect.dirs`：同 v1（只查找，不运行）。
 - `detect.cli`（可选）：`{argv, stream, parse}`。`argv` 是固定的只读命令（如 `["plugin","list","--json"]`），`stream` 为 `stdout` 或 `stderr`，`parse` 为 `json` 或 `text`。用于取得 `cli` 级证据；**检测本身不运行它**，只有 inventory 与 doctor 在用户已请求时运行。
+  - **批 B 已实现**：`agent_pack_clients.probe_problem` 校验声明（`argv` 为 1–16 个只含字母、数字与 `. _ : = @ / + -` 的参数，可执行文件取自 `detect.executables`，因此声明 `cli` 必须同时声明 `executables`）；`agent_pack_probe.run_probe(probe, executable, runner, timeout)` 是纯函数运行器，子进程函数由参数注入。默认运行器用列表形式、不经 shell、标准输入为空、有超时，只读不写。失败原因取 `invalid-probe`、`not-found`、`timeout`、`unreadable`、`nonzero-exit`、`too-large`（输出超过 1 MiB）、`unexpected-format`；失败的探针不构成任何证据。非零退出码按失败处理（假设：本版没有已知客户端在成功时返回非零，**未验证**）。本版没有内置驱动声明 `detect.cli`，也没有命令行开关调用它（接线在批 E）。用户级声明里的 `detect.cli` 与 `precedence` 一律拒绝。
 - 证据等级沿用 inventory 的 `file / setting / cli / unknown`。agy 的插件清单用 `cli` 证据（`plugin list --json`），文件读取作为 `file` 证据对照。
 
 ### 4.3 分发
@@ -148,9 +149,13 @@
 - `stores.skills[]`、`stores.mcp[]`、`stores.hooks[]`、`stores.context[]`：每项 `{scope, path, format, status}`，`status` 取 `observed`、`documented`、`undetermined`。**`undetermined` 的存储不被写入，也不参与 `inventory` 的结论**，只在 `agenthelm clients` 里显示。
 - `format`：`dir`、`json`、`toml`，另加 `json-hooks`（hook 配置）。
 - `precedence[]`：`{kind, rule, evidence, source_url}`，把 `agent_pack_inventory.py:758-801` 的规则搬进声明；`rule` 取 `local-over-project-over-user`、`personal-over-project`、`both-load`、`precedence-undocumented`、`unknown`。
+  - **批 B 已实现**：`kind` 取 `skills` 或 `mcp`；条目按声明顺序求值，第一条适用的生效，没有适用的条目即 `unknown`（`store` 为空）。可选的 `when: {scopes, match}` 写条件：同名分组的作用域集合等于（`exact`）或包含（`includes`）所列作用域；可选的 `winner` 指出哪个作用域的存储是生效的那一份（取分组里该作用域的第一个存储，要求有 `when`，且 `winner` 属于 `when.scopes`）。不带 `when` 的条目总是适用，其后不得再有同一 `kind` 的条目。
+  - `rule` 的取值在上述五个之外增加两个，因为既有输出已经使用它们：`project-approval-unknown`（Claude 的 MCP 在没有 local 条目时，项目级条目是否已批准未读取）与 `project-trust-unknown`（Codex 的 MCP，项目是否受信任未读取）；二者都是 `unknown` 的细分，`evidence` 为 `unknown`。官方文档链接作为 `source_url` 放在声明里，代码里不再有 `DOC_*` 常量。
+  - 求值器是 `agent_pack_inventory._effective`，不含客户端 id；`_skill_effective` 与 `_mcp_effective` 保留为薄包装。
 - 存储表的**唯一来源**是声明；inventory、relocate、config 读同一份，测试不再对账三份表。
+- **读取属性（批 B 已实现）**：`stores.mcp[]` 的 `json` 与 `toml` 存储必须带 `root_key`（`mcpServers`、`mcp_servers`），其余存储不得带。路径带 `#节名` 表示服务器按项目存放在同一文件内：`data[节名][<项目绝对路径>][root_key]`（Claude 的 local 作用域 `~/.claude.json#projects`），节的形状不符时报 `unknown`，不猜；该约定只适用于 `json` MCP 存储。`managed_by: "agent-pack-state"` 表示该存储里的条目可由 agent-pack 的同步状态记录认出来源（Claude 用户级 Skill 与 MCP）；`trust_required: true` 表示客户端只在受信任的项目里读取该存储，输出带 `codex-project-requires-trust` 注记（Codex 项目级 MCP）。三者都是存储属性，不是能力标志：能力标志会出现在 `agenthelm clients` 的输出里，加它们会改变既有输出。`inventory` 的跨存储判断、`doctor` 读取原生 MCP、Desktop 的路径解析（声明为 `<per-platform>/…` 的存储走平台表，`DESKTOP` 常量由此派生）都读这些声明。读取侧不再有按客户端名字的分支。
 - **写入目标标记（批 A 已实现）**：`stores.skills[]` 的条目可带 `write_target: true`，表示 `relocate` 把技能写到这个存储；同一客户端同一作用域至多一项，其余条目只供读取。取这个形状的证据：现有 `relocate` 的目标表与 inventory 的读取集合确实不同（Codex 用户级 `relocate` 写 `~/.agents/skills`，inventory 读 `~/.codex/skills` 与 `~/.agents/skills`；Cursor 项目级写 `.agents/skills`），写入目标总是读取集合里的一项，所以用条目上的布尔标记，不另建一张表。按声明顺序的第一项仍是该作用域的「主存储」（inventory 的引用里，其余存储带 `#agents` 后缀；config 的用户级技能根目录也取它），不需要另加标记。`stores[].status` 缺省表示尚未归类（v1 的既有条目），不等同于 `observed`；批 A 的内置条目不写 `status`。`lifecycle` 缺省为 `active`。
-- 共享存储：同一路径可出现在多个驱动里（`~/.agents/skills` 同时是 Codex、Cursor、Gemini 的存储），inventory 去重时按真实路径合并。
+- 共享存储：同一路径可出现在多个驱动里（`~/.agents/skills` 同时是 Codex、Cursor、Gemini 的存储），inventory 去重时按真实路径合并。**批 B 核实的行为**：条目与重复分组都按客户端计，共享路径对每个声明它的客户端各扫描一次，不跨客户端合并；同一客户端的两个存储指向同一真实路径时（符号链接或共享目录本身）关系为 `same-file`，不产生优先级结论；摘要里的 `description_bytes_distinct_files` 对同一真实文件只计一次。以上由合成的第三个客户端的测试覆盖，代码无需改动。
 
 ### 4.6 MCP 格式适配
 
@@ -159,7 +164,7 @@
 - `mcp.adapter`：`json-mcpServers`（Claude、Cursor、agy、Gemini 的 `settings.json`）、`toml-mcp_servers`（Codex）。
 - `mcp.options`：`root_key`、`remote_url_key`（`url`、`serverUrl`、`httpUrl`）、`remote_headers`、`env_interpolation`（`none`、`plugin-root-only`、`declared-variables`、`shell-env`）、`type_field_required`。agy 的 `remote_url_key` 为 `serverUrl`，`env_interpolation` 为 `declared-variables`（官方文档，未验证）。
 - `mcp.scopes`：声明到存储的映射（沿用 #82 的 `mcp_scope` 语义）。
-- 适配器必须容忍**空文件**（agy 全局 `mcp_config.json` 起初为 0 字节）：空文件按空对象处理，写入时不把它判为损坏。
+- 适配器必须容忍**空文件**（agy 全局 `mcp_config.json` 起初为 0 字节）：空文件按空对象处理，写入时不把它判为损坏。**批 B 已实现读取侧**：`agent_pack_store_read` 按格式命名读取适配器（`json`、`toml`），0 字节文件读作空对象；只含空白的文件仍是损坏。改动前 0 字节的 JSON 配置报 `invalid-json`（inventory 里是「无法判定」，`doctor --client claude-desktop` 里是 `desktop-config` 警告），空 TOML 本来就读作空表。写入侧留待后续批次。
 - `mcp.write`：`sync` 写入的方式，取 `package`（生成可移植包，由分发步骤安装）或 `user-file`（直接改用户级配置文件）。Claude、Codex、Cursor 沿用现有实现，本文不改。**agy 取 `package`**：生成含 `mcp.json` 与 `mcp_config.json` 的包，再 `plugin install <目录>`；不直接写全局 `mcp_config.json`，也不用 `agy mcp add`（`--env` 的值会出现在进程参数里，flag 顺序有约束）。全局文件只用于 `inventory` 读取（文件证据；`disabled: true` 的条目记为未加载）；`agy mcp list` 是否会启动服务器未知，`doctor` 默认不运行它。
 
 ### 4.7 hook 协议
@@ -253,7 +258,7 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 同一批文件不并行；并行不超过两个 session。每批的验收是「对照基线逐字节核对既有输出」（沿用 Phase 1 的做法），并在路径长度不少于 138 字符的工作树里跑全套测试。
 
 - **批 A（注册表 v2 与单一存储来源）**：`drivers/*.json`、加载与校验、`agent_pack_inventory.py`、`agent_pack_relocate.py`、`agent_pack_config.py` 的存储表改读注册表，`--client` 选项与 `mcp_server.py` 的 `enum` 改读注册表。风险低，其余批的前置。
-- **批 B（检测、inventory、relocate、dedupe、doctor）**：`precedence` 与存储进声明，`cli` 探针适配，空文件容忍，共享存储去重。
+- **批 B（检测、inventory、relocate、dedupe、doctor）**（读取侧已完成，见 §4.2、§4.5、§4.6；过渡版守卫 `tests/test_client_protocol_guard.py` 带一张逐文件上限表，上限必须恰好等于当前计数，后续批次减少字面量时同步下调）：`precedence` 与存储进声明，`cli` 探针适配，空文件容忍，共享存储去重。
 - **批 C（install、update、legacy）**：`distribution.steps` 与 `installed_state` 读取器取代 `agenthelm.py:312-380`、`1230-1232`、`1888-2003` 的按名字分支，文案走文案键。风险最高，要求既有三家输出逐字节不变，Cursor 的目录解包与 Codex 的残留清理各有回归用例。
 - **批 D（nudge 与 hooks）**：事件映射与输出适配器取代 `agent_pack_nudge.py` 的名字分支，hook 命令带 `--client`，保留嗅探给已有安装，新增 `injectSteps` 适配器与 agent-pack 根目录的 `hooks.json`、`mcp_config.json`。
 - **批 E（agy 与 gemini 声明、夹具、守卫收尾）**：两份声明加夹具，守卫一的豁免表只剩 `launcher.sh`，支持矩阵的 `unsupported` 条目与命令输出落地。

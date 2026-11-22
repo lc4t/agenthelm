@@ -34,7 +34,17 @@ SCHEMA_VERSIONS = (1, 2)
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
-STORE_KEYS = {"scope", "path", "format", "status", "write_target"}
+STORE_KEYS = {"scope", "path", "format", "status", "write_target", "root_key", "managed_by", "trust_required"}
+MANAGED_BY = ("agent-pack-state",)  # entries of this store are recognised through agent-pack's own sync state records
+EVIDENCE_LEVELS = ("file", "setting", "cli", "unknown")
+PRECEDENCE_KINDS = ("skills", "mcp")
+RULES = ("local-over-project-over-user", "personal-over-project", "both-load", "precedence-undocumented", "unknown",
+         "project-approval-unknown", "project-trust-unknown")  # the last two refine ``unknown`` (design section 4.5)
+WHEN_MATCHES = ("exact", "includes")
+PRECEDENCE_KEYS = {"kind", "rule", "evidence", "source_url", "when", "winner"}
+CLI_STREAMS = ("stdout", "stderr")
+CLI_PARSES = ("json", "text")
+CLI_ARG = re.compile(r"[A-Za-z0-9._:=@/+-]{1,128}")
 DRIVERS_DIR = Path(__file__).resolve().parent / "drivers"
 
 
@@ -65,13 +75,63 @@ def _check_stores(entries: Any, source: str, kind: str) -> None:
                f"stores.{kind}[].status must be one of {', '.join(STORE_STATUSES)}")
         _check(isinstance(entry.get("write_target", False), bool), source, f"stores.{kind}[].write_target must be a boolean")
         _check(not entry.get("write_target") or kind == "skills", source, "write_target applies to skills stores only")
+        _check(entry.get("managed_by", MANAGED_BY[0]) in MANAGED_BY, source,
+               f"stores.{kind}[].managed_by must be one of {', '.join(MANAGED_BY)}")
+        _check(isinstance(entry.get("trust_required", False), bool) and (kind == "mcp" or "trust_required" not in entry),
+               source, "trust_required must be a boolean and applies to mcp stores only")
+        reads_keys = kind == "mcp" and entry["format"] in ("json", "toml")
+        _check(reads_keys == ("root_key" in entry) and (not reads_keys or _is_text(entry["root_key"])), source,
+               "root_key (the key holding the servers) is required for json / toml mcp stores and only for them")
+        _check("#" not in entry["path"] or (kind == "mcp" and entry["format"] == "json"), source,
+               "a #section in a path applies to json mcp stores only")
+
+
+def probe_problem(probe: Any) -> str | None:
+    """Why ``probe`` is not a valid ``detect.cli`` declaration (``None`` when valid): a fixed read-only argument list
+    (the executable comes from ``detect.executables``), the stream the output is on and how to parse it."""
+    if not isinstance(probe, dict) or set(probe) != {"argv", "stream", "parse"}:
+        return "detect.cli must be an object with exactly argv, stream, parse"
+    argv = probe["argv"]
+    if not (isinstance(argv, list) and 1 <= len(argv) <= 16
+            and all(isinstance(item, str) and CLI_ARG.fullmatch(item) for item in argv)):
+        return "detect.cli.argv must be 1-16 plain arguments (letters, digits and . _ : = @ / + -)"
+    if probe["stream"] not in CLI_STREAMS:
+        return f"detect.cli.stream must be one of {', '.join(CLI_STREAMS)}"
+    if probe["parse"] not in CLI_PARSES:
+        return f"detect.cli.parse must be one of {', '.join(CLI_PARSES)}"
+    return None
+
+
+def _check_precedence(entries: Any, source: str) -> None:
+    _check(isinstance(entries, list), source, "precedence must be a list")
+    closed: set[str] = set()  # kinds that already have an unconditional entry: nothing after it can be reached
+    for entry in entries:
+        _check(isinstance(entry, dict) and {"kind", "rule", "evidence", "source_url"} <= set(entry) <= PRECEDENCE_KEYS,
+               source, "precedence[] needs kind, rule, evidence, source_url (optional: when, winner)")
+        _check(entry["kind"] in PRECEDENCE_KINDS, source, f"precedence[].kind must be one of {', '.join(PRECEDENCE_KINDS)}")
+        _check(entry["kind"] not in closed, source, f"precedence[] has an entry after an unconditional {entry['kind']} entry")
+        _check(entry["rule"] in RULES, source, f"precedence[].rule must be one of {', '.join(RULES)}")
+        _check(entry["evidence"] in EVIDENCE_LEVELS, source, f"precedence[].evidence must be one of {', '.join(EVIDENCE_LEVELS)}")
+        url = entry["source_url"]
+        _check(url is None or (_is_text(url, 300) and url.startswith("https://")), source,
+               "precedence[].source_url must be an https URL or null")
+        when = entry.get("when")
+        if when is None:
+            _check("winner" not in entry, source, "precedence[].winner needs a when condition")
+            closed.add(entry["kind"])
+            continue
+        _check(isinstance(when, dict) and set(when) == {"scopes", "match"} and when["match"] in WHEN_MATCHES
+               and isinstance(when["scopes"], list) and when["scopes"] and all(x in SCOPES for x in when["scopes"]),
+               source, "precedence[].when must be {scopes: [...], match: exact | includes}")
+        _check(entry.get("winner", when["scopes"][0]) in when["scopes"], source,
+               "precedence[].winner must be one of the when.scopes")
 
 
 def validate_builtin(data: Any, source: str) -> dict:
     """Return ``data`` when it is a valid built-in driver; raise ``DriverDataError`` naming ``source`` otherwise."""
     _check(isinstance(data, dict), source, "the top level must be an object")
-    _check(set(data) <= DECLARATION_KEYS | {"lifecycle"} and DECLARATION_KEYS <= set(data), source,
-           f"keys must be {', '.join(sorted(DECLARATION_KEYS))} (+ lifecycle); got {', '.join(sorted(data))}")
+    _check(set(data) <= DECLARATION_KEYS | {"lifecycle", "precedence"} and DECLARATION_KEYS <= set(data), source,
+           f"keys must be {', '.join(sorted(DECLARATION_KEYS))} (+ lifecycle, precedence); got {', '.join(sorted(data))}")
     _check(data["schema_version"] in SCHEMA_VERSIONS and not isinstance(data["schema_version"], bool), source,
            f"schema_version must be one of {', '.join(map(str, SCHEMA_VERSIONS))}")
     _check(isinstance(data["id"], str) and ID_PATTERN.match(data["id"]) is not None and data["id"] != "all", source,
@@ -79,8 +139,8 @@ def validate_builtin(data: Any, source: str) -> dict:
     _check(_is_text(data["display"]), source, "display must be a one-line string")
     _check(data.get("lifecycle", "active") in LIFECYCLES, source, f"lifecycle must be one of {', '.join(LIFECYCLES)}")
     detect_part = data["detect"]
-    _check(isinstance(detect_part, dict) and set(detect_part) <= {"executables", "dirs"}, source,
-           "detect must be an object with executables / dirs")
+    _check(isinstance(detect_part, dict) and set(detect_part) <= {"executables", "dirs", "cli"}, source,
+           "detect must be an object with executables / dirs (/ cli)")
     executables, dirs = detect_part.get("executables", []), detect_part.get("dirs", [])
     _check(isinstance(executables, list) and all(isinstance(x, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", x)
                                                  for x in executables), source, "detect.executables must be file names")
@@ -89,6 +149,9 @@ def validate_builtin(data: Any, source: str) -> dict:
         _check(isinstance(item, dict) and {"path"} <= set(item) <= {"path", "env"} and _is_text(item["path"], 200)
                and (item.get("env") is None or _is_text(item["env"])), source, "detect.dirs[] needs path (optional env)")
     _check(executables or dirs, source, "detect needs at least one fact")
+    if "cli" in detect_part:
+        _check(probe_problem(detect_part["cli"]) is None, source, probe_problem(detect_part["cli"]) or "")
+        _check(bool(executables), source, "detect.cli needs detect.executables (the program the probe runs)")
     _check(data["distribution"] in DISTRIBUTIONS, source, f"distribution must be one of {', '.join(DISTRIBUTIONS)}")
     stores = data["stores"]
     _check(isinstance(stores, dict) and set(stores) == {"skills", "mcp"}, source, "stores must have exactly skills and mcp")
@@ -101,6 +164,7 @@ def validate_builtin(data: Any, source: str) -> dict:
     _check(isinstance(capabilities, dict) and set(capabilities) == set(CAPABILITIES)
            and all(isinstance(v, bool) for v in capabilities.values()), source,
            f"capabilities must hold exactly the booleans {', '.join(CAPABILITIES)}")
+    _check_precedence(data.get("precedence", []), source)
     return data
 
 
@@ -158,6 +222,25 @@ def store_table(kind: str) -> dict[str, tuple[tuple[str, str], ...]]:
     declare at least one such store. ``<project>`` stays a placeholder."""
     return {item["id"]: tuple((store["scope"], store["path"]) for store in item["stores"][kind])
             for item in BUILTIN if item["stores"][kind]}
+
+
+def stores(client: str, kind: str) -> tuple[dict, ...]:
+    """The declared ``kind`` stores of ``client`` (``skills`` | ``mcp``) with all their attributes, in declaration order."""
+    driver = get(client)
+    return tuple(driver["stores"][kind]) if driver else ()
+
+
+def per_platform_ids() -> tuple[str, ...]:
+    """Drivers whose MCP file location depends on the platform (declared as ``<per-platform>/<file>``): their store is
+    resolved by a platform table, not from a path template."""
+    return tuple(item["id"] for item in BUILTIN
+                 if any(store["path"].startswith("<per-platform>") for store in item["stores"]["mcp"]))
+
+
+def precedence(client: str, kind: str) -> tuple[dict, ...]:
+    """The ordered precedence entries a driver declares for ``kind`` (``skills`` | ``mcp``); empty when it declares none."""
+    driver = get(client)
+    return tuple(item for item in driver.get("precedence", []) if item["kind"] == kind) if driver else ()
 
 
 def skill_write_targets() -> dict[tuple[str, str], str]:
