@@ -35,6 +35,8 @@ ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
 STORE_KEYS = {"scope", "path", "format", "status", "write_target"}
+OPTIONAL_BUILTIN_KEYS = {"lifecycle", "runtime_cache"}
+CACHE_KEYS = {"base", "env", "glob"}
 DRIVERS_DIR = Path(__file__).resolve().parent / "drivers"
 
 
@@ -70,8 +72,9 @@ def _check_stores(entries: Any, source: str, kind: str) -> None:
 def validate_builtin(data: Any, source: str) -> dict:
     """Return ``data`` when it is a valid built-in driver; raise ``DriverDataError`` naming ``source`` otherwise."""
     _check(isinstance(data, dict), source, "the top level must be an object")
-    _check(set(data) <= DECLARATION_KEYS | {"lifecycle"} and DECLARATION_KEYS <= set(data), source,
-           f"keys must be {', '.join(sorted(DECLARATION_KEYS))} (+ lifecycle); got {', '.join(sorted(data))}")
+    _check(set(data) <= DECLARATION_KEYS | OPTIONAL_BUILTIN_KEYS and DECLARATION_KEYS <= set(data), source,
+           f"keys must be {', '.join(sorted(DECLARATION_KEYS))} (+ {', '.join(sorted(OPTIONAL_BUILTIN_KEYS))}); "
+           f"got {', '.join(sorted(data))}")
     _check(data["schema_version"] in SCHEMA_VERSIONS and not isinstance(data["schema_version"], bool), source,
            f"schema_version must be one of {', '.join(map(str, SCHEMA_VERSIONS))}")
     _check(isinstance(data["id"], str) and ID_PATTERN.match(data["id"]) is not None and data["id"] != "all", source,
@@ -90,6 +93,16 @@ def validate_builtin(data: Any, source: str) -> dict:
                and (item.get("env") is None or _is_text(item["env"])), source, "detect.dirs[] needs path (optional env)")
     _check(executables or dirs, source, "detect needs at least one fact")
     _check(data["distribution"] in DISTRIBUTIONS, source, f"distribution must be one of {', '.join(DISTRIBUTIONS)}")
+    cache = data.get("runtime_cache", [])
+    _check(isinstance(cache, list), source, "runtime_cache must be a list")
+    for entry in cache:
+        _check(isinstance(entry, dict) and {"base", "glob"} <= set(entry) <= CACHE_KEYS, source,
+               "runtime_cache[] needs base, glob (optional: env)")
+        _check(_is_text(entry["base"], 200) and (entry["base"].startswith("~/") or entry["base"].startswith("/")), source,
+               "runtime_cache[].base must be ~/ or absolute")
+        _check(_is_text(entry["glob"], 200) and not entry["glob"].startswith("/") and ".." not in entry["glob"].split("/"),
+               source, "runtime_cache[].glob must be a relative pattern without ..")
+        _check(entry.get("env") is None or _is_text(entry["env"]), source, "runtime_cache[].env must be a variable name")
     stores = data["stores"]
     _check(isinstance(stores, dict) and set(stores) == {"skills", "mcp"}, source, "stores must have exactly skills and mcp")
     for kind in ("skills", "mcp"):
@@ -194,6 +207,53 @@ def detect(driver: dict, home: Path, getenv: Callable[[str], str | None],
         if path.is_dir():
             return {"detected": True, "evidence": {"kind": "directory", "name": item["path"]}}
     return {"detected": False, "evidence": None}
+
+
+# ---------------------------------------------------------------- runtime caches (where clients keep plugin copies)
+
+def _cache_patterns(home: Path, getenv: Callable[[str], str | None], plugin: str,
+                    *, with_defaults: bool = True) -> list[Path]:
+    """Glob patterns (absolute) of every declared client cache for ``plugin`` (``*`` when ``plugin`` is ``*``).
+
+    The environment override replaces the base directory; the default base is kept too, so a copy written before the
+    variable was set is still found."""
+    patterns: list[Path] = []
+    for driver in BUILTIN:
+        for entry in driver.get("runtime_cache", []):
+            bases = []
+            override = getenv(entry["env"]) if entry.get("env") else None
+            if override:
+                bases.append(Path(override))
+            if with_defaults or not bases:
+                bases.append(_expand(entry["base"], home))
+            for base in bases:
+                pattern = base / entry["glob"].replace("<plugin>", plugin)
+                if pattern not in patterns:
+                    patterns.append(pattern)
+    return patterns
+
+
+def runtime_cache_copies(home: Path, getenv: Callable[[str], str | None], plugin: str) -> list[Path]:
+    """Existing directories of ``plugin`` in the declared client caches (not filtered by content, not ordered)."""
+    found: list[Path] = []
+    for pattern in _cache_patterns(home, getenv, plugin):
+        anchor = Path(pattern.anchor)
+        relative = pattern.relative_to(anchor).as_posix()
+        for path in sorted(anchor.glob(relative)):
+            if path.is_dir() and path not in found:
+                found.append(path)
+    return found
+
+
+def in_runtime_cache(path: Path, home: Path, getenv: Callable[[str], str | None]) -> bool:
+    """Whether ``path`` lies inside one of the declared client caches (any plugin, any version)."""
+    import fnmatch
+    parts = path.parts
+    for pattern in _cache_patterns(home, getenv, "*"):
+        wanted = pattern.parts
+        if len(parts) > len(wanted) and all(fnmatch.fnmatchcase(a, b) for a, b in zip(parts, wanted)):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------- user declarations (validate only)

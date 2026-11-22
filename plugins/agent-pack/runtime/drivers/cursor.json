@@ -11,6 +11,12 @@
     ]
   },
   "distribution": "directory-dropin",
+  "runtime_cache": [
+    {
+      "base": "~/.cursor",
+      "glob": "plugins/local/<plugin>"
+    }
+  ],
   "stores": {
     "skills": [
       {
