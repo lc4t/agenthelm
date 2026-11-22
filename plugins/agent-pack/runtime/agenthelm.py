@@ -2103,6 +2103,11 @@ def content_companion(env: Env, report: dict) -> tuple[Path | None, list[dict]]:
                             clients=allowed), available
 
 
+def _runtime_latest_option(env: Env, version: str | None) -> str:
+    import agenthelm_runtime  # noqa: PLC0415 - shipped next to this file
+    return agenthelm_runtime.latest_option(version, env.get(ENV_LATEST))
+
+
 def content_step(env: Env, item: dict, report: dict, project: Path, accept: list[str], keep: list[str],
                  recovery_dir: Path | None, *, content_flags: list[str] | None = None) -> Step:
     if item["plugin"] != "agents-init":
@@ -2156,7 +2161,7 @@ def content_step(env: Env, item: dict, report: dict, project: Path, accept: list
         updatable = [entry["client"] for entry in installed if entry["client"] in {"claude", "codex"}]
         update_client = owner if owner in updatable else next(iter(updatable), None)
         advice = (f"{CLI} update --only plugins --client {update_client}" if update_client
-                  else f"{CLI} runtime update --apply")
+                  else f"{CLI} runtime update{_runtime_latest_option(env, required)} --apply")
         blocked = _("先更新 agents-init：实际选用 {0} {1}（{2}），需要 {3}；下一步：{4}").format(
             client, current or "?", manager, required, advice)
     elif older:

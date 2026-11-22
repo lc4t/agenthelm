@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -151,6 +152,14 @@ def release_label(root: Path, version: str) -> str:
 
 def is_prerelease(version: str | None) -> bool:
     return bool(version) and re.fullmatch(_PRERELEASE, version) is not None
+
+
+def latest_option(version: str | None, source: str | None) -> str:
+    """`` --latest <source>`` for a command that must see the same latest.json again; empty for a stable release.
+
+    A candidate (``-rc.N``) is announced by the latest.json the user passed (or ``AGENTHELM_LATEST_URL``); the default
+    latest.json names the stable release, so the next command only reaches the candidate when it carries the source."""
+    return f" --latest {shlex.quote(source)}" if source and is_prerelease(version) else ""
 
 
 def running_label(root: Path | None = None) -> str | None:
@@ -466,7 +475,8 @@ def main(argv: list[str], host: Any) -> int:
                 lines.append(_("其他已安装目录：{0}（目录版本号高于 current {1}，不代表内容更新）；切换：agenthelm runtime use {0} --apply").format(
                     version, active["version"]))
             if data["update_available"]:
-                lines.append(_("有新版本 {0}：agenthelm runtime update 预览").format(data['latest_release']))
+                option = latest_option(data["latest_release"], args.latest or env.get(host.ENV_LATEST))
+                lines.append(_("有新版本 {0}：{1} 预览").format(data['latest_release'], f"agenthelm runtime update{option}"))
             if not active:
                 lines.append(_("安装：agenthelm runtime install（预览）→ 加 --apply 执行"))
             _print({"ok": True, **data}, args.output, lines)
