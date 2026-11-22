@@ -579,6 +579,23 @@ def _render_input_drift(ctx: Context, pack_entry: dict | None) -> list[dict]:
     return rows
 
 
+def _private_ignore_language(ctx: Context) -> list[dict]:
+    """``private/.gitignore`` written in the other language: information only, exit code unchanged (refresh can fix it)."""
+    module = _init()
+    plan = module.private_ignore_plan(ctx.root, ctx.inputs.language)
+    if plan is None:
+        return []
+    names = {"zh": _("中文"), "en": _("英文")}
+    if plan["state"] == "mismatch":
+        message = _("private/.gitignore 是工具写过的{0}原文，与项目文件语言（{1}）不符："
+                    "运行 --mode refresh 预览，--apply 时先备份再换成{1}版本（不影响退出码）")
+    else:
+        message = _("private/.gitignore 开头是{0}原文，但内容已被修改，与项目文件语言（{1}）不符：工具不会改动它（不影响退出码）")
+    return [{"id": "private-ignore-language", "kind": "private-ignore-language", "level": "info", "path": plan["path"],
+             "state": plan["state"], "found": plan["found"], "language": plan["language"],
+             "message": message.format(names[plan["found"]], names[plan["language"]])}]
+
+
 # ---------------------------------------------------------------- decisions
 
 def local_decisions_file(state_dir: Path, root: Path) -> Path:
@@ -989,6 +1006,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     extras += _profile_extras(ctx)
     conflicts = _profile_conflicts(ctx)
     drift = _render_input_drift(ctx, pack_entry)
+    private_language = _private_ignore_language(ctx)
 
     decisions = load_decisions(root, state_dir)
     active, skipped = partition(findings, decisions, reprompt=reprompt)
@@ -996,7 +1014,7 @@ def check(root: Path, *, state_dir: Path | None = None, reprompt: bool = False) 
     return {"ok": not active, "required_ok": not any(f["level"] == "must" for f in active), "mode": "check", "packs": versions, "skeleton": skeleton, "profile": profile_rows,
             "project_language": {"declared": declared, "effective": declared or "zh"},
             "regions": region_state, "lock": lock_state, "case_naming": naming, "extras": extras,
-            "profile_extras": _extras_summary(extras), "profile_conflicts": conflicts, "render_input_drift": drift, "findings": active, "skipped": skipped,
+            "profile_extras": _extras_summary(extras), "profile_conflicts": conflicts, "render_input_drift": drift, "private_ignore_language": private_language, "findings": active, "skipped": skipped,
             "levels": level_counts(active), "categories": summarize(active),
             "decisions": {"path": DECISIONS_PATH.as_posix(), "errors": decisions["errors"],
                           "conflict_copies": decisions["conflict_copies"], "local_path": decisions["local_path"]}}
@@ -1437,7 +1455,7 @@ def render_text(result: dict) -> str:
             lines.append(_("  [已跳过 {0}] {1}").format(item['id'], reason))
         for item in result.get("profile_conflicts", []):
             lines.append(_("  [信息] {0}").format(item["message"]))
-        for item in result.get("render_input_drift", []):
+        for item in result.get("render_input_drift", []) + result.get("private_ignore_language", []):
             lines.append(_("  [信息] {0}").format(item["message"]))
         summary = result.get("profile_extras") or {}
         if summary.get("total"):
