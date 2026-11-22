@@ -26,14 +26,11 @@ EXCLUDED = {"agent_pack_clients.py", "i18n_agent_pack.py"}
 
 # file -> number of client-id string constants it still holds. Each is cleared by the batch named next to it.
 CAPS = {
-    "agent_pack_config.py": 31,     # sync write side, package destinations, Codex TOML writing, residual cleanup (batch D)
-    "agent_pack_claude.py": 12,     # native package construction: the sync write path, not install / update (batch D)
     "agent_pack_nudge.py": 14,      # hook protocol: events and output formats (batch D)
-    "agent_pack_scope.py": 4,       # scope declaration and shadow findings: the sync path (batch D)
-    "agent_pack_mcp_write.py": 3,   # MCP write side: the sync path (batch D)
-    "agent_pack_codex_mcp.py": 1,   # Codex native MCP entry: the sync path (batch D)
 }
 DISTRIBUTION_CLEARED = ("agenthelm.py",)  # batch C: install, update, legacy and the install-state readers read the declarations
+SYNC_WRITE_CLEARED = ("agent_pack_config.py", "agent_pack_native_package.py", "agent_pack_sync_scope.py",
+                      "agent_pack_mcp_move.py", "agent_pack_mcp_toml.py", "agent_pack_mcp_json.py")  # batch D2: sync writes
 READ_SIDE_CLEARED = ("agent_pack_inventory.py", "agent_pack_relocate.py", "agent_pack_dedupe.py", "agent_pack_desktop.py",
                      "agent_pack_ext_common.py")
 
@@ -79,6 +76,19 @@ class ClientNameGuard(unittest.TestCase):
             self.assertIn(name, found)
             self.assertEqual(found[name], [], name)
             self.assertNotIn(name, CAPS)
+
+    def test_the_sync_write_side_is_clear(self) -> None:
+        found = self.counts()
+        for name in SYNC_WRITE_CLEARED:
+            self.assertIn(name, found)
+            self.assertEqual(found[name], [], name)
+            self.assertNotIn(name, CAPS)
+
+    def test_no_runtime_module_name_carries_a_client_id(self) -> None:
+        ids = registry.all_ids()
+        named = [path.name for path in RUNTIME.glob("*.py")
+                 if any(part in path.stem.split("_") or part.replace("-", "_") in path.stem for part in ids)]
+        self.assertEqual(named, [], "modules are named for their role, format or protocol, never for a client")
 
     def test_the_scan_sees_a_planted_literal(self) -> None:
         import tempfile

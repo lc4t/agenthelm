@@ -117,7 +117,10 @@
     "legacy_cleanup": true,
     "marketplace_update": true,
     "reinstall_rewrites_all": false,
-    "market_pin": false
+    "market_pin": false,
+    "user_mcp_write": true,
+    "project_skill_write": false,
+    "user_skill_write": true
   },
   "precedence": [
     {
@@ -132,5 +135,43 @@
       "evidence": "unknown",
       "source_url": "https://learn.chatgpt.com/docs/extend/mcp?surface=cli"
     }
-  ]
+  ],
+  "sync": {
+    "write": "plugin-dir",
+    "package_dir": "~/.agents/plugins/plugins",
+    "companions": {
+      "manifest": ".codex-plugin/plugin.json",
+      "mcp": ".mcp.json",
+      "remote_mcp": "codex-remote-mcp.json",
+      "placeholder_prefix": "CLAUDE_",
+      "type_names": {
+        "streamable-http": "http",
+        "sse": "sse"
+      }
+    },
+    "marketplace": {
+      "path": "~/.agents/plugins/marketplace.json",
+      "source_dir": "./.agents/plugins/plugins"
+    },
+    "cleanup": {
+      "cache_dir": "~/.codex/plugins/cache",
+      "config_file": "~/.codex/config.toml"
+    }
+  },
+  "mcp": {
+    "adapter": "toml",
+    "write": "package",
+    "native_remote": true,
+    "options": {
+      "remote_url_key": "url",
+      "remote_headers": "split-env",
+      "env_interpolation": "none",
+      "type_field_required": false,
+      "header_fields": {
+        "plain": "http_headers",
+        "env": "env_http_headers",
+        "bearer": "bearer_token_env_var"
+      }
+    }
+  }
 }

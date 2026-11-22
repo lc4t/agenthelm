@@ -1,7 +1,7 @@
-"""Scope view of a Claude sync (#67): which entries are user-level, which the project declares as project-level,
+"""Scope view of a native-package sync (#67): which entries are user-level, which the project declares as project-level,
 what a narrowing would take away from other projects, and how the preview groups them.
 
-Pure helpers over plain data so the preview and ``--apply`` read one plan: ``agent_pack_claude.plan_project``
+Pure helpers over plain data so the preview and ``--apply`` read one plan: ``agent_pack_native_package.plan_project``
 decides, this module only describes. Nothing here writes. Output never carries configuration values.
 """
 from __future__ import annotations
@@ -190,32 +190,52 @@ def _inventory():
     return agent_pack_inventory
 
 
-def skill_shadow(name: str) -> dict[str, Any] | None:
+def _template(path: str) -> str:
+    """A declared store path as the store name the precedence layer compares: ``<project>/`` is dropped."""
+    return path.removeprefix("<project>/")
+
+
+def skill_shadow(name: str, client: str | None = None) -> dict[str, Any] | None:
     """A project-level Skill that a same-name user-level Skill outranks, by the precedence the inventory layer
-    already encodes (Claude: personal over project, from the official Skills documentation). None when the
-    documentation states no precedence."""
+    already encodes (declared per client in ``precedence``; for Claude: personal over project, from the official Skills
+    documentation). None when the documentation states no precedence."""
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file
+
+    client = client or _native_client()
     inventory = _inventory()
-    group = [{"scope": "user", "store": "~/.claude/skills"}, {"scope": "project", "store": ".claude/skills"}]
-    effective = inventory._skill_effective("claude", group)
+    user = next(store for store in agent_pack_clients.stores(client, "skills") if store["scope"] == "user")
+    project = next(store for store in agent_pack_clients.stores(client, "skills") if store["scope"] == "project")
+    group = [{"scope": "user", "store": user["path"]}, {"scope": "project", "store": _template(project["path"])}]
+    effective = inventory._skill_effective(client, group)
     if effective.get("evidence") == "unknown" or not effective.get("store"):
         return None
-    return {"kind": "skill", "name": name, "client": "claude", "effective_store": effective["store"],
-            "shadowed_store": ".claude/skills", "rule": effective["rule"], "evidence": effective["evidence"],
+    return {"kind": "skill", "name": name, "client": client, "effective_store": effective["store"],
+            "shadowed_store": _template(project["path"]), "rule": effective["rule"], "evidence": effective["evidence"],
             "source_url": effective["source_url"], "advisory": True}
 
 
-def mcp_shadow(name: str, project_store: str) -> dict[str, Any] | None:
-    """A same-name user-level MCP entry next to the new project-level one. Only a Claude ``local`` winner is
+def mcp_shadow(name: str, project_store: str, client: str | None = None) -> dict[str, Any] | None:
+    """A same-name user-level MCP entry next to the new project-level one. Only a ``local`` winner is
     concluded (``.mcp.json`` depends on a per-project approval this version does not read)."""
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file
+
+    client = client or _native_client()
     inventory = _inventory()
+    user_path = agent_pack_clients.user_mcp_store(client)["path"]
     scope = "local" if project_store == "local" else "project"
-    group = [{"scope": "user", "store": "~/.claude.json"}, {"scope": scope, "store": project_store}]
-    effective = inventory._mcp_effective("claude", group)
+    group = [{"scope": "user", "store": user_path}, {"scope": scope, "store": project_store}]
+    effective = inventory._mcp_effective(client, group)
     if effective.get("evidence") == "unknown" or not effective.get("store"):
         return None
-    return {"kind": "mcp", "name": name, "client": "claude", "effective_store": effective["store"],
-            "shadowed_store": "~/.claude.json", "rule": effective["rule"], "evidence": effective["evidence"],
+    return {"kind": "mcp", "name": name, "client": client, "effective_store": effective["store"],
+            "shadowed_store": user_path, "rule": effective["rule"], "evidence": effective["evidence"],
             "source_url": effective["source_url"], "advisory": True}
+
+
+def _native_client() -> str:
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file
+
+    return agent_pack_clients.ids_with_sync("native-package")[0]
 
 
 def project_skills_replace_warning(count: int) -> str:

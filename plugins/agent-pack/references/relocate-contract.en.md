@@ -26,7 +26,7 @@ Skills and MCP entries (below); for a Skill `<ref>` is `skills[].ref` from `agen
 
 ## MCP entries (`mcp:<name>@claude:<user|local|project>`)
 
-`<ref>` is `mcps[].ref`; `--to claude:user|local|project` (`project` is the project's `.mcp.json`). Same shell (preview, `plan_digest`, `--expect-plan`, `blocked`, `promise`); writes reuse the Claude sync's local and `.mcp.json` readers and helpers, implemented in `agent_pack_mcp_write.py`. `plan.kind` is `mcp`, `source.managed` says whether agent-pack's state records ownership, and `plan.manual[]` carries the manual command for an unmanaged source.
+`<ref>` is `mcps[].ref`; `--to claude:user|local|project` (`project` is the project's `.mcp.json`). Same shell (preview, `plan_digest`, `--expect-plan`, `blocked`, `promise`); writes reuse the Claude sync's local and `.mcp.json` readers and helpers, implemented in `agent_pack_mcp_move.py`. `plan.kind` is `mcp`, `source.managed` says whether agent-pack's state records ownership, and `plan.manual[]` carries the manual command for an unmanaged source.
 
 - **Copy only, never overwrite**: an existing target entry of that name → `target-exists-identical|different` (compares a hash of the whole entry, says only same or different, shows no value). `--mode link` → `link-unsupported`.
 - **Direction**: `user` is wider than `local`/`project`; widening (→ `user`) needs `--allow-widen` and is marked red; `local` ↔ `project` is `same`. A `project` target also needs `--confirm-project-content` on `--apply` (the entry enters version control).

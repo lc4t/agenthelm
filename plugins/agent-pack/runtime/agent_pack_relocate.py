@@ -6,7 +6,7 @@ Write order: recovery directory -> copy beside the target under a temporary name
 content digests, ``SKILL.md`` included) -> rename into place -> archive the source (a move, never a delete).
 Any failure undoes only what this run created and puts archived sources back; an existing target is never touched.
 
-Skills are handled here; ``mcp:`` refs go to ``agent_pack_mcp_write`` (same plan shell, digest and apply protocol).
+Skills are handled here; ``mcp:`` refs go to ``agent_pack_mcp_move`` (same plan shell, digest and apply protocol).
 Plans and outputs never contain file contents or values, only names, paths and digests.
 """
 
@@ -63,7 +63,7 @@ def build_plan(home: Path, project: Path, ref: str, to: str, mode: str = "copy",
     project = project.expanduser().resolve()
     parsed_early = parse_ref(ref)
     if parsed_early is not None and parsed_early[0] == "mcp":
-        import agent_pack_mcp_write as mcp_write  # noqa: PLC0415 - shipped next to this file
+        import agent_pack_mcp_move as mcp_write  # noqa: PLC0415 - shipped next to this file
         return mcp_write.build_plan(home, project, ref, to, allow_widen, keep_source, recovery_override, mode)
     plan: dict[str, Any] = {
         "ref": ref, "kind": "skill", "source": None, "target": None, "mode": mode, "retire_source": False,
@@ -203,7 +203,7 @@ def next_command(plan: dict, args_text: str) -> str:
 def apply_plan(plan: dict, ctx: dict, confirm_project: bool) -> dict:
     """Execute a ready plan. Never raises for expected failures; returns the ``applied`` record."""
     if plan["kind"] == "mcp":
-        import agent_pack_mcp_write as mcp_write  # noqa: PLC0415
+        import agent_pack_mcp_move as mcp_write  # noqa: PLC0415
         return mcp_write.apply_plan(plan, ctx, confirm_project)
     home, project = ctx["home"], ctx["project"]
     source: Path = ctx["source"]
@@ -287,7 +287,7 @@ ACTION_TEXT = {
 
 
 def render_text(plan: dict, applied: dict | None, command: str, color: bool = False) -> str:
-    import agent_pack_mcp_write as mcp_write  # noqa: PLC0415
+    import agent_pack_mcp_move as mcp_write  # noqa: PLC0415
     lines = []
     preview = applied is None
     lines.append(_("agenthelm relocate：预览（未写入任何文件）") if preview else _("agenthelm relocate：已执行"))

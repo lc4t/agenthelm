@@ -9,9 +9,9 @@
 2. **职责切分**：菜单与 `extensions` 命令只做展示、选择、预览确认与读回，全部数据与写入经子进程调用 agent-pack 的 `agenthelm` 命令并解析 JSON。写入由 agent-pack 新增的两个命令 `agenthelm relocate`（作用域或客户端之间移动、复制）与 `agenthelm dedupe`（重复处置）承担，均「默认预览、`--apply` 才写」，预览带 `plan_digest`，应用时必须回传同一摘要，保证预览等于应用。（§3.3、§4、§5）
 3. **「生效范围」的表达**：菜单里的三个选项（全局 / 仅此项目 / 仅某客户端）落到 #82 I-4 的 `mcp_scope` / `skill_scope` 声明与 `sync` 的存储映射，不新增第二套声明。**只收窄不放宽**：收窄是默认动作；放宽（项目→用户级）是单独动词，需要 `--allow-widen` 与键入条目名确认。（§2）
 4. **重复 MCP**：判据按「同名」「同指纹不同名」「同名不同指纹」三类；「哪份生效」只在官方文档写明优先级时才下结论，其余一律 `优先级未文档化`。处置四选一：保留一份并退役其余 / 都保留并标注 / 改作用域 / 忽略。（§4）
-5. **关键发现（影响实施）**：agent-pack 现有 `reconcile --retire-*` 只支持 **Skill 与插件**（`agent_pack_config.py:2108-2109`，`agent_pack_claude.py:389-402`），对 MCP 条目只产出手工残留提示（`:250-268`，因为 `~/.claude.json` 可能含本地凭据，故刻意不自动编辑）。「MCP 退役经归档、可恢复」目前没有现成路径，须新增（拆分项 CB-3，决策 D-CB6）。另外 `reconcile` 当前没有「从归档恢复」命令（只有失败时的事务回滚，`:590-593`），恢复目前是手工移回。（§4.4、§9）
+5. **关键发现（影响实施）**：agent-pack 现有 `reconcile --retire-*` 只支持 **Skill 与插件**（`agent_pack_config.py:2108-2109`，`agent_pack_native_package.py:389-402`），对 MCP 条目只产出手工残留提示（`:250-268`，因为 `~/.claude.json` 可能含本地凭据，故刻意不自动编辑）。「MCP 退役经归档、可恢复」目前没有现成路径，须新增（拆分项 CB-3，决策 D-CB6）。另外 `reconcile` 当前没有「从归档恢复」命令（只有失败时的事务回滚，`:590-593`），恢复目前是手工移回。（§4.4、§9）
 6. **技能**：工具只做机械判断（缺 description、体积、每会话 description 加载成本、同名漂移、可识别来源时的过期），**明确不做质量打分**。迁移用「复制 + 读回校验 + 归档源」，跨作用域不用指向 home 的符号链接；项目内相对符号链接沿用 #82 D3，Claude Code 官方文档确认支持符号链接，同步盘行为仍未核实。（§5）
-7. **拆分**：9 个 issue 草稿（CB-1…CB-9），分三个波次。波次一只含 orchestrator 的只读屏与 inventory 字段请求，波次二、三才碰 agent-pack 写入路径，并与 #82 的 I-4 / I-7 在 `agent_pack_claude.py` 上串行。无 major。（§8）
+7. **拆分**：9 个 issue 草稿（CB-1…CB-9），分三个波次。波次一只含 orchestrator 的只读屏与 inventory 字段请求，波次二、三才碰 agent-pack 写入路径，并与 #82 的 I-4 / I-7 在 `agent_pack_native_package.py` 上串行。无 major。（§8）
 
 **这个领域的标准流程**：包与配置管理的通用做法是「盘点（inventory）→ 解析（算出每份条目的归属与优先级）→ 预览（diff，不写）→ 应用（事务、先备份）→ 读回校验 → 退役（归档、可恢复）」，关键环节是作用域与优先级显式化、证据分级与不可逆动作前的确认。**当前行业内「好」的判据来源**：[OpenSSF Scorecard Pinned-Dependencies](https://github.com/ossf/scorecard/blob/main/docs/checks.md) 与 [MCP Registry server.schema.json](https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json)（#82 §0 已采用，本文不重述）；Skill 的格式与成本判据来自 [Agent Skills 规范](https://agentskills.io/specification)（`name` ≤64 字符、`description` ≤1024 字符、元数据约 100 token 在启动时常驻、`SKILL.md` 建议 <500 行 / <5000 token，2026-11-18 读取）与 [Claude Code Skills 文档](https://code.claude.com/docs/en/skills)（2026-11-18 读取，见 §5.3）。这些是社区或厂商约定，不是对本仓库的强制要求；本文把它们当作「机械提示」的阈值来源，不当作质量结论。
 
@@ -25,7 +25,7 @@
 - 非交互：`project_cli.py` 的 `COMMANDS` 字典与 `parser()`；全部子命令继承 `--project`、`--output text|json`、`--no-input`、`--demo`、`--offline`；写命令带 `--apply`；JSON 外壳为 `{ok, attention, exit_code, command, demo, data}`。
 - 预览/应用模式：`project_maintain.plan()` 生成 `{steps:[{id, title, blocked, custom, payload}]}`，`apply()` 逐步执行；预览与应用共用同一规划函数，`--apply` 前后不换逻辑；每个写入步骤有恢复目录（`_recovery_dir`，缺省 `~/.agent-pack/recovery/<时间戳>-agenthelm-<label>`）。
 - 跨插件调用：project-orchestrator 通过 `subprocess.run([...], capture_output=True, text=True)` 调用外部脚本并 `json.loads` 其 stdout（`_run_refresh`、`_run_init`），不 import 其他插件；失败时转为 `EntryError`。本设计沿用该模式，调用对象是 `agenthelm` 命令。
-- agent-pack 写入事务：`agent_pack_claude._apply` 在 `recovery_base/<时间戳>-claude-<名>` 下按 bucket 归档被替换物（`os.replace`），失败时按 `moved` 逆序回滚。
+- agent-pack 写入事务：`agent_pack_native_package._apply` 在 `recovery_base/<时间戳>-claude-<名>` 下按 bucket 归档被替换物（`os.replace`），失败时按 `moved` 逆序回滚。
 - 命令登记：`docs/write-commands.md` 的盘点表 + `tests/test_i18n_commands.py` 的 `READ_ONLY` / `PREVIEW` / `HELP_ONLY` / `DIRECT_WRITE` 字典与 `CASES`；新增子命令漏登会让测试失败。
 - i18n 规模：`plugins/project-orchestrator/runtime/locale/en.json` 现有 1467 条，`plugins/agent-pack/runtime/locale/en.json` 现有 640 条。
 
@@ -264,7 +264,7 @@ agenthelm project extensions scope   <ref> --effective project|user [--allow-wid
 ### 4.4 退役：归档、可恢复，并且需要新增路径
 
 **核对结论（影响实施）**：
-- `reconcile --retire-skill`、`--retire-plugin`、`--retire-only` 已存在，归档到 `recovery_base/<时间戳>-claude-<名>/{skills,plugins,…}`，失败按 `moved` 逆序回滚（`agent_pack_claude.py:389-402`、`:497-593`）。它们只处理**用户级 Skill 链接与已安装的插件**。
+- `reconcile --retire-skill`、`--retire-plugin`、`--retire-only` 已存在，归档到 `recovery_base/<时间戳>-claude-<名>/{skills,plugins,…}`，失败按 `moved` 逆序回滚（`agent_pack_native_package.py:389-402`、`:497-593`）。它们只处理**用户级 Skill 链接与已安装的插件**。
 - **没有** `--retire-mcp`。对指向被退役插件的 MCP 条目，代码只写 `manual` 提示（`claude mcp remove --scope user <名>`，`:250-268`），原因注释：`~/.claude.json` 可能含本地凭据，不自动编辑。
 - 没有「从恢复目录恢复」命令；恢复靠手工把归档目录移回原位。
 
@@ -390,14 +390,14 @@ agenthelm project extensions scope   <ref> --effective project|user [--allow-wid
 - 依赖：M1。验收：新字段在夹具上存在；不输出任何值；`schema_version` 不变或小版本递增并注明。测试：临时 HOME 夹具，含含假令牌的 MCP 条目。
 
 **CB-2 技能移动与复制 `agenthelm relocate`（Skill）**（minor；agent-pack）
-- 范围：§5.6。Skill 的 copy / link、跨作用域、跨客户端；plan_digest；读回；归档源（复用 `reconcile --retire-skill`）。**新模块**（建议 `agent_pack_relocate.py`），在 `agenthelm.py` 只加子命令注册，在 `locale/en.json` 追加文案，以降低与 I-1/I-4/I-7 在 `agent_pack_claude.py` 与 `agent_pack_config.py` 上的冲突。
+- 范围：§5.6。Skill 的 copy / link、跨作用域、跨客户端；plan_digest；读回；归档源（复用 `reconcile --retire-skill`）。**新模块**（建议 `agent_pack_relocate.py`），在 `agenthelm.py` 只加子命令注册，在 `locale/en.json` 追加文案，以降低与 I-1/I-4/I-7 在 `agent_pack_native_package.py` 与 `agent_pack_config.py` 上的冲突。
 - 影响既有项目：新命令，不影响既有 `sync`。用户动作：无。默认：`off`（须显式调用）。
 - 依赖：M1 inventory、CB-1。验收：目标已存在则 `blocked`；预览 = 应用（文件集合逐项相等）；失败回滚；复制后 `content_sha256` 一致。测试：目标冲突、中途失败、符号链接模式、`project-native`、回滚。
 
 **CB-3 MCP 移动、作用域设置与退役（Claude 先行）**（minor；agent-pack）
 - 范围：§2.2、§4.4。`relocate` 的 MCP 分支（用户级↔local↔项目文件）、`scope` 声明写入（I-4 的 `mcp_scope`）、**新增 MCP 退役**（受管条目归档编辑、未受管条目只给手工命令）、`transfer` 组合计划、含内联密钥的 `blocked`。
 - 影响既有项目：新命令；对 `~/.claude.json` 的编辑仅限受管条目，且先建 0600 恢复目录。用户动作：无。默认：`off`。
-- 依赖：I-1、I-4（作用域声明与存储映射）、CB-2（共用 plan 框架）。与 I-4 同改 `agent_pack_claude.py` 的 MCP 写入路径，**必须在 I-4 合并后串行**。
+- 依赖：I-1、I-4（作用域声明与存储映射）、CB-2（共用 plan 框架）。与 I-4 同改 `agent_pack_native_package.py` 的 MCP 写入路径，**必须在 I-4 合并后串行**。
 - 验收：声明为 `project` 的条目不回退写用户级；预览 = 应用；假令牌不入输出、不入恢复元数据以外的任何位置；退役后条目从原位置消失、恢复目录有片段（0600）。测试：#82 §10「作用域」「密钥安全」。
 
 **CB-4 重复处置 `agenthelm dedupe` 与机器级决定文件**（minor；agent-pack）
@@ -430,7 +430,7 @@ agenthelm project extensions scope   <ref> --effective project|user [--allow-wid
 ### 8.1 文件重叠与波次
 
 重叠热点：
-- agent-pack：`agent_pack_claude.py`、`agent_pack_config.py`（#82 的 I-1/I-3/I-4/I-7 同改）、`agenthelm.py`（子命令注册）、`locale/en.json`。
+- agent-pack：`agent_pack_native_package.py`、`agent_pack_config.py`（#82 的 I-1/I-3/I-4/I-7 同改）、`agenthelm.py`（子命令注册）、`locale/en.json`。
 - project-orchestrator：`project_menu.py`、`project_cli.py`、`project_real.py`、`project_demo.py`、`locale/en.json`。
 - 两个插件之间无文件重叠（只通过子进程与 JSON 耦合），因此波次一可与 agent-pack 侧的 M1 / I-1 / I-4 并行推进。
 
@@ -445,7 +445,7 @@ agenthelm project extensions scope   <ref> --effective project|user [--allow-wid
   CB-4 dedupe + 决定文件 + Desktop 片段           (agent-pack 新模块；依赖 CB-2 的 plan 框架，可与 CB-2 同 PR)
         │
 波次 3（等 I-4 合并后）
-  CB-3 MCP 移动/作用域/退役                       (agent-pack，改 agent_pack_claude.py)
+  CB-3 MCP 移动/作用域/退役                       (agent-pack，改 agent_pack_native_package.py)
   CB-7 菜单写入动作                               (orchestrator，依赖 CB-6 与 CB-2/3/4)
   CB-8 健康屏跳转 + opinion 引用位                 (orchestrator，小，随 CB-7)
 ```
@@ -504,7 +504,7 @@ agenthelm project extensions scope   <ref> --effective project|user [--allow-wid
 6. **`skills[].origin`**：明确结构 `{type: plugin|marketplace|git|manual|unknown, id, version, latest_known, evidence}`；`latest_known` 离线时为 `unknown`，**不联网**除非显式 `--refresh`。
 7. **`entries[].loaded` 与 `shadowed_by`**（#82 I-1 已规划）：必须随证据等级给出，菜单据此决定哪些重复能进入写动作。
 8. **MCP 条目**：`env_var_names[]`（仅变量名）、`has_inline_secret: bool`（只给布尔，**不给值与键名**）、`fingerprint_fields[]`（参与指纹的字段名，用于「哪些字段不同」）、`url_host`（仅远程条目，主机名，不含 query）。
-9. **`projects[]`**（已知项目列表）：来自 `~/.claude/agent-pack/state/*.json` 的 `{name, path, last_synced}`；当前代码我只确认状态里有 `skills` 与 `mcps`（`agent_pack_claude.py:546-549`），**是否记录项目路径未确认**，如没有请求补充。
+9. **`projects[]`**（已知项目列表）：来自 `~/.claude/agent-pack/state/*.json` 的 `{name, path, last_synced}`；当前代码我只确认状态里有 `skills` 与 `mcps`（`agent_pack_native_package.py:546-549`），**是否记录项目路径未确认**，如没有请求补充。
 10. **`desktop`**：`claude_desktop_config.json` 路径与 `exists`、`parse_ok`；`entries[]` 带 `store: "desktop-config"`。
 11. **每个条目的稳定 `ref`**（§3.4 的 `<kind>:<名>@<客户端>:<作用域>`）与 `plan` 里引用同一个字符串；若 M1 已有其他稳定 id 请告知，本文适配。
 12. **`schema_version`** 的兼容约定：新增键不递增主版本；菜单对未知 `schema_version` 主版本降级为「不可用」并显示原因，而不是猜测。

@@ -3,7 +3,7 @@
 
 Dispositions:
 * ``--keep <ref> --retire-others``: Skill copies are archived (a move into the recovery directory, never a delete);
-  MCP copies the project's agent-pack state owns (managed) are removed by ``agent_pack_mcp_write`` (original JSON
+  MCP copies the project's agent-pack state owns (managed) are removed by ``agent_pack_mcp_move`` (original JSON
   fragment into the 0600 recovery directory, byte-exact backup, atomic edit, byte-exact rollback); every other MCP
   copy only gets the official manual command and a backup reminder (not archivable by the tool).
 * ``--keep-all --note "..."`` / ``--ignore`` / ``--unignore``: write only the machine-level decision file
@@ -32,7 +32,7 @@ if str(RUNTIME_DIR) not in sys.path:
 import agent_pack_desktop as desktop  # noqa: E402
 import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
-import agent_pack_mcp_write as mcp_write  # noqa: E402
+import agent_pack_mcp_move as mcp_write  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
 DECISIONS_SCHEMA = 1
@@ -43,8 +43,6 @@ SECRET_LIKE = re.compile(r"(sk-[A-Za-z0-9]{12,}|gh[pousr]_[A-Za-z0-9]{12,}|xox[a
 
 # Manual-removal commands per client, as data (no per-client branches in the code): a client without an entry only
 # gets an instruction to delete the entry in its file by hand. ``{scope}`` and ``{name}`` are filled in.
-MANUAL_REMOVE = mcp_write.MANUAL_REMOVE
-MANUAL_BACKUP = mcp_write.MANUAL_BACKUP
 
 
 def decisions_path(home: Path) -> Path:
@@ -256,7 +254,7 @@ def _plan_mcp(plan: dict, ctx: dict, group: dict, kept: dict, others: list[dict]
         steps.append(ext.step(f"s{len(steps) + 1}", "manual-remove-mcp", "cannot-promise", ref=entry["ref"]))
     if plan["manual"]:
         plan["warnings"].append(ext.warning("mcp-not-archivable", _("MCP 副本不可由工具归档：配置文件可能含本地凭据，本工具不编辑它，只给手工命令")))
-        if group["client"] in MANUAL_BACKUP:
+        if mcp_write.manual_remove(group["client"]) is not None:
             plan["warnings"].append(ext.warning("backup-first", _("先自己备份 ~/.claude.json，再执行下面的命令")))
         else:
             plan["warnings"].append(ext.warning("backup-first", _("先自己备份相关配置文件，再手工修改")))

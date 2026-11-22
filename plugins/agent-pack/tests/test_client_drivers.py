@@ -74,6 +74,8 @@ class RegistryTests(unittest.TestCase):
             driver.pop("lifecycle", None)
             driver.pop("runtime_cache", None)  # added after 6.14.0 (#134 Phase 3)
             driver.pop("precedence", None)  # read-side data added after the snapshot (see test_registry_read_side)
+            driver.pop("sync", None)  # write-side data added after the snapshot (see test_sync_write_declarations)
+            driver.pop("mcp", None)
             driver["distribution"] = registry.distribution_type(driver)  # the step declarations (batch C) are tested apart
             for flag in registry.EXTENDED_CAPABILITIES:  # schema v2 flags: tested in test_distribution_declarations
                 driver["capabilities"].pop(flag, None)

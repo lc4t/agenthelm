@@ -1,5 +1,6 @@
-"""Claude Code projection of a project's capabilities: a dedicated package, sync /
-reconcile, preserved local credential overrides, and drift reports.
+"""Native-package projection of a project's capabilities (a client whose driver declares ``sync.write:
+native-package``): a dedicated package, sync / reconcile, preserved local credential overrides, and drift reports.
+The one client that declares it today is Claude Code, and the file layout below is that client's.
 
 Claude Code has no Agent Plugins loader, so a package is projected onto what it
 reads: ``~/.claude/skills/<skill>`` (links), ``~/.claude.json#mcpServers`` (user
@@ -26,7 +27,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import agent_pack_config as core
-import agent_pack_scope as scoping
+import agent_pack_sync_scope as scoping
 
 OVERRIDE_CONTAINERS = ("headers", "env")
 STATE_SCHEMA = 1
@@ -34,12 +35,32 @@ STATE_SCHEMA = 1
 
 # ---------------------------------------------------------------- locations
 
+def _client(client: str | None = None) -> str:
+    """``client``, or the client whose driver declares a ``native-package`` sync (the layout this module writes)."""
+    return client or core.native_package_client()
+
+
+def user_config(home: Path, client: str | None = None) -> Path:
+    """The client's user-level MCP file, from its driver's first user ``stores.mcp`` entry."""
+    return core.user_mcp_file(_client(client), home)
+
+
+def _root_key(client: str | None = None) -> str:
+    """The key holding the servers in that file (``root_key`` of the store); a local or project file uses the same key."""
+    return core.mcp_root_key(_client(client))
+
+
+def _entry(home: Path, name: str, config: dict[str, Any], client: str | None = None) -> dict[str, Any]:
+    """A portable entry projected onto the client's own schema (the ``json`` adapter and the client's options)."""
+    return core._native_mcp_config(_client(client), config, record_path(home, name, client), data_root(home, name))
+
+
 def package_root(home: Path, name: str) -> Path:
     return home / ".claude" / "agent-pack" / "packages" / name
 
 
-def record_path(home: Path, name: str) -> Path:
-    return core._claude_plugin_records(home) / name
+def record_path(home: Path, name: str, client: str | None = None) -> Path:
+    return core.package_parent(_client(client), home) / name
 
 
 SYNC_TYPES = ("plugins", "skills", "mcp")   # what ``--only`` can select; the default is all of them
@@ -161,15 +182,15 @@ def _read_state(home: Path, name: str) -> dict[str, Any]:
     return data if data.get("schema_version") == STATE_SCHEMA else {}
 
 
-def _read_config(home: Path) -> dict[str, Any]:
-    path = core._claude_user_config(home)
+def _read_config(home: Path, client: str | None = None) -> dict[str, Any]:
+    path = user_config(home, client)
     if not path.exists():
         return {}
     if path.is_symlink():
         raise core.AgentPackError(f"refusing to edit symlinked Claude config: {path}")
     config = core._read_json(path)
-    if not isinstance(config.get("mcpServers", {}), dict):
-        raise core.AgentPackError(f"mcpServers must be an object: {path}")
+    if not isinstance(config.get(_root_key(client), {}), dict):
+        raise core.AgentPackError(f"{_root_key(client)} must be an object: {path}")
     return config
 
 
@@ -237,7 +258,7 @@ def local_section(config: dict[str, Any], root: Path) -> tuple[str | None, dict[
             section = projects[key]
             if not isinstance(section, dict):
                 return None, {}, LOCAL_UNRECOGNIZED
-            servers = section.get("mcpServers")
+            servers = section.get(_root_key())
             if servers is None:
                 return key, {}, None
             return (key, servers, None) if isinstance(servers, dict) else (None, {}, LOCAL_UNRECOGNIZED)
@@ -299,7 +320,7 @@ def _read_project_file(path: Path) -> tuple[dict[str, Any], str | None]:
         data = core._read_json(path)
     except core.AgentPackError:
         return {}, "mcp-json-unreadable"
-    servers = data.get("mcpServers", {})
+    servers = data.get(_root_key(), {})
     return (servers, None) if isinstance(servers, dict) else ({}, "mcp-json-unreadable")
 
 
@@ -354,34 +375,34 @@ def _installed_plugin_mcps(home: Path, plugin: str, plugin_path: Path, config: d
         if server not in config:
             continue
         parsed = core._portable_mcp(server, raw)
-        if parsed.portable and core._claude_mcp_config(
-                parsed.config, record_path(home, plugin), data_root(home, plugin)) == config[server]:
+        if parsed.portable and _entry(home, plugin, parsed.config) == config[server]:
             owned.add(server)
     return owned
 
 
-def _plugin_residuals(home: Path, plugin: str, plugin_path: Path, config: dict[str, Any]) -> list[dict[str, str]]:
+def _plugin_residuals(home: Path, plugin: str, plugin_path: Path, config: dict[str, Any],
+                      client: str | None = None) -> list[dict[str, str]]:
     """Entries a retirement leaves on purpose: files Claude Code owns or that may hold local credentials."""
     residuals: list[dict[str, str]] = []
     prefixes = {str(plugin_path), str(plugin_path.resolve())}
-    config_path = core._claude_user_config(home)
+    config_path = user_config(home, client)
     installed = _installed_plugin_mcps(home, plugin, plugin_path, config)
     for server, entry in sorted(config.items()):
         if any(text.startswith(prefix + os.sep) or text == prefix for text in _strings(entry) for prefix in prefixes):
             residuals.append({
-                "client": "claude", "kind": "mcp", "name": server, "path": str(config_path),
+                "client": _client(client), "kind": "mcp", "name": server, "path": str(config_path),
                 "manual": f"MCP server {server} still points into the retired plugin; remove it with "
                           f"`claude mcp remove --scope user {server}` (the file may hold local credentials, so it is not edited automatically)"})
         elif server in installed:
             residuals.append({
-                "client": "claude", "kind": "mcp", "name": server, "path": str(config_path),
+                "client": _client(client), "kind": "mcp", "name": server, "path": str(config_path),
                 "manual": f"MCP server {server} was installed by the retired plugin (identical to what its mcp.json "
                           f"renders to); remove it with `claude mcp remove --scope user {server}` (the file may hold "
                           f"local credentials, so it is not edited automatically)"})
     managed = home / ".claude" / "plugins"
     if _inside(plugin_path, managed):
         residuals.append({
-            "client": "claude", "kind": "installed-record", "name": plugin,
+            "client": _client(client), "kind": "installed-record", "name": plugin,
             "path": str(managed / "installed_plugins.json"),
             "manual": f"Claude Code owns this install record; run `claude plugin uninstall {plugin}`"})
     return residuals
@@ -396,7 +417,7 @@ def _render_package_mcps(package: Path, home: Path, name: str) -> dict[str, dict
         parsed = core._portable_mcp(server, raw)
         if not parsed.portable:
             raise core.AgentPackError(f"MCP {server} is not portable: " + "; ".join(parsed.issues))
-        servers[server] = core._claude_mcp_config(parsed.config, record_path(home, name), data_root(home, name))
+        servers[server] = _entry(home, name, parsed.config)
     return servers
 
 
@@ -404,7 +425,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                  retire_skills: Iterable[str] = (), retire_plugins: Iterable[str] = (),
                  retire_only: bool = False, only: frozenset[str] = frozenset(SYNC_TYPES),
                  package_tree: Path | None = None, scope: str = "all",
-                 project_store: str = "local") -> dict[str, Any]:
+                 project_store: str = "local", client: str | None = None) -> dict[str, Any]:
     """Every change a Claude sync would make, without writing; conflicts are listed, not raised.
 
     ``only`` limits the sync to those types (#68): ``plugins`` is the package and its install record,
@@ -419,14 +440,15 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     the user level. Project-declared Skills are still ``skip-skill`` here (``.claude/skills`` arrives with a later change).
     """
     project_store = normalize_project_store(project_store)
+    client = _client(client)
     package_tree = package_tree or built
     layout = core.load_project_layout(project)
     authority = core.inventory_project(layout.root)
     name = core._package_name(layout.root)
-    package, record = package_root(home, name), record_path(home, name)
+    package, record = package_root(home, name), record_path(home, name, client)
     state = _read_state(home, name)
-    config = _read_config(home)
-    existing = config.get("mcpServers", {})
+    config = _read_config(home, client)
+    existing = config.get(_root_key(client), {})
     old_target = _link_target(record)
     legacy_root = old_target if old_target is not None and not _inside(old_target, package) else None
 
@@ -434,7 +456,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                       if child.is_dir() and (child / "SKILL.md").is_file()} if (built / "skills").is_dir() else set()
     desired_mcps = _render_package_mcps(built, home, name)
     excluded = sorted(item.name for item in authority.mcps
-                      if item.portable and not core._mcp_allowed(layout, item.name, "claude"))
+                      if item.portable and not core._mcp_allowed(layout, item.name, client))
     mcp_places = _state_scopes(state, "mcps")
     # Project-level entries are recorded only under ``scopes`` (never in the pre-existing ``skills`` / ``mcps`` keys,
     # which an older runtime reads as user-level ownership), so those two keys are user-level ownership only.
@@ -523,14 +545,14 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                     state_name = "update"
                 else:
                     state_name = "conflict"
-                    conflicts.append(f"mcp {server}: {core._claude_user_config(home)}")
+                    conflicts.append(f"mcp {server}: {user_config(home, client)}")
             if kept:
                 overrides.append({"name": server, "keys": kept})
             operations.append({"action": f"{state_name}-mcp", "name": server, "keys": kept, "_entry": entry})
         for server in sorted(owned_mcps - set(desired_mcps) if sync_mcps and do_user else ()):
             if server in existing:
                 operations.append({"action": "remove-mcp", "name": server,
-                                   "reason": "excluded for claude" if server in excluded else "no longer in project"})
+                                   "reason": f"excluded for {client}" if server in excluded else "no longer in project"})
 
     if not retire_only and do_project:
         skills_dir = layout.root / ".claude" / "skills"
@@ -548,7 +570,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                                         else "skill-source-outside-project")
             if reason:
                 operations.append({"action": "skip-skill", **base})
-                skipped.append({"kind": "skill", "name": skill, "client": "claude", "reason": reason})
+                skipped.append({"kind": "skill", "name": skill, "client": client, "reason": reason})
                 continue
             rel = os.path.relpath(source, skills_dir)
             existing_here = path.is_symlink() or path.exists()
@@ -602,7 +624,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             link = _link_target(user_path)
             ours_user = link is not None and (_inside(link, package) or (legacy_root is not None and _inside(link, legacy_root)))
             if not ours_user:   # someone else's Skill of that name: not archived, but it outranks the project one
-                advisory = scoping.skill_shadow(skill)
+                advisory = scoping.skill_shadow(skill, client)
                 if advisory:
                     shadowed.append(advisory)
                 continue
@@ -620,10 +642,10 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
         file_path = _project_file(layout.root)
         file_servers, file_problem = _read_project_file(file_path)
         target_store = scoping.LOCAL_MCP if project_store == "local" else scoping.FILE_MCP
-        target_path = (f"{core._claude_user_config(home)}#projects[{local_key or layout.root}].mcpServers"
+        target_path = (f"{user_config(home, client)}#projects[{local_key or layout.root}].{_root_key(client)}"
                        if project_store == "local" else str(file_path))
         problem = (local_problem if project_store == "local" else file_problem) or (
-            None if _writable(core._claude_user_config(home) if project_store == "local" else file_path)
+            None if _writable(user_config(home, client) if project_store == "local" else file_path)
             else "target-not-writable")
         place = "project:local" if project_store == "local" else "project:file"
         wanted = sorted(project_mcps) if sync_mcps else []
@@ -645,7 +667,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             if problem:
                 operations.append({"action": "skip-mcp", "name": server, "to": target_path,
                                    "scope": "project", "store": target_store})
-                skipped.append({"kind": "mcp", "name": server, "client": "claude", "reason": problem})
+                skipped.append({"kind": "mcp", "name": server, "client": client, "reason": problem})
                 continue
             state_name, entry, kept = classify_mcp(desired_mcps[server], current_servers.get(server),
                                                    reset=reset_overrides or project_store == "file")
@@ -666,7 +688,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                 migrations.append(scoping.migration_entry(
                     "mcp", server, "narrow", scoping.USER_MCP, target_store, write_new=f"{state_name}-project-mcp",
                     retire={"action": "manual", "command": command}))
-                advisory = scoping.mcp_shadow(server, project_store)
+                advisory = scoping.mcp_shadow(server, project_store, client)
                 if advisory:
                     shadowed.append(advisory)
         for server in sorted(owned_project_mcps - set(desired_mcps) if sync_mcps else ()):
@@ -674,7 +696,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
                 operations.append({"action": "remove-project-mcp", "name": server, "to": target_path,
                                    "scope": "project", "store": target_store, "reason": "no longer in project"})
 
-    client_inventory = core.inventory_client("claude", home)
+    client_inventory = core.inventory_client(client, home)
     actual_skills = {item.name: Path(item.path) for item in client_inventory.skills}
     actual_plugins = {str(item.get("name")): Path(str(item.get("path")))
                       for item in client_inventory.plugins if item.get("name") and item.get("path")}
@@ -697,7 +719,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             if link.name not in taken:
                 operations.append({"action": "archive-skill", "name": link.name, "from": str(link),
                                    "reason": f"links into retired plugin {plugin}"})
-        residuals.extend(_plugin_residuals(home, plugin, path, existing))
+        residuals.extend(_plugin_residuals(home, plugin, path, existing, client))
     if retire_only and not (retire_skills or retire_plugins):
         raise core.AgentPackError("retire-only reconcile needs at least one --retire-skill or --retire-plugin")
 
@@ -715,7 +737,7 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
     carried_mcps = sorted(server for server in project_mcps & owned_mcps if server in existing)
     undeclared = sorted((set(layout.mcp_scope) - set(desired_mcps) - set(item.name for item in authority.mcps))
                         | (set(layout.skill_scope) - desired_skills - set(item.name for item in authority.skills)))
-    return {"name": name, "aware": aware, "scope": scope, "do_user": do_user, "do_project": do_project,
+    return {"name": name, "client": client, "aware": aware, "scope": scope, "do_user": do_user, "do_project": do_project,
             "migrations": migrations, "shadowed": shadowed, "degraded": degraded,
             "project_skill_places": project_skill_places, "retired_project_skills": sorted(retired_project_skills), "skipped": skipped, "narrowing": narrowing,
             "others": others, "undeclared": undeclared,
@@ -731,9 +753,9 @@ def plan_project(project: Path, home: Path, *, built: Path, reset_overrides: boo
             "desired_skills": sorted(desired_skills), "desired_mcps": sorted(desired_mcps)}
 
 
-def _public(operations: list[dict[str, Any]], aware: bool = False) -> list[dict[str, Any]]:
+def _public(operations: list[dict[str, Any]], aware: bool = False, client: str | None = None) -> list[dict[str, Any]]:
     result = [{key: value for key, value in item.items() if not key.startswith("_") and value != []}
-              | {"client": "claude"} for item in operations]
+              | {"client": _client(client)} for item in operations]
     if aware:   # scope and store only appear once a project declares a scope (older output stays byte-identical)
         for item in result:
             for key, value in _scope_of_operation(item).items():
@@ -775,7 +797,7 @@ def _global_warnings(home: Path, summary: dict[str, int]) -> list[str]:
                         "they apply to every project (the replaced originals go to recovery)")
     if summary.get("mcp"):
         warnings.append(f"replaces {summary['mcp']} user-scope MCP entr{'y' if summary['mcp'] == 1 else 'ies'} in "
-                        f"{core._claude_user_config(home)}; they apply to every project (the replaced originals go to recovery)")
+                        f"{user_config(home)}; they apply to every project (the replaced originals go to recovery)")
     if summary.get("project_mcp"):
         warnings.append(scoping.project_replace_warning(summary["project_mcp"]))
     if summary.get("project_skills"):
@@ -788,8 +810,9 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
                  retire_skills: Iterable[str] = (), retire_plugins: Iterable[str] = (),
                  retire_only: bool = False, only: Iterable[str] | None = None,
                  replace_mcp: bool = False, replace_skills: bool = False, scope: str = "all",
-                 project_store: str = "local") -> dict[str, Any]:
+                 project_store: str = "local", client: str | None = None) -> dict[str, Any]:
     home = (home or Path.home()).expanduser().resolve()
+    client = _client(client)
     try:
         scope = scoping.normalize_scope(scope)
     except ValueError as exc:
@@ -800,12 +823,12 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
         layout = core.load_project_layout(project)
         authority = core.inventory_project(layout.root)
         name = core._package_name(layout.root)
-        built = core._build_package(authority, name, Path(temporary), "claude", home)
+        built = core._build_package(authority, name, Path(temporary), client, home)
         tree = built if types == frozenset(SYNC_TYPES) else _compose_package(
             package_root(home, name), built, types, Path(temporary))
         plan = plan_project(project, home, built=built, reset_overrides=reset_overrides,
                             retire_skills=retire_skills, retire_plugins=retire_plugins, retire_only=retire_only,
-                            only=types, package_tree=tree, scope=scope, project_store=project_store)
+                            only=types, package_tree=tree, scope=scope, project_store=project_store, client=client)
         blocking = [item for item in plan["conflicts"]
                     if not (replace or (replace_mcp and item.startswith(("mcp ", "project-mcp "))) or
                             (replace_skills and item.startswith(("skill ", "project-skill "))))]
@@ -814,8 +837,8 @@ def sync_project(project: Path, *, home: Path | None = None, apply: bool = False
                                       "(use --replace, or --replace-mcp / --replace-skills for one type; "
                                       "replaced items go to recovery): " + "; ".join(blocking))
         result: dict[str, Any] = {
-            "ok": True, "applied": False, "client": "claude", "package": name,
-            "operations": _public(plan["operations"], plan["aware"]), "overrides": plan["overrides"],
+            "ok": True, "applied": False, "client": client, "package": name,
+            "operations": _public(plan["operations"], plan["aware"], client), "overrides": plan["overrides"],
             "excluded": plan["excluded"], "native": plan["native"],
             "notes": ["restart Claude Code to load changed Skills and MCP servers"],
         }
@@ -941,14 +964,14 @@ def _restore_bytes(path: Path, data: bytes | None, mode: int) -> None:
 
 
 def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | None) -> Path:
-    name = plan["name"]
-    package, record = package_root(home, name), record_path(home, name)
+    name, client = plan["name"], plan["client"]
+    package, record = package_root(home, name), record_path(home, name, client)
     recovery_base = (recovery_root or home / ".agent-pack" / "recovery").expanduser().resolve()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-    transaction = recovery_base / f"{stamp}-claude-{name}"
+    transaction = recovery_base / f"{stamp}-{client}-{name}"
     transaction.mkdir(parents=True, mode=0o700)
-    config_path = core._claude_user_config(home)
-    config = _read_config(home)
+    config_path = user_config(home, client)
+    config = _read_config(home, client)
     original_config = json.loads(json.dumps(config))
     config_written = False
     config_bytes = config_path.read_bytes() if config_path.is_file() else None
@@ -1030,7 +1053,7 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
         user_mcp_ops = any(item["action"].endswith("-mcp") and not item["action"].endswith("-project-mcp")
                            and not item["action"].startswith("skip-") for item in plan["operations"])
         # (a scope-aware plan with no user-level MCP operation leaves ~/.claude.json's user section alone)
-        servers = (config.setdefault("mcpServers", {})
+        servers = (config.setdefault(_root_key(client), {})
                    if "mcp" in plan["only"] and plan["do_user"] and (user_mcp_ops or not plan["aware"]) else {})
         replaced: dict[str, Any] = {}
         mcp_state: dict[str, str] = {}
@@ -1074,7 +1097,7 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
                 backup.write_bytes(config_bytes)
                 os.chmod(backup, 0o600)
             section = config.setdefault("projects", {}).setdefault(key, {})
-            local_servers = section.setdefault("mcpServers", {})
+            local_servers = section.setdefault(_root_key(client), {})
             local_servers.update(local_set)
             for server in local_drop:
                 local_servers.pop(server, None)
@@ -1087,7 +1110,7 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
                 backup.write_bytes(file_bytes)
                 os.chmod(backup, 0o600)
             data = core._read_json(project_file) if file_bytes is not None else {}
-            file_servers = data.setdefault("mcpServers", {})
+            file_servers = data.setdefault(_root_key(client), {})
             file_servers.update(file_set)
             for server in file_drop:
                 file_servers.pop(server, None)
@@ -1134,14 +1157,15 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
 
 # ---------------------------------------------------------------- drift (doctor)
 
-def drift(project: Path, home: Path | None = None) -> dict[str, Any]:
+def drift(project: Path, home: Path | None = None, client: str | None = None) -> dict[str, Any]:
     home = (home or Path.home()).expanduser().resolve()
+    client = _client(client)
     with tempfile.TemporaryDirectory(prefix="agent-pack-claude-") as temporary:
         layout = core.load_project_layout(project)
         name = core._package_name(layout.root)
-        built = core._build_package(core.inventory_project(layout.root), name, Path(temporary), "claude", home)
-        plan = plan_project(project, home, built=built)
-    report: dict[str, Any] = {"client": "claude", "package": name, "missing": [], "different": [],
+        built = core._build_package(core.inventory_project(layout.root), name, Path(temporary), client, home)
+        plan = plan_project(project, home, built=built, client=client)
+    report: dict[str, Any] = {"client": client, "package": name, "missing": [], "different": [],
                               "overrides": plan["overrides"], "stale": [], "native": plan["native"],
                               "excluded": plan["excluded"], "dangling": [], "coupled": plan["legacy_root"]}
     for item in plan["operations"]:
@@ -1159,8 +1183,8 @@ def drift(project: Path, home: Path | None = None) -> dict[str, Any]:
     if skills_root.is_dir():
         report["dangling"] += [f"skill {path.name}" for path in sorted(skills_root.iterdir())
                                if path.is_symlink() and not path.exists()]
-    record = record_path(home, name)
-    config = _read_config(home).get("mcpServers", {})
+    record = record_path(home, name, client)
+    config = _read_config(home, client).get(_root_key(client), {})
     for server, entry in sorted(config.items()):
         for text in _strings(entry):
             if text.startswith(str(record) + os.sep) and not Path(text).exists():
