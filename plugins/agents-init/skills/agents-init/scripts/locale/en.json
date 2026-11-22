@@ -349,5 +349,12 @@
  "无法升级 legacy profile：{0} 的上级目录是符号链接": "cannot upgrade legacy profile: {0} has a symlinked parent",
  "拒绝通过符号链接的上级目录替换：{0}": "refusing to replace through symlinked parent: {0}",
  "--replace 只能在 migrate 模式使用": "--replace is available only in migrate mode",
- "--replace 指定的路径不存在：{0}": "--replace path does not exist: {0}"
+ "--replace 指定的路径不存在：{0}": "--replace path does not exist: {0}",
+ "中文": "Chinese",
+ "英文": "English",
+ "  private/.gitignore：开头是{0}原文，但内容已被修改，未改动": "  private/.gitignore: it starts with the {0} text but has been edited; left unchanged",
+ "  private/.gitignore：{0}原文已换成{1}版本（原件已备份）": "  private/.gitignore: the {0} text was replaced with the {1} version (the original was backed up)",
+ "  private/.gitignore：内容是工具写过的{0}原文，与项目文件语言（{1}）不符；--apply 时先备份再换成{1}版本": "  private/.gitignore: it holds the {0} text the tool wrote, which does not match the project file language ({1}); --apply backs it up and replaces it with the {1} version",
+ "private/.gitignore 是工具写过的{0}原文，与项目文件语言（{1}）不符：运行 --mode refresh 预览，--apply 时先备份再换成{1}版本（不影响退出码）": "private/.gitignore holds the {0} text the tool wrote, which does not match the project file language ({1}): run --mode refresh to preview; --apply backs it up and replaces it with the {1} version (the exit code is not affected)",
+ "private/.gitignore 开头是{0}原文，但内容已被修改，与项目文件语言（{1}）不符：工具不会改动它（不影响退出码）": "private/.gitignore starts with the {0} text but has been edited, and does not match the project file language ({1}): the tool will not change it (the exit code is not affected)"
 }
