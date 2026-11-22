@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。",
+    "en": "When Cursor has no release information, the last line of check no longer says everything is up to date; it says it cannot tell."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

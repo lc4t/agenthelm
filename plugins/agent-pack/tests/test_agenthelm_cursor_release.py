@@ -196,6 +196,34 @@ class CursorReleaseTests(unittest.TestCase):
         self.assertIn("The preview has no runnable steps: 1 failed (see", text)
         self.assertNotIn("add --apply to run it", text)
 
+    def check_text(self, lang: str) -> tuple[int, str]:
+        os.environ["AGENTHELM_LANG"] = lang
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = agenthelm.main(["check", "--home", str(self.home), "--latest", str(self.latest_file),
+                                   "--client", "cursor", "--no-project"])
+        return code, output.getvalue()
+
+    def test_check_does_not_claim_up_to_date_without_release_information(self) -> None:
+        self.fetch.side_effect = OSError("offline")  # no release block reachable: Cursor cannot be judged
+        code, text = self.check_text("en")
+        self.assertEqual(code, 0)
+        self.assertNotIn("Everything is up to date.", text)
+        self.assertEqual(text.splitlines()[-1],
+                         "Cannot tell whether everything is up to date: plugins without release information: 2 (see above).")
+        code, text = self.check_text("zh")
+        self.assertNotIn("全部为最新。", text)
+        self.assertEqual(text.splitlines()[-1], "2 个插件缺少发布信息，无法判断是否已是最新（见上）。")
+        code, check = self.cli("check")  # JSON keys and the exit code are unchanged
+        self.assertEqual((code, check["summary"]["plugins_unavailable"], check["summary"]["up_to_date"]), (0, 2, True))
+
+    def test_check_with_release_information_keeps_the_existing_last_line(self) -> None:
+        for name in self.latest["plugins"]:  # installed copies already at the cloud version
+            write(self.home / ".cursor/plugins/local" / name / "plugin.json",
+                  {"$schema": SCHEMA, "name": name, "version": self.latest["plugins"][name]["version"]})
+        self.assertEqual(self.check_text("en")[1].splitlines()[-1], "Everything is up to date.")
+        self.assertEqual(self.check_text("zh")[1].splitlines()[-1], "全部为最新。")
+
     def test_preview_summary_wording_for_mixed_and_zh_results(self) -> None:
         def preview(*statuses: str, lang: str = "en") -> str:
             records = [{"status": status, "description": f"step {index}"} for index, status in enumerate(statuses)]

@@ -1539,7 +1539,10 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
         if report["summary"].get("legacy_other_clients"):
             lines.append(_("其中 {0} 个旧方式安装不属于所选客户端（或无法判断归属），已列出但未计入“是否最新”。").format(
                 report["summary"]["legacy_other_clients"]))
-        lines.append(one_line(report) or _("全部为最新。"))
+        unknown = report["summary"].get("plugins_unavailable") or 0
+        # An unavailable plugin is behind the cloud version but has no release to install from: its state is unknown.
+        lines.append(one_line(report) or (_("{0} 个插件缺少发布信息，无法判断是否已是最新（见上）。").format(unknown)
+                                          if unknown else _("全部为最新。")))
     return "\n".join(lines) + "\n"
 
 

@@ -167,7 +167,8 @@ class CursorUnavailableTests(Base):
         self.assertIn("[cursor] agent-pack 1.0.0 → 2.0.0", text)
         self.assertIn("不可用", text)
         self.assertIn("--source", text)
-        self.assertIn("全部为最新", text)
+        self.assertNotIn("全部为最新", text)  # no release information: it cannot be judged (was claimed up to date before)
+        self.assertIn("无法判断是否已是最新", text)
 
     def test_local_source_makes_cursor_updatable_again(self) -> None:
         self.installed()
