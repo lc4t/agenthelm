@@ -124,7 +124,7 @@ def resolve_recovery_target(root: Path, recovery_dir: Path | None, label: str) -
     if target == root or root in target.parents:
         if defaulted:
             raise InitError(_("默认恢复目录 {0} 在项目目录内，请用 --recovery-dir 指定项目外的目录").format(target))
-        raise InitError("--recovery-dir must be outside the project root")
+        raise InitError(_("--recovery-dir 必须在项目目录之外"))
     return target, defaulted
 
 
@@ -152,7 +152,7 @@ def backup_into(root: Path, recovery: Path, relative: Path) -> None:
     """Copy ``root/relative`` to the same relative path under ``recovery`` (never overwriting an earlier copy)."""
     archived = recovery / relative
     if archived.exists():
-        raise InitError(f"recovery collision: {relative}")
+        raise InitError(_("恢复目录里已有同名文件：{0}").format(relative))
     archived.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     archived.write_bytes((root / relative).read_bytes())
 
@@ -188,7 +188,7 @@ class Inputs:
 def split_csv(value: str) -> tuple[str, ...]:
     items = tuple(part.strip() for part in value.split(",") if part.strip())
     if not items:
-        raise argparse.ArgumentTypeError("expected at least one non-empty value")
+        raise argparse.ArgumentTypeError(_("至少需要一个非空值"))
     return items
 
 
@@ -204,7 +204,7 @@ class ExtendCsvAction(argparse.Action):
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     if not slug:
-        raise InitError("--name needs an ASCII --slug override")
+        raise InitError(_("--name 无法推导出 ASCII slug，请用 --slug 指定"))
     return slug
 
 
@@ -381,10 +381,11 @@ def read_legacy_profile(root: Path) -> dict | None:
         except FileNotFoundError:
             return None
         if stat.S_ISLNK(metadata.st_mode):
-            kind = "legacy profile" if index == last else "parent"
-            raise InitError(f"refusing symlinked {kind}: {current.relative_to(root)}")
+            if index == last:
+                raise InitError(_("拒绝处理符号链接的 legacy profile：{0}").format(current.relative_to(root)))
+            raise InitError(_("拒绝处理符号链接的上级目录：{0}").format(current.relative_to(root)))
     if not stat.S_ISREG(metadata.st_mode):
-        raise InitError(f"legacy profile is not a regular file: {LEGACY_PROFILE_PATH}")
+        raise InitError(_("legacy profile 不是普通文件：{0}").format(LEGACY_PROFILE_PATH))
     try:
         profile = json.loads(current.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -600,7 +601,7 @@ def files_for(inputs: Inputs, templates: dict[str, str] | None = None, launcher:
 def validate_root(path: Path) -> Path:
     root = path.expanduser().resolve()
     if not root.exists() or not root.is_dir():
-        raise InitError(f"project directory does not exist: {root}")
+        raise InitError(_("项目目录不存在：{0}").format(root))
     return root
 
 
@@ -622,11 +623,11 @@ def plan_writes(
                 break
             if stat.S_ISLNK(metadata.st_mode):
                 if not skip_symlinked_parents:
-                    raise InitError(f"refusing symlinked parent: {current.relative_to(root)}")
+                    raise InitError(_("拒绝处理符号链接的上级目录：{0}").format(current.relative_to(root)))
                 linked = True
                 break
             if not stat.S_ISDIR(metadata.st_mode):
-                raise InitError(f"parent is not a directory: {current.relative_to(root)}")
+                raise InitError(_("上级路径不是目录：{0}").format(current.relative_to(root)))
         if linked:
             symlinked.append(relative)
             continue
@@ -654,7 +655,7 @@ def _open_parent(root_fd: int, relative: Path, created_dirs: list[Path]) -> int:
                 created_dirs.append(traversed)
                 child = os.open(part, flags, dir_fd=descriptor)
             except OSError as exc:
-                raise InitError(f"unsafe parent path {traversed}: {exc}") from exc
+                raise InitError(_("不安全的上级路径 {0}：{1}").format(traversed, exc)) from exc
             os.close(descriptor)
             descriptor = child
         return descriptor
@@ -671,7 +672,7 @@ def _write_exclusive(parent_fd: int, name: str, payload: bytes) -> None:
         while offset < len(payload):
             written = os.write(descriptor, payload[offset:])
             if written <= 0:
-                raise OSError("short write")
+                raise OSError(_("写入不完整"))
             offset += written
         os.fsync(descriptor)
         os.fchmod(descriptor, 0o644)
@@ -731,8 +732,8 @@ def apply_writes(root: Path, files: dict[Path, str], create: Iterable[Path]) -> 
             except OSError:
                 # A concurrent writer may have added unknown content. Never remove it.
                 pass
-        detail = f"; rollback incomplete: {', '.join(cleanup_errors)}" if cleanup_errors else ""
-        raise InitError(f"initialization rolled back after write failure: {exc}{detail}") from exc
+        detail = _("；回滚未完成：{0}").format(", ".join(cleanup_errors)) if cleanup_errors else ""
+        raise InitError(_("初始化因写入失败已回滚：{0}{1}").format(exc, detail)) from exc
     finally:
         os.close(root_fd)
 
@@ -754,7 +755,7 @@ def apply_migration(
         recovery, _defaulted = prepare_recovery_dir(root, recovery_dir, "migrate")
         conflicts = [path for path in [*replace_paths, *retire_paths] if (recovery / path).exists()]
         if conflicts:
-            raise InitError("recovery collision: " + ", ".join(str(path) for path in conflicts))
+            raise InitError(_("恢复目录里已有同名文件：{0}").format(", ".join(str(path) for path in conflicts)))
 
     root_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
     created_files: list[Path] = []
@@ -790,7 +791,7 @@ def apply_migration(
                 _unlink_relative(root_fd, relative, directory=True)
             except OSError:
                 pass
-        raise InitError(f"migration rolled back after write failure: {exc}") from exc
+        raise InitError(_("迁移因写入失败已回滚：{0}").format(exc)) from exc
     finally:
         os.close(root_fd)
     return recovery
@@ -838,9 +839,9 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str], *, inpu
     path = root / CONTENT_LOCK_PATH
     for parent in [*reversed(CONTENT_LOCK_PATH.parents[:-1])]:
         if (root / parent).is_symlink():
-            raise InitError(f"refusing symlinked parent: {parent}")
+            raise InitError(_("拒绝处理符号链接的上级目录：{0}").format(parent))
     if path.is_symlink():
-        raise InitError(f"refusing symlinked content lock: {CONTENT_LOCK_PATH}")
+        raise InitError(_("拒绝处理符号链接的内容锁：{0}").format(CONTENT_LOCK_PATH))
     lock: dict = {"schema_version": 1, "packs": {}}
     if path.exists():
         try:
@@ -870,7 +871,7 @@ def write_content_lock(root: Path, pack: dict, baseline: dict[str, str], *, inpu
 def _read_project_json(root: Path, relative: Path, label: str) -> dict:
     path = root / relative
     if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if root in parent.parents):
-        raise InitError(f"refusing symlinked {label}", code="profile-invalid")
+        raise InitError(_("拒绝处理符号链接的 {0}").format(label), code="profile-invalid")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -1527,7 +1528,7 @@ def readme_plan(root: Path, name: str, launcher: str | None, language: str = "zh
     """README.md: create it with the entry section, or append the section once (marked)."""
     path = root / "README.md"
     if path.is_symlink():
-        raise InitError("refusing symlinked README.md")
+        raise InitError(_("拒绝处理符号链接的 README.md"))
     if not path.exists():
         return {"path": "README.md", "action": "create", "text": f"# {name}\n\n{readme_block(launcher, language)}"}
     current = path.read_text(encoding="utf-8")
@@ -1555,7 +1556,7 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     template = launcher_text(project_language(profile))
     target = root / name
     if target.is_symlink():
-        raise InitError(f"refusing symlinked launcher: {name}")
+        raise InitError(_("拒绝处理符号链接的启动器：{0}").format(name))
     current = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
     if target.exists() and not target.is_file():
         raise InitError(_("{0} 已存在且不是文件").format(name))
@@ -1820,7 +1821,7 @@ def main(argv: list[str] | None = None) -> int:
         runtime_status = validate_runtime(args.runtime_plugin_root)
         slug = args.slug or slugify(args.name)
         if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
-            raise InitError("--slug must be lowercase ASCII kebab-case")
+            raise InitError(_("--slug 必须是小写 ASCII 短横线格式（kebab-case）"))
         inputs = Inputs(
             root,
             validate_inline("--name", args.name),
@@ -1843,13 +1844,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "migrate" and (root / PROFILE_PATH).exists():
             profile_file = root / PROFILE_PATH
             if profile_file.is_symlink() or any(parent.is_symlink() for parent in profile_file.parents if parent != root):
-                raise InitError("refusing symlinked Project Profile", code="profile-invalid")
+                raise InitError(_("拒绝处理符号链接的 Project Profile"), code="profile-invalid")
             try:
                 current_profile = json.loads(profile_file.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, ValueError) as exc:
                 raise InitError(_('Project Profile 无法解析'), code='profile-invalid') from exc
             if not isinstance(current_profile, dict) or current_profile.get("schema_version") != "1.0":
-                raise InitError("unsupported Project Profile", code="profile-invalid")
+                raise InitError(_("不支持的 Project Profile"), code="profile-invalid")
             upgraded = configure_work_mode(upgrade_legacy_profile(current_profile), args.work_mode)
             if args.language in ("zh", "en"):
                 upgraded["language"] = args.language
@@ -1882,12 +1883,12 @@ def main(argv: list[str] | None = None) -> int:
         requested_skip = {Path(value) for value in args.skip}
         if requested_skip:
             if args.mode == "init":
-                raise InitError("--skip is available only in migrate mode")
+                raise InitError(_("--skip 只能在 migrate 模式使用"))
             unknown_skip = requested_skip - set(files)
             if unknown_skip:
-                raise InitError("unknown skeleton path: " + ", ".join(str(path) for path in sorted(unknown_skip, key=str)))
+                raise InitError(_("未知的骨架路径：{0}").format(", ".join(str(path) for path in sorted(unknown_skip, key=str))))
             if PROFILE_PATH in requested_skip:
-                raise InitError(f"{PROFILE_PATH} cannot be skipped")
+                raise InitError(_("{0} 不能跳过").format(PROFILE_PATH))
             for path in requested_skip:
                 del files[path]
         readme = None
@@ -1900,21 +1901,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         requested_replace = {Path(value) for value in args.replace}
         if retire and PROFILE_PATH in symlinked:
-            raise InitError(f"cannot upgrade legacy profile: {PROFILE_PATH} has a symlinked parent")
+            raise InitError(_("无法升级 legacy profile：{0} 的上级目录是符号链接").format(PROFILE_PATH))
         linked_replace = requested_replace & set(symlinked)
         if linked_replace:
             raise InitError(
-                "refusing to replace through symlinked parent: "
-                + ", ".join(str(path) for path in sorted(linked_replace, key=str))
+                _("拒绝通过符号链接的上级目录替换：{0}").format(", ".join(str(path) for path in sorted(linked_replace, key=str)))
             )
         if args.mode == "init" and requested_replace:
-            raise InitError("--replace is available only in migrate mode")
+            raise InitError(_("--replace 只能在 migrate 模式使用"))
         unknown_replace = requested_replace - set(files) - set(symlinked)
         if unknown_replace:
-            raise InitError("unknown skeleton path: " + ", ".join(str(path) for path in sorted(unknown_replace, key=str)))
+            raise InitError(_("未知的骨架路径：{0}").format(", ".join(str(path) for path in sorted(unknown_replace, key=str))))
         missing_replace = requested_replace - set(collisions)
         if missing_replace:
-            raise InitError("--replace path does not exist: " + ", ".join(str(path) for path in sorted(missing_replace, key=str)))
+            raise InitError(_("--replace 指定的路径不存在：{0}").format(", ".join(str(path) for path in sorted(missing_replace, key=str))))
         replace = [path for path in collisions if path in requested_replace]
         preserved = [path for path in collisions if path not in requested_replace]
         pack = contract_pack()

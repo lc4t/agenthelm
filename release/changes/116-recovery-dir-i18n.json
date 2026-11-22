@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "agents-init 的拒绝与回滚提示全部走翻译：中文界面显示中文，英文界面输出不变。",
+    "en": "agents-init refusal and rollback messages now go through translation: Chinese in the Chinese interface, unchanged text in English."
+  },
+  "changes": [{
+    "scope": "agents-init",
+    "level": "patch",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "off",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

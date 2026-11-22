@@ -49,12 +49,16 @@ class AdoptRecoveryPreviewTests(unittest.TestCase):
 
     def test_recovery_dir_inside_the_project_is_refused_at_preview_like_apply(self) -> None:
         inside = self.root / "bk"
-        preview = self.run_init("--recovery-dir", str(inside))
-        applied = self.run_init("--recovery-dir", str(inside), "--apply")
-        self.assertEqual(preview.returncode, 2)
-        self.assertEqual(preview.stderr, applied.stderr)
-        self.assertIn("must be outside the project root", preview.stderr)
-        self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), "# mine\n")
+        for lang, message in (("zh", "--recovery-dir 必须在项目目录之外"), ("en", "--recovery-dir must be outside the project root")):
+            with self.subTest(lang=lang):  # #116: one refusal, one language per interface language
+                preview = self.run_init("--recovery-dir", str(inside), lang=lang)
+                applied = self.run_init("--recovery-dir", str(inside), "--apply", lang=lang)
+                self.assertEqual(preview.returncode, 2)
+                self.assertEqual(preview.stderr, applied.stderr)
+                self.assertIn(message, preview.stderr)
+                if lang == "en":
+                    self.assertFalse(any("\u4e00" <= ch <= "\u9fff" for ch in preview.stderr), preview.stderr)
+                self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), "# mine\n")
 
     def test_default_location_inside_the_project_is_refused_at_preview(self) -> None:
         done = self.run_init(home=self.root)

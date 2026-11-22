@@ -373,7 +373,7 @@ class InitProjectTests(unittest.TestCase):
             (root / ".agents").symlink_to(Path(outside), target_is_directory=True)
             result = self.run_script(root, "--apply")
             self.assertEqual(result.returncode, 2)
-            self.assertIn("symlinked parent", json.loads(result.stdout)["error"])
+            self.assertIn("拒绝处理符号链接的上级目录：.agents", json.loads(result.stdout)["error"])
             self.assertEqual(list(Path(outside).iterdir()), [])
 
     def test_midway_failure_rolls_back_known_files(self) -> None:
@@ -513,7 +513,7 @@ class InitProjectTests(unittest.TestCase):
                 "--recovery-dir", str(Path(backup) / "r"), "--apply",
             )
             self.assertEqual(result.returncode, 2)
-            self.assertIn("symlinked parent", json.loads(result.stdout)["error"])
+            self.assertIn("拒绝通过符号链接的上级目录替换：", json.loads(result.stdout)["error"])
             self.assertEqual(list(Path(outside).iterdir()), [])
 
     def test_migrate_skip_omits_unwanted_skeleton_files(self) -> None:
