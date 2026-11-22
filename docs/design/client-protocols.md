@@ -22,7 +22,7 @@
 - **一次清零（D-K2）**：既有三家的名字分支全部迁到协议维度，不用棘轮渐进。
 - **launcher 例外（D-K3）**：`launcher.sh` 的第 4 级降级（客户端私有缓存）不改，守卫为这一个文件登记带理由的例外。本项在设计评审时可以推翻（代价见 §9.3）。
 - **默认集合（D-K4）**：`agy` 与 `gemini` 的 `default_set` 为 false，须 `--client agy`、`--client gemini` 或 `--client all`；现有用户升级后行为不变。
-- **支持范围（D-K5）**：见 §6。`sync` 写用户级技能与 MCP、agents-init 的 `agent_cli`、`nudge install-hooks` 对新客户端明确标「不支持」，不静默忽略。agy 的 MCP 要与其他客户端同等支持（插件内 `mcp_config.json` 加用户级与项目级写入），用户级与项目级写入的落点与格式**待补测**（§12）。
+- **支持范围（D-K5）**：见 §6。`sync` 写用户级技能与 MCP、agents-init 的 `agent_cli`、`nudge install-hooks` 对新客户端明确标「不支持」，不静默忽略。agy 的 MCP 与 Codex、Cursor 同等支持：`sync` 生成含 `mcp.json` 与 `mcp_config.json` 的可移植包，再由 `agy plugin install <目录>` 安装（§4.6）；用户级配置文件的落点与格式已实测（§2.2），项目级不支持（与 Codex、Cursor 相同）。
 - **Gemini 安装的信任交互（D-K6）**：预览只打印命令；`--apply` 运行 `gemini extensions install` 时把终端交给用户，工具不代答信任提示，也不向其标准输入写入应答。
 - **Windows（D-K7）**：沿用 `packages/cli/README.md` 的口径，运行时与启动器仅在 macOS 与 Linux 上验证；本版不改变这一范围（#82 的 D14 仍待拍板）。
 
@@ -46,7 +46,7 @@
 | 可执行文件与版本 | 单文件可执行，`agy --version` 输出 `1.5.14`；帮助文本写 stderr | 实测 |
 | 顶层子命令 | `acp agent agents changelog help install mcp mic-serve models plugin remote-control update`；没有 `skills`、`hooks`、`version`、`extensions` | 实测 |
 | `agy plugin` | `list [--json]`、`import [gemini\|claude]`、`install <目标>`、`uninstall`、`enable`、`disable`、`validate [目标] [--strict] [--json]`、`link <市场> <目标>`；没有 `update` | 实测 |
-| `agy mcp` | `add remove list enable disable`（官方文档称没有该命令，与实测不一致，以实测为准）；各子命令的参数、落点、格式 | 子命令名实测；参数与落点**未验证** |
+| `agy mcp` | `add [flags] <name> <commandOrUrl> [args...]`（`-H/--header "Key: Value"` 可重复、`-e/--env KEY=value` 可重复、`-t/--type stdio\|http` 默认 stdio；flag 必须写在 `<name>` 之前，http 与 https 地址自动识别，命令或参数以 `-` 开头时用 `--`）、`remove`、`enable`、`disable`（均取 `<name>`）、`list`（无参数，表格 `NAME TYPE STATUS COMMAND/URL`，写 stdout）。官方文档称没有该命令，与实测不一致，以实测为准。写入全局 `~/.gemini/config/mcp_config.json`；`disable` 在同一文件里把条目的 `disabled` 改为 `true`，不产生其他状态文件；`remove` 删除条目 | 实测（隔离 HOME，真实 HOME 前后差异 0） |
 | 插件落点（用户） | `~/.gemini/config/plugins/<name>/`；`~/.gemini/antigravity-cli/plugins/` 不存在 | 实测，官方文档一致 |
 | 插件落点（项目） | `.agents/plugins/` | 官方文档，**未验证** |
 | 安装方式 | `agy plugin install <目录>` 原样复制目录并写 `~/.gemini/config/import_manifest.json`（`imports[]`：`name`、`source`、`importedAt`、`components`）；市场形式只文档化了 `antigravity-plugins-official`，GitHub 地址形式未试 | 目录形式实测 |
@@ -54,7 +54,7 @@
 | `plugin list --json` | 键 `name enabled version path skills[]`，有则 `mcpServers[]`（服务器名）、`hooks[]`（分组名）、`agents[]`、`rules[]`；经 agy 安装或导入的多一个 `source`（`antigravity` 或 `gemini-cli`）。可作为 `cli` 级证据 | 实测 |
 | 清单 | `plugin.json`；识别 Agent Plugins 1.0.0 的 `$schema`（`validate` 报 `agentPluginsSpec:true`）；`displayName`、`logo`、`suggestedPrompts` 等为 agy 自有键 | 实测 |
 | MCP（插件内） | 只有根目录 `mcp_config.json` 被 `install` 计入；Agent Plugins 的 `mcp.json` 仅在 `enable-agent-plugins-spec` 开关开启时使用，`validate` 对它只给 note，`install` 与 `list` 不计入（开关的存放位置**未找到**，本机状态推断为关） | 实测，开关状态为推断 |
-| MCP 文件格式 | `mcpServers.<名>.{command,args,env,type}`，远程用 `serverUrl`（文档另说 `url` 也可）；全局 `~/.gemini/config/mcp_config.json` 在实测机上是 0 字节空文件 | 实测，全局写入未验证 |
+| MCP 文件格式 | 全局与插件内同一格式 `mcpServers.<名>`：stdio 条目键 `command`、`args`（有参数时）、`env`（对象）、`disabled`（`agy mcp` 写入的全局文件里出现）；http 条目键 `serverUrl`（不写 `type`，不是 `url`）、`disabled`；`--env 'K=${K}'` 的字面量**原样保存、不展开**；`add` 后条目按名字排序。全局文件在实测机上起初是 0 字节空文件，首次 `add` 在其上写入 | 实测；启动 MCP 时是否展开 `${VAR}`、`disabled: true` 是否真的不启动**未验证** |
 | hooks | 只读取插件**根目录**的 `hooks.json`；`hooks/hooks.json` 被 `validate` 警告「never loaded」。格式 `<分组名> → <事件名> → [{type, command}]`，另有嵌套形式 `PreToolUse[]{matcher, hooks[]{command,timeout,type}}` | 实测（识别与警告），事件是否触发**未验证** |
 | hook 事件名 | `SessionStart PreInvocation PostInvocation PreToolUse PostToolUse Stop`；注入上下文用 `injectSteps` | 官方文档（真实 `hooks.json` 里见到 `PreInvocation`、`Stop`） |
 | 技能目录（用户） | 文档列出 `~/.gemini/skills/` 与 `~/.gemini/antigravity-cli/skills/` 两个候选；实测机上两者都不存在，技能只见于插件内 `skills/` | **未确定** |
@@ -138,7 +138,7 @@
 
 - `content.manifest`：清单协议 id，取值 `agent-plugins-1.0`、`claude-plugin`、`codex-plugin`、`cursor-plugin`、`gemini-extension`、`antigravity-plugin`。一个客户端可识别多种（agy 识别 `antigravity-plugin` 与 `agent-plugins-1.0`）。
 - `content.companions`：该客户端要求出现在插件根目录的伴随文件，`[{path, role, required_when}]`。agy：`mcp_config.json`（`role: mcp`，`required_when: agent-plugins-spec-off`，实测开关疑似关，故按「总是需要」处理）、`hooks.json`（`role: hooks`）。Gemini：`gemini-extension.json`（`role: manifest`）。
-- 伴随文件是**随包的静态数据文件**，不是安装时生成的：这样既不需要新代码，也不会让安装结果依赖运行时状态（§10）。生成规则与一致性由测试保证（§7.3）。
+- 伴随文件有两种来源。**agent-pack 自己的插件目录**里是随包的静态数据文件（不依赖运行时状态，§10）。**`sync` 生成的可移植包**里，`mcp_config.json` 由 MCP 格式适配器与 `mcp.json` 在同一个函数里从同一组条目生成，两份不会漂移；`hooks.json` 只出现在 agent-pack 自己的目录。一致性由测试保证（§7.4）。
 - `content.skills`：`agent-skills`（`SKILL.md`）；`content.context`：上下文文件协议，`agents-md`（原生）、`pointer-file`（需要指针文件）、`unsupported`。本版 agy 与 Gemini 均按 `unsupported` 处理 agents-init 的入口（§6）。
 
 ### 4.5 存储与优先级
@@ -158,7 +158,8 @@
 - `mcp.adapter`：`json-mcpServers`（Claude、Cursor、agy、Gemini 的 `settings.json`）、`toml-mcp_servers`（Codex）。
 - `mcp.options`：`root_key`、`remote_url_key`（`url`、`serverUrl`、`httpUrl`）、`remote_headers`、`env_interpolation`（`none`、`plugin-root-only`、`declared-variables`、`shell-env`）、`type_field_required`。agy 的 `remote_url_key` 为 `serverUrl`，`env_interpolation` 为 `declared-variables`（官方文档，未验证）。
 - `mcp.scopes`：声明到存储的映射（沿用 #82 的 `mcp_scope` 语义）。
-- 适配器必须容忍**空文件**（agy 全局 `mcp_config.json` 为 0 字节）：空文件按空对象处理，写入时不把它判为损坏。
+- 适配器必须容忍**空文件**（agy 全局 `mcp_config.json` 起初为 0 字节）：空文件按空对象处理，写入时不把它判为损坏。
+- `mcp.write`：`sync` 写入的方式，取 `package`（生成可移植包，由分发步骤安装）或 `user-file`（直接改用户级配置文件）。Claude、Codex、Cursor 沿用现有实现，本文不改。**agy 取 `package`**：生成含 `mcp.json` 与 `mcp_config.json` 的包，再 `plugin install <目录>`；不直接写全局 `mcp_config.json`，也不用 `agy mcp add`（`--env` 的值会出现在进程参数里，flag 顺序有约束）。全局文件只用于 `inventory` 读取（文件证据；`disabled: true` 的条目记为未加载）；`agy mcp list` 是否会启动服务器未知，`doctor` 默认不运行它。
 
 ### 4.7 hook 协议
 
@@ -198,7 +199,7 @@
 只列与既有驱动的差异和两个新驱动；既有驱动的存储与能力以 `agent_pack_clients.py` 为准，迁移为数据文件时逐字节保持。
 
 - **claude / codex / cursor / claude-desktop**：字段由现有代码与 Phase 1 注册表直接导出，不新增行为。
-- **agy**：`lifecycle: active`；`detect.executables: [agy]`，`detect.dirs: [~/.gemini/config]`，`detect.cli: plugin list --json`（stdout，json）；`distribution`：`marketplace-cli`，`source: bundle-dir`，`install = plugin install {source_dir}`，`installed_state: cli-list-json`；`content.manifest: [antigravity-plugin, agent-plugins-1.0]`，`companions: [mcp_config.json, hooks.json]`；`stores.skills.user: undetermined`，`stores.skills.project: .agents/skills（documented）`；`mcp.adapter: json-mcpServers`，`remote_url_key: serverUrl`；`hooks.events`：`session-start`、`stop`；`hooks.output: injectSteps`；`unsupported`：见 §6。
+- **agy**：`lifecycle: active`；`detect.executables: [agy]`，`detect.dirs: [~/.gemini/config]`，`detect.cli: plugin list --json`（stdout，json）；`distribution`：`marketplace-cli`，`source: bundle-dir`，`install = plugin install {source_dir}`，`installed_state: cli-list-json`；`content.manifest: [antigravity-plugin, agent-plugins-1.0]`，`companions: [mcp_config.json, hooks.json]`；`stores.skills.user: undetermined`，`stores.skills.project: .agents/skills（documented）`；`stores.mcp.user: ~/.gemini/config/mcp_config.json（observed，json，只读取）`；`mcp.adapter: json-mcpServers`，`remote_url_key: serverUrl`，`write: package`；`hooks.events`：`session-start`、`stop`；`hooks.output: injectSteps`；`unsupported`：见 §6。
 - **gemini**：`lifecycle: deprecated`；`detect.executables: [gemini]`，`detect.dirs: [~/.gemini]`；`distribution`：`marketplace-cli`，`source: bundle-dir`，`interactive: trust-prompt`，`installed_state: extensions-dir`（只读）；`content.manifest: [gemini-extension]`，`companions: [gemini-extension.json]`；`stores.skills.user: ~/.gemini/skills（observed）`、`.agents/skills` 别名（documented）；`capabilities.project_trust_required: true`；`hooks.events`：`session-start`；`hooks.output: hookSpecificOutput`。
 
 ---
@@ -212,8 +213,8 @@
 | `inventory` 读 | 支持：`plugin list --json`（`cli`）加文件读取（`file`）；用户级技能目录 `undetermined`，不下结论 | 支持：技能目录与扩展目录，扩展目录只读 |
 | `relocate`、`dedupe` | 不支持：技能存储未确定，插件内容不可移动 | 支持：仅限技能目录（`dir` 存储），不处理扩展目录 |
 | `doctor` | 支持：插件启用状态、`mcp_config.json` 与 `hooks.json` 是否随包、`enable-agent-plugins-spec` 状态未知时显示「未知」 | 支持：显示文件夹信任对项目级内容的影响 |
-| `sync` 写用户级与项目级技能 | 不支持（存储未确定） | 不支持 |
-| `sync` 写用户级与项目级 MCP | 待补测后确定（要求同等支持） | 不支持 |
+| `sync` 写技能 | 用户级随包交付（包形态，`install` 的技能计数已实测）；不写独立的技能目录（用户级目录未确定）；项目级不支持 | 不支持 |
+| `sync` 写 MCP | 用户级：生成含 `mcp.json` 与 `mcp_config.json` 的包再 `plugin install <目录>`；项目级不支持（与 Codex、Cursor 相同，项目级插件目录 `.agents/plugins/` 未验证） | 不支持 |
 | agents-init 的 `agent_cli` 与 `check`（#115） | 不支持（需要模板变化，影响既有项目） | 不支持 |
 | `nudge install-hooks` | 不适用：hooks 随插件交付 | 不适用 |
 | `prompt-submit` 事件 | 不支持（未验证） | 不支持（未验证） |
@@ -289,7 +290,7 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 - `relocate`、`dedupe`：存储表读注册表；对 `undetermined` 存储拒绝并说明。
 - `doctor`：新增「开关未知」「项目未被信任」等只读提示，默认 advisory，不改 `ok` 与退出码。
 - `nudge`：hook 命令带 `--client`；既有三家的输出逐字节不变。
-- agent-pack 插件新增两个静态文件：根目录 `hooks.json`（agy 格式，内容与 `hooks/hooks.json` 等价的子集，命令用 `--client agy`）与 `mcp_config.json`（与 `mcp.json` 同一服务器集合，agy 格式）；其他客户端忽略它们。
+- agent-pack 插件新增两个静态文件：根目录 `hooks.json`（agy 格式，内容与 `hooks/hooks.json` 等价的子集，命令用 `--client agy`）与 `mcp_config.json`（与 `mcp.json` 同一服务器集合，agy 格式）；其他客户端忽略它们。`sync` 生成的包里的 `mcp_config.json` 由适配器生成，不属于这两个静态文件。
 - 会话开始注入的文本总量不变（`docs/design/progressive-loading.md` §1.5 的约 2 KB）。
 - SKILL.md 体积：相对 `v6.13.1` 的净增长预算只剩 2 字节，本版不改 `SKILL.md`，说明放在 `references`。
 
@@ -302,7 +303,7 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 
 ## 12. 未验证与需要的后续补测
 
-1. **`agy mcp add/list/remove/disable` 的落点、格式、`serverUrl` 与 `url`、`${VAR}` 是否原样保存**：未观察（子命令名已确认存在）。决定 agy 用户级与项目级 MCP 写入的实现。需要先在维护者终端取得 `agy mcp add --help` 的输出。
+1. **agy MCP 的运行时行为**：`agy mcp` 的落点、格式、键名、`disable` 的落点已实测（§2.2）；`${VAR}` 在 agy 启动 MCP 时是否展开、`disabled: true` 是否真的不启动、包内 `mcp_config.json` 里 `${PLUGIN_ROOT}` 是否展开（文档称展开），需要模型会话。`sync` 的包形态因此要沿用现有的 `mcp_env_launcher` 包装，不依赖客户端展开。
 2. **`enable-agent-plugins-spec` 开关的存放位置与切换方式**：在 `config.json` 里没有找到；`mcp.json` 是否被运行时使用只有推断。本设计按「总是随包带 `mcp_config.json`」处理。
 3. **根目录 `hooks.json` 对 Claude 格式文件的接受程度**：`hooks/hooks.json` 被警告未加载；根目录 `hooks.json` 的接受格式只验证了 agy 自有格式。需要一次 `validate` 与 `install` 演练（夹具为 agent-pack 的 hook 文件放到根目录）。
 4. **agy hook 命令的工作目录与变量展开**（文档称插件 hook 的 cwd 是插件根目录）、`injectSteps` 输出是否被接受、各事件是否触发：需要模型会话。
@@ -316,7 +317,8 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 
 - **D-K3** `launcher.sh` 的例外是否保留（倾向保留，替代见 §9.3）。
 - **D-K8** `hooks.output` 的 `injectSteps` 适配器本版是否随 agy 一起发（倾向发，标「输出是否被接受未验证」，验收用模型会话冒烟）。
-- **D-K9** agent-pack 随包的 `hooks.json` 与 `mcp_config.json` 是否静态提交（倾向静态提交加一致性测试；替代：安装时生成，会使安装结果依赖运行时状态，且 `agy plugin install` 复制的是目录）。
+- **D-K9** agent-pack 自己的插件目录里的 `hooks.json` 与 `mcp_config.json` 是否静态提交（倾向静态提交加一致性测试；替代：安装时生成，会使安装结果依赖运行时状态，且 `agy plugin install` 复制的是目录）。`sync` 生成的包不受此影响，始终由适配器生成（§4.4）。
+- **D-K11** agy 的 `sync` 是否顺带支持用户级技能（倾向支持：包形态已含技能，`install` 的技能计数已实测，不需要新存储；替代：在声明里写 `unsupported`，与最初的支持范围一致）。
 - **D-K10** `agy` 的 `update` 用「卸载后重装」实现是否可接受（倾向可接受，因为没有 `plugin update`；风险是失去已有的启用状态，需要在预览里写明，并在重装后按读回的 `enabled` 恢复）。
 
 ## 14. 术语对照
