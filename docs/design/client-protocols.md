@@ -135,6 +135,17 @@
 
 **用户级声明里的 `steps` 一律拒绝**（沿用 Phase 1 的 D-R1：让用户文件决定运行什么命令，是任意命令执行面）。built-in 的 `steps` 是随包数据，经测试与代码审查。
 
+**批 C 已实现**（`agent_pack_clients.py` 校验，`agenthelm.py` 读取；与上文的差异如下，均为落地时的必要调整）：
+
+- `distribution` 在 built-in 里是对象 `{type, ...}`；v1 的写法（只写类型名的字符串）仍被接受，等价于 `{type}`，用户声明只能用字符串。`agenthelm clients` 的输出不变（仍报告类型名与原有三个能力标志）。
+- 每步是以 `{cli}` 开头的 argv 模板，参数只含 `[A-Za-z0-9._:=@/+-]` 与占位符；步骤缺省不写、不用空列表。`marketplace-cli` 必须有 `install`，且需要 `detect.executables`（`{cli}` 指它）。
+- **占位符补 `{slug}`**：Claude 与 Codex 的 `add_source` 需要市场来源（`owner/repo`、镜像或本地路径），而 `{marketplace}` 是市场名 `agenthelm`，两者不同。§4.3 的示例本来就写了 `{slug}`，占位符清单漏列。
+- **步骤名补 `update_source`**：Claude 的更新是「先刷新市场、再逐个插件更新」（`update_source` 加 `update`），Codex 一条 `plugin marketplace upgrade` 同时升级市场与已装插件（只有 `update_source`）。只声明 `update_source` 时，该命令的读回验证覆盖所有落后的插件。
+- **`installed_state` 取值按布局命名**：Claude 读 `installed_plugins.json` 里的安装记录（`records-json`），不是缓存目录；Codex 读 `plugins/cache/<市场>/<插件>/<版本>/`（`cache-dir-versioned`）；Cursor 读 `plugins/local/<插件>/`（`dropin-dir`）。§4.3 原把 Claude 与 Codex 都归入 `cache-dir-versioned`，与 Claude 的实际布局不符。`cli-list-json`、`extensions-dir` 随 agy、Gemini 在批 E 加入。
+- 新增字段：`config_dir`（读取器读的客户端目录，可由环境变量覆盖）、`owned_dirs`（旧安装路径归属判断用的目录）、`cli_locations`（命令不在 PATH 时的查找位置）、`scope_flag`（更新时指定安装范围的选项名）、`messages`（文案槽到文案键的映射；文案本身在运行时与 `locale`，声明不带文字）。
+- 能力标志 `legacy_cleanup`、`marketplace_update`、`reinstall_rewrites_all`、`market_pin` 落在 `capabilities`，built-in 可选、缺省为假；`reinstall_rewrites_all` 只放能力标志，不在 `distribution` 重复。
+- `interactive: trust-prompt` 与 `source` 取值已校验；`trust-prompt` 的运行时行为（继承终端）随 Gemini 在批 E 实现，批 C 没有声明它的驱动。
+
 ### 4.4 内容协议
 
 - `content.manifest`：清单协议 id，取值 `agent-plugins-1.0`、`claude-plugin`、`codex-plugin`、`cursor-plugin`、`gemini-extension`、`antigravity-plugin`。一个客户端可识别多种（agy 识别 `antigravity-plugin` 与 `agent-plugins-1.0`）。
@@ -259,7 +270,7 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 
 - **批 A（注册表 v2 与单一存储来源）**：`drivers/*.json`、加载与校验、`agent_pack_inventory.py`、`agent_pack_relocate.py`、`agent_pack_config.py` 的存储表改读注册表，`--client` 选项与 `mcp_server.py` 的 `enum` 改读注册表。风险低，其余批的前置。
 - **批 B（检测、inventory、relocate、dedupe、doctor）**（读取侧已完成，见 §4.2、§4.5、§4.6；过渡版守卫 `tests/test_client_protocol_guard.py` 带一张逐文件上限表，上限必须恰好等于当前计数，后续批次减少字面量时同步下调）：`precedence` 与存储进声明，`cli` 探针适配，空文件容忍，共享存储去重。
-- **批 C（install、update、legacy）**：`distribution.steps` 与 `installed_state` 读取器取代 `agenthelm.py:312-380`、`1230-1232`、`1888-2003` 的按名字分支，文案走文案键。风险最高，要求既有三家输出逐字节不变，Cursor 的目录解包与 Codex 的残留清理各有回归用例。
+- **批 C（install、update、legacy）**：`distribution.steps` 与 `installed_state` 读取器取代 `agenthelm.py:312-380`、`1230-1232`、`1888-2003` 的按名字分支，文案走文案键。风险最高，要求既有三家输出逐字节不变，Cursor 的目录解包与 Codex 的残留清理各有回归用例。**已完成**：`agenthelm.py` 的客户端 id 字面量清零（守卫上限表移除该文件）；`agent_pack_claude.py`、`agent_pack_scope.py`、`agent_pack_mcp_write.py`、`agent_pack_codex_mcp.py` 不在 install、update、legacy 的调用路径上（只被 `sync` 与 `agent_pack_config` 的写入侧使用），改名与字面量清零留给批 D；旧安装清理里 `legacy_artifacts` 与 `retire_legacy` 描述的是预发布时代引导脚本留下的一组固定文件，不按客户端 id 分支，未改。
 - **批 D（nudge 与 hooks）**：事件映射与输出适配器取代 `agent_pack_nudge.py` 的名字分支，hook 命令带 `--client`，保留嗅探给已有安装，新增 `injectSteps` 适配器与 agent-pack 根目录的 `hooks.json`、`mcp_config.json`。
 - **批 E（agy 与 gemini 声明、夹具、守卫收尾）**：两份声明加夹具，守卫一的豁免表只剩 `launcher.sh`，支持矩阵的 `unsupported` 条目与命令输出落地。
 - **并行轨 F（Phase 3，§9）**：运行时解析函数与同级插件查找；与批 A、B 文件不交叠时可并行，与批 C 交叠（`agenthelm.py`）时串行。

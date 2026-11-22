@@ -10,7 +10,21 @@
       }
     ]
   },
-  "distribution": "directory-dropin",
+  "distribution": {
+    "type": "directory-dropin",
+    "source": "bundle-dir",
+    "interactive": "none",
+    "installed_state": "dropin-dir",
+    "config_dir": {
+      "path": "~/.cursor"
+    },
+    "messages": {
+      "recovery": "dropin-backup-folder",
+      "unchanged": "release-same-version-rewrote",
+      "describe_dropin": "dropin-into-local-plugins",
+      "unavailable_next": "use-source-or-ignore-client"
+    }
+  },
   "runtime_cache": [
     {
       "base": "~/.cursor",
@@ -60,7 +74,11 @@
   "capabilities": {
     "default_set": true,
     "read_only": false,
-    "project_mcp_write": false
+    "project_mcp_write": false,
+    "legacy_cleanup": false,
+    "marketplace_update": false,
+    "reinstall_rewrites_all": true,
+    "market_pin": false
   },
   "precedence": [
     {

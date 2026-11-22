@@ -46,7 +46,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_desktop_is_read_only_and_outside_the_default_set(self) -> None:
         desktop = registry.get("claude-desktop")
-        self.assertEqual(desktop["distribution"], "none")
+        self.assertEqual(registry.distribution_type(desktop), "none")
         self.assertTrue(desktop["capabilities"]["read_only"])
         self.assertNotIn("claude-desktop", registry.default_ids())
 
@@ -74,6 +74,9 @@ class RegistryTests(unittest.TestCase):
             driver.pop("lifecycle", None)
             driver.pop("runtime_cache", None)  # added after 6.14.0 (#134 Phase 3)
             driver.pop("precedence", None)  # read-side data added after the snapshot (see test_registry_read_side)
+            driver["distribution"] = registry.distribution_type(driver)  # the step declarations (batch C) are tested apart
+            for flag in registry.EXTENDED_CAPABILITIES:  # schema v2 flags: tested in test_distribution_declarations
+                driver["capabilities"].pop(flag, None)
             for kind in driver["stores"].values():
                 for store in kind:
                     for key in ("write_target", "status", "root_key", "managed_by", "trust_required"):
@@ -152,8 +155,9 @@ class RegistryTests(unittest.TestCase):
 
     def test_builtin_values_are_in_the_documented_vocabulary(self) -> None:
         for driver in registry.BUILTIN:
-            self.assertIn(driver["distribution"], registry.DISTRIBUTIONS)
-            self.assertEqual(set(driver["capabilities"]), set(registry.CAPABILITIES))
+            self.assertIn(registry.distribution_type(driver), registry.DISTRIBUTIONS)
+            self.assertTrue(set(registry.CAPABILITIES) <= set(driver["capabilities"])
+                            <= {*registry.CAPABILITIES, *registry.EXTENDED_CAPABILITIES})
             self.assertEqual(driver.get("lifecycle", "active"), "active")
 
 

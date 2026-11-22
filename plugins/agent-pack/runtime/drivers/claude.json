@@ -13,7 +13,61 @@
       }
     ]
   },
-  "distribution": "marketplace-cli",
+  "distribution": {
+    "type": "marketplace-cli",
+    "source": "marketplace",
+    "interactive": "none",
+    "installed_state": "records-json",
+    "config_dir": {
+      "path": "~/.claude",
+      "env": "CLAUDE_CONFIG_DIR"
+    },
+    "steps": {
+      "add_source": [
+        "{cli}",
+        "plugin",
+        "marketplace",
+        "add",
+        "{slug}"
+      ],
+      "install": [
+        "{cli}",
+        "plugin",
+        "install",
+        "{plugin}@{marketplace}"
+      ],
+      "update_source": [
+        "{cli}",
+        "plugin",
+        "marketplace",
+        "update",
+        "{marketplace}"
+      ],
+      "update": [
+        "{cli}",
+        "plugin",
+        "update",
+        "{plugin}@{marketplace}"
+      ]
+    },
+    "scope_flag": "--scope",
+    "owned_dirs": [
+      {
+        "path": "~/.claude"
+      },
+      {
+        "path": "~/.claude",
+        "env": "CLAUDE_CONFIG_DIR"
+      }
+    ],
+    "messages": {
+      "recovery": "versioned-cache-keeps-old",
+      "applied_recovery": "versioned-cache-keeps-old",
+      "unchanged": "market-entry-version-same",
+      "describe_update_source": "refresh-own-market",
+      "describe_update": "update-plugin-to-version"
+    }
+  },
   "runtime_cache": [
     {
       "base": "~/.claude",
@@ -62,7 +116,11 @@
   "capabilities": {
     "default_set": true,
     "read_only": false,
-    "project_mcp_write": true
+    "project_mcp_write": true,
+    "legacy_cleanup": true,
+    "marketplace_update": true,
+    "reinstall_rewrites_all": false,
+    "market_pin": true
   },
   "precedence": [
     {

@@ -28,10 +28,24 @@ DISTRIBUTIONS = ("marketplace-cli", "directory-dropin", "none")
 SCOPES = ("user", "local", "project")
 FORMATS = ("json", "toml", "dir")
 CAPABILITIES = ("default_set", "read_only", "project_mcp_write")
+# Flags added in schema v2 (design section 4.8); built-in drivers only, optional (absent means false). ``clients`` keeps
+# reporting the three above, so its output does not change when a flag is added here.
+EXTENDED_CAPABILITIES = ("legacy_cleanup", "marketplace_update", "reinstall_rewrites_all", "market_pin")
 LIFECYCLES = ("active", "deprecated")
 STORE_STATUSES = ("observed", "documented", "undetermined")
 SCHEMA_VERSIONS = (1, 2)
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+INSTALLED_STATES = ("records-json", "cache-dir-versioned", "dropin-dir")  # the readers agenthelm.py implements
+INTERACTIVE = ("none", "trust-prompt")
+SOURCES = ("marketplace", "bundle-dir")
+STEP_NAMES = ("add_source", "install", "update_source", "update", "uninstall", "verify")
+PLACEHOLDERS = ("cli", "plugin", "marketplace", "source_dir", "version", "slug")  # slug: design section 4.3 deviation
+MESSAGE_SLOTS = ("recovery", "applied_recovery", "unchanged", "unchanged_next", "describe_update_source",
+                 "describe_update", "describe_dropin", "unavailable_next")
+DISTRIBUTION_KEYS = {"type", "steps", "interactive", "source", "installed_state", "config_dir", "scope_flag",
+                     "messages", "owned_dirs", "cli_locations"}
+PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
+STEP_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:" + "|".join(PLACEHOLDERS) + r")\}){1,128}")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
 OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache"}
@@ -86,6 +100,68 @@ def _check_stores(entries: Any, source: str, kind: str) -> None:
                "root_key (the key holding the servers) is required for json / toml mcp stores and only for them")
         _check("#" not in entry["path"] or (kind == "mcp" and entry["format"] == "json"), source,
                "a #section in a path applies to json mcp stores only")
+
+
+def _check_location(entry: Any, source: str, label: str) -> None:
+    _check(isinstance(entry, dict) and {"path"} <= set(entry) <= {"path", "env"} and _is_text(entry["path"], 200)
+           and (entry["path"].startswith("~/") or entry["path"].startswith("/")) and ".." not in entry["path"].split("/")
+           and (entry.get("env") is None or _is_text(entry["env"])), source,
+           f"{label} needs path (~/ or absolute, no ..), optional env")
+
+
+def step_problem(argv: Any) -> str | None:
+    """Why ``argv`` is not a valid step template (``None`` when valid): ``{cli}`` first, then 0-15 plain arguments, each
+    made of plain characters and the placeholders in ``PLACEHOLDERS`` (nothing else in braces)."""
+    if not (isinstance(argv, list) and 1 <= len(argv) <= 16 and all(isinstance(x, str) for x in argv)):
+        return "a step is a list of 1-16 strings"
+    if argv[0] != "{cli}":
+        return "a step starts with {cli}"
+    if not all(STEP_ARG.fullmatch(x) for x in argv):
+        return f"a step argument holds plain characters and the placeholders {', '.join(PLACEHOLDERS)} only"
+    return None
+
+
+def _check_distribution(value: Any, source: str, executables: list) -> None:
+    if isinstance(value, str):  # the v1 spelling: the type only
+        _check(value in DISTRIBUTIONS, source, f"distribution must be one of {', '.join(DISTRIBUTIONS)}")
+        return
+    _check(isinstance(value, dict) and "type" in value and set(value) <= DISTRIBUTION_KEYS, source,
+           f"distribution must be a type name or an object with type (optional: {', '.join(sorted(DISTRIBUTION_KEYS - {'type'}))})")
+    _check(value["type"] in DISTRIBUTIONS, source, f"distribution.type must be one of {', '.join(DISTRIBUTIONS)}")
+    kind = value["type"]
+    steps = value.get("steps")
+    _check(steps is None or kind == "marketplace-cli", source, "distribution.steps applies to marketplace-cli only")
+    if steps is not None:
+        _check(isinstance(steps, dict) and "install" in steps and set(steps) <= set(STEP_NAMES), source,
+               f"distribution.steps needs install (a missing step is left out, never an empty list); others: "
+               f"{', '.join(STEP_NAMES)}")
+        _check(bool(executables), source, "distribution.steps needs detect.executables (the program {cli} stands for)")
+        for name, argv in steps.items():
+            _check(step_problem(argv) is None, source, f"distribution.steps.{name}: {step_problem(argv)}")
+    elif kind == "marketplace-cli":
+        _check(False, source, "a marketplace-cli distribution needs steps")
+    _check(value.get("interactive", INTERACTIVE[0]) in INTERACTIVE, source,
+           f"distribution.interactive must be one of {', '.join(INTERACTIVE)}")
+    _check(value.get("source", SOURCES[0]) in SOURCES, source, f"distribution.source must be one of {', '.join(SOURCES)}")
+    state = value.get("installed_state")
+    _check(state is None or state in INSTALLED_STATES, source,
+           f"distribution.installed_state must be one of {', '.join(INSTALLED_STATES)}")
+    _check((state is None) == (kind == "none"), source, "installed_state is declared for every distribution but none")
+    if "config_dir" in value:
+        _check_location(value["config_dir"], source, "distribution.config_dir")
+    _check(state is None or "config_dir" in value, source, "installed_state needs distribution.config_dir")
+    _check(value.get("scope_flag") is None or (isinstance(value["scope_flag"], str)
+                                                and CLI_ARG.fullmatch(value["scope_flag"])), source,
+           "distribution.scope_flag must be a plain option name")
+    messages = value.get("messages", {})
+    _check(isinstance(messages, dict) and set(messages) <= set(MESSAGE_SLOTS)
+           and all(_is_text(key, 80) for key in messages.values()), source,
+           f"distribution.messages maps {', '.join(MESSAGE_SLOTS)} to message keys")
+    for name in ("owned_dirs", "cli_locations"):
+        entries = value.get(name, [])
+        _check(isinstance(entries, list), source, f"distribution.{name} must be a list")
+        for entry in entries:
+            _check_location(entry if name == "owned_dirs" else {"path": entry}, source, f"distribution.{name}[]")
 
 
 def probe_problem(probe: Any) -> str | None:
@@ -155,7 +231,7 @@ def validate_builtin(data: Any, source: str) -> dict:
     if "cli" in detect_part:
         _check(probe_problem(detect_part["cli"]) is None, source, probe_problem(detect_part["cli"]) or "")
         _check(bool(executables), source, "detect.cli needs detect.executables (the program the probe runs)")
-    _check(data["distribution"] in DISTRIBUTIONS, source, f"distribution must be one of {', '.join(DISTRIBUTIONS)}")
+    _check_distribution(data["distribution"], source, executables)
     cache = data.get("runtime_cache", [])
     _check(isinstance(cache, list), source, "runtime_cache must be a list")
     for entry in cache:
@@ -174,9 +250,9 @@ def validate_builtin(data: Any, source: str) -> dict:
         _check(sum(1 for e in stores["skills"] if e["scope"] == scope and e.get("write_target")) <= 1, source,
                f"more than one skills write_target for scope {scope}")
     capabilities = data["capabilities"]
-    _check(isinstance(capabilities, dict) and set(capabilities) == set(CAPABILITIES)
+    _check(isinstance(capabilities, dict) and set(CAPABILITIES) <= set(capabilities) <= {*CAPABILITIES, *EXTENDED_CAPABILITIES}
            and all(isinstance(v, bool) for v in capabilities.values()), source,
-           f"capabilities must hold exactly the booleans {', '.join(CAPABILITIES)}")
+           f"capabilities must hold the booleans {', '.join(CAPABILITIES)} (optional: {', '.join(EXTENDED_CAPABILITIES)})")
     _check_precedence(data.get("precedence", []), source)
     return data
 
@@ -205,6 +281,46 @@ def load_builtin(directory: Path | None = None) -> tuple[dict, ...]:
 
 BUILTIN: tuple[dict, ...] = load_builtin()
 BUILTIN_IDS = tuple(item["id"] for item in BUILTIN)
+
+
+def distribution(driver: dict) -> dict:
+    """The distribution declaration of a driver as an object (the v1 spelling, a bare type name, becomes ``{type}``)."""
+    value = driver["distribution"]
+    return {"type": value} if isinstance(value, str) else value
+
+
+def distribution_type(driver: dict) -> str:
+    return distribution(driver)["type"]
+
+
+def ids_of_type(kind: str) -> tuple[str, ...]:
+    """The built-in drivers whose distribution type is ``kind``, in registry order."""
+    return tuple(item["id"] for item in BUILTIN if distribution_type(item) == kind)
+
+
+def ids_with(capability: str) -> tuple[str, ...]:
+    """The built-in drivers declaring the capability flag ``capability``, in registry order."""
+    return tuple(item["id"] for item in BUILTIN if item["capabilities"].get(capability))
+
+
+def expand_step(driver: dict, name: str, **values: str) -> list[str] | None:
+    """The argument list of step ``name`` with the placeholders in ``values`` replaced (a placeholder without a value stays
+    as written). ``None`` when the driver declares no such step (a missing step is not an empty one)."""
+    argv = distribution(driver).get("steps", {}).get(name)
+    if argv is None:
+        return None
+    return [PLACEHOLDER.sub(lambda found: values.get(found.group(1), found.group(0)), item) for item in argv]
+
+
+def message_key(driver: dict, slot: str) -> str | None:
+    """The key of the message a driver names for ``slot`` (the text itself lives with the code that shows it)."""
+    return distribution(driver).get("messages", {}).get(slot)
+
+
+def config_dir(driver: dict, home: Path, getenv: Callable[[str], str | None]) -> Path | None:
+    """The client's own configuration directory (``distribution.config_dir``): the environment override, else the default."""
+    location = distribution(driver).get("config_dir")
+    return _location(location, home, getenv) if location else None
 
 
 def default_ids() -> tuple[str, ...]:
@@ -275,6 +391,31 @@ def primary_skill_stores() -> dict[tuple[str, str], str]:
 
 def _expand(template: str, home: Path) -> Path:
     return home / template[2:] if template.startswith("~/") else Path(template)
+
+
+def _location(entry: dict, home: Path, getenv: Callable[[str], str | None]) -> Path:
+    override = getenv(entry["env"]) if entry.get("env") else None
+    return Path(override) if override else _expand(entry["path"], home)
+
+
+def owned_dirs(driver: dict, home: Path, getenv: Callable[[str], str | None]) -> list[Path]:
+    """Directories whose contents belong to the client (``distribution.owned_dirs``); an entry with ``env`` follows that
+    variable when it is set, so an override and the default location are two entries."""
+    found: list[Path] = []
+    for entry in distribution(driver).get("owned_dirs", []):
+        path = _location(entry, home, getenv)
+        if path not in found:
+            found.append(path)
+    return found
+
+
+def cli_locations(executable: str, home: Path) -> list[Path]:
+    """Where the command line named ``executable`` lives when it is not on PATH: the declared locations of the driver that
+    owns the name (``distribution.cli_locations``), else the usual per-user places."""
+    for item in BUILTIN:
+        if executable in item["detect"].get("executables", []) and distribution(item).get("cli_locations"):
+            return [_expand(path, home) for path in distribution(item)["cli_locations"]]
+    return [home / ".local/bin" / executable, Path("/opt/homebrew/bin") / executable, Path("/usr/local/bin") / executable]
 
 
 def detect(driver: dict, home: Path, getenv: Callable[[str], str | None],
@@ -350,10 +491,18 @@ def declaration_dir(home: Path, getenv: Callable[[str], str | None]) -> Path:
     return (Path(base) if base else home / ".config") / "agenthelm" / "clients.d"
 
 
+def _holds_key(value: Any, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_holds_key(item, key) for item in value.values())
+    return isinstance(value, list) and any(_holds_key(item, key) for item in value)
+
+
 def validate_declaration(data: Any) -> str | None:
     """The reason a declaration is invalid (``None`` when valid). Only data fields are accepted."""
     if not isinstance(data, dict):
         return _("顶层必须是对象")
+    if _holds_key(data, "steps"):  # D-R1: a user file never decides which command runs
+        return _("含 steps（命令步骤）：用户声明不能决定运行什么命令，只有随包的内置声明可以")
     extra = sorted(set(data) - DECLARATION_KEYS)
     if extra:
         return _("含不支持的字段：{0}").format(_("、").join(map(str, extra)))
@@ -430,8 +579,9 @@ def report(home: Path, getenv: Callable[[str], str | None], find_cli: Callable[[
     for item in BUILTIN:
         found = detect(item, home, getenv, find_cli)
         clients.append({"id": item["id"], "display": item["display"], "source": "builtin", **found,
-                        "distribution": item["distribution"], "capabilities": dict(item["capabilities"]),
-                        "install_supported": item["distribution"] != "none"})
+                        "distribution": distribution_type(item),
+                        "capabilities": {key: item["capabilities"][key] for key in CAPABILITIES},
+                        "install_supported": distribution_type(item) != "none"})
     declared, warnings = load_declarations(home, getenv)
     for item in declared:
         probe = {"detect": {"executables": item["detect"].get("executables", []),

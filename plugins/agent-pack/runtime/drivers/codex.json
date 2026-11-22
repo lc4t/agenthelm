@@ -13,7 +13,60 @@
       }
     ]
   },
-  "distribution": "marketplace-cli",
+  "distribution": {
+    "type": "marketplace-cli",
+    "source": "marketplace",
+    "interactive": "none",
+    "installed_state": "cache-dir-versioned",
+    "config_dir": {
+      "path": "~/.codex",
+      "env": "CODEX_HOME"
+    },
+    "steps": {
+      "add_source": [
+        "{cli}",
+        "plugin",
+        "marketplace",
+        "add",
+        "{slug}"
+      ],
+      "install": [
+        "{cli}",
+        "plugin",
+        "add",
+        "{plugin}@{marketplace}"
+      ],
+      "update_source": [
+        "{cli}",
+        "plugin",
+        "marketplace",
+        "upgrade",
+        "{marketplace}"
+      ]
+    },
+    "owned_dirs": [
+      {
+        "path": "~/.agents"
+      },
+      {
+        "path": "~/.codex",
+        "env": "CODEX_HOME"
+      }
+    ],
+    "cli_locations": [
+      "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+      "~/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+      "~/.local/bin/codex",
+      "/opt/homebrew/bin/codex",
+      "/usr/local/bin/codex"
+    ],
+    "messages": {
+      "recovery": "managed-by-client-no-backup",
+      "unchanged": "market-not-pinned-here",
+      "unchanged_next": "pin-market-ref",
+      "describe_update_source": "upgrade-market-and-plugins"
+    }
+  },
   "runtime_cache": [
     {
       "base": "~/.codex",
@@ -60,7 +113,11 @@
   "capabilities": {
     "default_set": true,
     "read_only": false,
-    "project_mcp_write": false
+    "project_mcp_write": false,
+    "legacy_cleanup": true,
+    "marketplace_update": true,
+    "reinstall_rewrites_all": false,
+    "market_pin": false
   },
   "precedence": [
     {

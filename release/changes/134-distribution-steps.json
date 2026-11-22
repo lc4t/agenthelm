@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。",
+    "en": "install, update and legacy cleanup now follow the client distribution declarations: command steps, how installed plugins are read and per-client wording are declared data; the output for the existing three clients is unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
