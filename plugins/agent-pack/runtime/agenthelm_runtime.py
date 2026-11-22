@@ -94,9 +94,10 @@ def running_from(env: Any) -> str:
             return "runtime"
     except OSError:
         pass
-    text = here.as_posix()
-    if "/plugins/cache/" in text or "/.cursor/plugins/" in text:
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file
+    if agent_pack_clients.in_runtime_cache(here, env.home, env.get):
         return "client-plugin"
+    text = here.as_posix()
     if "/node_modules/" in text or "/_npx/" in text:
         return "npm"
     return "checkout"

@@ -14,13 +14,15 @@
     ]
   },
   "distribution": "none",
+  "runtime_cache": [],
   "stores": {
     "skills": [],
     "mcp": [
       {
         "scope": "user",
         "path": "<per-platform>/claude_desktop_config.json",
-        "format": "json"
+        "format": "json",
+        "root_key": "mcpServers"
       }
     ]
   },
@@ -28,5 +30,13 @@
     "default_set": false,
     "read_only": true,
     "project_mcp_write": false
-  }
+  },
+  "precedence": [
+    {
+      "kind": "mcp",
+      "rule": "precedence-undocumented",
+      "evidence": "unknown",
+      "source_url": null
+    }
+  ]
 }

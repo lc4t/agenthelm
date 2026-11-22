@@ -443,11 +443,15 @@ class AgenthelmOperationTests(unittest.TestCase):
         self.assertEqual(done[0]["status"], "moved")
         self.assertFalse((codex_home / "plugins/cache/personal/agent-pack").exists())
 
-    def test_newest_companion_wins_over_the_copy_next_to_this_script(self) -> None:
+    def test_the_copy_next_to_this_script_wins_over_a_newer_client_copy(self) -> None:
+        """Layers are strictly ordered (sibling, user runtime, client caches): a newer client copy does not displace the
+        sibling. Before the single resolver (#134 Phase 3) locate_companion pooled them and the newest won."""
         newer = self.home / ".claude/plugins/cache/agenthelm/agents-init/99.0.0"
         write(newer / "plugin.json", {"name": "agents-init", "version": "99.0.0"})
         installed = [{"client": "claude", "plugin": "agents-init", "version": "99.0.0", "path": str(newer)}]
-        self.assertEqual(agenthelm.locate_companion("agents-init", installed), newer)
+        sibling = agenthelm.PLUGIN_ROOT.parent / "agents-init"
+        self.assertEqual(agenthelm.locate_companion("agents-init", installed), sibling)
+        self.assertEqual(agenthelm.locate_companion("agents-init", installed, excluded={sibling}), newer)
 
     def test_locate_returns_the_newest_or_the_requested_version(self) -> None:
         legacy = self.home / ".agents/plugins/plugins/opinion-manager"

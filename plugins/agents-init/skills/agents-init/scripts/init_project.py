@@ -456,6 +456,63 @@ def private_ignore_text(language: str = "zh") -> str:
     return PRIVATE_IGNORE_EN if language == "en" else PRIVATE_IGNORE
 
 
+PRIVATE_IGNORE_PATH = Path("private/.gitignore")
+# 工具写过的 private/.gitignore 全部取值。核对范围：本地全部发布 tag 与全部提交历史里 PRIVATE_IGNORE（agents-init）
+# 与 IGNORE_TEXT（project-orchestrator）的定义——v6.2.0 至 v6.8.0 不写该文件，v6.11.0-rc.1 起中文 1 个、v6.14.0-rc.1 起英文 1 个，
+# 两个组件的取值逐字相同。新增取值时必须在这里补上，否则旧项目的该文件不会被识别为「工具写的」。
+PRIVATE_IGNORE_KNOWN = {"zh": PRIVATE_IGNORE, "en": PRIVATE_IGNORE_EN}
+
+
+def private_ignore_plan(root: Path, language: str) -> dict | None:
+    """What ``private/.gitignore`` looks like against the project file language, or ``None`` when nothing needs saying.
+
+    ``mismatch``: the text is exactly one the tool wrote in the other language, so it can be replaced (after a backup).
+    ``modified``: it starts like the other language's text but the user changed it: reported, never touched.
+    Anything else (already right, absent, a link, the user's own file) is not this tool's business.
+    """
+    target = root / PRIVATE_IGNORE_PATH
+    try:
+        if (root / "private").is_symlink() or target.is_symlink() or not target.is_file():
+            return None
+        text = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    expected = private_ignore_text(language)
+    if text == expected:
+        return None
+    for found, known in PRIVATE_IGNORE_KNOWN.items():
+        if found != language and text == known:
+            return {"path": PRIVATE_IGNORE_PATH.as_posix(), "state": "mismatch", "found": found, "language": language,
+                    "diff": _unified_diff(PRIVATE_IGNORE_PATH.as_posix(), text, expected), "new_text": expected}
+    first = text.splitlines()[0] if text.strip() else ""
+    for found, known in PRIVATE_IGNORE_KNOWN.items():
+        if found != language and first == known.splitlines()[0]:
+            return {"path": PRIVATE_IGNORE_PATH.as_posix(), "state": "modified", "found": found, "language": language,
+                    "diff": "", "new_text": None}
+    return None
+
+
+def private_ignore_lines(plan: dict | None, applied: bool) -> list[str]:
+    """Text lines for a refresh/entry result about ``private/.gitignore``."""
+    if not plan:
+        return []
+    if plan["state"] == "modified":
+        return [_("  private/.gitignore：开头是{0}原文，但内容已被修改，未改动").format(_language_name(plan["found"]))]
+    if applied:
+        return [_("  private/.gitignore：{0}原文已换成{1}版本（原件已备份）").format(
+            _language_name(plan["found"]), _language_name(plan["language"]))]
+    return [_("  private/.gitignore：内容是工具写过的{0}原文，与项目文件语言（{1}）不符；--apply 时先备份再换成{1}版本").format(
+        _language_name(plan["found"]), _language_name(plan["language"]))]
+
+
+def _language_name(language: str) -> str:
+    return _("中文") if language == "zh" else _("英文")
+
+
+def _public_private_ignore(plan: dict | None, applied: bool = False) -> dict | None:
+    return None if plan is None else {key: value for key, value in plan.items() if key != "new_text"} | {"applied": applied}
+
+
 def entry_command(launcher: str | None) -> str:
     return f"./{launcher}" if launcher else "agenthelm project"
 
@@ -1374,6 +1431,9 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
     blocked = [item["path"] for item in plan if item["action"] == "blocked"]
     symlinks = {item["path"] for item in plan if item.get("reason") == "symlink"}
     replacing = [Path(item["path"]) for item in plan if item["action"] in {"replace", "append", "merge"}]
+    private_plan = private_ignore_plan(root, inputs.language)
+    if private_plan and private_plan["state"] == "mismatch":
+        replacing.append(PRIVATE_IGNORE_PATH)
     for relative, chosen in picks.items():
         item = next(item for item in plan if item["path"] == relative.as_posix())
         if "merge" not in item:
@@ -1390,6 +1450,7 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         "from_version": entry.get("version"),
         "files": plan,
         "blocked": blocked,
+        "private_ignore": _public_private_ignore(private_plan),
     }
     if show_diff:
         result["diffs"] = {path.as_posix(): next(item["diff"] for item in plan if item["path"] == path.as_posix()) for path in sorted(show_diff)}
@@ -1414,6 +1475,10 @@ def refresh_project(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
             backup_into(root, recovery, relative)
         result.update(recovery=str(recovery), recovery_default=defaulted,
                       recovery_files=[path.as_posix() for path in replacing])
+    if private_plan and private_plan["state"] == "mismatch":
+        private_target = root / PRIVATE_IGNORE_PATH
+        _atomic_write(private_target, private_plan["new_text"], os.stat(private_target).st_mode & 0o7777)
+        result["private_ignore"] = _public_private_ignore(private_plan, applied=True)
     new_regions: dict[str, dict[str, str]] = {}
     for item in plan:
         relative = Path(item["path"])
@@ -1575,11 +1640,15 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
         action = "blocked"
     new_profile = {**profile, "entry": {**entry, "api": entry.get("api", ENTRY_API), "launcher": name}}
     profile_changed = new_profile != profile
+    private_plan = private_ignore_plan(root, project_language(profile))
+    private_replace = bool(private_plan and private_plan["state"] == "mismatch" and action != "blocked")
     readme = readme_plan(root, str(profile.get("name") or root.name), name, project_language(profile)) if args.readme_entry else None
     writes = ([name] if action in ("create", "replace") else []) + ([str(PROFILE_PATH)] if profile_changed else []) \
         + ([readme["path"]] if readme else [])
     if action in ("create", "replace", "unchanged"):
         writes.append(str(CONTENT_LOCK_PATH))
+    if private_replace:
+        writes.append(PRIVATE_IGNORE_PATH.as_posix())
     labels = {"create": _("新建启动器"), "replace": _("用模板替换（先备份）"), "unchanged": _("已是模板内容"),
               "keep": _("保留你的文件（不跟踪更新）"), "blocked": _("已存在同名文件，需要选择")}
     changes = [_("{0}：{1}").format(name, labels[action])]
@@ -1594,16 +1663,23 @@ def add_entry(args: argparse.Namespace, root: Path) -> tuple[int, dict]:
                   "profile_diff": _unified_diff(str(PROFILE_PATH), json_text(profile), json_text(new_profile))
                   if profile_changed else ""},
         "blocked": [name] if action == "blocked" else [],
+        "private_ignore": _public_private_ignore(private_plan),
         "readme_snippet": readme_block(name, project_language(profile)) if not readme else "",
     }
     if action == "blocked":
         result["hint"] = _("{0} 已存在：--accept {1} 用模板替换（先备份到恢复目录），或 --keep {2} 保留你的文件").format(name, name, name)
     if not args.apply or action == "blocked":
         return (0 if action != "blocked" else 1), result
-    if action == "replace":
+    if action == "replace" or private_replace:
         recovery, defaulted = prepare_recovery_dir(root, args.recovery_dir, "entry")
-        backup_into(root, recovery, Path(name))
-        result.update(recovery=str(recovery), recovery_default=defaulted, recovery_files=[name])
+        backed_up = ([name] if action == "replace" else []) + ([PRIVATE_IGNORE_PATH.as_posix()] if private_replace else [])
+        for relative in backed_up:
+            backup_into(root, recovery, Path(relative))
+        result.update(recovery=str(recovery), recovery_default=defaulted, recovery_files=backed_up)
+    if private_replace:
+        private_target = root / PRIVATE_IGNORE_PATH
+        _atomic_write(private_target, private_plan["new_text"], os.stat(private_target).st_mode & 0o7777)
+        result["private_ignore"] = _public_private_ignore(private_plan, applied=True)
     if action in ("create", "replace"):
         _atomic_write(target, template, 0o755)
     if readme:
@@ -1781,6 +1857,8 @@ def main(argv: list[str] | None = None) -> int:
                                                  result["entry"]["name"]))
                 for change in result["entry"]["changes"]:
                     print(f"  {change}")
+                for line in private_ignore_lines(result.get("private_ignore"), result["applied"]):
+                    print(line)
                 if result.get("hint"):
                     print(result["hint"])
                 if result.get("readme_snippet"):
@@ -1807,6 +1885,9 @@ def main(argv: list[str] | None = None) -> int:
                             for label, key in ((_("你的版本"), "mine"), (_("基线"), "base"), (_("新模板"), "theirs")):
                                 print(f"        [{label}]")
                                 print("".join(f"          {line}\n" for line in block[key].splitlines()) or "          \n", end="")
+                if not result.get("diffs"):
+                    for line in private_ignore_lines(result.get("private_ignore"), result["applied"]):
+                        print(line)
                 if result.get("hint") and not result.get("diffs"):
                     print(result["hint"])
                 for line in recovery_lines(result):
