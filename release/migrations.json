@@ -1192,5 +1192,71 @@
     "touches": [],
     "default_for_existing": "on",
     "template_changes": []
+  },
+  {
+    "plugin": "agent-pack",
+    "from": "1.14.0",
+    "to": "1.15.0",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-23",
+    "summary": "候选版场景下，runtime status 提示的下一条命令带上 --latest。; check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。; Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。; 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。; install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。; 内置客户端声明改为数据文件，行为不变。; 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。; nudge 与 hook 输出改读客户端声明：事件名映射、输出格式、停止提示默认值与旧安装的载荷嗅探都来自 drivers/*.json，既有三个客户端的输出不变。; 客户端读取侧改为读驱动声明：优先级、读取格式与受管条目进入声明；0 字节的 MCP 配置文件不再被判为损坏。; 同级插件的查找统一为一个解析函数：已装用户级运行时时，优先于客户端缓存里的副本。; sync 的写入侧改读客户端声明：包目的地、MCP 写入格式与选项、Codex 的 TOML 写入与残留清理、Cursor 的请求头写法、作用域与遮蔽发现都进入声明；既有三个客户端写出的文件与输出不变。; 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。; check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。",
+    "summary_en": "In a candidate (-rc.N) scenario, the next command that runtime status suggests carries --latest.; When check finds duplicate Skill / MCP groups, it adds one line pointing at inventory, dedupe and relocate.; When Cursor has no release information, the last line of check no longer says everything is up to date; it says it cannot tell.; Antigravity (agy) is a declared client: one driver declaration, fixtures and the shipped hooks.json and mcp_config.json. install, update (uninstall then reinstall), check, sync, nudge hook, inventory and doctor know agy; it is not in the default client set, name it with --client agy.; install, update and legacy cleanup now follow the client distribution declarations: command steps, how installed plugins are read and per-client wording are declared data; the output for the existing three clients is unchanged.; Built-in client declarations are now data files; behavior is unchanged.; Adds a declaration for Gemini CLI as a deprecated client (gemini, outside the default set: name it with --client gemini or --client all). install / update use its extensions install / uninstall commands; that command asks you to confirm folder trust, so --apply hands it your terminal and agenthelm does not answer, forward or bypass the question, and does not start the command without a terminal. Adds read-only reading of installed extensions (~/.gemini/extensions). This release does not ship the gemini-extension.json that Gemini requires, so an install without --source is blocked in the preview; the behaviour of the real Gemini CLI is not verified in this version. Output for the existing claude / codex / cursor clients is unchanged.; The nudge and hook output now follow the client declarations: event names, output formats, stop-prompt defaults and the legacy payload sniffing come from drivers/*.json; output for the three existing clients is unchanged.; The read side now follows the client driver declarations: precedence, read formats and managed entries are declared data, and a 0-byte MCP configuration file is no longer reported as corrupt.; Sibling plugins are now found by one resolver; an installed user-level runtime is preferred over client-cache copies.; The write side of sync now follows the client declarations: package destinations, the MCP write format and its options, Codex TOML writing and residual cleanup, the Cursor headers form, and scope and shadowing findings are declared data; the files and output written for the existing three clients are unchanged.; The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.; check reads the latest.json migration window: when far behind it fetches the full migration notes, and when they are unavailable it says so and treats the update as possibly incompatible; a breaking step without a summary no longer shows None.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "template_changes": [],
+    "default_for_existing": "on"
+  },
+  {
+    "plugin": "agents-init",
+    "from": "6.10.0",
+    "to": "6.11.0",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-23",
+    "summary": "refresh 与 entry 在 private/.gitignore 是另一种语言的工具原文时，预览中列出并在 --apply 时先备份再换成项目文件语言的版本；check 给出信息级提示。; check 在 Profile 与内容锁记录的渲染输入不一致时给出提示（信息级，不影响退出码）。; agents-init 的拒绝与回滚提示全部走翻译：中文界面显示中文，英文界面输出不变。; 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。",
+    "summary_en": "refresh and entry list a private/.gitignore that holds the tool's text in the other language and, on --apply, back it up and replace it with the project file language's version; check reports it as information.; check now reports when the Profile no longer matches the render inputs recorded in the content lock (information only, exit code unchanged).; agents-init refusal and rollback messages now go through translation: Chinese in the Chinese interface, unchanged text in English.; The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [
+      "private/.gitignore"
+    ],
+    "template_changes": [],
+    "default_for_existing": "on"
+  },
+  {
+    "plugin": "opinion-manager",
+    "from": "0.7.0",
+    "to": "0.7.1",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-23",
+    "summary": "各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。",
+    "summary_en": "The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "template_changes": [],
+    "default_for_existing": "on"
+  },
+  {
+    "plugin": "project-orchestrator",
+    "from": "1.12.0",
+    "to": "1.13.0",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-23",
+    "summary": "修复更新内容预览在英文界面下“默认”与动作之间缺空格（defaultkeep your version）。; 项目工具超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。; 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。",
+    "summary_en": "Fix the missing separator between the default marker and the action in the English update-content preview (defaultkeep your version).; A project tool that times out is reported as an unknown write outcome, distinct from a failure to start, instead of being treated as not written.; The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "template_changes": [],
+    "default_for_existing": "on"
   }
 ]

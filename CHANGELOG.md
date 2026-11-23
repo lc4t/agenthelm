@@ -1,5 +1,50 @@
 # 更新记录
 
+<!-- release-plan:start -->
+## 2026-11-23 — agenthelm 6.15.0
+
+### agent-pack 1.15.0
+
+- 候选版场景下，runtime status 提示的下一条命令带上 --latest。
+- check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。
+- Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。
+- 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。
+- install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。
+- 内置客户端声明改为数据文件，行为不变。
+- 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。
+- nudge 与 hook 输出改读客户端声明：事件名映射、输出格式、停止提示默认值与旧安装的载荷嗅探都来自 drivers/*.json，既有三个客户端的输出不变。
+- 客户端读取侧改为读驱动声明：优先级、读取格式与受管条目进入声明；0 字节的 MCP 配置文件不再被判为损坏。
+- 同级插件的查找统一为一个解析函数：已装用户级运行时时，优先于客户端缓存里的副本。
+- sync 的写入侧改读客户端声明：包目的地、MCP 写入格式与选项、Codex 的 TOML 写入与残留清理、Cursor 的请求头写法、作用域与遮蔽发现都进入声明；既有三个客户端写出的文件与输出不变。
+- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。
+- check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。
+
+### agents-init 6.11.0
+
+- refresh 与 entry 在 private/.gitignore 是另一种语言的工具原文时，预览中列出并在 --apply 时先备份再换成项目文件语言的版本；check 给出信息级提示。
+- check 在 Profile 与内容锁记录的渲染输入不一致时给出提示（信息级，不影响退出码）。
+- agents-init 的拒绝与回滚提示全部走翻译：中文界面显示中文，英文界面输出不变。
+- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。
+
+### opinion-manager 0.7.1
+
+- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。
+
+### project-orchestrator 1.13.0
+
+- 修复更新内容预览在英文界面下“默认”与动作之间缺空格（defaultkeep your version）。
+- 项目工具超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。
+- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。
+
+### suite 6.15.0
+
+- 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。
+- 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。
+- check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。
+- 新增只做检查、不推送的 promote 干跑工作流，并移除发布工作流中未使用的权限。
+<!-- release-plan:end -->
+
+
 ## 2026-11-21 — agenthelm 6.14.0
 
 ### agent-pack 1.14.0
