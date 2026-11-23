@@ -25,6 +25,7 @@ import tarfile
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -184,6 +185,104 @@ def _fetch(url: str, timeout: float = FETCH_TIMEOUT_SECONDS) -> dict:
     if not isinstance(data, dict) or data.get("marketplace") != MARKETPLACE:
         raise CheckError(f"{url} is not an agenthelm latest.json")
     return data
+
+
+MIGRATIONS_FULL_MAX_BYTES = 4 * 1024 * 1024  # the full file is ~80 KB and grows ~10 KB per release
+MIGRATIONS_FULL_CACHE = "migrations_full.json"
+MIGRATIONS_FULL_FAILURE = "migrations_full_failure.json"
+FULL_PATH_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*")
+
+
+def _fetch_bounded_json(url: str, timeout: float, limit: int | None = None) -> Any:
+    limit = MIGRATIONS_FULL_MAX_BYTES if limit is None else limit
+    request = urllib.request.Request(url, headers={"User-Agent": "agenthelm-check"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        raw = response.read(limit + 1)
+    if len(raw) > limit:
+        raise CheckError(f"{url} is larger than {limit} bytes")
+    return json.loads(raw.decode("utf-8"))
+
+
+def _full_migrations(data: Any) -> list[dict]:
+    """The full migrations file is a JSON array of entries (``release/migrations.json``); an object carrying such an
+    array under ``migrations`` is accepted too. Anything else, or an array with a non-object entry, is invalid."""
+    if isinstance(data, dict):
+        data = data.get("migrations")
+    if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
+        raise CheckError("not a list of migration entries")
+    return data
+
+
+def migrations_window(latest: dict) -> dict | None:
+    """The ``migrations_window`` block of a ``latest.json`` (schema 1) with a usable ``floor`` and relative ``full``
+    path; ``None`` when absent, malformed or from a newer schema, which keeps the pre-window behaviour."""
+    window = latest.get("migrations_window")
+    if not isinstance(window, dict) or window.get("schema") != 1 or not isinstance(window.get("floor"), dict):
+        return None
+    full = window.get("full")
+    if not isinstance(full, str) or not FULL_PATH_RE.fullmatch(full) or ".." in full.split("/"):
+        return None  # only a plain relative path under the latest.json source: never another host or an absolute path
+    return window
+
+
+def load_full_migrations(env: Env, latest: dict, origin: dict | None, source: str | None, *, offline: bool = False,
+                         timeout: float = FETCH_TIMEOUT_SECONDS, backoff: bool = False) -> list[dict] | None:
+    """The full migration list a windowed ``latest.json`` points at, or ``None`` when it cannot be had.
+
+    It is fetched from the same prefix as the ``latest.json`` that was read (then from the other default source when no
+    explicit one was given), cached for a day, and a cache is used offline or after a failed fetch. Never raises."""
+    try:
+        window = migrations_window(latest)
+        if window is None:
+            return None
+        origin_source = (origin or {}).get("source") or source
+        if origin_source and not re.match(r"https?://", str(origin_source)):  # a local latest.json: its sibling file
+            try:
+                return _full_migrations(read_json(Path(str(origin_source)).expanduser().parent / window["full"]))
+            except (OSError, ValueError, CheckError):
+                return None
+        explicit = source or env.get(ENV_LATEST)
+        bases = [origin_source] if origin_source else []
+        bases += [url for url in ((explicit,) if explicit else DEFAULT_LATEST_URLS) if url not in bases]
+        urls = [urllib.parse.urljoin(base, window["full"]) for base in bases]
+        stamp = {name: (item or {}).get("version") for name, item in (latest.get("plugins") or {}).items()
+                 if isinstance(item, dict)}
+        cache_file = env.cache_dir / MIGRATIONS_FULL_CACHE
+        cached = None
+        try:
+            cached = read_json(cache_file)
+            cached = (_full_migrations(cached["migrations"]), cached) if cached.get("url") in urls else None
+        except (OSError, ValueError, KeyError, AttributeError, TypeError, CheckError):
+            cached = None
+        if cached and (offline or (cached[1].get("stamp") == stamp
+                                   and time.time() - cached[1].get("fetched_at", 0) < CACHE_TTL_SECONDS)):
+            return cached[0]
+        if offline:
+            return None
+        failure_file = env.cache_dir / MIGRATIONS_FULL_FAILURE
+        if backoff:
+            try:
+                if time.time() - read_json(failure_file).get("at", 0) < FAILURE_BACKOFF_SECONDS:
+                    return cached[0] if cached else None
+            except (OSError, ValueError, AttributeError):
+                pass
+        for url in urls:
+            try:
+                entries = _full_migrations(_fetch_bounded_json(url, timeout))
+            except (OSError, ValueError, CheckError, urllib.error.URLError):
+                continue
+            try:
+                write_json_atomic(cache_file, {"url": url, "fetched_at": time.time(), "stamp": stamp, "migrations": entries})
+            except OSError:
+                pass
+            return entries
+        try:
+            write_json_atomic(failure_file, {"at": time.time()})
+        except OSError:
+            pass
+        return cached[0] if cached else None
+    except Exception:  # noqa: BLE001 - a missing migration note degrades to an explicit gap, it never breaks check
+        return None
 
 
 def load_latest(env: Env, source: str | None = None, *, offline: bool = False,
@@ -571,8 +670,38 @@ def migrations_between(latest: dict, plugin: str, current: str, target: str) -> 
     return sorted(steps.values(), key=lambda entry: version_key(str(entry.get("to"))) or (0,))
 
 
-def plugin_findings(latest: dict, installed: list[dict]) -> list[dict]:
+def window_gap_step(target: str) -> dict:
+    """What a caller sees when the migration notes outside the ``latest.json`` window cannot be fetched: an explicit,
+    breaking-by-default gap, never the empty "no migration" answer."""
+    return {"to": target, "change_kind": None, "breaking": True, "gap": True,
+            "summary": _("窗口外的迁移说明暂不可用，请查看 CHANGELOG.md 或联网重试"), "actions": []}
+
+
+def window_steps(latest: dict, plugin: str, current: str, target: str, full: Any) -> list[dict]:
+    """``migrations_between`` for a windowed ``latest.json``: below the plugin's ``floor`` the full list (``full()``,
+    ``None`` when unavailable) decides, and an unavailable list becomes a gap step on top of whatever the window holds."""
+    steps = migrations_between(latest, plugin, current, target)
+    window = migrations_window(latest)
+    floor = window["floor"].get(plugin) if window else None
+    if not isinstance(floor, str) or not is_newer(floor, current):
+        return steps
+    entries = full()
+    if entries is None:
+        return steps + [window_gap_step(target)]
+    return migrations_between({"migrations": entries}, plugin, current, target)
+
+
+def plugin_findings(latest: dict, installed: list[dict], load_full: Any = None) -> list[dict]:
+    """``load_full`` is a zero-argument callable returning the full migration list or ``None``; without it a windowed
+    ``latest.json`` below its floor reports the gap."""
     findings = []
+    full_cache: list = []
+
+    def full() -> list[dict] | None:
+        if not full_cache:
+            full_cache.append(load_full() if load_full else None)
+        return full_cache[0]
+
     for item in installed:
         target = latest.get("plugins", {}).get(item["plugin"], {}).get("version")
         current = item.get("version") or ""
@@ -590,7 +719,7 @@ def plugin_findings(latest: dict, installed: list[dict]) -> list[dict]:
             status = "unknown"
         else:
             status = "current"
-        steps = migrations_between(latest, item["plugin"], current, target) if status == "behind" else []
+        steps = window_steps(latest, item["plugin"], current, target, full) if status == "behind" else []
         kinds = sorted({step.get("change_kind") for step in steps if step.get("change_kind")})
         findings.append({
             **item,
@@ -600,7 +729,8 @@ def plugin_findings(latest: dict, installed: list[dict]) -> list[dict]:
             "breaking": any(step.get("breaking") for step in steps),
             "steps": [{"to": step.get("to"), "change_kind": step.get("change_kind"),
                        "breaking": step.get("breaking"), "summary": step.get("summary"),
-                       "actions": step.get("actions", [])} for step in steps],
+                       "actions": step.get("actions") or [], **({"gap": True} if step.get("gap") else {})}
+                      for step in steps],
         })
     return findings
 
@@ -1386,7 +1516,9 @@ def run_check(env: Env, project: Path | None, *, latest_source: str | None = Non
     names = set(latest.get("plugins", {}))
     installed = installed_plugins(env, names)
     selection = select_clients(env, clients)
-    everything = plugin_findings(latest, installed)
+    everything = plugin_findings(latest, installed, lambda: load_full_migrations(
+        env, latest, origin, latest_source, offline=offline,
+        timeout=HOOK_FETCH_TIMEOUT_SECONDS if hook_mode else FETCH_TIMEOUT_SECONDS, backoff=hook_mode))
     # A legacy copy belongs to no client: it stays visible whichever clients are selected.
     plugins = [item for item in everything if item["client"] == "legacy" or item["client"] in selection["active"]]
     ignored_plugins = [item for item in everything if item["client"] in selection["ignored"]]
@@ -1774,13 +1906,19 @@ def render_text(report: dict, *, show_skipped: bool = False, details: bool = Fal
             if item["breaking"]:
                 line += _("（含不兼容变更）")
             for step in item["steps"]:
+                if step.get("gap"):  # the notes outside the window are unavailable: possibly incompatible, say so once per client
+                    line += "\n      " + str(step.get("summary") or window_gap_step(step["to"])["summary"])
+                    continue
                 if step.get("breaking"):
                     key = (item["plugin"], str(step["to"]))
                     if key in shown_breaking:  # same plugin, same step: print the notes once, on the first client
                         line += _("\n      {0} 不兼容：同上（见 {1}）").format(step['to'], shown_breaking[key])
                         continue
                     shown_breaking[key] = item["client"]
-                    line += _("\n      {0} 不兼容：{1}").format(step['to'], step.get('summary'))
+                    if step.get("summary"):
+                        line += _("\n      {0} 不兼容：{1}").format(step['to'], step['summary'])
+                    else:  # an index entry outside the latest.json window carries no summary
+                        line += _("\n      {0} 不兼容").format(step['to'])
                     line += "".join(f"\n        - {action}" for action in step.get("actions") or [])
             hint = update_hint(item["client"])
             if item.get("unavailable"):

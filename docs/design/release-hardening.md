@@ -212,6 +212,12 @@ W4 的体积（窗口内全文条数以“最新 N 条”近似；套件版本�
 5. 在沙盒 Pages 或本地 HTTP 服务上做一次真实“跨 5 个版本”的升级演练并记录。
 6. 先发布新客户端（agent-pack minor），**其后**才启用窗口生成；两步分属不同的发布，避免“生成侧先上线”。
 
+### 2.8 实施进度（I4a 已落地，I4b 待下一个发布）
+
+- **消费端（I4a，agent-pack minor）**：`agenthelm.py` 识别 `migrations_window`（`schema` 为 1、`floor` 为对象、`full` 为 `latest.json` 同前缀下的相对路径；缺失、格式错误或更高 schema 一律按无窗口处理，与旧行为逐字节相同）。`behind` 且当前版本低于 `floor[插件]` 时，才从与 `latest.json` 同一来源前缀（无显式来源时再试另一默认来源；本地 `latest.json` 读同目录文件）取全量文件，上限 4 MiB，按日缓存到 `migrations_full.json`（缓存带各插件云端版本戳，版本变化即视为过期；离线或联网失败时用缓存）。取不到全文（离线无缓存、两个来源 404、非法 JSON、不是迁移条目数组、超限）时，在步骤里追加 `gap` 记录并按不兼容处理，不抛异常，也不输出“无迁移”。渲染里 `summary` 缺失不再打印 `None`。
+- **生成侧（I4b，下一个发布）**：`release_workflow.window_migrations` 已作为纯函数就位并有测试，**尚未接入 `build_latest`**，本版 `latest.json` 与 `release/migrations.json` 与不启用窗口时逐字节相同（有测试固定）。启用步骤：在 I4a 发布之后，由 `build_latest` 以窗口参数调用该函数、`consistency_problems` 改为比对窗口化结果。窗口大小 N 与 `legacy` 的归属仍取决于 D2-1，降级口径取决于 D2-2。
+- **回归矩阵（2.7-1）**：`tests/test_migration_window_matrix.py` 逐 tag（v6.8.0、v6.11.0、v6.12.0、v6.13.0、v6.13.1、v6.14.0）用各自的 `agenthelm.py` 读取窗口化与全量 `latest.json`，两种下限（历史中位、全部在窗口外）下所有插件的所有版本的 `breaking`、变更类别与各步 `(版本, breaking)` 一致。缺 tag 时跳过，`AGENTHELM_REQUIRE_TAGS=1` 下失败。
+
 ---
 
 ## 3. 发布工具职责拆分（#28 第八节预算）
@@ -283,7 +289,7 @@ wc -l scripts/release_meta.py scripts/release_model.py scripts/release_workflow.
 4. 定时工作流只在默认分支最新提交上运行（未取到官方原文）；设计要求 `promote.yml` 位于 `main`。
 5. npm 是否提供“批准后”的 webhook / 事件（未见文档）；`npm view` 是否暴露可与 GitHub 提交比对的 provenance 字段。
 6. `check-changes` 对 `.github/workflows/`、`scripts/` 变更是否要求片段（现有 VERSIONING.md 仅写“测试与 CI 配置本身不要求插件升版”，以 `ci_gate` 实测为准）。
-7. 老客户端“静默丢失不兼容提示”是源码推断，已用 v6.8.0 的 `migrations_between` 与 v6.12.0 的同名函数核对形态，**未用真实旧版运行时实跑**（验收标准 2.7-1 的内容）。
+7. 老客户端“静默丢失不兼容提示”是源码推断；窗口化后的 `latest.json` 对各历史 tag 运行时的判定已由 2.8 的回归矩阵实跑核对（已核实）。
 8. 窗口体积数字（2.2、2.4）是对当前 `latest.json` 的离线计算，条数到套件版本的映射按“最新 N 条”近似。
 9. Claude Code / Codex / Cursor 客户端是否会缓存或二次解析 `latest.json`：本仓库只由 agent-pack 运行时读取 `migrations`，客户端本身不读取（grep 范围：`plugins/`、`packages/`、`scripts/`）。
 

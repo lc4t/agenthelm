@@ -1,5 +1,6 @@
 {
  "\n      {0}\n      有本地仓库时：{1} update --source <本地仓库>；不使用 Cursor 时：{1} config ignore-client cursor --apply": "\n      {0}\n      With a local repository: {1} update --source <local repository>; if you do not use Cursor: {1} config ignore-client cursor --apply",
+ "\n      {0} 不兼容": "\n      {0} is incompatible",
  "\n      {0} 不兼容：{1}": "\n      {0} is incompatible: {1}",
  "\n      {0} 不兼容：同上（见 {1}）": "\n      {0} is incompatible: same as above (see {1})",
  "\n      {0}仍是 {1}（目标 {2}）": "\n      {0}still {1} (target {2})",
@@ -726,6 +727,7 @@
  "离线且没有缓存的 latest.json": "Offline and no cached latest.json",
  "离线时用 --source 指向发布包（.tar.gz）或仓库检出": "Offline: use --source to point at a release (.tar.gz) or a repository checkout",
  "离线，且缓存来自另一个来源（{0}），不能代替 {1}": "Offline, and the cache came from another source ({0}); it cannot stand in for {1}",
+ "窗口外的迁移说明暂不可用，请查看 CHANGELOG.md 或联网重试": "Migration notes outside the latest.json window are unavailable: check CHANGELOG.md or retry online.",
  "符号链接": "symlink",
  "符号链接已失效": "Broken symlink",
  "符号链接模式必然保留源（目标指向它）；两处内容同步变化": "Link mode always keeps the source (the target points to it); a change in one place shows in the other",

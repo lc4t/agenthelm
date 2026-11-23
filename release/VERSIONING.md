@@ -58,7 +58,7 @@ CI 的各套件和升级矩阵在 Python 设置成功且任务未取消时分别
 | 迁移汇总 | `release/history/**/migrations.json` 加候选计划的迁移条目，生成 `release/migrations.json` 与 `latest.json.migrations` |
 | 发布说明 | 当前计划生成的 CHANGELOG 标记段；正式发布计划与片段归档在 `release/history/<套件版本>/` |
 
-既有手写迁移一次性原样导入 `release/history/legacy/migrations.json`。汇总不是第二个可编辑来源。暂不裁剪 `latest.json` 的历史窗口；达到 issue #28 的触发规模再加按需获取。
+既有手写迁移一次性原样导入 `release/history/legacy/migrations.json`。汇总不是第二个可编辑来源。`latest.json` 暂时仍携带全量迁移历史：能读 `migrations_window` 并按需拉取全文的客户端先发布（agent-pack 的消费端已就绪），窗口化的生成侧在其后的发布才启用，两步分属不同的发布；窗口大小与 `legacy` 的归属见设计稿 `docs/design/release-hardening.md` 第 2 节（D2-1、D2-2），未定之前不启用。
 
 ## 候选发布
 

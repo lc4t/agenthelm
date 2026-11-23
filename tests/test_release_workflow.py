@@ -347,3 +347,62 @@ class RepositoryTests(unittest.TestCase):
         changelog = (self.root / 'CHANGELOG.md').read_text()
         self.assertIn('agenthelm 1.0.1', changelog)
         self.assertIn('agenthelm 1.0.2', changelog)
+
+
+class WindowMigrationsTests(unittest.TestCase):
+    """The pure window generator (not wired into build_latest yet) and the guard that latest.json stays unwindowed."""
+
+    def entry(self, plugin, to, *, breaking=False, summary='完整说明', **kw):
+        return {'plugin': plugin, 'from': '0.0.0', 'to': to, 'change_kind': 'code', 'breaking': breaking, 'date': '2026-01-01',
+                'summary': summary, 'summary_en': 'full', 'actions': ['do it'], 'user_action_required': [], 'touches': ['x'],
+                'declaration': 2, 'template_changes': [], 'default_for_existing': 'on', **kw}
+
+    def test_inside_the_window_keeps_the_full_text_and_outside_becomes_an_index(self):
+        entries = [self.entry('a', '1.0.0'), self.entry('a', '1.1.0'), self.entry('a', '1.2.0'), self.entry('b', '5.0.0')]
+        result, window = workflow.window_migrations(entries, {'a': '1.1.0'})
+        self.assertEqual(window, {'schema': 1, 'floor': {'a': '1.1.0'}, 'full': 'release/migrations.json'})
+        self.assertEqual(result[2], entries[2])  # newer than the floor: full text
+        self.assertEqual(result[3], entries[3])  # a plugin with no floor stays in full
+        self.assertEqual(result[0], {'plugin': 'a', 'from': '0.0.0', 'to': '1.0.0', 'change_kind': 'code', 'breaking': False,
+                                     'date': '2026-01-01'})
+        self.assertEqual(result[1], {key: entries[1][key] for key in result[1]})  # the floor itself is outside (to <= floor)
+        self.assertNotIn('summary', result[1])
+        self.assertEqual(len(result), len(entries))
+
+    def test_an_outside_breaking_entry_keeps_a_short_summary_and_no_actions(self):
+        long_text = '很长的说明' * 40
+        entries = [self.entry('a', '1.0.0', breaking=True, summary=long_text), self.entry('a', '1.0.1', breaking=True, summary='短'),
+                   self.entry('a', '2.0.0')]
+        result, _ = workflow.window_migrations(entries, {'a': '1.5.0'})
+        self.assertEqual(len(result[0]['summary']), 80)
+        self.assertTrue(result[0]['summary'].endswith('\u2026'))
+        self.assertEqual((result[0]['actions'], result[1]['summary'], result[1]['actions']), ([], '短', []))
+        for item in result[:2]:
+            self.assertTrue(item['breaking'])
+            self.assertNotIn('summary_en', item)
+            self.assertNotIn('touches', item)
+
+    def test_the_input_is_not_modified_and_the_breaking_count_is_kept(self):
+        entries = [self.entry('a', '1.0.0', breaking=True), self.entry('a', '2.0.0', breaking=True)]
+        snapshot = copy.deepcopy(entries)
+        result, _ = workflow.window_migrations(entries, {'a': '9.0.0'})
+        self.assertEqual(entries, snapshot)
+        self.assertEqual(sum(item['breaking'] for item in result), 2)
+
+    def test_the_real_history_windows_without_losing_a_breaking_entry_or_growing(self):
+        full = json.loads((ROOT / 'release/migrations.json').read_text(encoding='utf-8'))
+        floor = {name: item['version'] for name, item in json.loads((ROOT / 'latest.json').read_text(encoding='utf-8'))['plugins'].items()}
+        result, _ = workflow.window_migrations(full, floor)
+        self.assertEqual([(e['plugin'], e['from'], e['to'], e['breaking']) for e in result],
+                         [(e['plugin'], e['from'], e['to'], e['breaking']) for e in full])
+        self.assertTrue(all(e['summary'] and len(e['summary']) <= 80 and e['actions'] == [] for e in result if e['breaking']))
+        self.assertLess(len(json.dumps(result, ensure_ascii=False)), len(json.dumps(full, ensure_ascii=False)) // 4)
+
+    def test_latest_json_is_still_the_unwindowed_generated_file(self):
+        latest = (ROOT / 'latest.json').read_text(encoding='utf-8')
+        built = meta.build_latest(meta.load_plugins())
+        self.assertNotIn('migrations_window', built)
+        self.assertNotIn('migrations_window', json.loads(latest))
+        self.assertEqual(latest, meta.dump(built))
+        self.assertEqual(built['migrations'], meta.read_migrations())
+        self.assertEqual((ROOT / 'release/migrations.json').read_text(encoding='utf-8'), meta.dump(meta.read_migrations()))
