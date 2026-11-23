@@ -24,7 +24,7 @@ npx @sakanano-moe/agenthelm install
 npx @sakanano-moe/agenthelm install --apply
 ```
 
-它检测本机的 Claude Code、Codex 与 Cursor，分别调用各自的市场命令；`--client claude|codex|cursor` 可只装某一个。
+它检测本机的 Claude Code、Codex 与 Cursor，分别调用各自的市场命令；`--client claude|codex|cursor` 可只装某一个。Antigravity（`agy`）不在默认集合里，须显式写 `--client agy`：安装与更新调用 `agy plugin install <目录>`（没有 `plugin update`，更新是卸载后重装），详见 [INSTALL.md](INSTALL.md) 的「Antigravity」一节。
 
 **Gemini CLI（已弃用）**：官方已用 Antigravity CLI 取代它，所以不在默认客户端里，只有 `--client gemini`（或 `--client all`）点名才会处理。它的 `extensions install` 要求你在终端里确认文件夹信任：`--apply` 时命令直接使用你的终端，agenthelm 不代答、不转发、不绕过；没有终端时不会启动命令。`update` 是先卸载再安装。Gemini 要求插件目录里有 `gemini-extension.json`，本版发布包还没有随包提供，因此现阶段只能用 `--source` 指向带有该文件的本地检出（发布包安装会在预览里标明受阻）。`agenthelm check` 读取 `~/.gemini/extensions/` 里已装扩展的版本（只读）。真实 Gemini CLI 的安装与更新尚未在本版验证。
 

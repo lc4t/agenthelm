@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
 import os
@@ -112,6 +113,9 @@ def sha256_file(path: Path) -> str:
 class Env:
     home: Path
     variables: dict[str, str] = field(default_factory=dict)
+    # The clients this run was told about with ``--client``: a client outside the default set is only asked (its command
+    # line is only run) when it is named here.
+    named_clients: frozenset = frozenset()
 
     def child_environment(self) -> dict[str, str]:
         """Environment for client CLIs: they must see the same home this run inspects."""
@@ -385,6 +389,36 @@ def _installed_dropin_dir(env: Env, driver: dict, names: set[str]) -> list[dict]
     return found
 
 
+def cli_plugin_list(env: Env, driver: dict) -> dict:
+    """Run the driver's read-only ``detect.cli`` probe (a plugin list in JSON) with the client's own program, with this run's
+    home and an empty standard input. The result is ``agent_pack_probe.run_probe``'s: ``ok`` false with a reason when the
+    program is missing or its answer is unreadable (a failed probe is no evidence)."""
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_probe  # noqa: PLC0415 - shipped next to this file
+
+    return agent_pack_probe.run_driver_probe(driver, env.home, env.variables)
+
+
+def _installed_cli_list_json(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    """Layout ``cli-list-json``: what the client's own ``plugin list --json`` reports (``cli`` evidence). The program runs
+    only for a client the run named with ``--client``: a check of the default clients never starts it."""
+    if driver["id"] not in env.named_clients or "cli" not in driver["detect"]:
+        return []
+    found: list[dict] = []
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_probe  # noqa: PLC0415 - shipped next to this file
+
+    for item in agent_pack_probe.plugin_entries(cli_plugin_list(env, driver)):
+        if item["name"] not in names:
+            continue
+        entry = {"client": driver["id"], "plugin": item["name"], "version": str(item["version"]) if item.get("version") else None,
+                 "path": str(item.get("path", "")), "enabled": item.get("enabled") is not False}
+        if entry["path"] and Path(entry["path"]).is_symlink():
+            entry["dev"] = "symlink"
+        found.append(entry)
+    return found
+
+
 def _installed_extensions_dir(env: Env, driver: dict, names: set[str]) -> list[dict]:
     """Layout ``extensions-dir``: ``extensions/<plugin>/<manifest>`` under the client's directory, the manifest being the
     driver's declared companion with role ``manifest``. Read only: the client signs what it installs there, so nothing
@@ -417,6 +451,7 @@ def _no_others(env: Env, driver: dict, names: set[str]) -> list[dict]:
 STATE_READERS = {"records-json": (_installed_records_json, _others_records_json),
                  "cache-dir-versioned": (_installed_cache_dir_versioned, _others_cache_dir_versioned),
                  "dropin-dir": (_installed_dropin_dir, _no_others),
+                 "cli-list-json": (_installed_cli_list_json, _no_others),
                  "extensions-dir": (_installed_extensions_dir, _no_others)}
 
 
@@ -581,6 +616,7 @@ ORIGIN_LABELS = {"symlink": N_("指向别处的软链"), "local-directory-market
 # Keys are the message keys a driver's ``distribution.messages`` names (plus ``legacy``, which belongs to no client); the
 # texts stay here and in ``locale`` so a declaration never carries prose.
 RECOVERY_HINTS = {
+    "reinstall-no-backup": N_("由 Antigravity 管理，agenthelm 不备份；更新是卸载后重装（客户端没有 plugin update）"),
     "versioned-cache-keeps-old": N_("Claude Code 升级后把旧版本目录留在 ~/.claude/plugins/cache/agenthelm/<插件>/<旧版本>/（客户端行为，agenthelm 不清理）"),
     "managed-by-client-no-backup": N_("由 Codex 管理，agenthelm 不备份；需要回退时用 codex 重新安装指定版本"),
     "dropin-backup-folder": N_("被替换的目录备份在 ~/.agent-pack/recovery/<时间>-cursor-<插件>/replaced-plugin/<插件>/"),
@@ -807,7 +843,7 @@ def _advice(diag: dict, client: str) -> dict:
 def install_state(env: Env, latest: dict, findings: list[dict], others: list[dict], declared: list[dict],
                   clients: list[str]) -> dict:
     """Per selected client: none / partial / marketplace(current|behind|ahead) / dev / legacy / mixed / market-conflict."""
-    detected = set(detect_clients(env))
+    detected = set(detect_clients(env, named=True))
     conflict = market_conflict(latest, declared)
     pin = market_pin(latest, declared)
     result: dict = {"clients": {}, "unconfirmed": [
@@ -1910,10 +1946,12 @@ def github_slug(latest: dict) -> str:
     return match.group(1)
 
 
-def detect_clients(env: Env) -> list[str]:
-    """Default-set clients whose declared detection evidence (executable or configuration directory) is present."""
+def detect_clients(env: Env, *, named: bool = False) -> list[str]:
+    """Default-set clients whose declared detection evidence (executable or configuration directory) is present; with
+    ``named`` also the other selectable clients this run named with ``--client`` (a client outside the default set is
+    looked at only when asked for)."""
     return [driver["id"] for driver in client_registry.BUILTIN
-            if driver["capabilities"]["default_set"]
+            if (driver["capabilities"]["default_set"] or (named and driver["id"] in env.named_clients))
             and client_registry.detect(driver, env.home, env.get, lambda name: find_cli(env, name))["detected"]]
 
 
@@ -2214,7 +2252,7 @@ def _inherited_streams() -> dict:
 
 
 def bundle_dir_step(env: Env, driver: dict, plugin: str, latest: dict, source: Path | None, *, replace: bool,
-                    target: str | None, skipped: str | None = None) -> Step:
+                    target: str | None, skipped: str | None = None, enabled: bool | None = None) -> Step:
     """The step of a ``bundle-dir`` client: its declared ``install`` command is given the plugin's directory from the
     release (or from a local checkout). ``replace`` (an update) first runs the declared ``uninstall``, because the client has
     no update command for a directory. When the driver declares ``interactive: trust-prompt`` the command asks the user
@@ -2227,6 +2265,11 @@ def bundle_dir_step(env: Env, driver: dict, plugin: str, latest: dict, source: P
     shown = str(source / "plugins" / plugin) if source is not None else f"<{_('发布包')}>/plugins/{plugin}"
     install = client_registry.expand_step(driver, "install", cli=found or executable, plugin=plugin, source_dir=shown)
     uninstall = client_registry.expand_step(driver, "uninstall", cli=found or executable, plugin=plugin) if replace else None
+    # A client that forgets the plugin's enabled state on uninstall and declares a ``disable`` step gets the state it
+    # reported before the update restored afterwards (design D-K10): a plugin that was disabled is disabled again.
+    restore = (client_registry.expand_step(driver, "disable", cli=found or executable, plugin=plugin)
+               if uninstall and enabled is False else None)
+    losing = bool(uninstall and client_registry.expand_step(driver, "disable", cli="x", plugin="x"))
     asks = client_registry.interactive(driver) != "none"
     required = client_registry.required_files(driver)
     unshipped = [item["path"] for item in driver.get("content", {}).get("companions", []) if not item.get("shipped", True)]
@@ -2266,14 +2309,23 @@ def bundle_dir_step(env: Env, driver: dict, plugin: str, latest: dict, source: P
             if done.returncode != 0:
                 detail = _("；未确认：用户拒绝确认时该命令的退出码") if asks else ""
                 raise CheckError(_("命令退出码 {0}{1}").format(done.returncode, detail))
+            if restore:
+                again = subprocess.run(restore, capture_output=True, text=True, check=False, env=child_env)
+                outcome["restored_disabled"] = again.returncode == 0
+                if again.returncode != 0:
+                    raise CheckError(_("重装成功，但恢复停用状态失败（退出码 {0}）：{1}").format(
+                        again.returncode, tail_lines(again.stderr or again.stdout)))
             return outcome
 
     notes = [deprecation_note(client)]
     if asks:
         notes.append(_("该命令会向你索取确认：--apply 时它直接使用你的终端，请在终端里自己回答；agenthelm 不会代答、转发或绕过确认。"
                        "是否安装成功以读回的版本为准（未确认：拒绝确认时的退出码与输出）。"))
-    if uninstall:
+    if uninstall and asks:
         notes.append(_("更新是先卸载再安装：若在确认处拒绝，该插件会处于未安装状态，重新运行 install 即可（未确认：卸载本身是否也要确认）。"))
+    if losing:
+        notes.append(_("没有 plugin update 命令，更新是先卸载再重装：已有的启用状态会丢失，重装后按卸载前读回的状态恢复"
+                       "（原先是停用的会再执行一次停用）；若中途失败，该插件可能处于未安装状态，重新运行 install 即可。"))
     verb = _("更新 {0} → {1}").format(plugin, target) if replace else _("安装 {0}").format(plugin)
     return Step("update" if replace else "install", client, f"{name} {verb}",
                 [*uninstall, "&&", *install] if uninstall else install, action=run, blocked=blocked, blocker=blocker,
@@ -2318,8 +2370,8 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
             if kind == "marketplace-cli" and driver["capabilities"].get("marketplace_update"):
                 steps += marketplace_update_steps(env, report, driver, mine)
             elif kind == "marketplace-cli" and client_registry.source_kind(driver) == "bundle-dir":
-                steps += [bundle_dir_step(env, driver, item["plugin"], latest, source, replace=True, target=item["latest"])
-                          for item in mine]
+                steps += [bundle_dir_step(env, driver, item["plugin"], latest, source, replace=True, target=item["latest"],
+                                          enabled=item.get("enabled")) for item in mine]
             elif kind == "directory-dropin":
                 cursor = sorted({item["plugin"] for item in mine})
                 steps.append(dropin_step(driver, latest, cursor, source, home, _("更新"), env=env))
@@ -2504,6 +2556,7 @@ UNCHANGED_REASONS = {
     "market-entry-version-same": N_("该客户端的市场条目 version 没有变（Claude Code 只看市场条目的 version 判断是否有更新），或市场没有固定到这个版本"),
     "market-not-pinned-here": N_("该客户端的市场没有固定到此版本（可能在跟随默认分支，升级到的是那里的版本）"),
     "release-same-version-rewrote": N_("发布包里的版本与已装的相同，文件已按发布包重写"),
+    "reinstall-version-unchanged": N_("卸载后重装已完成，但读回的版本没有变化（发布包里的版本与已装的相同，或客户端读不到）"),
 }
 UNCHANGED_ADVICE = {"pin-market-ref": pin_market_ref_advice}  # message key -> builds the next step from latest.json
 
@@ -3159,8 +3212,13 @@ def run_inventory(args: argparse.Namespace, env: Env) -> int:
     import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
 
     project = (args.project or Path.cwd()).resolve()
+    # A driver's read-only ``detect.cli`` probe runs only for a client the user asked for (named, or through ``all``): the
+    # default clients declare none, so a plain ``inventory`` starts no client program.
+    asked = list(client_registry.all_ids()) if args.client and "all" in args.client else (args.client or [])
+    probes = {name: cli_plugin_list(env, driver) for name in asked if (driver := client_registry.get(name))
+              and "cli" in driver["detect"] and find_cli(env, driver["detect"]["executables"][0])}
     report = agent_pack_inventory.observe(env.home, project, args.client, args.type, args.scope,
-                                          include_description=args.include_description)
+                                          include_description=args.include_description, probes=probes or None)
     if args.output == "json":
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -3325,6 +3383,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_local_only(argv[1:])
     args = parser().parse_args(argv)
     env = current_env(args.home)
+    env.named_clients = frozenset(name for name in expand_clients(getattr(args, "client", None) or [])
+                                  if name in client_registry.installable_ids())
     home = env.home
     project = None
     if hasattr(args, "no_project") and not args.no_project:

@@ -2,9 +2,10 @@
 """Read-only observation of the Skills and MCP servers each client can see (``agenthelm inventory``).
 
 The JSON shape is a contract (``schema_version``, documented in ``references/inventory-contract.md``): later write
-commands and menus build on it, so keys are only ever appended. Nothing here writes, runs a client command line or
-reads a settings key; every observation is ``evidence: file`` (read from a file) or ``unknown`` (could not be
-decided, for example a corrupt file). MCP ``env`` values, ``headers`` values and tokens never appear in any output.
+commands and menus build on it, so keys are only ever appended. Nothing here writes or reads a settings key, and it runs
+no client command line itself: a driver's read-only ``detect.cli`` probe runs only when the caller passes its result in
+(``probes``, for a client the user named), and its answer is reported apart as ``cli`` evidence. Every Skill / MCP observation
+is ``evidence: file`` (read from a file) or ``unknown`` (could not be decided, for example a corrupt file). MCP ``env`` values, ``headers`` values and tokens never appear in any output.
 
 Reuses ``agent_pack_config`` for JSON/TOML readers, the MCP normaliser's secret patterns and version parsing.
 """
@@ -35,7 +36,7 @@ DESKTOP = client_registry.per_platform_ids()[0]
 ALL_CLIENTS = client_registry.all_ids()  # the default set is CLIENTS; the read-only DESKTOP target must be named (or ``all``)
 TYPES = ("skills", "mcp", "all")
 SCOPES = ("project", "user", "all")
-EVIDENCE = ("file", "setting", "cli", "unknown")  # setting / cli are reserved: this version never reads them
+EVIDENCE = ("file", "setting", "cli", "unknown")  # ``setting`` is reserved: this version never reads a settings key
 AGENTHELM_PLUGINS = frozenset({"agent-pack", "agents-init", "opinion-manager", "project-orchestrator"})
 AGENTHELM_REPOSITORY = "lc4t/agenthelm"
 OVERLAP_THRESHOLD = 0.8  # token Jaccard similarity; a hint only, never a semantic judgement
@@ -476,14 +477,16 @@ def _names(mapping: Any) -> list[str]:
 
 
 def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home: Path,
-                  state: dict[str, str], trust_required: bool = False) -> dict:
+                  state: dict[str, str], trust_required: bool = False, url_key: str = "url",
+                  disabled_key: str | None = None) -> dict:
     """A server entry reduced to what may be shown: no ``env`` / ``headers`` values, no tokens.
 
     ``state`` is the sync-state record of a store declared ``managed_by`` (empty otherwise); ``trust_required`` is the
-    store's declaration that the client reads it only in a trusted project."""
+    store's declaration that the client reads it only in a trusted project. ``url_key`` is the key the client keeps a remote
+    URL under and ``disabled_key`` the key it marks a switched-off server with (``mcp.options`` of its driver)."""
     item = raw if isinstance(raw, dict) else {}
     command = item.get("command") if isinstance(item.get("command"), str) else None
-    url = item.get("url") if isinstance(item.get("url"), str) else None
+    url = item.get(url_key) if isinstance(item.get(url_key), str) else None
     declared = str(item.get("type") or item.get("transport") or "").lower()
     if declared in ("stdio", "sse", "http"):
         transport = declared
@@ -541,6 +544,8 @@ def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home
         record["origin"] = {"kind": "state-record", "detail": state[name]}
     if trust_required:
         record["notes"].append("codex-project-requires-trust")
+    if disabled_key and item.get(disabled_key) is True:
+        record["loaded"] = "no"   # the file itself switches this server off
     if not command and not url:
         record["evidence"] = "unknown"
     return record
@@ -579,7 +584,9 @@ def _observe_mcp_store(client: str, decl: dict, home: Path, project: Path | None
             unknown.append({"store": store, "client": client, "reason": "unexpected-structure"})
         return []
     scoped = state if decl.get("managed_by") else {}
-    return [normalize_mcp(str(name), raw, client, scope, store, home, scoped, bool(decl.get("trust_required")))
+    options = client_registry.mcp_options(client)
+    return [normalize_mcp(str(name), raw, client, scope, store, home, scoped, bool(decl.get("trust_required")),
+                          options["remote_url_key"], options["disabled_key"])
             for name, raw in sorted(servers.items())]
 
 
@@ -810,10 +817,19 @@ def _annotate(skills: list[dict], mcps: list[dict], duplicates: dict) -> None:
 
 # ------------------------------------------------------------------ entry point
 
+def clients_with(client: str) -> list[str] | None:
+    """What an observation that must see ``client`` covers: ``None`` (the default clients) when it is one of them, else the
+    default clients plus it when it is another registered client (a reference to an entry of a client outside the default
+    set resolves; the default clients' entries stay what they were)."""
+    return None if client in CLIENTS or client not in ALL_CLIENTS else [*CLIENTS, client]
+
+
 def observe(home: Path, project: Path | None = None, clients: list[str] | None = None, types: str = "all",
-            scope: str = "all", platform: str | None = None, include_description: bool = False) -> dict:
+            scope: str = "all", platform: str | None = None, include_description: bool = False,
+            probes: dict[str, dict] | None = None) -> dict:
     """Everything the chosen clients can see, as the ``schema_version`` 1 document. Read-only and never raises on
-    bad input files (they become ``unknown`` entries)."""
+    bad input files (they become ``unknown`` entries). ``probes`` maps a client id to the result of its ``detect.cli`` probe
+    (``agent_pack_probe.run_probe``); when given, the report gains a ``cli`` key with that evidence."""
     home = home.expanduser().resolve()
     project = project.expanduser().resolve() if project is not None else None
     requested = list(ALL_CLIENTS) if clients and "all" in clients else (clients or list(CLIENTS))
@@ -888,7 +904,28 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
     }
     if DESKTOP in chosen:
         report["desktop"] = desktop_info(home, platform)
+    if probes:
+        report["cli"] = {client: cli_section(result, home, project) for client, result in probes.items() if client in chosen}
     return report
+
+
+def cli_section(result: dict, home: Path, project: Path | None) -> dict:
+    """One client's ``cli`` evidence: the plugins its own plugin list reports (with their enabled state and what each carries),
+    or why the list could not be read (a failed probe is no evidence of anything)."""
+    import agent_pack_probe  # noqa: PLC0415 - shipped next to this file
+
+    if not result.get("ok"):
+        return {"evidence": "unknown", "ok": False, "reason": result.get("reason", "unreadable"), "plugins": []}
+    plugins = []
+    for entry in agent_pack_probe.plugin_entries(result):
+        plugins.append({
+            "name": entry["name"], "enabled": entry.get("enabled") is not False, "version": entry.get("version"),
+            "path": display_path(entry["path"], home, project) if isinstance(entry.get("path"), str) else None,
+            "skills": sorted(x for x in entry.get("skills", []) if isinstance(x, str)),
+            "mcp_servers": sorted(x for x in entry.get("mcpServers", []) if isinstance(x, str)),
+            "hooks": sorted(x for x in entry.get("hooks", []) if isinstance(x, str)),
+        })
+    return {"evidence": "cli", "ok": True, "reason": None, "plugins": plugins}
 
 
 # ------------------------------------------------------------------ text rendering
@@ -930,6 +967,15 @@ def render_text(report: dict) -> str:
             hint["client"], " / ".join(hint["names"]), hint["similarity"]))
     for item in report["unknown"]:
         lines.append(_("无法判定：{0}（{1}）").format(item["store"], _(REASON_TEXT.get(item["reason"], item["reason"]))))
-    if not (report["skills"] or report["mcps"] or report["unknown"]):
+    for client, section in (report.get("cli") or {}).items():
+        if not section["ok"]:
+            lines.append(_("[{0}] 客户端自己的插件列表读不到（{1}）：不据此下结论").format(client, section["reason"]))
+            continue
+        for plugin in section["plugins"]:
+            lines.append(_("  plugin {0} {1}  {2}  Skill：{3}；MCP：{4}；hooks：{5}（来自客户端命令，cli）").format(
+                client, plugin["name"], _("已启用") if plugin["enabled"] else _("已停用"),
+                ", ".join(plugin["skills"]) or "-", ", ".join(plugin["mcp_servers"]) or "-", ", ".join(plugin["hooks"]) or "-"))
+    if not (report["skills"] or report["mcps"] or report["unknown"] or any(
+            section["plugins"] for section in (report.get("cli") or {}).values())):
         lines.append(_("没有发现任何 Skill 或 MCP 配置。"))
     return "\n".join(lines) + "\n"

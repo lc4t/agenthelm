@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "alpha": {
+      "command": "echo",
+      "args": ["alpha"]
+    },
+    "paused": {
+      "command": "echo",
+      "args": ["paused"],
+      "disabled": true
+    },
+    "remote": {
+      "serverUrl": "https://mcp.example.com/mcp"
+    }
+  }
+}

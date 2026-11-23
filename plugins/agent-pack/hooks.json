@@ -1,0 +1,18 @@
+{
+  "agenthelm": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 ./runtime/agenthelm.py nudge hook --event session-start --client agy",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 ./runtime/agenthelm.py nudge hook --event stop --client agy",
+        "timeout": 10
+      }
+    ]
+  }
+}

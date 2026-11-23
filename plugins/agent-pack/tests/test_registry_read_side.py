@@ -69,6 +69,11 @@ class PrecedenceTests(unittest.TestCase):
     def test_declared_conclusions_equal_the_previous_functions_for_every_registered_client(self) -> None:
         for client in registry.all_ids():
             for group in groups():
+                if client == "agy":   # added after the old functions: the declaration is the only source, and it says "undocumented"
+                    for kind in ("skills", "mcp"):
+                        self.assertEqual(inv._effective(client, kind, group), {
+                            "store": None, "rule": "precedence-undocumented", "evidence": "unknown", "source_url": None})
+                    continue
                 self.assertEqual(inv._skill_effective(client, group), reference_skill_effective(client, group), (client, group))
                 self.assertEqual(inv._mcp_effective(client, group), reference_mcp_effective(client, group), (client, group))
 
@@ -182,8 +187,8 @@ class DeclarationValidationTests(unittest.TestCase):
         (self.folder / "synthetic.json").write_text(json.dumps(data), encoding="utf-8")
         self.assertEqual(registry.load_builtin(self.folder)[0]["detect"]["cli"], good)
 
-    def test_no_builtin_driver_declares_a_probe_in_this_version(self) -> None:
-        self.assertTrue(all("cli" not in driver["detect"] for driver in registry.BUILTIN))
+    def test_only_the_antigravity_driver_declares_a_probe(self) -> None:
+        self.assertEqual([driver["id"] for driver in registry.BUILTIN if "cli" in driver["detect"]], ["agy"])
 
     def test_user_declarations_cannot_carry_a_probe_or_precedence(self) -> None:
         base = {"schema_version": 1, "id": "example-ide", "display": "Example", "detect": {"executables": ["example"]},
@@ -403,7 +408,7 @@ class ReadAdapterTests(Fixture):
         self.assertEqual(trust, [("codex", "project")])
         self.assertEqual({c: [s["root_key"] for s in registry.stores(c, "mcp")] for c in registry.all_ids()},
                          {"claude": ["mcpServers"] * 3, "codex": ["mcp_servers"] * 2, "cursor": ["mcpServers"] * 2,
-                          "claude-desktop": ["mcpServers"], "gemini": []})
+                          "agy": ["mcpServers"], "claude-desktop": ["mcpServers"], "gemini": []})
 
 
 class EmptyFileTests(Fixture):

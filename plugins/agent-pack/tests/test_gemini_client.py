@@ -147,7 +147,7 @@ class SelectionTests(GeminiFixture):
 
     def test_all_covers_every_installable_client_deprecated_included(self) -> None:
         _c, payload = self.run_json("install", "--client", "all", "--source", str(self.package))
-        self.assertEqual(payload["clients"], ["claude", "codex", "cursor", "gemini"])
+        self.assertEqual(payload["clients"], ["claude", "codex", "cursor", "agy", "gemini"])
 
     def test_the_client_option_accepts_gemini_and_all(self) -> None:
         parsed = agenthelm.parser().parse_args(["install", "--client", "gemini", "--client", "all"])

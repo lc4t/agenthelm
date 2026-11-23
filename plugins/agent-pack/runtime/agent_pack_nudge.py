@@ -30,6 +30,7 @@ from nudge_text import LANGUAGES, resolve_language, session_flag, text as say
 ENV_DISABLE = "AGENTHELM_NO_NUDGE"
 ENV_DEBUG = "AGENTHELM_NUDGE_DEBUG"
 CLIENTS = client_registry.default_ids()
+HOOK_CLIENTS = client_registry.hook_client_ids()  # the clients a hook command can name with --client: default set, then the rest
 EVENTS = client_registry.HOOK_EVENTS
 STOP_MODES = client_registry.STOP_MODES
 CONFIRM_MODES = ("ask", "digest", "quiet")
@@ -103,7 +104,7 @@ def merge_config(*layers: Any) -> tuple[dict[str, Any], list[str]]:
                     problems.append(("warn_language", {"label": label}))
             elif key == "stop_prompt":
                 modes = {client: value for client in CLIENTS} if isinstance(value, str) else value
-                if isinstance(modes, dict) and all(client in CLIENTS and mode in STOP_MODES for client, mode in modes.items()):
+                if isinstance(modes, dict) and all(client in HOOK_CLIENTS and mode in STOP_MODES for client, mode in modes.items()):
                     config[key] = {**config[key], **modes}
                 else:
                     problems.append(("warn_stop", {"label": label, "modes": "/".join(STOP_MODES)}))
@@ -661,7 +662,7 @@ def parser() -> argparse.ArgumentParser:
     sub = result.add_subparsers(dest="action", required=True)
     hook = sub.add_parser("hook", help="called by a client hook: the hook JSON arrives on stdin, always exits 0")
     hook.add_argument("--event", choices=EVENTS, required=True)
-    hook.add_argument("--client", choices=("auto", *CLIENTS), default="auto")
+    hook.add_argument("--client", choices=("auto", *HOOK_CLIENTS), default="auto")
     hook.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     state = sub.add_parser("status", help="show the effective config, the current pending summary and whether a new session would remind")
     state.add_argument("--project", type=Path)

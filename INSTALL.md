@@ -76,6 +76,10 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - 项目里的入口：`agenthelm project extensions list|dups|show|check|move|dedupe|scope`（菜单第 9 屏「技能与 MCP」）。项目级作用域用 Profile 的 `capabilities.default_scope` / `mcp_scope` / `skill_scope` 声明，`sync` / `reconcile` 加 `--scope user|project|all`，见 [capability-config.md](plugins/agent-pack/references/capability-config.md)。
 - 本版 Claude Desktop 只读，不写 `claude_desktop_config.json`；MCP 条目是否被 Desktop 加载、Claude local 级条目是否弹批准、同步盘符号链接行为均**未确认**，需真机验证。
 
+### Antigravity（`agy`）
+
+`agy` 不在默认客户端集合里，`check`、`install`、`update`、`sync` 只在显式 `--client agy` 时处理它，也只有这时才运行它的只读命令 `agy plugin list --json`（读取已装插件与启用状态）。`install` 把发布包里的插件目录交给 `agy plugin install <目录>`；`agy` 没有 `plugin update`，所以 `update` 对落后的插件先 `agy plugin uninstall <插件>` 再 `install`，重装前处于停用状态的插件会再执行 `agy plugin disable`（预览里写明）。`sync --client agy` 生成含 `mcp.json` 与 `mcp_config.json` 的包再交给 `agy plugin install`，只处理用户级；项目级条目被跳过并说明原因。`inventory --client agy` 与 `agent-pack doctor --client agy` 会把 `agy` 自己的插件列表作为 `cli` 级证据写进输出。`agy` 的 hook 与 MCP 在真实会话里是否生效尚未验证（见 `docs/design/client-protocols.md` 第 12 节）。
+
 ### Gemini CLI（已弃用）
 
 `agenthelm install --client gemini`、`agenthelm update --client gemini` 与 `--client all` 才会处理它；默认集合和不带 `--client` 的命令不含它。预览只打印命令；`--apply` 时 `gemini extensions install <插件目录>` 会向你索取文件夹信任确认，命令直接使用你的终端，agenthelm 不代答、不转发输入、不加 `--consent`，没有终端（标准输入不是终端）时不启动命令。安装结果以读回 `~/.gemini/extensions/<插件>/gemini-extension.json` 的版本为准，该目录由 Gemini 签名，agenthelm 只读不写。`update` 是先 `extensions uninstall` 再 `extensions install`：在确认处拒绝时插件会处于未安装状态，重新运行 `install` 即可。用户拒绝确认时命令的退出码，以及卸载本身是否也要确认，尚未确认。Gemini 要求插件目录有 `gemini-extension.json`，本版发布包没有随包提供它：不带 `--source` 的安装在预览里显示为受阻，用 `--source '/path/to/checkout'` 指向带有该文件的目录才会运行命令。

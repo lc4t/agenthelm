@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "sample-plugin",
+  "version": "1.0.0",
+  "description": "A sample plugin used by the Antigravity client tests."
+}

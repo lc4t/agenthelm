@@ -35,7 +35,7 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor|claude-de
 
 ## MCP 条目
 
-`ref`、`name`、`client`、`scope`（`user|local|project`）、`store`、`transport`（`stdio|http|sse|unknown`）、`command`、`args[]`、`url`、`url_host`（仅远程，只有主机名，不含端口与 query）、`env_names[]`（`env` 的键名）、`env_var_names[]`（涉及的环境变量名：`env` 键名加 `${VAR}` 引用，仅名字）、`header_names[]`、`has_inline_secret`（布尔：是否存在内联的凭据值；不给键名、不给值）、`fingerprint`、`fingerprint_fields[]`（参与指纹的字段名：`["command","args"]` 或 `["url"]`）、`origin`、`loaded`（恒 `"unknown"`）、`precedence`、`shadowed_by`、`evidence`、`notes[]`。
+`ref`、`name`、`client`、`scope`（`user|local|project`）、`store`、`transport`（`stdio|http|sse|unknown`）、`command`、`args[]`、`url`、`url_host`（仅远程，只有主机名，不含端口与 query）、`env_names[]`（`env` 的键名）、`env_var_names[]`（涉及的环境变量名：`env` 键名加 `${VAR}` 引用，仅名字）、`header_names[]`、`has_inline_secret`（布尔：是否存在内联的凭据值；不给键名、不给值）、`fingerprint`、`fingerprint_fields[]`（参与指纹的字段名：`["command","args"]` 或 `["url"]`）、`origin`、`loaded`（`"unknown"`，文件自己关闭的条目为 `"no"`）、`precedence`、`shadowed_by`、`evidence`、`notes[]`。
 
 - **绝不输出 `env` 值、`headers` 值、令牌**：只给键名（`env_names`、`header_names`）。`args` 与 `url` 里疑似凭据的值替换为 `<redacted>`，URL 的用户信息与查询值同理；`${VAR:-默认值}` 只保留 `${VAR}`。
 - `fingerprint`：对**已脱敏**的 `command+args` 或 `url` 取 SHA-256，用于判重，不含 `env` 与 `headers`。
@@ -81,3 +81,7 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor|claude-de
 ## 平台
 
 支持 macOS 与 Linux 的路径解析；Windows 路径只在文档说明，本命令不解析。
+
+## `cli` 键（只在点名运行客户端命令时出现）
+
+`--client agy`（或 `all` 且程序存在）时，顶层追加 `cli`：`{<客户端>: {evidence, ok, reason, plugins[]}}`。`evidence` 为 `cli`（客户端自己的 `plugin list --json` 读成功）或 `unknown`（读取失败，`reason` 是 `not-found`、`timeout`、`unreadable`、`nonzero-exit`、`too-large`、`unexpected-format` 之一，不构成证据）。`plugins[]` 的键：`name`、`enabled`、`version`、`path`、`skills[]`、`mcp_servers[]`、`hooks[]`（后三者是名字）。默认的 `inventory` 不运行任何客户端命令，也没有这个键。

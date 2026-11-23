@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from i18n_agent_pack import _
+
 RUNTIME_DIR = Path(__file__).resolve().parent
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
@@ -29,6 +31,18 @@ MAX_TREE_FILES = 20000
 # so; no match proves nothing (the official documentation on symlinks inside synced folders was not found).
 SYNC_FOLDER_MARKERS = ("icloud drive", "mobile documents", "dropbox", "onedrive", "google drive", "googledrive",
                        "cloudstorage", "box sync", "pcloud", "nextcloud", "syncthing")
+
+
+def unsupported_block(text: str | None, feature: str) -> dict | None:
+    """A ``blocked`` entry when ``text`` (a reference ``kind:name@client:scope`` or a target ``client:scope``) names a client whose
+    driver declares ``feature`` unsupported (``unsupported`` in the driver); ``None`` otherwise. The reason is the driver's own."""
+    import agent_pack_clients as registry  # noqa: PLC0415 - shipped next to this file
+
+    if not text:
+        return None
+    client = (text.rpartition("@")[2] if "@" in text else text).partition(":")[0].split("#", 1)[0]
+    reason = registry.unsupported(client, feature)
+    return blocked("unsupported-client", _("{0} 不支持 {1}：{2}").format(client, feature, reason)) if reason else None
 
 
 class ExtError(Exception):

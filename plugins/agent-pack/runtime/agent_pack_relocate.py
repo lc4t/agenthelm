@@ -56,22 +56,35 @@ def _candidates(report: dict, name: str) -> list[str]:
     return sorted(item["ref"] for item in report["skills"] if item["name"] == name)
 
 
+def _skeleton(ref: str, mode: str, home: Path, project: Path, recovery_override: Path | None) -> dict[str, Any]:
+    return {
+        "ref": ref, "kind": "skill", "source": None, "target": None, "mode": mode, "retire_source": False,
+        "direction": None, "status": "blocked", "steps": [], "blocked": [], "warnings": [], "confirmations": [],
+        "recovery_base": ext.display(ext.recovery_base(home, recovery_override), home, project),
+    }
+
+
 def build_plan(home: Path, project: Path, ref: str, to: str, mode: str = "copy", allow_widen: bool = False,
                keep_source: bool = False, recovery_override: Path | None = None) -> tuple[dict, dict]:
     """The plan (JSON-safe) and a private context with absolute paths for apply. Reads only, never writes."""
     home = home.expanduser().resolve()
     project = project.expanduser().resolve()
     parsed_early = parse_ref(ref)
+    declined = [block for text in (ref, to) if (block := ext.unsupported_block(text, "relocate"))]
     if parsed_early is not None and parsed_early[0] == "mcp":
+        if declined:
+            plan = _skeleton(ref, mode, home, project, recovery_override)
+            plan["kind"] = "mcp"
+            plan["blocked"].extend(declined)
+            return _finish(plan), {}
         import agent_pack_mcp_move as mcp_write  # noqa: PLC0415 - shipped next to this file
         return mcp_write.build_plan(home, project, ref, to, allow_widen, keep_source, recovery_override, mode)
-    plan: dict[str, Any] = {
-        "ref": ref, "kind": "skill", "source": None, "target": None, "mode": mode, "retire_source": False,
-        "direction": None, "status": "blocked", "steps": [], "blocked": [], "warnings": [], "confirmations": [],
-        "recovery_base": ext.display(ext.recovery_base(home, recovery_override), home, project),
-    }
+    plan = _skeleton(ref, mode, home, project, recovery_override)
     ctx: dict[str, Any] = {}
     blocks = plan["blocked"]
+    if declined:
+        blocks.extend(declined)
+        return _finish(plan), ctx
 
     parsed = parse_ref(ref)
     target = parse_target(to)
@@ -87,7 +100,7 @@ def build_plan(home: Path, project: Path, ref: str, to: str, mode: str = "copy",
     _kind, name, _src_client, _src_scope = parsed
     target_client, target_scope = target
 
-    report = inv.observe(home, project, None, "skills", "all")
+    report = inv.observe(home, project, inv.clients_with(parsed[2]), "skills", "all")
     item = next((entry for entry in report["skills"] if entry["ref"] == ref), None)
     if item is None:
         near = _candidates(report, name)

@@ -195,6 +195,7 @@ class DriverFieldTests(unittest.TestCase):
         self.assertEqual(caches["codex"], [{"base": "~/.codex", "env": "CODEX_HOME",
                                             "glob": "plugins/cache/agenthelm/<plugin>/*"}])
         self.assertEqual(caches["cursor"], [{"base": "~/.cursor", "glob": "plugins/local/<plugin>"}])
+        self.assertEqual(caches["agy"], [{"base": "~/.gemini/config", "glob": "plugins/<plugin>"}])   # observed install location
         self.assertEqual(caches["claude-desktop"], [])
         self.assertEqual(caches["gemini"], [])  # an extension directory is signed by the client: not a runtime to run from
 
