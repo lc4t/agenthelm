@@ -166,21 +166,21 @@ class SyncTests(ClaudeCase):
     def test_failure_rolls_back_config_links_and_package(self) -> None:
         write_json(self.config_path, {"mcpServers": {"my-tool": {"type": "stdio", "command": "mine"}}})
         before = self.config_path.read_text(encoding="utf-8")
-        import agent_pack_claude
+        import agent_pack_native_package
 
-        original = agent_pack_claude.core._write_json_atomic
+        original = agent_pack_native_package.core._write_json_atomic
 
         def failing(path, value, mode=0o644):
             if Path(path).name.endswith(".json") and "state" in Path(path).parts:
                 raise OSError("disk full")
             return original(path, value, mode=mode)
 
-        agent_pack_claude.core._write_json_atomic = failing
+        agent_pack_native_package.core._write_json_atomic = failing
         try:
             with self.assertRaises(AgentPackError):
                 self.sync(apply=True)
         finally:
-            agent_pack_claude.core._write_json_atomic = original
+            agent_pack_native_package.core._write_json_atomic = original
         self.assertEqual(self.config_path.read_text(encoding="utf-8"), before)
         self.assertFalse((self.home / ".claude/skills/sample-skill").exists())
         self.assertFalse((self.home / ".claude/agent-pack/packages/notes-lab").exists())

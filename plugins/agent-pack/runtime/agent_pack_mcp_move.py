@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""MCP entry moves and retirements for Claude (``agenthelm relocate`` mcp refs, later ``dedupe``).
+"""MCP entry moves and retirements for a ``native-package`` client (``agenthelm relocate`` mcp refs, later ``dedupe``).
 
-The one place that edits MCP entries in ``~/.claude.json`` (user level and the ``local`` section under the project's
-path) and the project's ``.mcp.json``. It reuses the readers and helpers of ``agent_pack_claude`` (the same ones the
-Claude sync uses), writes atomically, restores every touched file byte for byte on a failure, and never prints a value:
+The one place that edits MCP entries in the client's user-level MCP file (and its ``local`` section under the project's
+path) and the project's ``.mcp.json``. It reuses the readers and helpers of ``agent_pack_native_package`` (the same ones the
+sync uses), writes atomically, restores every touched file byte for byte on a failure, and never prints a value:
 plans, outputs and the metadata this module writes carry names, scopes, paths and digests only. The only files that hold
 the user's own values are the recovery fragments (``mcp/<name>@<scope>.json``) and the byte-exact backups
 (``claude.json.before`` / ``project-mcp.json.before``), all mode 0600.
@@ -27,20 +27,37 @@ from typing import Any
 RUNTIME_DIR = Path(__file__).resolve().parent
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
+import agent_pack_clients as registry  # noqa: E402
 import agent_pack_config as core  # noqa: E402
 import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
-# Writers as data: the clients whose MCP stores this module knows how to edit (the Claude layout). Whether a client
-# supports project-level writes is decided only by ``agent_pack_config.project_write_supported``.
-MCP_WRITERS = {"claude": ("user", "local", "project")}
+# Writers as data: the clients whose MCP stores this module knows how to edit are the ones whose driver declares a
+# ``native-package`` sync, with the scopes their ``stores.mcp`` declare. Whether a client supports project-level writes is
+# decided only by ``agent_pack_config.project_write_supported``.
+MCP_WRITERS = {client: tuple(store["scope"] for store in registry.stores(client, "mcp"))
+               for client in registry.ids_with_sync("native-package")}
 RANK = {"local": 0, "project": 0, "user": 1}   # breadth: a higher rank widens; local <-> project is lateral
-STORE_PATH = {"user": "~/.claude.json", "local": "~/.claude.json#projects[" + inv.PROJECT + "]",
+ROOT_KEY = core.mcp_root_key(core.native_package_client())   # the key holding the servers in those stores
+_USER_STORE = registry.user_mcp_store(core.native_package_client())["path"]
+STORE_PATH = {"user": _USER_STORE, "local": _USER_STORE + "#projects[" + inv.PROJECT + "]",
               "project": inv.PROJECT + "/.mcp.json"}
 PLACE = {"local": "project:local", "project": "project:file"}
-MANUAL_REMOVE = {"claude": "claude mcp remove --scope {scope} {name}"}
-MANUAL_BACKUP = {"claude": "cp ~/.claude.json ~/.claude.json.bak"}
+
+
+def manual_remove(client: str) -> str | None:
+    """The documented command that removes an entry by hand (``mcp.manual_remove``), with ``{scope}`` and ``{name}`` left."""
+    argv = (registry.mcp_spec(client) or {}).get("manual_remove")
+    return " ".join(argv) if argv else None
+
+
+def manual_backup(client: str) -> str:
+    """A backup command for the user-level MCP file the manual command edits."""
+    path = registry.user_mcp_store(client)["path"]
+    return f"cp {path} {path}.bak"
+
+
 WIDEN_WARNING = N_("放宽：这个 MCP 之后在所有项目里可见")
 
 ACTION_TEXT = {
@@ -61,9 +78,9 @@ def _short(entry: Any) -> str:
     return entry_hash(entry)[:16]
 
 
-def _claude():
-    import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
-    return agent_pack_claude
+def _native():
+    import agent_pack_native_package  # noqa: PLC0415 - shipped next to this file
+    return agent_pack_native_package
 
 
 # ------------------------------------------------------------------ reading
@@ -79,15 +96,15 @@ def _root_and_package(project: Path) -> tuple[Path, str | None, Any]:
 
 def read_entry(home: Path, root: Path, scope: str, name: str) -> tuple[Any, str | None]:
     """(raw entry or ``None``, problem). ``problem`` is a short code when the store cannot be read as expected."""
-    claude = _claude()
+    native = _native()
     try:
         if scope == "project":
-            servers, problem = claude._read_project_file(claude._project_file(root))
+            servers, problem = native._read_project_file(native._project_file(root))
             return servers.get(name), problem
-        config = claude._read_config(home)
+        config = native._read_config(home)
         if scope == "user":
-            return (config.get("mcpServers") or {}).get(name), None
-        _key, servers, problem = claude.local_section(config, root)
+            return (config.get(ROOT_KEY) or {}).get(name), None
+        _key, servers, problem = native.local_section(config, root)
         return servers.get(name), problem
     except core.AgentPackError:
         return None, "config-unreadable"
@@ -98,16 +115,16 @@ def ownership(home: Path, package: str | None, scope: str, name: str) -> dict:
 
     Only the state of this project's package counts; an entry owned by another package's state (or by none) is unmanaged.
     """
-    claude = _claude()
-    state = claude._read_state(home, package) if package else {}
+    native = _native()
+    state = native._read_state(home, package) if package else {}
     if scope == "user":
         mcps = state.get("mcps") if isinstance(state.get("mcps"), dict) else {}
         recorded = mcps.get(name)
-        places = claude._state_scopes(state, "mcps")
+        places = native._state_scopes(state, "mcps")
         owned = name in mcps and places.get(name, "user") == "user"
         return {"managed": owned, "recorded_hash": recorded if owned else None, "package": package}
-    owned = claude._state_scopes(state, "mcps").get(name) == PLACE[scope]
-    hashes = claude._project_hashes(state)
+    owned = native._state_scopes(state, "mcps").get(name) == PLACE[scope]
+    hashes = native._project_hashes(state)
     return {"managed": owned, "recorded_hash": hashes.get(name) if owned else None, "package": package}
 
 
@@ -116,9 +133,9 @@ def ownership(home: Path, package: str | None, scope: str, name: str) -> dict:
 def manual_entry(item_ref: str, client: str, scope: str, store: str, name: str) -> dict:
     entry: dict[str, Any] = {"ref": item_ref, "client": client, "scope": scope, "store": store, "name": name,
                              "not_archivable_by_tool": True, "promise": "cannot-promise"}
-    if client in MANUAL_REMOVE:
-        entry["command"] = MANUAL_REMOVE[client].format(scope=scope, name=shlex.quote(name))
-        entry["backup"] = MANUAL_BACKUP[client]
+    if manual_remove(client) is not None:
+        entry["command"] = manual_remove(client).format(scope=scope, name=shlex.quote(name))
+        entry["backup"] = manual_backup(client)
     else:
         entry["instruction"] = _("手工删除 {0} 里名为 {1} 的 MCP 条目（先自己备份该文件）").format(store, name)
     return entry
@@ -211,19 +228,19 @@ def build_plan(home: Path, project: Path, ref: str, to: str, allow_widen: bool =
 
     # target side
     existing, target_problem = read_entry(home, root, target_scope, name)
-    claude = _claude()
+    native = _native()
     if target_problem:
         blocks.append(ext.blocked("target-unreadable", _("目标存储的结构不被识别，不写入"), problem=target_problem))
     elif existing is not None:
         relation = "identical" if entry_hash(existing) == current_hash else "different"
         blocks.append(ext.blocked("target-exists-" + relation, _("目标已存在同名条目（内容{0}），不覆盖、不改名、不合并").format(
             _("相同") if relation == "identical" else _("不同")), target=plan["target"]["path"]))
-    elif not claude._writable(core._claude_user_config(home) if target_scope != "project" else claude._project_file(root)):
+    elif not native._writable(native.user_config(home) if target_scope != "project" else native._project_file(root)):
         blocks.append(ext.blocked("target-not-writable", _("目标文件不可写")))
     if target_scope == "project":
         if item.get("has_inline_secret"):
             blocks.append(ext.blocked("inline-secret-in-project-file", _("条目含内联密钥值，不能写入项目文件 .mcp.json；请先改成 ${VAR} 引用（工具不改写条目）")))
-        fields = claude.machine_specific(raw, home, root)
+        fields = native.machine_specific(raw, home, root)
         if fields:
             blocks.append(ext.blocked("machine-specific-in-project-file", _("条目含本机路径（{0}），不能写入项目文件 .mcp.json").format(", ".join(fields)), fields=fields))
         plan["confirmations"].append({
@@ -302,16 +319,16 @@ def apply_edits(home: Path, root: Path, recovery: Path, edits: list[dict], state
     """Apply ``edits`` (``{"op": "set"|"drop", "scope", "name", "entry"?}``) and the optional state change in one
     transaction. Config and project-file writes are atomic; any failure puts every touched file back byte for byte and
     re-raises. Returns the recovery fragment paths of the dropped entries."""
-    claude = _claude()
-    config_path = core._claude_user_config(home)
-    project_file = claude._project_file(root)
-    state_path = claude.state_path(home, state_package) if state_package else None
+    native = _native()
+    config_path = native.user_config(home)
+    project_file = native._project_file(root)
+    state_path = native.state_path(home, state_package) if state_package else None
     snapshots: dict[Path, tuple[bytes | None, int]] = {}
     for path in (config_path, project_file, state_path):
         if path is not None:
             snapshots[path] = (path.read_bytes() if path.is_file() else None,
                                stat.S_IMODE(path.stat().st_mode) if path.is_file() else 0o600)
-    config = claude._read_config(home)
+    config = native._read_config(home)
     config_before = json.loads(json.dumps(config))
     fragments: list[Path] = []
     file_data: dict[str, Any] | None = None
@@ -332,7 +349,7 @@ def apply_edits(home: Path, root: Path, recovery: Path, edits: list[dict], state
             _backup(recovery, "project-mcp.json.before", snapshots[project_file][0])
             file_data = core._read_json(project_file) if snapshots[project_file][0] is not None else {}
         for edit in edits:
-            servers = _servers_for(claude, config, file_data, edit["scope"], root, create=edit["op"] == "set")
+            servers = _servers_for(native, config, file_data, edit["scope"], root, create=edit["op"] == "set")
             if edit["op"] == "set":
                 servers[edit["name"]] = edit["entry"]
             elif servers is not None:
@@ -344,7 +361,7 @@ def apply_edits(home: Path, root: Path, recovery: Path, edits: list[dict], state
             touched.append(project_file)
             core._write_json_atomic(project_file, file_data, mode=snapshots[project_file][1] if snapshots[project_file][0] else 0o644)
         if state_package and state_change is not None and state_path is not None:
-            after = claude._read_state(home, state_package)
+            after = native._read_state(home, state_package)
             for change in ([state_change] if isinstance(state_change, dict) else state_change):
                 after = state_after(after, **change)
             touched.append(state_path)
@@ -353,7 +370,7 @@ def apply_edits(home: Path, root: Path, recovery: Path, edits: list[dict], state
     except Exception:
         for path in reversed(touched):
             data, mode = snapshots[path]
-            claude._restore_bytes(path, data, mode)
+            native._restore_bytes(path, data, mode)
         raise
     return {"fragments": fragments}
 
@@ -372,18 +389,18 @@ def _backup(recovery: Path, name: str, data: bytes | None) -> None:
         handle.write(data)
 
 
-def _servers_for(claude, config: dict, file_data: dict | None, scope: str, root: Path, create: bool) -> dict | None:
+def _servers_for(native, config: dict, file_data: dict | None, scope: str, root: Path, create: bool) -> dict | None:
     if scope == "user":
-        return config.setdefault("mcpServers", {}) if create else config.get("mcpServers", {})
+        return config.setdefault(ROOT_KEY, {}) if create else config.get(ROOT_KEY, {})
     if scope == "project":
         assert file_data is not None
-        return file_data.setdefault("mcpServers", {})
-    key = claude.local_section(config, root)[0]
+        return file_data.setdefault(ROOT_KEY, {})
+    key = native.local_section(config, root)[0]
     if key is None:
         raise core.AgentPackError("claude local MCP store changed shape since the preview")
     if not create and key not in (config.get("projects") or {}):
         return {}
-    return config.setdefault("projects", {}).setdefault(key, {}).setdefault("mcpServers", {})
+    return config.setdefault("projects", {}).setdefault(key, {}).setdefault(ROOT_KEY, {})
 
 
 def _verify(home: Path, root: Path, edits: list[dict]) -> None:

@@ -1,6 +1,6 @@
 """``agent_pack_config.py`` must start under ``python3 -I`` / ``-P`` / PYTHONSAFEPATH=1 (#98).
 
-Only this one entry is supported in isolated mode; its sibling imports (``agent_pack_claude`` ...) must
+Only this one entry is supported in isolated mode; its sibling imports (``agent_pack_native_package`` ...) must
 still resolve and share one ``AgentPackError`` class, so a Claude-path failure stays a one-line error.
 """
 from __future__ import annotations
@@ -64,7 +64,7 @@ class IsolatedEntryTests(unittest.TestCase):
                 self.assertIn("usage:", proc.stdout)
 
     def test_doctor_with_claude_client_runs_in_every_mode(self) -> None:
-        # ``--client claude`` imports agent_pack_claude lazily: it must be found in isolated mode too.
+        # ``--client claude`` imports agent_pack_native_package lazily: it must be found in isolated mode too.
         for mode in MODES:
             with self.subTest(mode=mode):
                 project, home = self.project(0, mode)

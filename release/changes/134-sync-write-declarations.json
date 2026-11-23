@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "sync 的写入侧改读客户端声明：包目的地、MCP 写入格式与选项、Codex 的 TOML 写入与残留清理、Cursor 的请求头写法、作用域与遮蔽发现都进入声明；既有三个客户端写出的文件与输出不变。",
+    "en": "The write side of sync now follows the client declarations: package destinations, the MCP write format and its options, Codex TOML writing and residual cleanup, the Cursor headers form, and scope and shadowing findings are declared data; the files and output written for the existing three clients are unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

@@ -78,7 +78,10 @@
     "legacy_cleanup": false,
     "marketplace_update": false,
     "reinstall_rewrites_all": true,
-    "market_pin": false
+    "market_pin": false,
+    "user_mcp_write": true,
+    "project_skill_write": false,
+    "user_skill_write": true
   },
   "precedence": [
     {
@@ -123,5 +126,19 @@
       "feature": "hook-event:prompt-submit",
       "reason": "agenthelm wires no prompt-submit hook for Cursor (unchanged since the first nudge release)"
     }
-  ]
+  ],
+  "sync": {
+    "write": "plugin-dir",
+    "package_dir": "~/.cursor/plugins/local"
+  },
+  "mcp": {
+    "adapter": "json",
+    "write": "package",
+    "options": {
+      "remote_url_key": "url",
+      "remote_headers": "inline",
+      "env_interpolation": "declared-variables",
+      "type_field_required": true
+    }
+  }
 }

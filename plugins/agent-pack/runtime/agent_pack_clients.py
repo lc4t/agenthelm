@@ -30,7 +30,8 @@ FORMATS = ("json", "toml", "dir")
 CAPABILITIES = ("default_set", "read_only", "project_mcp_write")
 # Flags added in schema v2 (design section 4.8); built-in drivers only, optional (absent means false). ``clients`` keeps
 # reporting the three above, so its output does not change when a flag is added here.
-EXTENDED_CAPABILITIES = ("legacy_cleanup", "marketplace_update", "reinstall_rewrites_all", "market_pin")
+EXTENDED_CAPABILITIES = ("legacy_cleanup", "marketplace_update", "reinstall_rewrites_all", "market_pin",
+                         "user_mcp_write", "project_skill_write", "user_skill_write")
 LIFECYCLES = ("active", "deprecated")
 STORE_STATUSES = ("observed", "documented", "undetermined")
 SCHEMA_VERSIONS = (1, 2)
@@ -48,7 +49,7 @@ PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 STEP_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:" + "|".join(PLACEHOLDERS) + r")\}){1,128}")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
-OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported"}
+OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp"}
 HOOK_EVENTS = ("session-start", "prompt-submit", "stop")  # canonical event names (design section 4.7)
 # Output adapters by output format, never by client id; agent_pack_nudge.ADAPTERS implements exactly these.
 HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps")
@@ -70,6 +71,23 @@ PRECEDENCE_KEYS = {"kind", "rule", "evidence", "source_url", "when", "winner"}
 CLI_STREAMS = ("stdout", "stderr")
 CLI_PARSES = ("json", "text")
 CLI_ARG = re.compile(r"[A-Za-z0-9._:=@/+-]{1,128}")
+# ``sync`` and ``mcp`` (batch D2, design sections 4.5, 4.6, 4.8): how ``sync`` writes a project's package and MCP entries.
+SYNC_WRITES = ("native-package", "plugin-dir")  # links plus user-file entries plus state | a package directory
+SYNC_KEYS = {"write", "package_dir", "companions", "marketplace", "cleanup"}
+COMPANION_KEYS = {"manifest", "mcp", "remote_mcp", "placeholder_prefix", "type_names"}
+MARKETPLACE_KEYS = {"path", "source_dir"}
+CLEANUP_KEYS = {"cache_dir", "config_file"}
+MCP_ADAPTERS = ("json", "toml")  # named by file format, never by client
+MCP_WRITES = ("package", "user-file")
+MCP_KEYS = {"adapter", "write", "native_remote", "options", "manual_remove"}
+REMOTE_HEADERS = ("inline", "split-env", "none")
+ENV_INTERPOLATIONS = ("none", "plugin-root-only", "declared-variables", "shell-env")
+MCP_OPTION_KEYS = {"remote_url_key", "remote_headers", "env_interpolation", "type_field_required", "type_names",
+                   "header_fields"}
+HEADER_FIELDS = ("plain", "env", "bearer")
+MCP_OPTION_DEFAULTS = {"remote_url_key": "url", "remote_headers": "inline", "env_interpolation": "shell-env",
+                       "type_field_required": True, "type_names": {}, "header_fields": {}}
+MANUAL_REMOVE_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:scope|name)\}){1,128}")
 DRIVERS_DIR = Path(__file__).resolve().parent / "drivers"
 
 
@@ -257,6 +275,87 @@ def _check_precedence(entries: Any, source: str) -> None:
                "precedence[].winner must be one of the when.scopes")
 
 
+def _check_sync(value: Any, source: str) -> None:
+    _check(isinstance(value, dict) and {"write", "package_dir"} <= set(value) <= SYNC_KEYS, source,
+           f"sync needs write and package_dir (optional: {', '.join(sorted(SYNC_KEYS - {'write', 'package_dir'}))})")
+    _check(value["write"] in SYNC_WRITES, source, f"sync.write must be one of {', '.join(SYNC_WRITES)}")
+    _check_location({"path": value["package_dir"]}, source, "sync.package_dir")
+    plugin_dir = value["write"] == "plugin-dir"
+    for key in ("companions", "marketplace", "cleanup"):
+        _check(key not in value or plugin_dir, source, f"sync.{key} applies to plugin-dir writes only")
+    if "companions" in value:
+        companions = value["companions"]
+        _check(isinstance(companions, dict) and {"manifest"} <= set(companions) <= COMPANION_KEYS, source,
+               f"sync.companions needs manifest (optional: {', '.join(sorted(COMPANION_KEYS - {'manifest'}))})")
+        for key in ("manifest", "mcp", "remote_mcp"):
+            if key in companions:
+                _check(_is_text(companions[key], 100) and not companions[key].startswith("/")
+                       and ".." not in companions[key].split("/"), source,
+                       f"sync.companions.{key} must be a relative file path without ..")
+        _check("remote_mcp" not in companions or "mcp" in companions, source, "sync.companions.remote_mcp needs mcp")
+        _check(companions.get("placeholder_prefix", "") == "" or (isinstance(companions["placeholder_prefix"], str)
+               and re.fullmatch(r"[A-Z_]{1,32}", companions["placeholder_prefix"])), source,
+               "sync.companions.placeholder_prefix must be upper-case letters and underscores")
+        names = companions.get("type_names", {})
+        _check(isinstance(names, dict) and all(_is_text(k, 32) and _is_text(v, 32) for k, v in names.items()), source,
+               "sync.companions.type_names must map type names to type names")
+    if "marketplace" in value:
+        market = value["marketplace"]
+        _check(isinstance(market, dict) and set(market) == MARKETPLACE_KEYS, source,
+               "sync.marketplace needs exactly path and source_dir")
+        _check_location({"path": market["path"]}, source, "sync.marketplace.path")
+        _check(_is_text(market["source_dir"], 100) and market["source_dir"].startswith("./")
+               and ".." not in market["source_dir"].split("/"), source, "sync.marketplace.source_dir must be ./relative")
+    if "cleanup" in value:
+        cleanup = value["cleanup"]
+        _check(isinstance(cleanup, dict) and set(cleanup) <= CLEANUP_KEYS and cleanup, source,
+               f"sync.cleanup holds {', '.join(sorted(CLEANUP_KEYS))}")
+        for key, path in cleanup.items():
+            _check_location({"path": path}, source, f"sync.cleanup.{key}")
+
+
+def mcp_option_problem(options: Any) -> str | None:
+    """Why ``options`` is not a valid ``mcp.options`` (``None`` when valid)."""
+    if not isinstance(options, dict) or not set(options) <= MCP_OPTION_KEYS:
+        return f"mcp.options holds only {', '.join(sorted(MCP_OPTION_KEYS))}"
+    if "remote_url_key" in options and not (isinstance(options["remote_url_key"], str)
+                                            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,31}", options["remote_url_key"])):
+        return "mcp.options.remote_url_key must be a plain key name"
+    if options.get("remote_headers", REMOTE_HEADERS[0]) not in REMOTE_HEADERS:
+        return f"mcp.options.remote_headers must be one of {', '.join(REMOTE_HEADERS)}"
+    if options.get("env_interpolation", MCP_OPTION_DEFAULTS["env_interpolation"]) not in ENV_INTERPOLATIONS:
+        return f"mcp.options.env_interpolation must be one of {', '.join(ENV_INTERPOLATIONS)}"
+    if not isinstance(options.get("type_field_required", True), bool):
+        return "mcp.options.type_field_required must be a boolean"
+    names = options.get("type_names", {})
+    if not (isinstance(names, dict) and all(_is_text(k, 32) and _is_text(v, 32) for k, v in names.items())):
+        return "mcp.options.type_names must map type names to type names"
+    fields = options.get("header_fields", {})
+    if not (isinstance(fields, dict) and set(fields) <= set(HEADER_FIELDS)
+            and all(isinstance(v, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", v) for v in fields.values())):
+        return f"mcp.options.header_fields maps {', '.join(HEADER_FIELDS)} to plain key names"
+    if (options.get("remote_headers") == "split-env") != bool(fields) or (fields and set(fields) != set(HEADER_FIELDS)):
+        return "mcp.options.header_fields is required, with plain / env / bearer, exactly for remote_headers split-env"
+    return None
+
+
+def _check_mcp(value: Any, source: str, stores: dict) -> None:
+    _check(isinstance(value, dict) and {"adapter", "write"} <= set(value) <= MCP_KEYS, source,
+           f"mcp needs adapter and write (optional: {', '.join(sorted(MCP_KEYS - {'adapter', 'write'}))})")
+    _check(value["adapter"] in MCP_ADAPTERS, source, f"mcp.adapter must be one of {', '.join(MCP_ADAPTERS)}")
+    _check(value["write"] in MCP_WRITES, source, f"mcp.write must be one of {', '.join(MCP_WRITES)}")
+    _check(isinstance(value.get("native_remote", False), bool), source, "mcp.native_remote must be a boolean")
+    problem = mcp_option_problem(value.get("options", {}))
+    _check(problem is None, source, problem or "")
+    remove = value.get("manual_remove")
+    _check(remove is None or (isinstance(remove, list) and 1 <= len(remove) <= 16
+                              and all(isinstance(x, str) and MANUAL_REMOVE_ARG.fullmatch(x) for x in remove)), source,
+           "mcp.manual_remove is a list of plain arguments and the placeholders {scope} and {name}")
+    user_stores = [s for s in stores["mcp"] if s["scope"] == "user"]
+    _check(bool(user_stores) and user_stores[0]["format"] == value["adapter"], source,
+           "mcp.adapter must be the format of the first user-level mcp store")
+
+
 def validate_builtin(data: Any, source: str) -> dict:
     """Return ``data`` when it is a valid built-in driver; raise ``DriverDataError`` naming ``source`` otherwise."""
     _check(isinstance(data, dict), source, "the top level must be an object")
@@ -306,6 +405,16 @@ def validate_builtin(data: Any, source: str) -> dict:
            and all(isinstance(v, bool) for v in capabilities.values()), source,
            f"capabilities must hold the booleans {', '.join(CAPABILITIES)} (optional: {', '.join(EXTENDED_CAPABILITIES)})")
     _check_precedence(data.get("precedence", []), source)
+    for flag in ("user_mcp_write", "user_skill_write"):
+        _check(not capabilities.get(flag) or "sync" in data, source, f"capabilities.{flag} needs a sync declaration")
+    for flag in ("project_mcp_write", "project_skill_write"):
+        _check(not capabilities.get(flag) or data.get("sync", {}).get("write") == "native-package", source,
+               f"capabilities.{flag} needs sync.write native-package (a plugin-dir write has no project-level store)")
+    if "sync" in data:
+        _check_sync(data["sync"], source)
+    if "mcp" in data:
+        _check_mcp(data["mcp"], source, stores)
+    _check(("sync" in data) == ("mcp" in data) or "sync" not in data, source, "sync needs mcp (the MCP format it writes)")
     _check_hooks(data, source)
     return data
 
@@ -479,6 +588,60 @@ def primary_skill_stores() -> dict[tuple[str, str], str]:
         for store in item["stores"]["skills"]:
             table.setdefault((item["id"], store["scope"]), store["path"])
     return table
+
+
+# ---------------------------------------------------------------- sync write declarations (batch D2)
+
+def sync_spec(client: str) -> dict | None:
+    """The ``sync`` declaration (how ``sync`` writes the project package) of a built-in driver, or ``None``."""
+    driver = get(client)
+    return driver.get("sync") if driver else None
+
+
+def ids_with_sync(kind: str) -> tuple[str, ...]:
+    """The built-in drivers whose ``sync.write`` is ``kind`` (``native-package`` | ``plugin-dir``), in registry order."""
+    return tuple(item["id"] for item in BUILTIN if item.get("sync", {}).get("write") == kind)
+
+
+def package_dir(client: str, home: Path) -> Path | None:
+    """Where ``sync`` puts the project package (``plugin-dir``) or its install record (``native-package``): the parent
+    directory; the package name is appended by the caller. ``None`` for a client without a ``sync`` declaration."""
+    spec = sync_spec(client)
+    return _expand(spec["package_dir"], home) if spec else None
+
+
+def location(path: str, home: Path) -> Path:
+    """A declared ``~/`` or absolute path as a ``Path`` (no environment override)."""
+    return _expand(path, home)
+
+
+def mcp_spec(client: str) -> dict | None:
+    """The ``mcp`` declaration (format adapter, write mode, options) of a built-in driver, or ``None``."""
+    driver = get(client)
+    return driver.get("mcp") if driver else None
+
+
+def mcp_options(client: str) -> dict:
+    """The adapter options of ``client`` with the documented defaults filled in (an undeclared client gets the defaults)."""
+    spec = mcp_spec(client) or {}
+    return {**MCP_OPTION_DEFAULTS, **spec.get("options", {})}
+
+
+def user_mcp_store(client: str) -> dict | None:
+    """The first user-level MCP store a driver declares (the file ``sync`` and ``relocate`` read and edit)."""
+    return next((store for store in stores(client, "mcp") if store["scope"] == "user"), None)
+
+
+def user_mcp_file(client: str, home: Path) -> Path | None:
+    store = user_mcp_store(client)
+    return _expand(store["path"].split("#", 1)[0], home) if store else None
+
+
+def default_config_dir(client: str, home: Path) -> Path | None:
+    """``distribution.config_dir`` at its default location (the environment override is not consulted)."""
+    driver = get(client)
+    location_ = distribution(driver).get("config_dir") if driver else None
+    return _expand(location_["path"], home) if location_ else None
 
 
 # ---------------------------------------------------------------- detection (facts, not names)

@@ -175,8 +175,16 @@
 - `mcp.adapter`：`json-mcpServers`（Claude、Cursor、agy、Gemini 的 `settings.json`）、`toml-mcp_servers`（Codex）。
 - `mcp.options`：`root_key`、`remote_url_key`（`url`、`serverUrl`、`httpUrl`）、`remote_headers`、`env_interpolation`（`none`、`plugin-root-only`、`declared-variables`、`shell-env`）、`type_field_required`。agy 的 `remote_url_key` 为 `serverUrl`，`env_interpolation` 为 `declared-variables`（官方文档，未验证）。
 - `mcp.scopes`：声明到存储的映射（沿用 #82 的 `mcp_scope` 语义）。
-- 适配器必须容忍**空文件**（agy 全局 `mcp_config.json` 起初为 0 字节）：空文件按空对象处理，写入时不把它判为损坏。**批 B 已实现读取侧**：`agent_pack_store_read` 按格式命名读取适配器（`json`、`toml`），0 字节文件读作空对象；只含空白的文件仍是损坏。改动前 0 字节的 JSON 配置报 `invalid-json`（inventory 里是「无法判定」，`doctor --client claude-desktop` 里是 `desktop-config` 警告），空 TOML 本来就读作空表。写入侧留待后续批次。
+- 适配器必须容忍**空文件**（agy 全局 `mcp_config.json` 起初为 0 字节）：空文件按空对象处理，写入时不把它判为损坏。**批 B 已实现读取侧**：`agent_pack_store_read` 按格式命名读取适配器（`json`、`toml`），0 字节文件读作空对象；只含空白的文件仍是损坏。改动前 0 字节的 JSON 配置报 `invalid-json`（inventory 里是「无法判定」，`doctor --client claude-desktop` 里是 `desktop-config` 警告），空 TOML 本来就读作空表。写入侧留待后续批次。**批 D2 核实**：写入侧的 JSON 读取（`agent_pack_config._read_json`）对 0 字节文件仍报损坏，保持不变（本批要求既有输出逐字节不变）；空 TOML 本来就读作空表，`toml` 适配器的写入对 0 字节的 `config.toml` 正常工作。写入侧的空 JSON 容忍留待后续批次，由 `agent_pack_mcp_json` 的单元测试固定当前行为。
 - `mcp.write`：`sync` 写入的方式，取 `package`（生成可移植包，由分发步骤安装）或 `user-file`（直接改用户级配置文件）。Claude、Codex、Cursor 沿用现有实现，本文不改。**agy 取 `package`**：生成含 `mcp.json` 与 `mcp_config.json` 的包，再 `plugin install <目录>`；不直接写全局 `mcp_config.json`，也不用 `agy mcp add`（`--env` 的值会出现在进程参数里，flag 顺序有约束）。全局文件只用于 `inventory` 读取（文件证据；`disabled: true` 的条目记为未加载）；`agy mcp list` 是否会启动服务器未知，`doctor` 默认不运行它。
+
+**批 D2 已实现（`sync` 写入侧读声明）**：内置驱动新增两个可选顶层块，用户级声明一律拒绝（沿用 D-R1，`validate_declaration` 的字段白名单不含它们，补了反例测试）。
+
+- `sync`：`write` 取 `native-package`（Skill 链接加用户文件条目加归属记录，目前只有 Claude 声明）或 `plugin-dir`（一个包目录，Codex、Cursor）；`package_dir` 是包（或安装记录）的父目录。`plugin-dir` 另可带：`companions`（`manifest` 清单相对路径；可选 `mcp` 伴随 MCP 文件、`remote_mcp` 远程条目拆出的文件、`placeholder_prefix` 占位符前缀、`type_names` 类型改名表）、`marketplace`（`path`、`source_dir`：个人市场文件与条目的相对源目录）、`cleanup`（`cache_dir`、`config_file`：退役时只列出不编辑的残留位置）。这三块把 Codex 的 `.codex-plugin/plugin.json`、`.mcp.json` 投影、`codex-remote-mcp.json`、个人市场条目与残留清理从代码搬进数据。
+- `mcp`：`adapter`（`json` 或 `toml`，必须等于第一个用户级 MCP 存储的格式，根键名取自该存储的 `root_key`，不重复声明）、`write`（`package` 或 `user-file`）、`native_remote`（远程服务器不进包而写入用户文件，Codex）、`manual_remove`（手工移除命令的 argv 模板，只含 `{scope}`、`{name}`，仅供显示，从不执行）、`options`。
+- `mcp.options`：`remote_url_key`（默认 `url`）、`remote_headers`（`inline` 默认、`split-env`、`none`）、`env_interpolation`（`none`、`plugin-root-only`、`declared-variables`、`shell-env`，默认 `shell-env`）、`type_field_required`（默认真）、`type_names`（类型改名表）、`header_fields`（`split-env` 时的 `plain`、`env`、`bearer` 字段名）。设计稿原清单之外新增 `type_names` 与 `header_fields`：Claude 把 `streamable-http` 写成 `http`，Codex 把请求头拆成三个字段，二者原先写死在代码里。`env_interpolation` 现在只有 `declared-variables` 改变写出的内容（引用 `${NAME}` 写成 `${env:NAME}`，Cursor），其余三个取值保持引用原样，值本身记录客户端展开什么；`none` 的 `remote_headers` 拒绝带请求头的远程条目。
+- 适配器按格式命名：`agent_pack_mcp_json.py`（`json`：条目形状、包内 `mcp.json` 的请求头、伴随文件投影、根键读写助手）与 `agent_pack_mcp_toml.py`（`toml`：命名表的保留式替换、请求头拆分字段、所有权记录）；二者与它们的函数名都不含客户端 id。`native-package` 写入（`agent_pack_native_package.py`）仍实现 Claude 的那一种文件布局（`~/.claude/…` 下的链接、状态与数据目录），布局常量没有进声明；第二个声明 `native-package` 的客户端需要先把这些路径抽成声明。
+- 能力标志新增 `user_mcp_write`、`project_skill_write`、`user_skill_write`（built-in 可选，缺省为假）。
 
 ### 4.7 hook 协议
 
@@ -281,7 +289,15 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 - **批 E（agy 与 gemini 声明、夹具、守卫收尾）**：两份声明加夹具，守卫一的豁免表只剩 `launcher.sh`，支持矩阵的 `unsupported` 条目与命令输出落地。
 - **并行轨 F（Phase 3，§9）**：运行时解析函数与同级插件查找；与批 A、B 文件不交叠时可并行，与批 C 交叠（`agenthelm.py`）时串行。
 
-`agent_pack_claude.py`、`agent_pack_codex_mcp.py`、`agent_pack_mcp_write.py`、`agent_pack_scope.py` 的文件名含客户端名，批 C 与批 D 中按职责重命名（例如 `agent_pack_claude.py` 里的 Claude 插件包构造按「native-package」职责归类），重命名随对应批进行，不单独成批。
+`agent_pack_claude.py`、`agent_pack_codex_mcp.py`、`agent_pack_mcp_write.py`、`agent_pack_scope.py` 的文件名含客户端名，批 C 与批 D 中按职责重命名（例如 `agent_pack_claude.py` 里的 Claude 插件包构造按「native-package」职责归类），重命名随对应批进行，不单独成批。**批 D2 已完成重命名**（`git mv` 保留历史）：
+
+- `agent_pack_claude.py` → `agent_pack_native_package.py`（`native-package` 写入：包构造、计划、应用、漂移）
+- `agent_pack_codex_mcp.py` → `agent_pack_mcp_toml.py`（`toml` MCP 适配器）
+- `agent_pack_mcp_write.py` → `agent_pack_mcp_move.py`（`relocate`、`dedupe` 对 `native-package` 客户端 MCP 条目的移动与退役）
+- `agent_pack_scope.py` → `agent_pack_sync_scope.py`（`sync` 的作用域视图与遮蔽发现，读 `precedence`）
+- 新增 `agent_pack_mcp_json.py`（`json` MCP 适配器）；测试 `test_agent_pack_claude.py` → `test_native_package.py`。
+
+上限表里的五行（`agent_pack_config.py` 31、`agent_pack_claude.py` 12、`agent_pack_scope.py` 4、`agent_pack_mcp_write.py` 3、`agent_pack_codex_mcp.py` 1）已清零，守卫新增「没有 runtime 模块名含客户端 id」与「`sync` 写入侧文件字面量为 0」两条；还剩 `agent_pack_nudge.py`（批 D1）。验收对照：固定夹具下 `sync` 预览与 `--apply`、`doctor`、`inventory`、`dedupe`、`relocate`、各 `--help` 的输出与写出的文件树，改前改后逐字节一致。
 
 ## 9. Phase 3：运行时查找
 

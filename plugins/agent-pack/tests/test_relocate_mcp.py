@@ -16,8 +16,8 @@ RUNTIME = TESTS.parent / "runtime"
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(RUNTIME))
 
-import agent_pack_claude as claude  # noqa: E402
-import agent_pack_mcp_write as mcp_write  # noqa: E402
+import agent_pack_native_package as claude  # noqa: E402
+import agent_pack_mcp_move as mcp_write  # noqa: E402
 from test_project_store_write import older_runtime_runs  # noqa: E402
 from test_scope_declaration import FAKE_TOKEN, ScopeBase, declare  # noqa: E402
 

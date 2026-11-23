@@ -15,7 +15,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 from test_agent_pack_config import make_project, write_json
 import agent_pack_config as core
-import agent_pack_codex_mcp as codex
+import agent_pack_clients as registry
+import agent_pack_mcp_toml as codex
 import agenthelm
 
 
@@ -89,7 +90,7 @@ class RemoteMcpTests(unittest.TestCase):
         parsed = core._portable_mcp("example", {"url": self.remote["url"], "http_headers": {"Accept": "application/json"},
                                                "env_http_headers": {"X-Api-Key": "EXAMPLE_MCP_TOKEN"}})
         self.assertTrue(parsed.portable)
-        self.assertEqual(codex.native_entry(parsed.config)["env_http_headers"], {"X-Api-Key": "EXAMPLE_MCP_TOKEN"})
+        self.assertEqual(codex.native_entry(parsed.config, registry.mcp_options("codex"), "Codex")["env_http_headers"], {"X-Api-Key": "EXAMPLE_MCP_TOKEN"})
         for raw in ({"url": self.remote["url"], "http_headers": {"Authorization": "Bearer " + self.secret}},
                     {"url": self.remote["url"], "bearer_token_env_var": "not a name"},
                     {"url": self.remote["url"], "env_http_headers": {"X-Key": "bad-name"}},

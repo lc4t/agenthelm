@@ -17,7 +17,7 @@ sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(RUNTIME))
 
 import agent_pack_dedupe as dedupe  # noqa: E402
-import agent_pack_mcp_write as mcp_write  # noqa: E402
+import agent_pack_mcp_move as mcp_write  # noqa: E402
 from test_relocate_mcp import ENTRY, FAKE_TOKEN, NAME, SHAREABLE, McpBase  # noqa: E402
 
 KEEP = f"mcp:{NAME}@claude:project"

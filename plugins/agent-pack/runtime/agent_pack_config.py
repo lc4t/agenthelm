@@ -617,14 +617,55 @@ def _client_skill_roots(client: str, home: Path) -> list[Path]:
     raise AgentPackError(f"unsupported client: {client}")
 
 
+def _registry():
+    import agent_pack_clients  # noqa: PLC0415 - shipped next to this file; imported late (python3 -I path set in main)
+    return agent_pack_clients
+
+
+def package_parent(client: str, home: Path) -> Path:
+    """The directory ``sync`` puts this client's project package (or its install record) in, from the driver's ``sync``
+    declaration; the package name is appended by the caller."""
+    parent = _registry().package_dir(client, home)
+    if parent is None:
+        raise AgentPackError(f"sync adapter not implemented for client: {client}")
+    return parent
+
+
+def user_mcp_file(client: str, home: Path) -> Path:
+    """The client's user-level MCP file (the first user store its driver declares in ``stores.mcp``)."""
+    path = _registry().user_mcp_file(client, home)
+    if path is None:
+        raise AgentPackError(f"sync adapter not implemented for client: {client}")
+    return path
+
+
+def mcp_root_key(client: str) -> str:
+    """The key holding the servers in the client's user-level MCP file (the ``root_key`` of that store)."""
+    store = _registry().user_mcp_store(client)
+    if store is None:
+        raise AgentPackError(f"sync adapter not implemented for client: {client}")
+    return store["root_key"]
+
+
+def native_package_client() -> str:
+    """The client whose driver declares ``sync.write: native-package`` (the first one, in registry order)."""
+    found = _registry().ids_with_sync("native-package")
+    if not found:
+        raise AgentPackError("no client declares a native-package sync")
+    return found[0]
+
+
+def _declared_write(client: str | None, flag: str) -> bool:
+    """Whether the client's driver allows the ``sync`` write named by capability ``flag`` (``user_skill_write``,
+    ``user_mcp_write``, ``project_skill_write``). A call without a client, or for a client with no ``sync`` declaration,
+    is not limited by a driver."""
+    registry = _registry()
+    return client is None or registry.sync_spec(client) is None or registry.supports(client, flag)
+
+
 def _client_plugin_roots(client: str, home: Path) -> list[Path]:
-    if client == "cursor":
-        return [home / ".cursor" / "plugins" / "local"]
-    if client == "codex":
-        return [home / ".agents" / "plugins" / "plugins"]
-    if client == "claude":
-        return [_claude_plugin_records(home)]
-    return []
+    parent = _registry().package_dir(client, home)
+    return [parent] if parent is not None else []
 
 
 def _version_tuple(value: str) -> tuple[int, ...]:
@@ -632,37 +673,45 @@ def _version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(number) for number in numbers)
 
 
-def _client_marketplace_plugins(client: str, home: Path) -> list[Path]:
-    """Plugin roots the client installed from marketplaces (not agent-pack bootstrap copies)."""
+def _marketplace_records_json(base: Path) -> list[Path]:
+    """Layout ``records-json``: ``plugins/installed_plugins.json`` holds a record per plugin with its install path."""
     found: list[Path] = []
-    if client == "claude":
-        try:
-            records = _read_json(home / ".claude" / "plugins" / "installed_plugins.json").get("plugins", {})
-        except AgentPackError:
-            records = {}
-        for entries in records.values() if isinstance(records, dict) else ():
-            for entry in entries if isinstance(entries, list) else ():
-                path = Path(str(entry.get("installPath", "")))
-                if (path / "plugin.json").is_file():
-                    found.append(path)
-    elif client == "codex":
-        cache = home / ".codex" / "plugins" / "cache"
-        if cache.is_dir() and not cache.is_symlink():
-            for plugin_dir in sorted(path for market in cache.iterdir() if market.is_dir() for path in market.iterdir()):
-                versions = [path for path in plugin_dir.iterdir() if (path / "plugin.json").is_file()] if plugin_dir.is_dir() else []
-                if versions:
-                    found.append(max(versions, key=lambda path: (_version_tuple(path.name), path.name)))
+    try:
+        records = _read_json(base / "plugins" / "installed_plugins.json").get("plugins", {})
+    except AgentPackError:
+        records = {}
+    for entries in records.values() if isinstance(records, dict) else ():
+        for entry in entries if isinstance(entries, list) else ():
+            path = Path(str(entry.get("installPath", "")))
+            if (path / "plugin.json").is_file():
+                found.append(path)
     return found
 
 
-def _claude_plugin_records(home: Path) -> Path:
-    """Install records for Claude Code: one symlink per plugin to its source root."""
-    return home / ".claude" / "agent-pack" / "plugins"
+def _marketplace_cache_versioned(base: Path) -> list[Path]:
+    """Layout ``cache-dir-versioned``: ``plugins/cache/<market>/<plugin>/<version>/plugin.json``; the newest version counts."""
+    found: list[Path] = []
+    cache = base / "plugins" / "cache"
+    if cache.is_dir() and not cache.is_symlink():
+        for plugin_dir in sorted(path for market in cache.iterdir() if market.is_dir() for path in market.iterdir()):
+            versions = [path for path in plugin_dir.iterdir() if (path / "plugin.json").is_file()] if plugin_dir.is_dir() else []
+            if versions:
+                found.append(max(versions, key=lambda path: (_version_tuple(path.name), path.name)))
+    return found
 
 
-def _claude_user_config(home: Path) -> Path:
-    """Claude Code keeps user-scope MCP servers in ~/.claude.json#mcpServers."""
-    return home / ".claude.json"
+MARKETPLACE_READERS = {"records-json": _marketplace_records_json, "cache-dir-versioned": _marketplace_cache_versioned}
+
+
+def _client_marketplace_plugins(client: str, home: Path) -> list[Path]:
+    """Plugin roots the client installed from marketplaces (not agent-pack bootstrap copies): the reader is the one named by
+    the driver's ``distribution.installed_state``, reading under the client's directory at its default location."""
+    registry = _registry()
+    driver = registry.get(client)
+    state = registry.distribution(driver).get("installed_state") if driver else None
+    base = registry.default_config_dir(client, home)
+    reader = MARKETPLACE_READERS.get(state)
+    return reader(base) if reader is not None and base is not None else []
 
 
 def _native_user_mcps(client: str, home: Path) -> dict[str, Any]:
@@ -1071,9 +1120,11 @@ def _portable_package_from_inventory(
     skills_root = destination / "skills"
     skills_root.mkdir()
     for item in inventory.skills:
-        if (client is not None and not project_write_supported(client) and layout is not None
+        if (client is not None and not _declared_write(client, "project_skill_write") and layout is not None
                 and declared_scope(layout, "skill", item.name) == "project"):
             continue   # project-native for these clients (.agents/skills); never copied to the user-level package
+        if not _declared_write(client, "user_skill_write"):
+            continue   # the driver does not declare user-level Skill writes
         _copy_skill(Path(item.path), skills_root / item.name, allowed_root=project_root)
 
     system_env = _system_env_values(home)
@@ -1109,6 +1160,7 @@ def _portable_package_from_inventory(
     selected_mcps = [
         item for item in inventory.mcps
         if item.portable and (client is None or layout is None or _mcp_allowed(layout, item.name, client))
+        and _declared_write(client, "user_mcp_write")
     ]
     required_env: set[str] = set()
     for item in selected_mcps:
@@ -1130,9 +1182,9 @@ def _portable_package_from_inventory(
         config = project_mcp_config(item)
         references = _env_references(config)
         if not references or config.get("type") != "stdio":
-            if client == "cursor" and config.get("type") != "stdio" and isinstance(config.get("headers"), dict):
-                config["headers"] = {key: ENV_REFERENCE_RE.sub(r"${env:\1}", value)
-                                     for key, value in config["headers"].items()}
+            if client is not None and _registry().mcp_spec(client) is not None:
+                import agent_pack_mcp_json  # noqa: PLC0415 - the ``json`` MCP adapter, shipped next to this file
+                config = agent_pack_mcp_json.package_entry(config, _registry().mcp_options(client))
             rendered_mcps[item.name] = config
             continue
         runtime_root = destination / "runtime"
@@ -1165,63 +1217,62 @@ def _portable_package_from_inventory(
     _write_json_atomic(destination / "plugin.json", manifest)
 
 
-def _codex_adapter(package_root: Path, *, native_remote: bool = False) -> None:
+def _companion_spec(client: str) -> dict[str, Any] | None:
+    """The ``sync.companions`` declaration of a client (the files its package carries beside the portable ones), or ``None``."""
+    spec = _registry().sync_spec(client)
+    return spec.get("companions") if spec else None
+
+
+def _native_remote(client: str) -> bool:
+    """Whether the client's remote MCP servers are written to its own user-level file instead of the package."""
+    spec = _registry().mcp_spec(client)
+    return bool(spec and spec.get("native_remote"))
+
+
+def _write_companions(package_root: Path, companions: dict[str, Any], *, native_remote: bool = False) -> None:
+    """Write the companion files a client's package declares (``sync.companions``) from the portable ``plugin.json`` and
+    ``mcp.json``: a manifest in the client's own layout, and an ``mcp`` projection with prefixed placeholders."""
+    import agent_pack_mcp_json  # noqa: PLC0415 - the ``json`` MCP adapter, shipped next to this file
+
     manifest = _read_json(package_root / "plugin.json")
-    codex_dir = package_root / ".codex-plugin"
-    codex_dir.mkdir(exist_ok=True)
-    codex_manifest_path = codex_dir / "plugin.json"
-    if codex_manifest_path.exists():
-        codex_manifest = _read_json(codex_manifest_path)
+    manifest_path = package_root / companions["manifest"]
+    manifest_path.parent.mkdir(exist_ok=True)
+    if manifest_path.exists():
+        companion = _read_json(manifest_path)
     else:
-        codex_manifest = {}
+        companion = {}
     # Identity fields are owned by the portable plugin.json and are always
-    # regenerated here so the Codex adapter can never drift from the
-    # authoritative manifest (only Codex-specific presentation such as the
+    # regenerated here so the companion manifest can never drift from the
+    # authoritative one (only client-specific presentation such as the
     # `interface` block is preserved as authored).
-    codex_manifest["name"] = manifest["name"]
-    codex_manifest["version"] = manifest.get("version", "1.0.0")
-    codex_manifest.setdefault(
+    companion["name"] = manifest["name"]
+    companion["version"] = manifest.get("version", "1.0.0")
+    companion.setdefault(
         "description", manifest.get("description", "Project capabilities")
     )
-    codex_manifest.setdefault("skills", "./skills/")
+    companion.setdefault("skills", "./skills/")
     mcp_path = package_root / "mcp.json"
-    if not mcp_path.exists():
-        _write_json_atomic(codex_manifest_path, codex_manifest)
+    if "mcp" not in companions or not mcp_path.exists():
+        _write_json_atomic(manifest_path, companion)
         return
-    codex_manifest.setdefault("mcpServers", "./.mcp.json")
-    _write_json_atomic(codex_manifest_path, codex_manifest)
+    companion.setdefault("mcpServers", "./" + companions["mcp"])
+    _write_json_atomic(manifest_path, companion)
     mcp = _read_json(mcp_path)
-    # Remote MCPs are synchronized through config.toml's native env-name fields;
+    # Remote MCPs are synchronized through the client's own file with native env-name fields;
     # do not load a second copy from the plugin with ambiguous header expansion.
-    remote = {name: config for name, config in mcp.get("mcpServers", {}).items() if native_remote and config.get("type") != "stdio"}
-    if remote:
-        _write_json_atomic(package_root / "codex-remote-mcp.json", {"mcpServers": remote})
+    remote = {name: config for name, config in mcp.get("mcpServers", {}).items()
+              if native_remote and config.get("type") != "stdio"}
+    if remote and "remote_mcp" in companions:
+        _write_json_atomic(package_root / companions["remote_mcp"], {"mcpServers": remote})
         mcp["mcpServers"] = {name: config for name, config in mcp["mcpServers"].items() if name not in remote}
         _write_json_atomic(mcp_path, mcp)
-    codex_mcps: dict[str, Any] = {}
+    projected: dict[str, Any] = {}
     for name, config in mcp.get("mcpServers", {}).items():
-        # Codex reads the portable mcp.json (${PLUGIN_ROOT}); this projection is
-        # what Claude Code and Cursor load, and they only expand CLAUDE_* names.
-        item = _claude_plugin_placeholders(dict(config))
-        mcp_type = item.pop("type", None)
-        if mcp_type == "streamable-http":
-            item["type"] = "http"
-        elif mcp_type == "sse":
-            item["type"] = "sse"
-        codex_mcps[name] = item
-    _write_json_atomic(package_root / ".mcp.json", {"mcpServers": codex_mcps})
-
-
-def _claude_plugin_placeholders(value: Any) -> Any:
-    if isinstance(value, str):
-        return value.replace("${PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}").replace(
-            "${PLUGIN_DATA}", "${CLAUDE_PLUGIN_DATA}"
-        )
-    if isinstance(value, list):
-        return [_claude_plugin_placeholders(child) for child in value]
-    if isinstance(value, dict):
-        return {key: _claude_plugin_placeholders(child) for key, child in value.items()}
-    return value
+        # The portable mcp.json carries ${PLUGIN_ROOT}; this projection is what the client loads, and it
+        # only expands the prefixed names.
+        projected[name] = agent_pack_mcp_json.companion_entry(
+            config, companions.get("placeholder_prefix", ""), companions.get("type_names", {}))
+    _write_json_atomic(package_root / companions["mcp"], {"mcpServers": projected})
 
 
 def _package_name(root: Path) -> str:
@@ -1233,13 +1284,7 @@ def _package_name(root: Path) -> str:
 
 
 def _client_package_destination(client: str, home: Path, package_name: str) -> Path:
-    if client == "cursor":
-        return home / ".cursor" / "plugins" / "local" / package_name
-    if client == "codex":
-        return home / ".agents" / "plugins" / "plugins" / package_name
-    if client == "claude":
-        return _claude_plugin_records(home) / package_name
-    raise AgentPackError(f"sync adapter not implemented for client: {client}")
+    return package_parent(client, home) / package_name
 
 
 def _tree_fingerprint(root: Path) -> str:
@@ -1287,12 +1332,13 @@ def _source_matches_client_destination(
     destination: Path,
     client: str,
 ) -> bool:
-    if client != "codex":
+    companions = _companion_spec(client)
+    if companions is None:
         return _source_matches_destination(source, destination)
     with tempfile.TemporaryDirectory(prefix="agent-pack-match-") as temporary:
         staged = Path(temporary) / source.name
         shutil.copytree(source, staged, symlinks=False, ignore=shutil.ignore_patterns(*COPY_IGNORE))
-        _codex_adapter(staged)
+        _write_companions(staged, companions)
         return _source_matches_destination(staged, destination)
 
 
@@ -1300,8 +1346,9 @@ def _build_package(inventory: Inventory, package_name: str, parent: Path, client
                    home: Path | None = None) -> Path:
     package = parent / package_name
     _portable_package_from_inventory(inventory, package_name, package, client=client, home=home)
-    if client == "codex":
-        _codex_adapter(package, native_remote=True)
+    companions = _companion_spec(client)
+    if companions is not None:
+        _write_companions(package, companions, native_remote=_native_remote(client))
     return package
 
 
@@ -1329,13 +1376,13 @@ def install_plugin(
     name = manifest["name"]
     _tree_fingerprint(plugin)
     home = (home or Path.home()).expanduser().resolve()
-    if client == "claude":
-        return _install_plugin_claude(
-            plugin, name, home=home, apply=apply, replace=replace, recovery_root=recovery_root,
+    if client in _registry().ids_with_sync("native-package"):
+        return _install_plugin_native(
+            plugin, name, client, home=home, apply=apply, replace=replace, recovery_root=recovery_root,
             select_skills=set(skills), select_mcps=set(mcps), reset_overrides=reset_overrides,
         )
     if skills or mcps:
-        raise AgentPackError("--skill / --mcp selection is supported for the claude client only")
+        raise AgentPackError(f"--skill / --mcp selection is supported for the {_native_names()} client only")
     destination = _client_package_destination(client, home, name)
     action = "install-plugin"
     if destination.exists() or destination.is_symlink():
@@ -1361,8 +1408,8 @@ def install_plugin(
             staged = temp_parent / name
             try:
                 shutil.copytree(plugin, staged, symlinks=False, ignore=shutil.ignore_patterns(*COPY_IGNORE))
-                if client == "codex":
-                    _codex_adapter(staged)
+                if _companion_spec(client) is not None:
+                    _write_companions(staged, _companion_spec(client))
                 os.replace(staged, destination)
             except Exception:
                 if archived is not None and archived.exists() and not destination.exists():
@@ -1371,37 +1418,26 @@ def install_plugin(
             finally:
                 if temp_parent.exists():
                     shutil.rmtree(temp_parent)
-        if client == "codex":
-            _update_personal_marketplace(home, name)
+        _update_personal_marketplace(client, home, name)
     return {"ok": True, "applied": apply, "operations": [operation]}
 
 
-def _claude_mcp_config(config: dict[str, Any], plugin_root: Path, data_root: Path) -> dict[str, Any]:
-    """Project a portable MCP entry onto Claude Code's ``mcpServers`` schema."""
-
-    def expand(value: Any) -> Any:
-        if isinstance(value, str):
-            return value.replace("${PLUGIN_ROOT}", str(plugin_root)).replace(
-                "${PLUGIN_DATA}", str(data_root)
-            )
-        if isinstance(value, list):
-            return [expand(child) for child in value]
-        if isinstance(value, dict):
-            return {key: expand(child) for key, child in value.items()}
-        return value
-
-    item = expand(dict(config))
-    # Claude Code stdio entries have no working-directory field; plugin MCPs
-    # must address their files through ${PLUGIN_ROOT} instead.
-    item.pop("cwd", None)
-    if item.get("type") == "streamable-http":
-        item["type"] = "http"
-    return item
+def _native_names() -> str:
+    """The clients whose driver declares a ``native-package`` sync, for the messages that name who supports a flag."""
+    return " / ".join(_registry().ids_with_sync("native-package"))
 
 
-def _install_plugin_claude(
+def _native_mcp_config(client: str, config: dict[str, Any], plugin_root: Path, data_root: Path) -> dict[str, Any]:
+    """Project a portable MCP entry onto the client's own MCP schema (the ``json`` adapter, with the client's options)."""
+    import agent_pack_mcp_json  # noqa: PLC0415 - shipped next to this file
+
+    return agent_pack_mcp_json.native_entry(config, plugin_root, data_root, _registry().mcp_options(client))
+
+
+def _install_plugin_native(
     plugin: Path,
     name: str,
+    client: str,
     *,
     home: Path,
     apply: bool,
@@ -1411,19 +1447,19 @@ def _install_plugin_claude(
     select_mcps: set[str] | None = None,
     reset_overrides: bool = False,
 ) -> dict[str, Any]:
-    """Install a plugin into Claude Code as live links plus user-scope MCP entries.
+    """Install a plugin into a ``native-package`` client as live links plus user-scope MCP entries.
 
-    Claude Code has no Agent Plugins loader, so the plugin is projected onto the
+    Such a client has no Agent Plugins loader, so the plugin is projected onto the
     three things it does read: ``~/.claude/skills/<skill>`` (symlink to the
     source skill), ``~/.claude.json#mcpServers`` (user scope), and an install
     record ``~/.claude/agent-pack/plugins/<name>`` (symlink to the source root)
     that inventory uses to report the installed version.
     """
-    import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+    import agent_pack_native_package  # noqa: PLC0415 - shipped next to this file
 
     select_skills, select_mcps = select_skills or set(), select_mcps or set()
     selective = bool(select_skills or select_mcps)
-    record = _claude_plugin_records(home) / name
+    record = package_parent(client, home) / name
     links: list[tuple[str, str, Path, Path]] = [("plugin", name, record, plugin)]
     available_skills: set[str] = set()
     skills_root = plugin / "skills"
@@ -1437,7 +1473,8 @@ def _install_plugin_claude(
     if unknown_skills:
         raise AgentPackError("plugin has no such Skill: " + ", ".join(sorted(unknown_skills)))
 
-    config_path = _claude_user_config(home)
+    config_path = user_mcp_file(client, home)
+    root_key = mcp_root_key(client)
     servers: dict[str, dict[str, Any]] = {}
     mcp_path = plugin / "mcp.json"
     if mcp_path.is_file():
@@ -1452,7 +1489,7 @@ def _install_plugin_claude(
             parsed = _portable_mcp(server, raw)
             if not parsed.portable:
                 raise AgentPackError(f"MCP {server} is not portable: " + "; ".join(parsed.issues))
-            servers[server] = _claude_mcp_config(parsed.config, record, data_root)
+            servers[server] = _native_mcp_config(client, parsed.config, record, data_root)
     elif select_mcps:
         raise AgentPackError("plugin has no mcp.json: " + ", ".join(sorted(select_mcps)))
 
@@ -1461,9 +1498,9 @@ def _install_plugin_claude(
         if config_path.is_symlink():
             raise AgentPackError(f"refusing to edit symlinked Claude config: {config_path}")
         config = _read_json(config_path)
-    existing_servers = config.get("mcpServers", {})
+    existing_servers = config.get(root_key, {})
     if not isinstance(existing_servers, dict):
-        raise AgentPackError(f"mcpServers must be an object: {config_path}")
+        raise AgentPackError(f"{root_key} must be an object: {config_path}")
 
     operations: list[dict[str, str]] = []
     conflicts: list[str] = []
@@ -1475,15 +1512,15 @@ def _install_plugin_claude(
             conflicts.append(f"{kind} {item_name}: {path}")
         else:
             action = "link"
-        operations.append({"action": f"{action}-{kind}", "client": "claude", "name": item_name, "to": str(path)})
+        operations.append({"action": f"{action}-{kind}", "client": client, "name": item_name, "to": str(path)})
     entries: dict[str, dict[str, Any]] = {}
     for server, rendered in servers.items():
-        state, entries[server], kept = agent_pack_claude.classify_mcp(
+        state, entries[server], kept = agent_pack_native_package.classify_mcp(
             rendered, existing_servers.get(server), reset=reset_overrides)
         action = {"differ": "replace"}.get(state, state)
         if action == "replace":
             conflicts.append(f"mcp {server}: {config_path}")
-        operation = {"action": f"{action}-mcp", "client": "claude", "name": server, "to": str(config_path)}
+        operation = {"action": f"{action}-mcp", "client": client, "name": server, "to": str(config_path)}
         if kept:
             operation["kept_overrides"] = kept
         operations.append(operation)
@@ -1497,7 +1534,7 @@ def _install_plugin_claude(
     if conflicts:
         recovery_base = (recovery_root or home / ".agent-pack" / "recovery").expanduser().resolve()
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-        transaction = recovery_base / f"{stamp}-claude-{name}"
+        transaction = recovery_base / f"{stamp}-{client}-{name}"
         transaction.mkdir(parents=True, mode=0o700)
         result["recovery"] = str(transaction)
     moved: list[tuple[Path, Path]] = []
@@ -1526,7 +1563,7 @@ def _install_plugin_claude(
             if replaced:
                 assert transaction is not None
                 _write_json_atomic(transaction / "replaced-mcp.json", {"mcpServers": replaced}, mode=0o600)
-            config.setdefault("mcpServers", {}).update(changed)
+            config.setdefault(root_key, {}).update(changed)
             mode = stat.S_IMODE(config_path.stat().st_mode) if config_path.exists() else 0o600
             _write_json_atomic(config_path, config, mode=mode)
             config_written = True
@@ -1539,7 +1576,7 @@ def _install_plugin_claude(
         for archived, original in reversed(moved):
             if archived.exists() and not original.exists():
                 os.replace(archived, original)
-        raise AgentPackError(f"claude install rolled back: {exc}") from exc
+        raise AgentPackError(f"{client} install rolled back: {exc}") from exc
     return result
 
 
@@ -1615,48 +1652,55 @@ def _marketplace_without(text: str, name: str) -> str:
     return json.dumps(payload, indent=indent, ensure_ascii=False) + ("\n" if text.endswith("\n") else "")
 
 
-def _codex_retirement_extras(home: Path, name: str, primary: Path) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    """Codex keeps a retired plugin in a personal copy, a marketplace entry, a cache and config.toml.
+def _retirement_extras(client: str, home: Path, name: str, primary: Path) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """A client that keeps a retired plugin in a personal copy, a marketplace entry, a cache and its own config file
+    (``sync.marketplace`` and ``sync.cleanup``) leaves those behind after a retirement.
 
     The copy and the marketplace entry are archived and removed; the cache versions and the user's
-    config.toml are listed as residuals with a manual step.
+    config file are listed as residuals with a manual step.
     """
+    registry = _registry()
+    spec = registry.sync_spec(client) or {}
     operations: list[dict[str, str]] = []
     residuals: list[dict[str, str]] = []
-    copy = _client_package_destination("codex", home, name)
+    copy = _client_package_destination(client, home, name)
     if (copy.exists() or copy.is_symlink()) and copy.resolve() != primary.resolve():
         operations.append({"action": "archive-plugin-copy", "name": name, "from": str(copy)})
-    market = home / ".agents" / "plugins" / "marketplace.json"
-    if market.is_symlink():
-        residuals.append({"client": "codex", "kind": "marketplace-entry", "name": name, "path": str(market),
-                          "manual": f"remove the {name} entry from this file by hand (symlinked file, not edited automatically)"})
-    elif market.is_file():
+    if "marketplace" in spec:
+        market = registry.location(spec["marketplace"]["path"], home)
+        if market.is_symlink():
+            residuals.append({"client": client, "kind": "marketplace-entry", "name": name, "path": str(market),
+                              "manual": f"remove the {name} entry from this file by hand (symlinked file, not edited automatically)"})
+        elif market.is_file():
+            try:
+                plugins = json.loads(market.read_text(encoding="utf-8")).get("plugins", [])
+                listed = isinstance(plugins, list) and any(isinstance(item, dict) and item.get("name") == name for item in plugins)
+            except (OSError, ValueError, AttributeError):
+                listed = False
+                residuals.append({"client": client, "kind": "marketplace-entry", "name": name, "path": str(market),
+                                  "manual": f"unreadable marketplace file; remove the {name} entry by hand if present"})
+            if listed:
+                operations.append({"action": "remove-marketplace-entry", "name": name, "from": str(market)})
+    cleanup = spec.get("cleanup", {})
+    if "cache_dir" in cleanup:
+        cache = registry.location(cleanup["cache_dir"], home)
+        if cache.is_dir() and not cache.is_symlink():
+            for market_dir in sorted(path for path in cache.iterdir() if path.is_dir()):
+                plugin_dir = market_dir / name
+                if plugin_dir.is_dir():
+                    left = [path for path in sorted(plugin_dir.iterdir()) if path.resolve() != primary.resolve()]
+                    if left:
+                        residuals.append({"client": client, "kind": "cache", "name": name, "path": str(plugin_dir),
+                                          "manual": "other cached versions or copies remain; delete the directory when no longer needed"})
+    if "config_file" in cleanup:
+        config = registry.location(cleanup["config_file"], home)
         try:
-            plugins = json.loads(market.read_text(encoding="utf-8")).get("plugins", [])
-            listed = isinstance(plugins, list) and any(isinstance(item, dict) and item.get("name") == name for item in plugins)
-        except (OSError, ValueError, AttributeError):
-            listed = False
-            residuals.append({"client": "codex", "kind": "marketplace-entry", "name": name, "path": str(market),
-                              "manual": f"unreadable marketplace file; remove the {name} entry by hand if present"})
-        if listed:
-            operations.append({"action": "remove-marketplace-entry", "name": name, "from": str(market)})
-    cache = home / ".codex" / "plugins" / "cache"
-    if cache.is_dir() and not cache.is_symlink():
-        for market_dir in sorted(path for path in cache.iterdir() if path.is_dir()):
-            plugin_dir = market_dir / name
-            if plugin_dir.is_dir():
-                left = [path for path in sorted(plugin_dir.iterdir()) if path.resolve() != primary.resolve()]
-                if left:
-                    residuals.append({"client": "codex", "kind": "cache", "name": name, "path": str(plugin_dir),
-                                      "manual": "other cached versions or copies remain; delete the directory when no longer needed"})
-    config = home / ".codex" / "config.toml"
-    try:
-        mentioned = config.is_file() and f"{name}@" in config.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        mentioned = False
-    if mentioned:
-        residuals.append({"client": "codex", "kind": "config", "name": name, "path": str(config),
-                          "manual": f"remove the [plugins.\"{name}@...\"] table by hand (user configuration, not edited automatically)"})
+            mentioned = config.is_file() and f"{name}@" in config.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            mentioned = False
+        if mentioned:
+            residuals.append({"client": client, "kind": "config", "name": name, "path": str(config),
+                              "manual": f"remove the [plugins.\"{name}@...\"] table by hand (user configuration, not edited automatically)"})
     return operations, residuals
 
 
@@ -1686,34 +1730,35 @@ def reconcile_project(
 
     ``retire_only`` archives the selected legacy components without installing
     or replacing the project package itself. Claude Code is handled by
-    ``agent_pack_claude`` (dedicated package, MCP entries, Skill links);
+    ``agent_pack_native_package`` (dedicated package, MCP entries, Skill links);
     ``replace`` and ``reset_overrides`` only apply there.
     """
-    if client == "claude":
-        import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+    if client in _registry().ids_with_sync("native-package"):
+        import agent_pack_native_package  # noqa: PLC0415 - shipped next to this file
 
-        return agent_pack_claude.sync_project(
+        return agent_pack_native_package.sync_project(
             project, home=home, apply=apply, replace=replace, reset_overrides=reset_overrides,
             recovery_root=recovery_root, retire_skills=retire_skills, retire_plugins=retire_plugins,
             retire_only=retire_only, only=only, replace_mcp=replace_mcp, replace_skills=replace_skills,
-            scope=scope, project_store=project_store)
-    import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+            scope=scope, project_store=project_store, client=client)
+    import agent_pack_native_package  # noqa: PLC0415 - shipped next to this file
 
+    native = _native_names()
     if scope != "all":
-        raise AgentPackError(f"--scope user|project is supported for the claude client only: {client} has no "
+        raise AgentPackError(f"--scope user|project is supported for the {native} client only: {client} has no "
                              "project-level write yet")
     if project_store != "local":
-        raise AgentPackError(f"--project-store is supported for the claude client only: {client} has no "
+        raise AgentPackError(f"--project-store is supported for the {native} client only: {client} has no "
                              "project-level write yet")
 
-    if agent_pack_claude.normalize_only(only) != frozenset(agent_pack_claude.SYNC_TYPES) and not retire_only:
+    if agent_pack_native_package.normalize_only(only) != frozenset(agent_pack_native_package.SYNC_TYPES) and not retire_only:
         raise AgentPackError(
-            f"--only mcp|skills|plugins is supported for the claude client only: {client} installs one package "
+            f"--only mcp|skills|plugins is supported for the {native} client only: {client} installs one package "
             "that holds Skills, MCP servers and the manifest together")
-    if replace_skills or (replace_mcp and client != "codex"):
+    if replace_skills or (replace_mcp and not _native_remote(client)):
         raise AgentPackError(
-            "--replace-skills / --replace-mcp are supported for the claude client only"
-            " (codex also accepts --replace-mcp for its native remote MCP entries)")
+            f"--replace-skills / --replace-mcp are supported for the {native} client only"
+            f" ({' / '.join(_native_remote_clients())} also accepts --replace-mcp for its native remote MCP entries)")
     replace = replace or replace_mcp
     layout = load_project_layout(project)
     authority = inventory_project(layout.root)
@@ -1767,17 +1812,17 @@ def reconcile_project(
                     package_action = "replace-plugin"
 
     native_plan = None
-    if client == "codex" and not retire_only:
-        import agent_pack_codex_mcp
-        native_plan = agent_pack_codex_mcp.plan(project, home, replace=replace)
+    if _native_remote(client) and not retire_only:
+        import agent_pack_mcp_toml  # noqa: PLC0415 - the ``toml`` MCP adapter, shipped next to this file
+        native_plan = agent_pack_mcp_toml.plan(project, home, client, replace=replace)
     operations: list[dict[str, str]] = [] if retire_only else [
         {"action": package_action, "client": client, "name": package_name, "to": str(destination)}
     ]
     residuals: list[dict[str, str]] = []
     for kind, name, path in retirement_targets:
         operations.append({"action": "archive-" + kind, "name": name, "from": str(path)})
-        if kind == "plugin" and client == "codex":
-            extra_operations, extra_residuals = _codex_retirement_extras(home, name, path)
+        if kind == "plugin" and _has_retirement_extras(client):
+            extra_operations, extra_residuals = _retirement_extras(client, home, name, path)
             operations.extend(extra_operations)
             residuals.extend(extra_residuals)
     if native_plan is not None:
@@ -1786,9 +1831,9 @@ def reconcile_project(
     skipped = _project_scope_skips(layout, authority, client)
     if skipped:   # declared project-level entries are skipped for this client, never written to the user level
         extras["skipped"] = skipped
-        import agent_pack_scope  # noqa: PLC0415 - shipped next to this file
+        import agent_pack_sync_scope  # noqa: PLC0415 - shipped next to this file
 
-        extras["warnings"] = [agent_pack_scope.skipped_warning(item) for item in skipped]
+        extras["warnings"] = [agent_pack_sync_scope.skipped_warning(item) for item in skipped]
     if not apply:
         return {"ok": True, "applied": False, "states": states, "operations": operations, **extras}
 
@@ -1840,13 +1885,13 @@ def reconcile_project(
                 market.write_text(_marketplace_without(original_bytes.decode("utf-8"), operation["name"]),
                                   encoding="utf-8")
         if native_plan is not None:
-            agent_pack_codex_mcp.apply(native_plan, transaction)
+            agent_pack_mcp_toml.apply(native_plan, transaction)
             native_applied = True
-        if client == "codex" and needs_package:
-            _update_personal_marketplace(home, package_name)
+        if needs_package:
+            _update_personal_marketplace(client, home, package_name)
     except Exception as exc:
         if native_applied:
-            agent_pack_codex_mcp.rollback(native_plan)
+            agent_pack_mcp_toml.rollback(native_plan)
         if marketplace_backup is not None:
             marketplace_backup[0].write_bytes(marketplace_backup[1])
         if installed and destination.exists():
@@ -1892,8 +1937,12 @@ def _project_scope_skips(layout: ProjectLayout, authority: Inventory, client: st
     return sorted(skipped, key=lambda item: (item["kind"], item["name"]))
 
 
-def _update_personal_marketplace(home: Path, package_name: str) -> None:
-    marketplace = home / ".agents" / "plugins" / "marketplace.json"
+def _update_personal_marketplace(client: str, home: Path, package_name: str) -> None:
+    """List the package in the client's personal marketplace file (``sync.marketplace``); no-op without that declaration."""
+    spec = (_registry().sync_spec(client) or {}).get("marketplace")
+    if spec is None:
+        return
+    marketplace = _registry().location(spec["path"], home)
     if marketplace.exists():
         payload = _read_json(marketplace)
     else:
@@ -1904,11 +1953,20 @@ def _update_personal_marketplace(home: Path, package_name: str) -> None:
     plugins[:] = [item for item in plugins if not isinstance(item, dict) or item.get("name") != package_name]
     plugins.append({
         "name": package_name,
-        "source": {"source": "local", "path": f"./.agents/plugins/plugins/{package_name}"},
+        "source": {"source": "local", "path": f"{spec['source_dir']}/{package_name}"},
         "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
         "category": "Developer Tools",
     })
     _write_json_atomic(marketplace, payload)
+
+
+def _has_retirement_extras(client: str) -> bool:
+    spec = _registry().sync_spec(client) or {}
+    return "marketplace" in spec or "cleanup" in spec
+
+
+def _native_remote_clients() -> list[str]:
+    return [item["id"] for item in _registry().BUILTIN if (item.get("mcp") or {}).get("native_remote")]
 
 
 def _skill_fingerprints(package: Path) -> dict[str, str]:
@@ -1947,13 +2005,13 @@ def client_drift(project: Path, client: str, home: Path | None = None) -> dict[s
 
     Codex and Cursor load the project package directory, so the installed package
     is compared with a freshly built one (Skills, MCP servers, the rest of the
-    files). Claude Code is compared entry by entry by ``agent_pack_claude``.
+    files). Claude Code is compared entry by entry by ``agent_pack_native_package``.
     Same-name MCP servers configured by hand in the client are listed as native.
     """
-    if client == "claude":
-        import agent_pack_claude  # noqa: PLC0415 - shipped next to this file
+    if client in _registry().ids_with_sync("native-package"):
+        import agent_pack_native_package  # noqa: PLC0415 - shipped next to this file
 
-        report = agent_pack_claude.drift(project, home)
+        report = agent_pack_native_package.drift(project, home, client=client)
         layout = load_project_layout(project)
         report["missing_env"] = remote_missing_env(inventory_project(layout.root), layout, client)
         report["in_sync"] = report["in_sync"] and not report["missing_env"]
@@ -1990,13 +2048,14 @@ def client_drift(project: Path, client: str, home: Path | None = None) -> dict[s
                 report["different"].append(f"package {name}: other files differ")
         native = _native_user_mcps(client, home)
         report["native"] = sorted(native)
-    if client == "codex":
-        import agent_pack_codex_mcp
+    if _native_remote(client):
+        import agent_pack_mcp_toml  # noqa: PLC0415 - the ``toml`` MCP adapter, shipped next to this file
         for item in authority.mcps:
             if item.portable and item.config.get("type") != "stdio" and _mcp_allowed(layout, item.name, client):
                 if item.name not in native:
                     report["missing"].append(f"mcp {item.name}")
-                elif native[item.name] != agent_pack_codex_mcp.native_entry(item.config):
+                elif native[item.name] != agent_pack_mcp_toml.native_entry(
+                        item.config, _registry().mcp_options(client), _registry().get(client)["display"]):
                     report["different"].append(f"mcp {item.name}")
     report["missing_env"] = remote_missing_env(authority, layout, client)
     report["in_sync"] = not (report["missing"] or report["different"] or report["stale"] or report["dangling"] or report["missing_env"])
@@ -2018,19 +2077,23 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
     unknown_policies = set(layout.mcp_client_policy) - configured_names
     issues.extend(f"MCP client policy references unknown server: {name}" for name in sorted(unknown_policies))
     for plugin in inventory.plugins:
-        adapter_path = Path(plugin["path"]) / ".codex-plugin" / "plugin.json"
-        if not adapter_path.is_file() or adapter_path.is_symlink():
-            continue
-        try:
-            adapter_version = _read_json(adapter_path).get("version")
-        except AgentPackError as exc:
-            issues.append(str(exc))
-            continue
-        if adapter_version != plugin["version"]:
-            issues.append(
-                f"plugin {plugin['name']}: Codex adapter version {adapter_version!r} "
-                f"does not match plugin.json version {plugin['version']!r}"
-            )
+        for driver in _registry().BUILTIN:
+            companions = (driver.get("sync") or {}).get("companions")
+            if not companions:
+                continue
+            adapter_path = Path(plugin["path"]) / companions["manifest"]
+            if not adapter_path.is_file() or adapter_path.is_symlink():
+                continue
+            try:
+                adapter_version = _read_json(adapter_path).get("version")
+            except AgentPackError as exc:
+                issues.append(str(exc))
+                continue
+            if adapter_version != plugin["version"]:
+                issues.append(
+                    f"plugin {plugin['name']}: {driver['display']} adapter version {adapter_version!r} "
+                    f"does not match plugin.json version {plugin['version']!r}"
+                )
     for item in inventory.mcps:
         if item.portable:
             issues.extend(_mcp_plugin_root_problems(item, inventory))
@@ -2052,7 +2115,7 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
                 issues.append(str(exc))
     reports: dict[str, Any] = {}
     for client in dict.fromkeys(clients):
-        if client == "claude-desktop":  # read-only observation of claude_desktop_config.json; never a drift issue
+        if _registry().supports(client, "read_only"):  # read-only observation of the client's own file; never a drift issue
             import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
 
             report = agent_pack_inventory.desktop_report(home or Path.home())
@@ -2061,11 +2124,11 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
             continue
         report = client_drift(layout.root, client, home)
         reports[client] = report
-        if client == "claude":  # advisory only: it never changes ``ok`` or the exit code
+        if client in _registry().ids_with_sync("native-package"):  # advisory only: it never changes ``ok`` or the exit code
             import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
 
             shadows = agent_pack_inventory.desktop_shadow_findings(
-                home or Path.home(), [item.name for item in inventory.mcps if _mcp_allowed(layout, item.name, "claude")])
+                home or Path.home(), [item.name for item in inventory.mcps if _mcp_allowed(layout, item.name, client)])
             if shadows:
                 report["shadowed_by"] = shadows
                 warnings.extend(agent_pack_inventory.shadow_warning(item) for item in shadows)
@@ -2105,12 +2168,12 @@ def _print(value: dict[str, Any], output: str) -> None:
     if isinstance(summary, dict):
         print("conflicts: " + ", ".join(f"{key}={number}" for key, number in summary.items()))
     if "by_scope" in value:   # a project declares scopes (or --scope was given): group by store
-        import agent_pack_scope  # noqa: PLC0415 - shipped next to this file; imported late (python3 -I path set in main)
+        import agent_pack_sync_scope  # noqa: PLC0415 - shipped next to this file; imported late (python3 -I path set in main)
 
-        for line in agent_pack_scope.grouped_lines(value):
+        for line in agent_pack_sync_scope.grouped_lines(value):
             print(line)
-        for line in (agent_pack_scope.narrowing_lines(value) + agent_pack_scope.migration_lines(value)
-                     + agent_pack_scope.skipped_lines(value)):
+        for line in (agent_pack_sync_scope.narrowing_lines(value) + agent_pack_sync_scope.migration_lines(value)
+                     + agent_pack_sync_scope.skipped_lines(value)):
             print(line)
         value = {**value, "operations": []}
     for operation in value.get("operations", []):
@@ -2279,7 +2342,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    # ``agent_pack_claude`` and ``agent_pack_codex_mcp`` do ``import agent_pack_config`` (also lazily,
+    # ``agent_pack_native_package`` and ``agent_pack_mcp_toml`` do ``import agent_pack_config`` (also lazily,
     # inside bootstrap/reconcile). Without help that loads a second copy of this file whose
     # ``AgentPackError`` is a different class, so ``main()``'s ``except AgentPackError`` could not catch
     # what they raise (a stack trace, exit 1). Register this running module under its import name so

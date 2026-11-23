@@ -120,7 +120,10 @@
     "legacy_cleanup": true,
     "marketplace_update": true,
     "reinstall_rewrites_all": false,
-    "market_pin": true
+    "market_pin": true,
+    "user_mcp_write": true,
+    "project_skill_write": true,
+    "user_skill_write": true
   },
   "precedence": [
     {
@@ -176,6 +179,31 @@
     },
     "legacy_sniff": {
       "fallback": true
+    }
+  },
+  "sync": {
+    "write": "native-package",
+    "package_dir": "~/.claude/agent-pack/plugins"
+  },
+  "mcp": {
+    "adapter": "json",
+    "write": "user-file",
+    "manual_remove": [
+      "claude",
+      "mcp",
+      "remove",
+      "--scope",
+      "{scope}",
+      "{name}"
+    ],
+    "options": {
+      "remote_url_key": "url",
+      "remote_headers": "inline",
+      "env_interpolation": "shell-env",
+      "type_field_required": true,
+      "type_names": {
+        "streamable-http": "http"
+      }
     }
   }
 }

@@ -8,7 +8,7 @@
 2. 现有的客户端名单（`agenthelm.py` 的 `CLIENTS` / `CLIENT_KEYS` / `CLIENT_NAMES` / `--client` choices / `detect_clients`，`agent_pack_inventory.py`、`agent_pack_nudge.py`、`user_settings.py` 的枚举）改为读注册表；内容与顺序不变，既有输出逐字节不变。
 3. 新增只读命令 `agenthelm clients`：列出每个驱动的检测结果（依据哪一项）、分发驱动类型、能力标志。
 4. 预留用户级声明 `~/.config/agenthelm/clients.d/*.json`（遵循 `XDG_CONFIG_HOME`）：本版**只校验**，非法的警告并忽略，合法的标「已声明，本版未支持安装」，**不执行其中任何内容、不据此写任何文件、不进入 `--client` 可用集合**。
-5. 存储与写入逻辑（`agent_pack_config.py`、`agent_pack_claude.py`、`agent_pack_inventory.py` 的存储表）本版不动；注册表里的存储声明与 inventory 现有表用测试对账，避免两份数据漂移。
+5. 存储与写入逻辑（`agent_pack_config.py`、`agent_pack_native_package.py`、`agent_pack_inventory.py` 的存储表）本版不动；注册表里的存储声明与 inventory 现有表用测试对账，避免两份数据漂移。
 
 ## 1. 数据模型
 

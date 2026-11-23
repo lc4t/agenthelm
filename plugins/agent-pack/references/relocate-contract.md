@@ -26,7 +26,7 @@ agenthelm relocate <ref> --to <客户端>:<作用域> [--mode copy|link] [--proj
 
 ## MCP 条目（`mcp:<名>@claude:<user|local|project>`）
 
-`<ref>` 取 `mcps[].ref`；`--to claude:user|local|project`（`project` 即项目 `.mcp.json`）。同一套外壳（预览、`plan_digest`、`--expect-plan`、`blocked`、`promise`）；写入复用 Claude sync 的 local 与 `.mcp.json` 读写助手，实现在 `agent_pack_mcp_write.py`。`plan.kind` 为 `mcp`，`source.managed` 表示 agent-pack 的 state 是否记录了归属，`plan.manual[]` 在未受管时给手工命令。
+`<ref>` 取 `mcps[].ref`；`--to claude:user|local|project`（`project` 即项目 `.mcp.json`）。同一套外壳（预览、`plan_digest`、`--expect-plan`、`blocked`、`promise`）；写入复用 Claude sync 的 local 与 `.mcp.json` 读写助手，实现在 `agent_pack_mcp_move.py`。`plan.kind` 为 `mcp`，`source.managed` 表示 agent-pack 的 state 是否记录了归属，`plan.manual[]` 在未受管时给手工命令。
 
 - **只复制，绝不覆盖**：目标同名条目 → `target-exists-identical|different`（比整条条目的哈希，只说相同或不同，不显示值）。`--mode link` → `link-unsupported`。
 - **方向**：`user` 比 `local`/`project` 宽；放宽（→ `user`）需 `--allow-widen`，预览标红；`local` ↔ `project` 为 `same`。目标为 `project` 时 `--apply` 还须 `--confirm-project-content`（条目会进入版本库）。

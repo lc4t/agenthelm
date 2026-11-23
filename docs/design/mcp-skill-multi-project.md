@@ -27,18 +27,18 @@
 **项目声明**。Profile 位于 `.agents/moe.sakanano.agent-pack/project.json`，`capabilities` 段由 `load_project_layout` 解析（`agent_pack_config.py:263-321`）：`plugin_roots`、`plugin_dirs`、`skill_roots`、`mcp_sources`、`native_mcp_sources`、`credential_env_file`、`mcp_client_policy`（仅 `include`/`exclude` 按客户端路由，`:286-306`）、`destination_*`。顶层未知键不报错，这使得新增键对旧运行时兼容（旧运行时直接忽略）。所有路径经 `_contained` 限制在项目根内（`:229-236`、`:239-247`）。
 
 **客户端存储位置（agenthelm 当前读写的）**：
-- Claude：Skill 链接 `~/.claude/skills/<名>`；MCP 写 `~/.claude.json` 顶层 `mcpServers`（用户级，`_claude_user_config`，`:623-625`）；项目包 `~/.claude/agent-pack/packages/<名>/`、安装记录 `~/.claude/agent-pack/plugins/<名>`、归属状态 `~/.claude/agent-pack/state/<名>.json`（`agent_pack_claude.py:36-42`、`:98`，状态 schema 1，含 `skills` 列表与 `mcps` 字典，`:546-549`）。
-- Codex：包在 `~/.agents/plugins/plugins/<名>`，市场条目 `~/.agents/plugins/marketplace.json`，远程 MCP 写 `~/.codex/config.toml`（`agent_pack_codex_mcp.py`）。
+- Claude：Skill 链接 `~/.claude/skills/<名>`；MCP 写 `~/.claude.json` 顶层 `mcpServers`（用户级，`_claude_user_config`，`:623-625`）；项目包 `~/.claude/agent-pack/packages/<名>/`、安装记录 `~/.claude/agent-pack/plugins/<名>`、归属状态 `~/.claude/agent-pack/state/<名>.json`（`agent_pack_native_package.py:36-42`、`:98`，状态 schema 1，含 `skills` 列表与 `mcps` 字典，`:546-549`）。
+- Codex：包在 `~/.agents/plugins/plugins/<名>`，市场条目 `~/.agents/plugins/marketplace.json`，远程 MCP 写 `~/.codex/config.toml`（`agent_pack_mcp_toml.py`）。
 - Cursor：`~/.cursor/plugins/local/<名>`；MCP 读 `~/.cursor/mcp.json`。
 - `inventory_client` 读取的 Skill 根：codex `~/.codex/skills`、cursor `~/.cursor/skills`、claude `~/.claude/skills`（`:568-577`）；MCP 只读用户级顶层（`_json_client_mcps`，`:640-648`；codex 读 `config.toml` 的 `mcp_servers`，`:628-637`）。**不读** `.mcp.json`、Claude 本地级（`~/.claude.json` 内按项目路径存放的条目）、`~/.agents/skills`、项目级的 `.claude/skills`、`.cursor/mcp.json`、`.codex/config.toml`、`claude_desktop_config.json`。
 
-**#68 在 6.13.0 的形态**：`--only mcp|skills|plugins`（`SYNC_TYPES`，`agent_pack_claude.py:44`，`normalize_only` `:47`）；`--replace-mcp` / `--replace-skills`（`sync_project` `:416`）；冲突按类型计数并提示用户级内容对所有项目生效（`_conflict_summary` `:397`、`_global_warnings` `:404`）；Codex/Cursor 只接受全部类型（`reconcile_project` 内报错）。测试 `plugins/agent-pack/tests/test_sync_only.py`（18 个用例）。CHANGELOG 6.13.0 小节为 `agent-pack 1.13.0`。
+**#68 在 6.13.0 的形态**：`--only mcp|skills|plugins`（`SYNC_TYPES`，`agent_pack_native_package.py:44`，`normalize_only` `:47`）；`--replace-mcp` / `--replace-skills`（`sync_project` `:416`）；冲突按类型计数并提示用户级内容对所有项目生效（`_conflict_summary` `:397`、`_global_warnings` `:404`）；Codex/Cursor 只接受全部类型（`reconcile_project` 内报错）。测试 `plugins/agent-pack/tests/test_sync_only.py`（18 个用例）。CHANGELOG 6.13.0 小节为 `agent-pack 1.13.0`。
 
 **密钥与就绪**：stdio 条目的 `${VAR}` 引用必须在 `credential_env_file`（项目内 dotenv，0600，符号链接拒绝）里存在，缺失时 `sync` 阻塞、`doctor` 报 issue（`_dotenv_keys` `:905-925`，`doctor` `:1970-1986`）。含引用的 stdio 条目被 `mcp_env_launcher.py` 包装，`--env-file` 写入绝对路径（`:1105-1118`）。远程条目的 `${VAR}` 只检查 `os.environ` 非空（`remote_missing_env`，`:1875-1878`）。`doctor` 的退出码取决于 `ok = not issues`（`main` 内 `return 0 if result.get("ok", True) else 1`）。
 
 **对 issue 前提的两处核对结果**：
 - #73 写的 `doctor --json` 在 CLI 中实际是 `--output json`（`capability-config.md`「CLI」一节）。
-- #73 提到 `doctor` 对这类条目给出 `machine-local` 状态。在本仓库 `agent_pack_config.py` 与 `agent_pack_claude.py` 里没有这个状态；`agent-bootstrap` 只在 SKILL.md 中被引用为项目内 `tools/agent-bootstrap`（`plugins/agent-pack/skills/agent-pack/SKILL.md:13`），不在本仓库。该状态的来源**未确认**，本设计以仓库内的 `doctor` 为准。
+- #73 提到 `doctor` 对这类条目给出 `machine-local` 状态。在本仓库 `agent_pack_config.py` 与 `agent_pack_native_package.py` 里没有这个状态；`agent-bootstrap` 只在 SKILL.md 中被引用为项目内 `tools/agent-bootstrap`（`plugins/agent-pack/skills/agent-pack/SKILL.md:13`），不在本仓库。该状态的来源**未确认**，本设计以仓库内的 `doctor` 为准。
 
 ---
 
@@ -112,7 +112,7 @@ Cursor（[MCP](https://cursor.com/docs/context/mcp)、[Skills](https://cursor.co
 ## 3. 问题 1：作用域（#67）
 
 ### 现状
-- `sync --client claude` 只写用户级：`~/.claude.json` 顶层 `mcpServers` 与 `~/.claude/skills`（`agent_pack_claude.py:311-324`，MCP 写入见 `:337-346`，路径来自 `core._claude_user_config`）。对「A 声明 `x`、B 不声明，在 A 同步后 B 仍能看到并启动 `x`」的复现，与官方「User：所有项目」一致，无需额外验证。
+- `sync --client claude` 只写用户级：`~/.claude.json` 顶层 `mcpServers` 与 `~/.claude/skills`（`agent_pack_native_package.py:311-324`，MCP 写入见 `:337-346`，路径来自 `core._claude_user_config`）。对「A 声明 `x`、B 不声明，在 A 同步后 B 仍能看到并启动 `x`」的复现，与官方「User：所有项目」一致，无需额外验证。
 - 路由维度只有客户端（`mcp_client_policy`，`:286-306`），没有项目或作用域维度。
 - `inventory_client` 不读项目级与本地级存储（§1），所以用户级与项目级同名冲突无从检出。
 - 预览的 `operations` 无作用域字段；`warnings` 只在有冲突时提示「用户级内容对所有项目生效」（`:404-413`）。
@@ -408,7 +408,7 @@ agent-pack catalog verify  [--project P]                                        
 - 只能指定一个文件。
 - `mcp_sources`、`plugin_roots` 同样限制在项目内，没有跨项目共享位置。
 - `mcp_env_launcher.py:86` 把 env 文件的**全部键**合并进子进程环境（`environment.update(load_dotenv(...))`），不论条目是否引用。当文件只服务一个项目时影响有限；**多项目共享同一文件后，每个 MCP 子进程都能看到所有键**，违反最小暴露。
-- 跨项目的重复没有发现机制；归属状态按项目包名分文件（`~/.claude/agent-pack/state/<名>.json`），内容为本项目装进 Claude 的 Skill 与 MCP（`agent_pack_claude.py:546-549`）。
+- 跨项目的重复没有发现机制；归属状态按项目包名分文件（`~/.claude/agent-pack/state/<名>.json`），内容为本项目装进 Claude 的 Skill 与 MCP（`agent_pack_native_package.py:546-549`）。
 
 ### 选项穷举（密钥文件）
 - **A. 命名的用户级文件**：`"credential_env_file": "user:<名称>"`，解析到固定根 `$XDG_CONFIG_HOME/agenthelm/credentials/<名称>.env`（缺省 `~/.config/agenthelm/credentials/`），目录 0700、文件 0600，名称限 `[a-z0-9-]+`。
