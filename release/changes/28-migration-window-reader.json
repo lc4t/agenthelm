@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "summary": {"zh": "check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。", "en": "check reads the latest.json migration window: when far behind it fetches the full migration notes, and when they are unavailable it says so and treats the update as possibly incompatible; a breaking step without a summary no longer shows None."},
+  "changes": [{
+    "scope": "agent-pack",
+    "level": "minor",
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "default_for_existing": "off",
+    "template_changes": [],
+    "contracts": []
+  }],
+  "suite": null
+}

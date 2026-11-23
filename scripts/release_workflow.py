@@ -238,6 +238,39 @@ def history_migrations(meta):
     return list({(e['plugin'], e['from'], e['to']): e for e in entries}.values())
 
 
+WINDOW_SCHEMA = 1
+WINDOW_FULL = 'release/migrations.json'
+WINDOW_SUMMARY_MAX = 80
+WINDOW_INDEX_KEYS = ('plugin', 'from', 'to', 'change_kind', 'breaking', 'date')
+
+
+def _version_key(value):
+    return tuple(int(part) for part in str(value).split('.'))
+
+
+def window_migrations(entries, floor, full=WINDOW_FULL):
+    """Pure: the windowed ``latest.json`` migrations and its ``migrations_window`` block (not wired into
+    ``build_latest`` yet; see docs/design/release-hardening.md section 2).
+
+    ``floor`` maps a plugin to the version its full-text window starts after: an entry with ``to`` newer than the
+    floor keeps its full text, as does every entry of a plugin with no floor. Older entries become index entries;
+    an outside breaking entry keeps a summary of at most 80 characters with empty ``actions``, so a client that
+    does not know the window still reports it as incompatible. No entry is removed."""
+    result = []
+    for entry in entries:
+        limit = floor.get(entry['plugin'])
+        if limit is None or _version_key(entry['to']) > _version_key(limit):
+            result.append(entry)
+            continue
+        index = {key: entry[key] for key in WINDOW_INDEX_KEYS if key in entry}
+        if entry.get('breaking'):
+            summary = str(entry.get('summary', '')).strip()
+            index['summary'] = summary if len(summary) <= WINDOW_SUMMARY_MAX else summary[:WINDOW_SUMMARY_MAX - 1] + '\u2026'
+            index['actions'] = []
+        result.append(index)
+    return result, {'schema': WINDOW_SCHEMA, 'floor': dict(sorted(floor.items())), 'full': full}
+
+
 def release_files(meta, release, candidate):
     generated = {}
     index = meta.read_json(meta.ROOT / 'index.json')
