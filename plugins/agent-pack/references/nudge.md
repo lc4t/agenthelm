@@ -65,4 +65,4 @@
 
 nudge 只提醒，不替用户决定：第一次 `inbox add` 的返回带 `notice`，每个项目第一次开会话时给一行可见提示（已被 Git 忽略则不提醒），`agenthelm nudge status` 随时显示当前状态。它不会修改 `.gitignore`，也不会删除、改写或拒绝保存任何内容。
 
-- **Antigravity（`agy`）**：hooks 随插件交付，根目录的 `hooks.json` 把 `SessionStart` 与 `Stop` 接到 `agenthelm nudge hook --event … --client agy`（命令用相对路径 `./runtime/agenthelm.py`，因为 hook 在插件目录下运行）；没有 `prompt-submit` 事件。输出是 `injectSteps`（只有给模型的文字，没有用户可见的一行）。`stop` 默认关闭，用 `nudge.stop_prompt` 的对象写法逐个客户端开启（`{"agy": "on-completion"}`）。hook 是否触发、`injectSteps` 是否被接受尚未验证。`nudge install-hooks` 不适用。
+- **Antigravity（`agy`）**：hooks 随插件交付，根目录的 `hooks.json` 把 `SessionStart` 与 `Stop` 接到 `agenthelm nudge hook --event … --client agy`（命令用相对路径 `./runtime/agenthelm.py`，因为 hook 在插件目录下运行）；没有 `prompt-submit` 事件。`SessionStart` 的输出是 `injectSteps`（只有给模型的文字，没有用户可见的一行），`Stop` 的输出是 `{"decision":"continue","reason":…}`（`Stop` 不接受 `injectSteps`）；项目目录取自载荷的 `workspacePaths`，会话取自 `conversationId`（agy 的 hook 载荷没有 `cwd`）。`stop` 默认关闭，用 `nudge.stop_prompt` 的对象写法逐个客户端开启（`{"agy": "on-completion"}`）。hook 是否触发、`injectSteps` 是否被接受尚未验证。`nudge install-hooks` 不适用。

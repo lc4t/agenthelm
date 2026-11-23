@@ -72,6 +72,15 @@ class AdapterTests(unittest.TestCase):
         self.assertIsNone(adapter("Stop", None, "user line only"))
         self.assertIsNone(adapter("Stop", "", None))
 
+    def test_decision_continue_is_the_antigravity_stop_output(self) -> None:
+        adapter = nudge.ADAPTERS["decision_continue"]
+        self.assertEqual(adapter("Stop", "go on", "ignored"), {"decision": "continue", "reason": "go on"})
+        self.assertIsNone(adapter("Stop", None, "only a user line"))
+        self.assertIsNone(adapter("Stop", "", None))
+        self.assertEqual(json.dumps(adapter("Stop", "é", None), ensure_ascii=False), '{"decision": "continue", "reason": "é"}')
+        used = {client for client in registry.all_ids() if "decision_continue" in registry.hooks(client).get("output", {}).values()}
+        self.assertEqual(used, {"agy"})
+
     def test_inject_steps_is_used_by_the_antigravity_driver_only(self) -> None:
         used = {client for client in registry.all_ids()
                 if "injectSteps" in registry.hooks(client).get("output", {}).values()}

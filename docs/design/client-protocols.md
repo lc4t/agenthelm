@@ -67,6 +67,7 @@
 | --- | --- | --- |
 | 根目录 `hooks.json`，agy 自有格式 | `{ "<分组名>": { "<事件名>": [ {type, command, timeout} ] } }`：`validate` 接受；`install` 复制；`list --json` 的 `hooks[]` 列出分组名 | 实测 |
 | 根目录 `hooks.json`，Claude 格式（顶层键 `hooks`） | `validate` 报 3 个 error、退出码 1；而 `install` 与 `list` 又把顶层键 `hooks` 当作分组名接受。两个命令互相矛盾，**不使用** | 实测 |
+| 官方文档的 hook 载荷与输出（读取日期 2026-11-23，未实测） | 载荷键为 `conversationId`、`workspacePaths` 等，没有 `cwd`；`Stop` 输出 `{"decision":"continue","reason":…}`，不接受 `injectSteps`；见 §4.7 | 官方文档 |
 | `list --json` 的 `hooks[]` | 只列分组名，不列事件，所以两个事件（`SessionStart`、`Stop`）是否都被收录只能间接推断 | 实测；收录情况为推断 |
 | hook 命令的运行位置 | `validate` 的提示写明 hook 命令在插件目录下运行、旧版本不设置 `${PLUGIN_ROOT}`，所以随包命令用相对路径 `./runtime/agenthelm.py`；`${PLUGIN_ROOT}` 在 1.5.14 上是否展开**未观察到** | 实测（提示文字），展开行为未验证 |
 | `mcp_config.json`（根目录） | 是 agy 会安装的 MCP 文件；`mcp.json` 不会被安装（`validate` 说明：`mcp.json` 仅在 `enable-agent-plugins-spec` 开启时使用，`mcp_config.json` 仅在关闭时使用，本机应是关闭，开关值未直接观察到） | 实测；开关状态为推断 |
@@ -242,8 +243,14 @@
 
 - **批 E 的落地写法**：
   - **功能名统一**：`unsupported[].feature` 一律取 §6 矩阵的功能名，hook 事件保留 `hook-event:<规范事件>` 的写法（批 D1 已在代码与 Cursor 的声明里使用，改动面最小）；其余功能名为 `relocate`、`dedupe`、`sync-skills-project`、`sync-mcp-project`、`agents-init-agent-cli`、`nudge-install-hooks`（`agent_pack_clients.UNSUPPORTED_FEATURES`，与 §6 的第一列由守卫三对账；与 Gemini 批对齐成同一套：`sync-skills`、`sync-mcp` 指整个 `sync` 写入不支持，`sync-skills-project`、`sync-mcp-project` 只指项目级）。`hook-event:*` 以外的 `unsupported` 不要求有 `hooks` 声明。
-  - agy 的 `hooks` 声明：`session-start` → `SessionStart`、`stop` → `Stop`，二者的输出适配器都是 `injectSteps`；`prompt-submit` 在 `unsupported`；`stop_prompt` 为 `off`（不在默认集合里，用户在 `nudge.stop_prompt` 里用对象写法逐个客户端开启：`{"agy": "always"}`；字符串写法仍只覆盖默认客户端）。`nudge hook --client` 的取值是「有 `hooks` 声明的可安装客户端」（`hook_client_ids()`）。载荷里项目目录的字段名（agy 的 hook 输入）**未观察到**：目录取自载荷的 `cwd`，没有时 hook 静默不输出（§12）。
+  - agy 的 `hooks` 声明：`session-start` → `SessionStart`（输出适配器 `injectSteps`）、`stop` → `Stop`（输出适配器 **`decision_continue`**）；`prompt-submit` 在 `unsupported`；`stop_prompt` 为 `off`（不在默认集合里，用户在 `nudge.stop_prompt` 里用对象写法逐个客户端开启：`{"agy": "always"}`；字符串写法仍只覆盖默认客户端）。`nudge hook --client` 的取值是「有 `hooks` 声明的可安装客户端」（`hook_client_ids()`）。载荷里项目目录的字段名（agy 的 hook 输入）**未观察到**：目录取自载荷的 `cwd`，没有时 hook 静默不输出（§12）。
   - 随包的根目录 `hooks.json` 命令是 `python3 ./runtime/agenthelm.py nudge hook --event <事件> --client agy`（相对路径的依据见 §2.2 probe-v4）。
+
+- **agy 的 hook 载荷与 Stop 输出（rc.1 前修正，依据官方文档 https://antigravity.google/docs/hooks，读取日期 2026-11-23）**：
+  - 所有 hook 的 stdin 载荷公共键是 `conversationId`、`workspacePaths`（挂载的工作区绝对路径数组）、`transcriptPath`、`artifactDirectoryPath`、`modelName`、`lastUserInput`；`Stop` 另有 `executionNum`、`terminationReason`、`fullyIdle`。**没有 `cwd`，也没有 `session_id`、`conversation_id`、`workspace_roots`。**
+  - 声明里新增 `hooks.payload`：`{project_dir: [...], session: [...]}`（各 1-4 个键名），agy 为 `workspacePaths` 与 `conversationId`。**为什么放进声明而不是写进代码的通用键表**：载荷键是客户端协议事实，按「新增客户端只加声明」的原则属于数据；代码里写死 `workspacePaths` 等于给下一个客户端的键名留一个口子，也会让既有三个客户端的载荷被多读一个键。读取顺序固定：先是既有的通用来源（`workspace_roots`、`cwd`、`CURSOR_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`；会话为各事件原有的 `session_id`、`conversation_id`），声明的键放在它们之后且只对声明它的客户端生效，所以既有客户端的行为逐字节不变（`payload_directory` 与 `payload_session`）。路径数组取第一个字符串。
+  - **`Stop` 不接受 `injectSteps`**：文档里 `Stop` 的输出是 `{"decision":"continue","reason":"…"}`（`reason` 作为系统消息注入并让代理继续，其他 `decision` 值表示允许停止）。新增输出适配器 `decision_continue`，agy 的 `hooks.output.stop` 改用它；此前写成 `injectSteps` 是错的（因 `stop_prompt` 默认 `off` 没有触发）。
+  - **未决**：`SessionStart` 示例的嵌套是 `{"injectSteps":[{"systemMessage":{"systemMessage":"…"}}]}`，`PreInvocation` 的描述却写成 `systemMessage` 字符串，运行时哪种被接受留给 rc 阶段的模型会话冒烟（§12 第 4 项）；文档没有写 hook 命令的工作目录与 `PLUGIN_ROOT` 环境变量，随包的 `./runtime/agenthelm.py` 保持不变。
 
 ### 4.8 能力标志
 

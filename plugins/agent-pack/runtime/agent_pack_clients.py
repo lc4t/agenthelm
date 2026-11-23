@@ -54,9 +54,13 @@ MAX_DECLARATION_BYTES = 64 * 1024
 OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp", "content"}
 HOOK_EVENTS = ("session-start", "prompt-submit", "stop")  # canonical event names (design section 4.7)
 # Output adapters by output format, never by client id; agent_pack_nudge.ADAPTERS implements exactly these.
-HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps")
+HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps",
+                "decision_continue")
 HOOK_CONFIG_FORMATS = ("group-event-handlers", "flat-event-commands")
-HOOKS_KEYS = {"events", "output", "stop_prompt", "shows_system_message", "stop_status_gated", "config", "legacy_sniff"}
+HOOKS_KEYS = {"events", "output", "stop_prompt", "shows_system_message", "stop_status_gated", "config", "legacy_sniff",
+             "payload"}
+PAYLOAD_PURPOSES = ("project_dir", "session")  # what a client's hook payload keys can name (design section 4.7)
+PAYLOAD_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,31}")
 HOOK_CONFIG_KEYS = {"format", "plugin_file", "user", "project"}
 SNIFF_KEYS = {"priority", "payload_keys", "env", "fallback"}
 STOP_MODES = ("off", "on-completion", "always")
@@ -276,6 +280,12 @@ def _check_hooks(data: dict, source: str) -> None:
                f"hooks.config needs format ({', '.join(HOOK_CONFIG_FORMATS)}), optional plugin_file / user / project")
         if config["format"] == "flat-event-commands":
             _check("user" in config and "project" in config, source, "flat-event-commands needs user and project locations")
+    payload = hooks_part.get("payload")
+    if payload is not None:
+        _check(isinstance(payload, dict) and payload and set(payload) <= set(PAYLOAD_PURPOSES)
+               and all(isinstance(keys, list) and 1 <= len(keys) <= 4 and all(isinstance(k, str) and PAYLOAD_KEY.fullmatch(k) for k in keys)
+                       for keys in payload.values()), source,
+               f"hooks.payload maps {', '.join(PAYLOAD_PURPOSES)} to 1-4 plain payload key names")
     sniff = hooks_part.get("legacy_sniff")
     if sniff is not None:
         _check(isinstance(sniff, dict) and set(sniff) <= SNIFF_KEYS and (sniff.get("fallback") is True or "priority" in sniff)
@@ -585,6 +595,12 @@ def hook_event_name(client: str, event: str) -> str | None:
 def hook_output(client: str, event: str) -> str | None:
     """The output adapter name the client's ``event`` hook speaks; ``None`` when the event is not mapped."""
     return hooks(client).get("output", {}).get(event)
+
+
+def hook_payload_keys(client: str, purpose: str) -> tuple[str, ...]:
+    """The payload keys the client's hooks send for ``purpose`` (``project_dir`` | ``session``) beyond the ones every client is
+    read for; ``()`` when the driver declares none."""
+    return tuple(hooks(client).get("payload", {}).get(purpose, ()))
 
 
 def hook_flag(client: str, key: str) -> bool:
