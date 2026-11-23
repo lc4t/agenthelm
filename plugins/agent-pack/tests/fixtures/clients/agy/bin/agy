@@ -77,6 +77,8 @@ elif args[:2] == ["plugin", "uninstall"] and len(args) == 3:
     del state[args[2]]
     save(state)
 elif args[:2] in (["plugin", "enable"], ["plugin", "disable"]) and len(args) == 3:
+    if args[1] == "disable" and os.environ.get("AGY_STUB_DISABLE_FAIL"):
+        fail("disable failed")
     state = load()
     if args[2] not in state:
         fail(f"plugin {args[2]} is not installed")

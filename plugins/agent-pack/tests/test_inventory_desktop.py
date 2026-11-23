@@ -90,7 +90,7 @@ class DesktopTests(unittest.TestCase):
         code, out, _err = self.inventory_cli("--client", "claude-desktop", "--output", "json")
         self.assertEqual((code, json.loads(out)["clients"]), (0, ["claude-desktop"]))
         self.assertEqual(json.loads(self.inventory_cli("--client", "all", "--output", "json")[1])["clients"],
-                         ["claude", "codex", "cursor", "agy", "claude-desktop"])
+                         ["claude", "codex", "cursor", "agy", "claude-desktop", "gemini"])
 
     def test_desktop_block_reports_path_exists_parse_ok(self) -> None:
         self.assertNotIn("desktop", inv.observe(self.home, self.project))

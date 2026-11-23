@@ -2173,6 +2173,13 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
             warnings.extend(report.pop("warnings"))
             reports[client] = report
             continue
+        if _registry().sync_spec(client) is None:  # sync writes nothing for this client: say why, with the declared reasons
+            reasons = [entry["reason"] for entry in _registry().get(client).get("unsupported", [])
+                       if entry["feature"] in ("sync-skills", "sync-mcp")]
+            warnings.append(f"{client}: not compared with the project, sync does not write this client"
+                            + (f" ({'; '.join(reasons)})" if reasons else ""))
+            reports[client] = {"client": client, "compared": False}
+            continue
         report = client_drift(layout.root, client, home)
         reports[client] = report
         if "cli" in (_registry().get(client) or {}).get("detect", {}):   # advisory: what the client's own plugin list says
@@ -2289,7 +2296,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync_parser = sub.add_parser("sync")
     sync_parser.add_argument("--project", type=Path, default=Path.cwd())
-    sync_parser.add_argument("--client", choices=agent_pack_clients.selectable_ids(), required=True)
+    sync_parser.add_argument("--client", choices=agent_pack_clients.sync_client_ids(), required=True)
     sync_parser.add_argument("--home", type=Path)
     sync_parser.add_argument("--apply", action="store_true")
     sync_parser.add_argument("--replace", action="store_true",
@@ -2313,7 +2320,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reconcile_parser = sub.add_parser("reconcile")
     reconcile_parser.add_argument("--project", type=Path, default=Path.cwd())
-    reconcile_parser.add_argument("--client", choices=agent_pack_clients.selectable_ids(), required=True)
+    reconcile_parser.add_argument("--client", choices=agent_pack_clients.sync_client_ids(), required=True)
     reconcile_parser.add_argument("--replace", action="store_true",
                                   help="claude: also replace Skills / MCP entries this package did not install")
     reconcile_parser.add_argument("--reset-overrides", action="store_true",

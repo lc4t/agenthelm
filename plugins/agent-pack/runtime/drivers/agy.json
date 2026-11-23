@@ -52,8 +52,7 @@
     },
     "messages": {
       "recovery": "reinstall-no-backup",
-      "unchanged": "reinstall-version-unchanged",
-      "describe_update": "update-by-reinstall"
+      "unchanged": "reinstall-version-unchanged"
     }
   },
   "content": {
@@ -64,12 +63,16 @@
     "companions": [
       {
         "path": "hooks.json",
-        "role": "hooks"
+        "role": "hooks",
+        "optional": true,
+        "shipped": true
       },
       {
         "path": "mcp_config.json",
         "role": "mcp",
-        "required_when": "agent-plugins-spec-off"
+        "required_when": "agent-plugins-spec-off",
+        "optional": true,
+        "shipped": true
       }
     ],
     "skills": "agent-skills",
@@ -122,8 +125,7 @@
     "market_pin": false,
     "user_mcp_write": true,
     "project_skill_write": false,
-    "user_skill_write": true,
-    "update_by_reinstall": true
+    "user_skill_write": true
   },
   "precedence": [
     {

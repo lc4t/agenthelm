@@ -86,6 +86,8 @@ class DeclarationGuards(unittest.TestCase):
         for path in FILES:
             data = json.loads(path.read_text(encoding="utf-8"))
             for companion in (data.get("content") or {}).get("companions", []):
+                if not companion.get("shipped", True):   # declared but not shipped by this release (``shipped: false``)
+                    continue
                 with self.subTest(driver=data["id"], companion=companion["path"]):
                     self.assertTrue((PLUGIN / companion["path"]).is_file())
 

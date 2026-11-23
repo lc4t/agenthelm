@@ -90,6 +90,16 @@
 | hooks | 配置在 `settings.json` 的 `hooks` 对象，扩展内在 `hooks/hooks.json`；事件 `SessionStart SessionEnd BeforeTool AfterTool BeforeAgent AfterAgent BeforeModel AfterModel BeforeToolSelection Notification PreCompress`；`SessionStart` 输出 `hookSpecificOutput.additionalContext`；stdin 字段 `session_id transcript_path cwd hook_event_name timestamp` | 官方文档 |
 | MCP | 在 `settings.json` 的 `mcpServers`，键 `command url httpUrl args env cwd headers trust …`；`$VAR` 展开只在 `env` 对象里有文字依据 | 官方文档，**未验证** |
 
+**批 E-gemini 已实现**（`drivers/gemini.json`，夹具 `tests/fixtures/clients/gemini/`；全部用桩 `gemini` 验证，**没有在真实 Gemini CLI 上运行**，验收环境若没有 Gemini 则为未验证）：
+
+- 声明：`lifecycle: deprecated`，`default_set: false`，`detect` 为可执行文件 `gemini` 与目录 `~/.gemini`（不声明 `detect.cli`：`extensions list -o json` 在 stderr 的行为已实测，但本版没有 inventory 用它）；`distribution.source: bundle-dir`、`interactive: trust-prompt`、`installed_state: extensions-dir`；`steps.install = extensions install {source_dir}`、`steps.uninstall = extensions uninstall {plugin}`（没有 `update`：对本地目录安装，`extensions update` 的行为未验证）；`stores.skills`：用户 `~/.gemini/skills` 与项目 `<project>/.gemini/skills`（`observed`，`write_target`）、`~/.agents/skills` 与 `<project>/.agents/skills`（`documented`）；`stores.mcp` 为空（`settings.json` 的 `mcpServers` 只有官方文档依据，不读取）；`hooks` 只映射 `session-start`，`prompt-submit`、`stop` 与 `sync-skills`、`sync-mcp`、`agents-init-agent-cli` 写入 `unsupported`；`capabilities.project_trust_required: true`；`content.context: unsupported`。`unsupported[].feature` 词表新增 `sync-skills`、`sync-mcp`、`agents-init-agent-cli`（对应 §6 矩阵里 `sync` 写技能、`sync` 写 MCP、agents-init 的 `agent_cli`）；除 `hook-event:*` 之外，这些条目目前只是声明：`sync` 与 agents-init 的 `--client` 选项不含 Gemini，没有命令会遇到它们。
+- **`gemini-extension.json` 本版不随包提供**（`content.companions[].shipped: false`）。依据：Gemini 只认这个清单（§2.3 实测），但随包提供要决定插件版本载体（它要和 `plugin.json` 同步）、是否同时带 `hooks/hooks.json`（Gemini 的变量名与 Claude 不同）与 `skills/` 在 Gemini 里的加载行为，这些没有实测依据，按「不能确定的不做」处理。后果：不带 `--source` 的 `install --client gemini` 在预览里 `blocked`（`blocker: companion-not-shipped`），不下载、不运行命令；带 `--source` 时运行前检查声明的伴随文件是否真的在插件目录里，缺失就报失败。待后续发布随包提供该文件，把 `shipped` 改为 `true` 即可（`shipped: true` 的伴随文件由守卫检查确实存在）。
+- `interactive: trust-prompt` 的运行时行为：预览的步骤带 `interactive: trust-prompt` 与说明（会向你索取确认、工具不代答）；`--apply` 时命令的标准输入是用户终端（不捕获，不写入，不传 `--consent`），标准输出送到标准错误（`--output json` 的标准输出保持可解析），标准输入不是终端时**不启动命令**（步骤失败，说明需要交互式终端）。结果以读回的已装版本为准；命令非零退出按失败处理。**未确认**：用户拒绝确认时 Gemini 的退出码与输出、`extensions uninstall` 是否也要确认。
+- `update` = 先 `uninstall` 再 `install`（同一步骤，读回的「之前」是卸载前的版本）；在确认处拒绝时插件处于未安装状态，预览与文档都写明。这是 D-K10（agy）同类的取舍，对 Gemini 是**未验证**的。
+- `extensions-dir` 读取器：读 `<config_dir>/extensions/<插件>/<manifest>` 的 `version`（manifest 取自声明里 `role: manifest` 的伴随文件），符号链接记为开发安装（`dev: symlink`），只读，不写、不校验签名。
+- `deprecated` 的行为：`agenthelm clients` 的 JSON 里只有 Gemini 多一个 `lifecycle: deprecated` 字段（其他条目的输出逐字节不变），文本行末标「已弃用」；`--client` 对 `install`、`update`、`check`、`migrate` 接受 `gemini` 与 `all`（`all` 展开为所有可安装客户端，含已弃用的）；不带 `--client` 时 Gemini 不进入任何集合（即使 `~/.gemini` 存在）；点名使用时 `install` 与 `update` 的每个步骤带一条弃用说明。§4.1 原只写「在 `clients` 里显示，不改变其他行为」，弃用说明与 `all` 的展开是本批的解释，待维护者确认。
+- 既有客户端的输出：在固定夹具上对 `install`、`update`、`check`、`clients`、`sync`、`doctor`、`inventory`、`dedupe`、`relocate`、`migrate`、`nudge` 的文本与 JSON（中英文）改前改后逐字节比较，差异只有 Gemini 一行或一项：`clients` 多一条；`inventory --client all` 多出 Gemini 对共享目录 `~/.agents/skills` 的条目与摘要行；各命令 `--help` 的 `--client` 取值列表多出 `gemini`（`install`、`update`、`check` 等还多出 `all`）。
+
 ### 2.4 一个会影响设计的对照
 
 - Gemini 的 hook 输入字段与 Claude 的几乎相同，**按载荷嗅探客户端会误判**（现有 `agent_pack_nudge.detect_client` 靠载荷字段区分 Cursor、Codex、Claude）。设计结论：hook 命令一律显式带 `--client <id>`，嗅探只保留给已有安装。
@@ -155,10 +165,10 @@
 - 每步是以 `{cli}` 开头的 argv 模板，参数只含 `[A-Za-z0-9._:=@/+-]` 与占位符；步骤缺省不写、不用空列表。`marketplace-cli` 必须有 `install`，且需要 `detect.executables`（`{cli}` 指它）。
 - **占位符补 `{slug}`**：Claude 与 Codex 的 `add_source` 需要市场来源（`owner/repo`、镜像或本地路径），而 `{marketplace}` 是市场名 `agenthelm`，两者不同。§4.3 的示例本来就写了 `{slug}`，占位符清单漏列。
 - **步骤名补 `update_source`**：Claude 的更新是「先刷新市场、再逐个插件更新」（`update_source` 加 `update`），Codex 一条 `plugin marketplace upgrade` 同时升级市场与已装插件（只有 `update_source`）。只声明 `update_source` 时，该命令的读回验证覆盖所有落后的插件。
-- **`installed_state` 取值按布局命名**：Claude 读 `installed_plugins.json` 里的安装记录（`records-json`），不是缓存目录；Codex 读 `plugins/cache/<市场>/<插件>/<版本>/`（`cache-dir-versioned`）；Cursor 读 `plugins/local/<插件>/`（`dropin-dir`）。§4.3 原把 Claude 与 Codex 都归入 `cache-dir-versioned`，与 Claude 的实际布局不符。`cli-list-json`、`extensions-dir` 随 agy、Gemini 在批 E 加入。
+- **`installed_state` 取值按布局命名**：Claude 读 `installed_plugins.json` 里的安装记录（`records-json`），不是缓存目录；Codex 读 `plugins/cache/<市场>/<插件>/<版本>/`（`cache-dir-versioned`）；Cursor 读 `plugins/local/<插件>/`（`dropin-dir`）。§4.3 原把 Claude 与 Codex 都归入 `cache-dir-versioned`，与 Claude 的实际布局不符。`cli-list-json` 随 agy 在批 E 加入；`extensions-dir` 已随 Gemini 加入（§2.3）。
 - 新增字段：`config_dir`（读取器读的客户端目录，可由环境变量覆盖）、`owned_dirs`（旧安装路径归属判断用的目录）、`cli_locations`（命令不在 PATH 时的查找位置）、`scope_flag`（更新时指定安装范围的选项名）、`messages`（文案槽到文案键的映射；文案本身在运行时与 `locale`，声明不带文字）。
 - 能力标志 `legacy_cleanup`、`marketplace_update`、`reinstall_rewrites_all`、`market_pin` 落在 `capabilities`，built-in 可选、缺省为假；`reinstall_rewrites_all` 只放能力标志，不在 `distribution` 重复。
-- `interactive: trust-prompt` 与 `source` 取值已校验；`trust-prompt` 的运行时行为（继承终端）随 Gemini 在批 E 实现，批 C 没有声明它的驱动。
+- `interactive: trust-prompt` 与 `source` 取值已校验；`trust-prompt` 的运行时行为（继承终端）随 Gemini 在批 E 实现，批 C 没有声明它的驱动。**批 E-gemini 已实现**，见 §2.3。
 
 ### 4.4 内容协议
 
@@ -171,7 +181,7 @@
 
 - `content` 是内置驱动的可选顶层块（用户声明一律拒绝）：`manifest`（清单协议列表）、`companions[]`（`{path, role, required_when}`，`role` 取 `manifest`、`mcp`、`hooks`）、`skills`（`agent-skills`）、`context`（`agents-md`、`pointer-file`、`unsupported`）。`content.companions` 描述**随包**的伴随文件：agent-pack 自己的插件目录里必须真实存在（守卫三检查），`doctor` 读它来报告已装插件是否带着这些文件。
 - **`sync.write` 新增 `plugin-install`**：包构建在 agent-pack 自己的暂存目录（`sync.package_dir`，agy 为 `~/.agent-pack/packages/agy/<包名>`），再由客户端自己的命令装进它的存储，命令取自 `distribution.steps`（`install` 含 `{source_dir}`、`uninstall`、`disable`）。`sync.companions` 在这种写入里只要 `mcp`（客户端读自己的 `plugin.json`，不生成第二份清单）。预览只构建与比对，不运行 `install`；`--apply` 才运行客户端命令。包有变化而客户端已装时先 `uninstall` 再 `install`，原先被停用的包重装后再 `disable`；安装失败时恢复上一份暂存包并尝试重装它。
-- **能力标志 `update_by_reinstall`** 与步骤名 **`disable`**：没有更新命令的客户端，`update` 是「逐个落后的插件先卸载再重装」；重装前读回的 `enabled` 为假的插件重装后再执行 `disable`（D-K10 的「按读回的 enabled 恢复」）。预览在第一步的说明里写明启用状态会丢失并恢复。`update_by_reinstall` 要求 `install` 与 `uninstall` 步骤、且没有 `update` 或 `update_source`。
+- **步骤名 `disable`**：没有更新命令的客户端，`update` 是「逐个落后的插件先卸载再重装」，与 Gemini 共用同一个实现（`agenthelm.bundle_dir_step`，`source: bundle-dir` 的客户端各一步：先 `uninstall` 再 `install`）。驱动若声明了 `disable` 步骤，重装前读回的 `enabled` 为假的插件重装后再执行 `disable`（D-K10 的「按读回的 enabled 恢复」）；预览在步骤说明里写明启用状态会丢失并恢复，以及中途失败时插件可能处于未安装状态。
 - **`installed_state: cli-list-json`**：读取器运行驱动 `detect.cli` 声明的只读命令（`plugin list --json`），键 `name enabled version path` 构成已装状态（`cli` 级证据）。**只对本次用 `--client` 点名的客户端运行**：默认的 `check`、`install`、`update` 不启动它的程序（这个客户端也不在默认集合里）；命令失败或输出读不懂时读作「未安装」，不据此下结论。
 - 驱动名单的另一个入口 `AGENTHELM_DRIVERS_DIR`（§7.3）需要同时设置 `AGENTHELM_TEST_DRIVERS=1` 才生效，只补充、不替换内置驱动，由同一套校验加载。
 
@@ -231,8 +241,8 @@
   - 用户级声明含 `hooks`（任意层级）整份拒绝，与 `steps` 同理：用户文件不得决定 hook 运行什么、输出什么。
 
 - **批 E 的落地写法**：
-  - **功能名统一**：`unsupported[].feature` 一律取 §6 矩阵的功能名，hook 事件保留 `hook-event:<规范事件>` 的写法（批 D1 已在代码与 Cursor 的声明里使用，改动面最小）；其余功能名为 `relocate`、`dedupe`、`sync-skills-project`、`sync-mcp-project`、`agents-init-agent-cli`、`nudge-install-hooks`（`agent_pack_clients.UNSUPPORTED_FEATURES`，与 §6 的第一列由守卫三对账）。`hook-event:*` 以外的 `unsupported` 不要求有 `hooks` 声明。
-  - agy 的 `hooks` 声明：`session-start` → `SessionStart`、`stop` → `Stop`，二者的输出适配器都是 `injectSteps`；`prompt-submit` 在 `unsupported`；`stop_prompt` 为 `off`（不在默认集合里，用户在 `nudge.stop_prompt` 里用对象写法逐个客户端开启：`{"agy": "always"}`；字符串写法仍只覆盖默认客户端）。`nudge hook --client` 的取值是「有 `hooks` 声明的可选客户端」（`hook_client_ids()`）。载荷里项目目录的字段名（agy 的 hook 输入）**未观察到**：目录取自载荷的 `cwd`，没有时 hook 静默不输出（§12）。
+  - **功能名统一**：`unsupported[].feature` 一律取 §6 矩阵的功能名，hook 事件保留 `hook-event:<规范事件>` 的写法（批 D1 已在代码与 Cursor 的声明里使用，改动面最小）；其余功能名为 `relocate`、`dedupe`、`sync-skills-project`、`sync-mcp-project`、`agents-init-agent-cli`、`nudge-install-hooks`（`agent_pack_clients.UNSUPPORTED_FEATURES`，与 §6 的第一列由守卫三对账；与 Gemini 批对齐成同一套：`sync-skills`、`sync-mcp` 指整个 `sync` 写入不支持，`sync-skills-project`、`sync-mcp-project` 只指项目级）。`hook-event:*` 以外的 `unsupported` 不要求有 `hooks` 声明。
+  - agy 的 `hooks` 声明：`session-start` → `SessionStart`、`stop` → `Stop`，二者的输出适配器都是 `injectSteps`；`prompt-submit` 在 `unsupported`；`stop_prompt` 为 `off`（不在默认集合里，用户在 `nudge.stop_prompt` 里用对象写法逐个客户端开启：`{"agy": "always"}`；字符串写法仍只覆盖默认客户端）。`nudge hook --client` 的取值是「有 `hooks` 声明的可安装客户端」（`hook_client_ids()`）。载荷里项目目录的字段名（agy 的 hook 输入）**未观察到**：目录取自载荷的 `cwd`，没有时 hook 静默不输出（§12）。
   - 随包的根目录 `hooks.json` 命令是 `python3 ./runtime/agenthelm.py nudge hook --event <事件> --client agy`（相对路径的依据见 §2.2 probe-v4）。
 
 ### 4.8 能力标志
@@ -242,7 +252,6 @@
 - `user_mcp_write`、`project_skill_write`、`user_skill_write`：是否支持对应的 `sync` 写入。
 - `plugin_hooks`、`plugin_mcp`：随插件交付 hooks 与 MCP 的能力。
 - `reinstall_rewrites_all`：重装会重写所有插件（Cursor，对应 `agenthelm.py:632`）。
-- `update_by_reinstall`（批 E）：没有更新命令，更新 = 逐个插件卸载后重装（agy）。它与 `reinstall_rewrites_all` 不同：后者描述「重装一个会重写全部」，这里只重装落后的那几个。
 - `market_pin`：支持市场固定（Claude，对应 `704-705`）。
 - `legacy_cleanup`、`marketplace_update`：对应 `568`、`2084`、`2471` 里按名字取的集合。
 - `project_trust_required`：项目级内容在未信任的工作区不加载（Gemini）。
@@ -275,10 +284,8 @@
 | `inventory` 读（`inventory`） | 支持：`plugin list --json`（`cli`）加文件读取（`file`）；用户级技能目录 `undetermined`，不下结论 | 支持：技能目录与扩展目录，扩展目录只读 |
 | `relocate`、`dedupe`（`relocate`、`dedupe`） | 不支持：技能存储未确定，插件内容不可移动 | 支持：仅限技能目录（`dir` 存储），不处理扩展目录 |
 | `doctor`（`doctor`） | 支持：插件启用状态、`mcp_config.json` 与 `hooks.json` 是否随包、`enable-agent-plugins-spec` 状态未知时显示「未知」 | 支持：显示文件夹信任对项目级内容的影响 |
-| `sync` 写用户级技能（`sync-skills-user`） | 随包交付（包形态，`install` 的技能计数已实测）；不写独立的技能目录（用户级目录未确定） | 不支持 |
-| `sync` 写项目级技能（`sync-skills-project`） | 不支持 | 不支持 |
-| `sync` 写用户级 MCP（`sync-mcp-user`） | 生成含 `mcp.json` 与 `mcp_config.json` 的包再 `plugin install <目录>` | 不支持 |
-| `sync` 写项目级 MCP（`sync-mcp-project`） | 不支持（与 Codex、Cursor 相同，项目级插件目录 `.agents/plugins/` 未验证） | 不支持 |
+| `sync` 写技能（`sync-skills`；只限项目级：`sync-skills-project`） | 用户级随包交付（包形态，`install` 的技能计数已实测），不写独立的技能目录（用户级目录未确定）；项目级不支持（`sync-skills-project`） | 不支持（`sync-skills`）：技能用 `gemini skills link` |
+| `sync` 写 MCP（`sync-mcp`；只限项目级：`sync-mcp-project`） | 用户级：生成含 `mcp.json` 与 `mcp_config.json` 的包再 `plugin install <目录>`；项目级不支持（`sync-mcp-project`，与 Codex、Cursor 相同，项目级插件目录 `.agents/plugins/` 未验证） | 不支持（`sync-mcp`） |
 | agents-init 的 `agent_cli` 与 `check`（`agents-init-agent-cli`，#115） | 不支持（需要模板变化，影响既有项目） | 不支持 |
 | `nudge install-hooks`（`nudge-install-hooks`） | 不适用：hooks 随插件交付 | 不适用 |
 | `prompt-submit` 事件（`hook-event:prompt-submit`） | 不支持（未验证） | 不支持（未验证） |
@@ -326,7 +333,7 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 - **批 B（检测、inventory、relocate、dedupe、doctor）**（读取侧已完成，见 §4.2、§4.5、§4.6；过渡版守卫 `tests/test_client_protocol_guard.py` 带一张逐文件上限表，上限必须恰好等于当前计数，后续批次减少字面量时同步下调）：`precedence` 与存储进声明，`cli` 探针适配，空文件容忍，共享存储去重。
 - **批 C（install、update、legacy）**：`distribution.steps` 与 `installed_state` 读取器取代 `agenthelm.py:312-380`、`1230-1232`、`1888-2003` 的按名字分支，文案走文案键。风险最高，要求既有三家输出逐字节不变，Cursor 的目录解包与 Codex 的残留清理各有回归用例。**已完成**：`agenthelm.py` 的客户端 id 字面量清零（守卫上限表移除该文件）；`agent_pack_claude.py`、`agent_pack_scope.py`、`agent_pack_mcp_write.py`、`agent_pack_codex_mcp.py` 不在 install、update、legacy 的调用路径上（只被 `sync` 与 `agent_pack_config` 的写入侧使用），改名与字面量清零留给批 D；旧安装清理里 `legacy_artifacts` 与 `retire_legacy` 描述的是预发布时代引导脚本留下的一组固定文件，不按客户端 id 分支，未改。
 - **批 D（nudge 与 hooks）**（D1 已完成第一阶段：事件映射、输出适配器、停止提示默认值与嗅探改读声明，`agent_pack_nudge.py` 的客户端 id 字面量清零；根目录 `hooks.json` 与 `mcp_config.json` 属第二阶段，待 agy 实机探测）：事件映射与输出适配器取代 `agent_pack_nudge.py` 的名字分支，hook 命令带 `--client`，保留嗅探给已有安装，新增 `injectSteps` 适配器与 agent-pack 根目录的 `hooks.json`、`mcp_config.json`。
-- **批 E（agy 与 gemini 声明、夹具、守卫收尾）**：两份声明加夹具，守卫一的豁免表只剩 `launcher.sh`，支持矩阵的 `unsupported` 条目与命令输出落地。**agy 部分已完成**（Gemini 另有 session）：`drivers/agy.json`、`tests/fixtures/clients/agy/`（桩 `agy`、配置树、插件包）、随包的根目录 `hooks.json` 与 `mcp_config.json`、`detect.cli` 接线、`--client agy` 进入受支持集合（`selectable_ids`，不进默认集合）、写入侧容忍 0 字节 JSON、三条守卫收尾。核心代码里新增的是**按格式与分发类型命名**的能力（`cli-list-json` 读取器、`plugin-install` 写入、`update_by_reinstall`、`content` 块），没有 agy 的字面量。对既有三个客户端的输出逐字节不变，已知并允许的差异只有：`agenthelm clients`、`inventory --client all` 的客户端列表与 `--client` 的取值列表里多出 agy，以及上面的 0 字节文件。
+- **批 E（agy 与 gemini 声明、夹具、守卫收尾）**：两份声明加夹具，守卫一的豁免表只剩 `launcher.sh`，支持矩阵的 `unsupported` 条目与命令输出落地。**agy 部分已完成**（Gemini 另有 session）：`drivers/agy.json`、`tests/fixtures/clients/agy/`（桩 `agy`、配置树、插件包）、随包的根目录 `hooks.json` 与 `mcp_config.json`、`detect.cli` 接线、`--client agy` 进入受支持集合（`installable_ids`，不进默认集合）、写入侧容忍 0 字节 JSON、三条守卫收尾。核心代码里新增的是**按格式与分发类型命名**的能力（`cli-list-json` 读取器、`plugin-install` 写入、`update_by_reinstall`、`content` 块），没有 agy 的字面量。对既有三个客户端的输出逐字节不变，已知并允许的差异只有：`agenthelm clients`、`inventory --client all` 的客户端列表与 `--client` 的取值列表里多出 agy，以及上面的 0 字节文件。
 - **并行轨 F（Phase 3，§9）**：运行时解析函数与同级插件查找；与批 A、B 文件不交叠时可并行，与批 C 交叠（`agenthelm.py`）时串行。
 
 `agent_pack_claude.py`、`agent_pack_codex_mcp.py`、`agent_pack_mcp_write.py`、`agent_pack_scope.py` 的文件名含客户端名，批 C 与批 D 中按职责重命名（例如 `agent_pack_claude.py` 里的 Claude 插件包构造按「native-package」职责归类），重命名随对应批进行，不单独成批。**批 D2 已完成重命名**（`git mv` 保留历史）：
@@ -400,9 +407,12 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 7. **Gemini 的 MCP、`$VAR` 展开、`.agents/skills` 别名、AGENTS.md 处理**：只有官方文档依据。
 8. **agy 的 GitHub 地址与市场形式安装**：只文档化，未试。
 9. **Agent Plugins 1.1.0 草案的可移植 hooks**：草案正文未读；它若定稿，`hooks.events` 的映射可以简化。
-10. **（批 E 新增）`agy plugin install` 对已装同名插件的行为**：桩假定「已装则失败」，所以 `update` 与 `sync` 先卸载再安装；真实行为未试。`uninstall` 是否保留启用状态（`config.json` 的 `plugins.<名>.enabled`）、重装后默认是否启用，都未验证，现行做法是按重装前读回的 `enabled` 恢复。
-11. **（批 E 新增）三个既有客户端对根目录多余文件的容忍**：见 §10，只有文档依据。
-12. **（批 E 新增）`plugin list --json` 在没有任何插件时的输出**（空数组还是别的形状）与 `path` 字段对符号链接安装的表现：读取器按「JSON 数组，或含 `plugins` 数组的对象」解析，其他形状读作未安装。
+10. **Gemini 安装的交互结果**：用户在信任确认处拒绝时的退出码与输出、`extensions uninstall` 是否也要确认、`gemini extensions update` 对本地目录安装的行为（本版 `update` 用卸载后重装代替），需要真实 Gemini CLI 或其源码确认；本批只用桩验证了命令行、终端继承与读回。
+11. **随包提供 `gemini-extension.json`**：版本载体同步、`hooks/hooks.json` 的变量名、`skills/` 的加载行为都没有实测；本版不随包（`shipped: false`），发布包安装因此受阻，见 §2.3「批 E-gemini 已实现」。
+12. **Gemini 扩展内的技能**：`~/.gemini/extensions/<插件>/skills/` 没有作为 inventory 的存储（存储路径不支持通配）；扩展自带的技能只出现在 `extensions list -o json` 的 `skills[]`，本版不读取。
+13. **（批 E 新增）`agy plugin install` 对已装同名插件的行为**：桩假定「已装则失败」，所以 `update` 与 `sync` 先卸载再安装；真实行为未试。`uninstall` 是否保留启用状态（`config.json` 的 `plugins.<名>.enabled`）、重装后默认是否启用，都未验证，现行做法是按重装前读回的 `enabled` 恢复。
+14. **（批 E 新增）三个既有客户端对根目录多余文件的容忍**：见 §10，只有文档依据。
+15. **（批 E 新增）`plugin list --json` 在没有任何插件时的输出**（空数组还是别的形状）与 `path` 字段对符号链接安装的表现：读取器按「JSON 数组，或含 `plugins` 数组的对象」解析，其他形状读作未安装。
 
 ## 13. 决策记录
 

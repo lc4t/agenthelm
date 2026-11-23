@@ -70,13 +70,12 @@ class DeclarationTests(unittest.TestCase):
         driver = registry.get("agy")
         self.assertEqual((driver["display"], driver["lifecycle"]), ("Antigravity", "active"))
         self.assertNotIn("agy", registry.default_ids())
-        self.assertIn("agy", registry.selectable_ids())
+        self.assertIn("agy", registry.installable_ids())
         self.assertEqual(driver["detect"]["executables"], ["agy"])
         self.assertEqual(driver["detect"]["cli"], {"argv": ["plugin", "list", "--json"], "stream": "stdout", "parse": "json"})
         self.assertEqual(registry.expand_step(driver, "install", cli="agy", source_dir="/x"), ["agy", "plugin", "install", "/x"])
         self.assertEqual(registry.expand_step(driver, "uninstall", cli="agy", plugin="p"), ["agy", "plugin", "uninstall", "p"])
         self.assertIsNone(registry.expand_step(driver, "update", cli="agy"))   # there is no update command
-        self.assertTrue(registry.supports("agy", "update_by_reinstall"))
         self.assertFalse(registry.supports("agy", "reinstall_rewrites_all"))
 
     def test_store_statuses_follow_what_was_observed(self) -> None:
@@ -119,6 +118,20 @@ class DeclarationTests(unittest.TestCase):
         self.assertFalse(Path("/nonexistent/should-not-be-written").exists())
 
 
+class LifecycleTests(unittest.TestCase):
+    def test_an_active_client_carries_no_deprecation_marker_unlike_a_deprecated_one(self) -> None:
+        data = registry.report(Path("/nonexistent-home"), lambda name: None, lambda name: None)
+        rows = {item["id"]: item for item in data["clients"]}
+        self.assertEqual(registry.lifecycle(registry.get("agy")), "active")
+        self.assertNotIn("lifecycle", rows["agy"])
+        self.assertEqual(rows["gemini"]["lifecycle"], "deprecated")   # the contrast: only a deprecated client is marked
+        text = [line for line in registry.render_text(data).splitlines() if line.lstrip().startswith("agy")]
+        self.assertEqual(len(text), 1)
+        self.assertNotIn(agenthelm._("；已弃用（厂商已用其他客户端取代它）"), text[0])
+        self.assertNotIn("deprecated", text[0])
+        self.assertNotIn("agy", registry.deprecated_ids())
+
+
 class InstallAndUpdateTests(Fixture):
     def test_install_preview_names_the_command_and_writes_nothing(self) -> None:
         code, payload = self.run_json("install", "--client", "agy", "--source", str(self.source))
@@ -150,9 +163,11 @@ class InstallAndUpdateTests(Fixture):
         self.install_old()
         code, payload = self.run_json("update", "--no-project", "--client", "agy", "--source", str(self.source))
         steps = [s for s in payload["steps"] if s["client"] == "agy"]
-        self.assertEqual([s["command"].split(" ", 1)[1] for s in steps],
-                         ["plugin uninstall agent-pack", f"plugin install {self.source / 'plugins/agent-pack'}"])
-        self.assertIn("启用状态", steps[0]["note"])   # the preview says the enabled state is lost and restored
+        self.assertEqual(len(steps), 1)   # the one step both bundle-dir clients share: uninstall, then install
+        self.assertEqual(steps[0]["command"], f"{self.bin / 'agy'} plugin uninstall agent-pack && "
+                                              f"{self.bin / 'agy'} plugin install {self.source / 'plugins/agent-pack'}")
+        self.assertIn("没有 plugin update", steps[0]["note"])   # the risk is written in the preview (D-K10)
+        self.assertIn("重装后按卸载前读回的状态恢复", steps[0]["note"])
         self.assertEqual(self.commands(), [])
         self.assertEqual(self.agy_state(), {"agent-pack": {"enabled": True}})
 
@@ -161,8 +176,8 @@ class InstallAndUpdateTests(Fixture):
         code, payload = self.run_json("update", "--no-project", "--client", "agy", "--source", str(self.source), "--apply")
         self.assertEqual(code, 0, payload)
         self.assertEqual(self.commands(), ["plugin uninstall agent-pack", f"plugin install {self.source / 'plugins/agent-pack'}"])
-        reinstalled = [s for s in payload["steps"] if s["client"] == "agy"][-1]
-        self.assertEqual((reinstalled["status"], reinstalled["before"], reinstalled["after"]), ("applied", None, "2.0.0"))
+        step = [s for s in payload["steps"] if s["client"] == "agy"][-1]
+        self.assertEqual((step["status"], step["before"], step["after"]), ("applied", "1.0.0", "2.0.0"))
         self.assertEqual(self.agy_state(), {"agent-pack": {"enabled": True}})
 
     def test_a_disabled_plugin_is_disabled_again_after_the_reinstall(self) -> None:
@@ -170,24 +185,40 @@ class InstallAndUpdateTests(Fixture):
         _code, payload = self.run_json("update", "--no-project", "--client", "agy", "--source", str(self.source), "--apply")
         self.assertEqual(self.commands(), ["plugin uninstall agent-pack", f"plugin install {self.source / 'plugins/agent-pack'}",
                                            "plugin disable agent-pack"])
-        self.assertEqual(self.agy_state(), {"agent-pack": {"enabled": False}})
-        self.assertTrue(all(s["status"] == "applied" for s in payload["steps"] if s["client"] == "agy"))
+        self.assertEqual(self.agy_state(), {"agent-pack": {"enabled": False}})   # D-K10: restored from the value read back
+        step = [s for s in payload["steps"] if s["client"] == "agy"][-1]
+        self.assertEqual(step["status"], "applied")
+        self.assertTrue(step["result"]["restored_disabled"])
 
-    def test_a_failed_uninstall_stops_the_rest_of_the_update(self) -> None:
+    def test_a_plugin_that_was_enabled_gets_no_disable_command(self) -> None:
+        self.install_old(enabled=True)
+        self.run_json("update", "--no-project", "--client", "agy", "--source", str(self.source), "--apply")
+        self.assertNotIn("plugin disable agent-pack", self.commands())
+
+    def test_a_failed_disable_after_the_reinstall_is_reported(self) -> None:
+        self.install_old(enabled=False)
+        with mock.patch.dict(os.environ, {"AGY_STUB_DISABLE_FAIL": "1"}):
+            _code, payload = self.run_json("update", "--no-project", "--client", "agy", "--source", str(self.source), "--apply")
+        step = [s for s in payload["steps"] if s["client"] == "agy"][-1]
+        self.assertEqual(step["status"], "failed")
+        self.assertIn("恢复停用状态失败", step["error"])
+
+    def test_a_failed_uninstall_fails_the_step_and_installs_nothing(self) -> None:
         self.install_old()
         with mock.patch.dict(os.environ, {"AGY_STUB_UNINSTALL_FAIL": "1"}):
             _code, payload = self.run_json("update", "--no-project", "--client", "agy", "--source", str(self.source), "--apply")
-        statuses = [s["status"] for s in payload["steps"] if s["client"] == "agy"]
-        self.assertEqual(statuses[0], "failed")
-        self.assertEqual(set(statuses[1:]), {"not_run"})
+        steps = [s for s in payload["steps"] if s["client"] == "agy"]
+        self.assertEqual([s["status"] for s in steps], ["failed"])
+        self.assertIn("卸载旧版失败", steps[0]["error"])
+        self.assertEqual(self.commands(), ["plugin uninstall agent-pack"])
         self.assertFalse(payload["ok"])
 
-    def test_an_unreachable_release_blocks_with_the_reason_and_runs_nothing(self) -> None:
+    def test_an_unreachable_release_is_reported_and_runs_nothing(self) -> None:
         write(self.latest_file, {**LATEST, "release": {"tag": "v2.0.0"}})
         _code, payload = self.run_json("install", "--client", "agy", "--apply")
         step = payload["steps"][0]
-        self.assertEqual(step["status"], "blocked")
-        self.assertIn("--source", step["blocked"])
+        self.assertEqual(step["status"], "unavailable")
+        self.assertIn("--source", step["error"])
         self.assertEqual(self.commands(), [])
 
     def test_check_reads_the_install_state_through_the_plugin_list(self) -> None:

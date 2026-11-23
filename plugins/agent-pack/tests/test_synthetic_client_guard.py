@@ -49,7 +49,7 @@ def declaration(client: str, program: str) -> dict:
                        {"scope": "project", "path": f"<project>/.{client}/skills", "format": "dir", "write_target": True}],
             "mcp": [{"scope": "user", "path": f"~/.{client}/mcp.json", "format": "json", "root_key": "mcpServers"}]},
         "capabilities": {"default_set": False, "read_only": False, "project_mcp_write": False, "user_mcp_write": True,
-                         "user_skill_write": True, "project_skill_write": False, "update_by_reinstall": True},
+                         "user_skill_write": True, "project_skill_write": False},
         "precedence": [{"kind": "skills", "rule": "precedence-undocumented", "evidence": "unknown", "source_url": None},
                        {"kind": "mcp", "rule": "precedence-undocumented", "evidence": "unknown", "source_url": None}],
         "sync": {"write": "plugin-install", "package_dir": f"~/.agent-pack/packages/{client}",

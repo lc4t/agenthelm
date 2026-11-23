@@ -1,0 +1,140 @@
+{
+  "schema_version": 2,
+  "id": "gemini",
+  "display": "Gemini CLI",
+  "lifecycle": "deprecated",
+  "detect": {
+    "executables": [
+      "gemini"
+    ],
+    "dirs": [
+      {
+        "path": "~/.gemini"
+      }
+    ]
+  },
+  "runtime_cache": [],
+  "distribution": {
+    "type": "marketplace-cli",
+    "source": "bundle-dir",
+    "interactive": "trust-prompt",
+    "installed_state": "extensions-dir",
+    "config_dir": {
+      "path": "~/.gemini"
+    },
+    "steps": {
+      "install": [
+        "{cli}",
+        "extensions",
+        "install",
+        "{source_dir}"
+      ],
+      "uninstall": [
+        "{cli}",
+        "extensions",
+        "uninstall",
+        "{plugin}"
+      ]
+    },
+    "owned_dirs": [
+      {
+        "path": "~/.gemini"
+      }
+    ]
+  },
+  "content": {
+    "manifest": [
+      "gemini-extension"
+    ],
+    "companions": [
+      {
+        "path": "gemini-extension.json",
+        "role": "manifest",
+        "required_when": "always",
+        "shipped": false
+      }
+    ],
+    "skills": "agent-skills",
+    "context": "unsupported"
+  },
+  "stores": {
+    "skills": [
+      {
+        "scope": "user",
+        "path": "~/.gemini/skills",
+        "format": "dir",
+        "status": "observed",
+        "write_target": true
+      },
+      {
+        "scope": "user",
+        "path": "~/.agents/skills",
+        "format": "dir",
+        "status": "documented"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.gemini/skills",
+        "format": "dir",
+        "status": "observed",
+        "write_target": true
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.agents/skills",
+        "format": "dir",
+        "status": "documented"
+      }
+    ],
+    "mcp": []
+  },
+  "capabilities": {
+    "default_set": false,
+    "read_only": false,
+    "project_mcp_write": false,
+    "project_trust_required": true
+  },
+  "precedence": [
+    {
+      "kind": "mcp",
+      "rule": "precedence-undocumented",
+      "evidence": "unknown",
+      "source_url": null
+    }
+  ],
+  "hooks": {
+    "events": {
+      "session-start": "SessionStart"
+    },
+    "output": {
+      "session-start": "hookSpecificOutput"
+    },
+    "stop_prompt": "off",
+    "config": {
+      "format": "group-event-handlers",
+      "plugin_file": "hooks/hooks.json"
+    }
+  },
+  "unsupported": [
+    {
+      "feature": "hook-event:prompt-submit",
+      "reason": "no mapping to a Gemini CLI event has been verified (BeforeAgent is untested)"
+    },
+    {
+      "feature": "hook-event:stop",
+      "reason": "no mapping to a Gemini CLI event has been verified (AfterAgent is untested)"
+    },
+    {
+      "feature": "sync-skills",
+      "reason": "Gemini CLI links skills with its own command (gemini skills link); sync does not write them"
+    },
+    {
+      "feature": "sync-mcp",
+      "reason": "Gemini CLI keeps MCP servers in settings.json, whose behaviour is documented but unverified"
+    },
+    {
+      "feature": "agents-init-agent-cli",
+      "reason": "supporting Gemini CLI in the agents-init entry files needs a template change that affects existing projects"
+    }
+  ]
+}

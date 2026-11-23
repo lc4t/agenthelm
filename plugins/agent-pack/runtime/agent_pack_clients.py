@@ -32,12 +32,13 @@ CAPABILITIES = ("default_set", "read_only", "project_mcp_write")
 # Flags added in schema v2 (design section 4.8); built-in drivers only, optional (absent means false). ``clients`` keeps
 # reporting the three above, so its output does not change when a flag is added here.
 EXTENDED_CAPABILITIES = ("legacy_cleanup", "marketplace_update", "reinstall_rewrites_all", "market_pin",
-                         "user_mcp_write", "project_skill_write", "user_skill_write", "update_by_reinstall")
+                         "user_mcp_write", "project_skill_write", "user_skill_write", "project_trust_required")
 LIFECYCLES = ("active", "deprecated")
 STORE_STATUSES = ("observed", "documented", "undetermined")
 SCHEMA_VERSIONS = (1, 2)
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
-INSTALLED_STATES = ("records-json", "cache-dir-versioned", "dropin-dir", "cli-list-json")  # the readers agenthelm.py implements
+INSTALLED_STATES = ("records-json", "cache-dir-versioned", "dropin-dir", "extensions-dir",
+                    "cli-list-json")  # the readers agenthelm.py implements
 INTERACTIVE = ("none", "trust-prompt")
 SOURCES = ("marketplace", "bundle-dir")
 STEP_NAMES = ("add_source", "install", "update_source", "update", "uninstall", "disable", "verify")
@@ -51,14 +52,6 @@ STEP_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:" + "|".join(PLACEHOLDERS) +
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
 OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp", "content"}
-# ``content`` (design section 4.4): the manifest protocols a client reads, the files it wants beside the manifest, how it
-# takes Skills and what an agents-init entry point is for it.
-CONTENT_MANIFESTS = ("agent-plugins-1.0", "claude-plugin", "codex-plugin", "cursor-plugin", "gemini-extension",
-                     "antigravity-plugin")
-CONTENT_ROLES = ("manifest", "mcp", "hooks")
-CONTENT_SKILLS = ("agent-skills",)
-CONTENT_CONTEXTS = ("agents-md", "pointer-file", "unsupported")
-COMPANION_REQUIRED_WHEN = ("always", "agent-plugins-spec-off")
 HOOK_EVENTS = ("session-start", "prompt-submit", "stop")  # canonical event names (design section 4.7)
 # Output adapters by output format, never by client id; agent_pack_nudge.ADAPTERS implements exactly these.
 HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps")
@@ -67,9 +60,17 @@ HOOKS_KEYS = {"events", "output", "stop_prompt", "shows_system_message", "stop_s
 HOOK_CONFIG_KEYS = {"format", "plugin_file", "user", "project"}
 SNIFF_KEYS = {"priority", "payload_keys", "env", "fallback"}
 STOP_MODES = ("off", "on-completion", "always")
-# The feature names of the support matrix (design section 6); ``hook-event:<event>`` is the form for the hook events.
-UNSUPPORTED_FEATURES = (*(f"hook-event:{event}" for event in HOOK_EVENTS), "relocate", "dedupe", "sync-skills-project",
-                        "sync-mcp-project", "agents-init-agent-cli", "nudge-install-hooks")
+# Feature names of the support matrix (design section 6); ``hook-event:*`` are the canonical hook events.
+UNSUPPORTED_FEATURES = (*(f"hook-event:{event}" for event in HOOK_EVENTS), "relocate", "dedupe", "sync-skills",
+                        "sync-mcp", "sync-skills-project", "sync-mcp-project", "agents-init-agent-cli",
+                        "nudge-install-hooks")
+# ``content`` (design section 4.4): which manifest protocols a client reads and which companion files it requires.
+MANIFESTS = ("agent-plugins-1.0", "claude-plugin", "codex-plugin", "cursor-plugin", "gemini-extension", "antigravity-plugin")
+COMPANION_ROLES = ("manifest", "mcp", "hooks")
+COMPANION_ENTRY_KEYS = {"path", "role", "required_when", "shipped", "optional"}
+CONTENT_KEYS = {"manifest", "companions", "skills", "context"}
+CONTENT_SKILLS = ("agent-skills",)
+CONTENT_CONTEXTS = ("agents-md", "pointer-file", "unsupported")
 CACHE_KEYS = {"base", "env", "glob"}
 STORE_KEYS = {"scope", "path", "format", "status", "write_target", "root_key", "managed_by", "trust_required"}
 MANAGED_BY = ("agent-pack-state",)  # entries of this store are recognised through agent-pack's own sync state records
@@ -219,6 +220,27 @@ def probe_problem(probe: Any) -> str | None:
     return None
 
 
+def _check_content(value: Any, source: str) -> None:
+    _check(isinstance(value, dict) and {"manifest"} <= set(value) <= CONTENT_KEYS, source,
+           f"content needs manifest (optional: {', '.join(sorted(CONTENT_KEYS - {'manifest'}))})")
+    manifests = value["manifest"]
+    _check(isinstance(manifests, list) and manifests and all(item in MANIFESTS for item in manifests), source,
+           f"content.manifest lists protocols from {', '.join(MANIFESTS)}")
+    companions = value.get("companions", [])
+    _check(isinstance(companions, list), source, "content.companions must be a list")
+    for entry in companions:
+        _check(isinstance(entry, dict) and {"path", "role"} <= set(entry) <= COMPANION_ENTRY_KEYS
+               and _is_text(entry["path"], 100) and not entry["path"].startswith("/") and ".." not in entry["path"].split("/")
+               and entry["role"] in COMPANION_ROLES and (entry.get("required_when") is None or _is_text(entry["required_when"]))
+               and isinstance(entry.get("shipped", True), bool) and isinstance(entry.get("optional", False), bool), source,
+               f"content.companions[] needs a relative path and a role ({', '.join(COMPANION_ROLES)}); "
+               "optional: required_when, shipped (false: this release does not ship the file), optional (true: a plugin may "
+               "leave the file out, as most do; only the plugins that need it carry it)")
+    _check(value.get("skills", CONTENT_SKILLS[0]) in CONTENT_SKILLS, source, "content.skills must be agent-skills")
+    _check(value.get("context", CONTENT_CONTEXTS[0]) in CONTENT_CONTEXTS, source,
+           f"content.context must be one of {', '.join(CONTENT_CONTEXTS)}")
+
+
 def _check_hooks(data: dict, source: str) -> None:
     unsupported = data.get("unsupported", [])
     _check(isinstance(unsupported, list), source, "unsupported must be a list")
@@ -286,31 +308,6 @@ def _check_precedence(entries: Any, source: str) -> None:
                source, "precedence[].when must be {scopes: [...], match: exact | includes}")
         _check(entry.get("winner", when["scopes"][0]) in when["scopes"], source,
                "precedence[].winner must be one of the when.scopes")
-
-
-def _check_content(value: Any, source: str) -> None:
-    _check(isinstance(value, dict) and {"manifest"} <= set(value) <= {"manifest", "companions", "skills", "context"}, source,
-           "content needs manifest (optional: companions, skills, context)")
-    manifests = value["manifest"]
-    _check(isinstance(manifests, list) and manifests and all(item in CONTENT_MANIFESTS for item in manifests)
-           and len(set(manifests)) == len(manifests), source,
-           f"content.manifest must list manifest protocols from {', '.join(CONTENT_MANIFESTS)}")
-    _check(value.get("skills", CONTENT_SKILLS[0]) in CONTENT_SKILLS, source, f"content.skills must be {CONTENT_SKILLS[0]}")
-    _check(value.get("context", CONTENT_CONTEXTS[0]) in CONTENT_CONTEXTS, source,
-           f"content.context must be one of {', '.join(CONTENT_CONTEXTS)}")
-    companions = value.get("companions", [])
-    _check(isinstance(companions, list), source, "content.companions must be a list")
-    paths: set[str] = set()
-    for entry in companions:
-        _check(isinstance(entry, dict) and {"path", "role"} <= set(entry) <= {"path", "role", "required_when"}, source,
-               "content.companions[] needs path, role (optional: required_when)")
-        _check(_is_text(entry["path"], 100) and not entry["path"].startswith("/") and ".." not in entry["path"].split("/"),
-               source, "content.companions[].path must be a relative file path without ..")
-        _check(entry["role"] in CONTENT_ROLES, source, f"content.companions[].role must be one of {', '.join(CONTENT_ROLES)}")
-        _check(entry.get("required_when", COMPANION_REQUIRED_WHEN[0]) in COMPANION_REQUIRED_WHEN, source,
-               f"content.companions[].required_when must be one of {', '.join(COMPANION_REQUIRED_WHEN)}")
-        _check(entry["path"] not in paths, source, f"content.companions lists {entry['path']} twice")
-        paths.add(entry["path"])
 
 
 def _check_sync(value: Any, source: str) -> None:
@@ -449,10 +446,6 @@ def validate_builtin(data: Any, source: str) -> dict:
            and all(isinstance(v, bool) for v in capabilities.values()), source,
            f"capabilities must hold the booleans {', '.join(CAPABILITIES)} (optional: {', '.join(EXTENDED_CAPABILITIES)})")
     _check_precedence(data.get("precedence", []), source)
-    _check(not capabilities.get("update_by_reinstall") or (
-        isinstance(data["distribution"], dict) and {"install", "uninstall"} <= set(data["distribution"].get("steps", {}))
-        and not {"update", "update_source"} & set(data["distribution"].get("steps", {}))), source,
-        "capabilities.update_by_reinstall needs the install and uninstall steps and no update step")
     for flag in ("user_mcp_write", "user_skill_write"):
         _check(not capabilities.get(flag) or "sync" in data, source, f"capabilities.{flag} needs a sync declaration")
     for flag in ("project_mcp_write", "project_skill_write"):
@@ -524,6 +517,48 @@ def distribution(driver: dict) -> dict:
 
 def distribution_type(driver: dict) -> str:
     return distribution(driver)["type"]
+
+
+def lifecycle(driver: dict) -> str:
+    """``active`` (the default) or ``deprecated``: the client's vendor has replaced it (design section 4.1)."""
+    return driver.get("lifecycle", LIFECYCLES[0])
+
+
+def deprecated_ids() -> tuple[str, ...]:
+    return tuple(item["id"] for item in BUILTIN if lifecycle(item) == "deprecated")
+
+
+def installable_ids() -> tuple[str, ...]:
+    """The built-in drivers ``install`` and ``update`` can address by name: every distribution but ``none``. The default
+    set comes first; the others (opt-in, possibly deprecated) are only used when named or with ``--client all``."""
+    return tuple(item["id"] for item in BUILTIN if distribution_type(item) != "none")
+
+
+def interactive(driver: dict) -> str:
+    """``none`` or ``trust-prompt``: whether the install command asks the user for a confirmation (design section 4.3)."""
+    return distribution(driver).get("interactive", INTERACTIVE[0])
+
+
+def source_kind(driver: dict) -> str:
+    """``marketplace`` (the client fetches the source) or ``bundle-dir`` (agenthelm hands it a plugin directory)."""
+    return distribution(driver).get("source", SOURCES[0])
+
+
+def companions(driver: dict, role: str | None = None) -> tuple[dict, ...]:
+    """The companion files ``content.companions`` declares (optionally of one ``role``) that this release ships."""
+    found = driver.get("content", {}).get("companions", [])
+    return tuple(item for item in found if (role is None or item["role"] == role) and item.get("shipped", True))
+
+
+def required_files(driver: dict) -> tuple[str, ...]:
+    """Files every plugin directory handed to this client must hold: the declared companions that are not ``optional``,
+    shipped or not."""
+    return tuple(item["path"] for item in driver.get("content", {}).get("companions", []) if not item.get("optional", False))
+
+
+def manifest_file(driver: dict) -> str | None:
+    """The declared companion with role ``manifest`` (the file naming and versioning the plugin for this client)."""
+    return next((item["path"] for item in driver.get("content", {}).get("companions", []) if item["role"] == "manifest"), None)
 
 
 def ids_of_type(kind: str) -> tuple[str, ...]:
@@ -605,18 +640,15 @@ def all_ids() -> tuple[str, ...]:
     return BUILTIN_IDS
 
 
-def selectable_ids() -> tuple[str, ...]:
-    """The clients a command that writes (``install``, ``update``, ``sync``, hooks) accepts with ``--client``: the default
-    set first, then the other drivers that are not read-only, in registry order. A client outside the default set is
-    acted on only when named."""
-    return tuple(item["id"] for item in BUILTIN
-                 if item["capabilities"]["default_set"] or not item["capabilities"]["read_only"])
+def sync_client_ids() -> tuple[str, ...]:
+    """The installable clients that declare a ``sync`` (what ``sync`` and ``reconcile`` accept with ``--client``)."""
+    return tuple(item["id"] for item in BUILTIN if item["id"] in installable_ids() and "sync" in item)
 
 
 def hook_client_ids() -> tuple[str, ...]:
     """The selectable clients that declare hooks, in registry order (what ``nudge hook --client`` accepts)."""
-    selectable = selectable_ids()
-    return tuple(item["id"] for item in BUILTIN if item["id"] in selectable and "hooks" in item)
+    installable = installable_ids()
+    return tuple(item["id"] for item in BUILTIN if item["id"] in installable and "hooks" in item)
 
 
 def unsupported(client: str, feature: str) -> str | None:
@@ -938,10 +970,13 @@ def report(home: Path, getenv: Callable[[str], str | None], find_cli: Callable[[
     clients = []
     for item in BUILTIN:
         found = detect(item, home, getenv, find_cli)
-        clients.append({"id": item["id"], "display": item["display"], "source": "builtin", **found,
-                        "distribution": distribution_type(item),
-                        "capabilities": {key: item["capabilities"][key] for key in CAPABILITIES},
-                        "install_supported": distribution_type(item) != "none"})
+        entry = {"id": item["id"], "display": item["display"], "source": "builtin", **found,
+                 "distribution": distribution_type(item),
+                 "capabilities": {key: item["capabilities"][key] for key in CAPABILITIES},
+                 "install_supported": distribution_type(item) != "none"}
+        if lifecycle(item) != LIFECYCLES[0]:  # reported only when it differs from the default: other entries are unchanged
+            entry["lifecycle"] = lifecycle(item)
+        clients.append(entry)
     declared, warnings = load_declarations(home, getenv)
     for item in declared:
         probe = {"detect": {"executables": item["detect"].get("executables", []),
@@ -964,7 +999,8 @@ def render_text(data: dict) -> str:
             seen = _("已声明，本版未支持安装")
         flags = [key for key, value in item["capabilities"].items() if value]
         lines.append("  " + _("{0}（{1}）：{2}；分发 {3}；能力 {4}").format(
-            item["id"], item["display"], seen, item["distribution"], ", ".join(flags) or "-"))
+            item["id"], item["display"], seen, item["distribution"], ", ".join(flags) or "-")
+            + (_("；已弃用（厂商已用其他客户端取代它）") if item.get("lifecycle") == "deprecated" else ""))
     for warning in data["warnings"]:
         lines.append(_("警告：忽略声明 {0}：{1}").format(warning["file"], warning["reason"]))
     return "\n".join(lines) + "\n"
