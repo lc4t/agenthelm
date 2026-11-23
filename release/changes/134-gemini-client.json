@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。",
+    "en": "Adds a declaration for Gemini CLI as a deprecated client (gemini, outside the default set: name it with --client gemini or --client all). install / update use its extensions install / uninstall commands; that command asks you to confirm folder trust, so --apply hands it your terminal and agenthelm does not answer, forward or bypass the question, and does not start the command without a terminal. Adds read-only reading of installed extensions (~/.gemini/extensions). This release does not ship the gemini-extension.json that Gemini requires, so an install without --source is blocked in the preview; the behaviour of the real Gemini CLI is not verified in this version. Output for the existing claude / codex / cursor clients is unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

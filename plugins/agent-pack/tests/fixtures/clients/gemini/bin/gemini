@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Stub of the Gemini CLI for the tests: records what it was started with, then behaves like the commands the tests use.
+
+It never answers anything: it only observes whether it was given a terminal and whether anything was written to its
+standard input. ``extensions install <dir>`` copies the directory to ``$HOME/.gemini/extensions/<name>`` (the real client
+asks the user to trust the folder first); ``extensions uninstall <name>`` removes it. ``GEMINI_STUB_EXIT`` sets the exit
+code of every command (the install does nothing then). Everything is recorded in ``$GEMINI_STUB_LOG``.
+"""
+import json
+import os
+import select
+import shutil
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+readable = bool(select.select([sys.stdin], [], [], 0.3)[0]) if sys.stdin and not sys.stdin.closed else False
+with open(os.environ["GEMINI_STUB_LOG"], "a", encoding="utf-8") as log:
+    log.write(json.dumps({"argv": args, "stdin_tty": sys.stdin.isatty(), "stdout_tty": sys.stdout.isatty(),
+                          "stderr_tty": sys.stderr.isatty(), "stdin_has_data": readable}) + "\n")
+code = int(os.environ.get("GEMINI_STUB_EXIT", "0"))
+if code:
+    sys.exit(code)
+extensions = Path(os.environ["HOME"]) / ".gemini" / "extensions"
+if args[:2] == ["extensions", "install"]:
+    source = Path(args[2])
+    name = json.loads((source / "gemini-extension.json").read_text(encoding="utf-8"))["name"]
+    shutil.rmtree(extensions / name, ignore_errors=True)
+    shutil.copytree(source, extensions / name)
+elif args[:2] == ["extensions", "uninstall"]:
+    shutil.rmtree(extensions / args[2], ignore_errors=True)

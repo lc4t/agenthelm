@@ -77,6 +77,16 @@
 | hooks | 配置在 `settings.json` 的 `hooks` 对象，扩展内在 `hooks/hooks.json`；事件 `SessionStart SessionEnd BeforeTool AfterTool BeforeAgent AfterAgent BeforeModel AfterModel BeforeToolSelection Notification PreCompress`；`SessionStart` 输出 `hookSpecificOutput.additionalContext`；stdin 字段 `session_id transcript_path cwd hook_event_name timestamp` | 官方文档 |
 | MCP | 在 `settings.json` 的 `mcpServers`，键 `command url httpUrl args env cwd headers trust …`；`$VAR` 展开只在 `env` 对象里有文字依据 | 官方文档，**未验证** |
 
+**批 E-gemini 已实现**（`drivers/gemini.json`，夹具 `tests/fixtures/clients/gemini/`；全部用桩 `gemini` 验证，**没有在真实 Gemini CLI 上运行**，验收环境若没有 Gemini 则为未验证）：
+
+- 声明：`lifecycle: deprecated`，`default_set: false`，`detect` 为可执行文件 `gemini` 与目录 `~/.gemini`（不声明 `detect.cli`：`extensions list -o json` 在 stderr 的行为已实测，但本版没有 inventory 用它）；`distribution.source: bundle-dir`、`interactive: trust-prompt`、`installed_state: extensions-dir`；`steps.install = extensions install {source_dir}`、`steps.uninstall = extensions uninstall {plugin}`（没有 `update`：对本地目录安装，`extensions update` 的行为未验证）；`stores.skills`：用户 `~/.gemini/skills` 与项目 `<project>/.gemini/skills`（`observed`，`write_target`）、`~/.agents/skills` 与 `<project>/.agents/skills`（`documented`）；`stores.mcp` 为空（`settings.json` 的 `mcpServers` 只有官方文档依据，不读取）；`hooks` 只映射 `session-start`，`prompt-submit`、`stop` 与 `sync-skills`、`sync-mcp`、`agents-init-agent-cli` 写入 `unsupported`；`capabilities.project_trust_required: true`；`content.context: unsupported`。`unsupported[].feature` 词表新增 `sync-skills`、`sync-mcp`、`agents-init-agent-cli`（对应 §6 矩阵里 `sync` 写技能、`sync` 写 MCP、agents-init 的 `agent_cli`）；除 `hook-event:*` 之外，这些条目目前只是声明：`sync` 与 agents-init 的 `--client` 选项不含 Gemini，没有命令会遇到它们。
+- **`gemini-extension.json` 本版不随包提供**（`content.companions[].shipped: false`）。依据：Gemini 只认这个清单（§2.3 实测），但随包提供要决定插件版本载体（它要和 `plugin.json` 同步）、是否同时带 `hooks/hooks.json`（Gemini 的变量名与 Claude 不同）与 `skills/` 在 Gemini 里的加载行为，这些没有实测依据，按「不能确定的不做」处理。后果：不带 `--source` 的 `install --client gemini` 在预览里 `blocked`（`blocker: companion-not-shipped`），不下载、不运行命令；带 `--source` 时运行前检查声明的伴随文件是否真的在插件目录里，缺失就报失败。待后续发布随包提供该文件，把 `shipped` 改为 `true` 即可（`shipped: true` 的伴随文件由守卫检查确实存在）。
+- `interactive: trust-prompt` 的运行时行为：预览的步骤带 `interactive: trust-prompt` 与说明（会向你索取确认、工具不代答）；`--apply` 时命令的标准输入是用户终端（不捕获，不写入，不传 `--consent`），标准输出送到标准错误（`--output json` 的标准输出保持可解析），标准输入不是终端时**不启动命令**（步骤失败，说明需要交互式终端）。结果以读回的已装版本为准；命令非零退出按失败处理。**未确认**：用户拒绝确认时 Gemini 的退出码与输出、`extensions uninstall` 是否也要确认。
+- `update` = 先 `uninstall` 再 `install`（同一步骤，读回的「之前」是卸载前的版本）；在确认处拒绝时插件处于未安装状态，预览与文档都写明。这是 D-K10（agy）同类的取舍，对 Gemini 是**未验证**的。
+- `extensions-dir` 读取器：读 `<config_dir>/extensions/<插件>/<manifest>` 的 `version`（manifest 取自声明里 `role: manifest` 的伴随文件），符号链接记为开发安装（`dev: symlink`），只读，不写、不校验签名。
+- `deprecated` 的行为：`agenthelm clients` 的 JSON 里只有 Gemini 多一个 `lifecycle: deprecated` 字段（其他条目的输出逐字节不变），文本行末标「已弃用」；`--client` 对 `install`、`update`、`check`、`migrate` 接受 `gemini` 与 `all`（`all` 展开为所有可安装客户端，含已弃用的）；不带 `--client` 时 Gemini 不进入任何集合（即使 `~/.gemini` 存在）；点名使用时 `install` 与 `update` 的每个步骤带一条弃用说明。§4.1 原只写「在 `clients` 里显示，不改变其他行为」，弃用说明与 `all` 的展开是本批的解释，待维护者确认。
+- 既有客户端的输出：在固定夹具上对 `install`、`update`、`check`、`clients`、`sync`、`doctor`、`inventory`、`dedupe`、`relocate`、`migrate`、`nudge` 的文本与 JSON（中英文）改前改后逐字节比较，差异只有 Gemini 一行或一项：`clients` 多一条；`inventory --client all` 多出 Gemini 对共享目录 `~/.agents/skills` 的条目与摘要行；各命令 `--help` 的 `--client` 取值列表多出 `gemini`（`install`、`update`、`check` 等还多出 `all`）。
+
 ### 2.4 一个会影响设计的对照
 
 - Gemini 的 hook 输入字段与 Claude 的几乎相同，**按载荷嗅探客户端会误判**（现有 `agent_pack_nudge.detect_client` 靠载荷字段区分 Cursor、Codex、Claude）。设计结论：hook 命令一律显式带 `--client <id>`，嗅探只保留给已有安装。
@@ -141,10 +151,10 @@
 - 每步是以 `{cli}` 开头的 argv 模板，参数只含 `[A-Za-z0-9._:=@/+-]` 与占位符；步骤缺省不写、不用空列表。`marketplace-cli` 必须有 `install`，且需要 `detect.executables`（`{cli}` 指它）。
 - **占位符补 `{slug}`**：Claude 与 Codex 的 `add_source` 需要市场来源（`owner/repo`、镜像或本地路径），而 `{marketplace}` 是市场名 `agenthelm`，两者不同。§4.3 的示例本来就写了 `{slug}`，占位符清单漏列。
 - **步骤名补 `update_source`**：Claude 的更新是「先刷新市场、再逐个插件更新」（`update_source` 加 `update`），Codex 一条 `plugin marketplace upgrade` 同时升级市场与已装插件（只有 `update_source`）。只声明 `update_source` 时，该命令的读回验证覆盖所有落后的插件。
-- **`installed_state` 取值按布局命名**：Claude 读 `installed_plugins.json` 里的安装记录（`records-json`），不是缓存目录；Codex 读 `plugins/cache/<市场>/<插件>/<版本>/`（`cache-dir-versioned`）；Cursor 读 `plugins/local/<插件>/`（`dropin-dir`）。§4.3 原把 Claude 与 Codex 都归入 `cache-dir-versioned`，与 Claude 的实际布局不符。`cli-list-json`、`extensions-dir` 随 agy、Gemini 在批 E 加入。
+- **`installed_state` 取值按布局命名**：Claude 读 `installed_plugins.json` 里的安装记录（`records-json`），不是缓存目录；Codex 读 `plugins/cache/<市场>/<插件>/<版本>/`（`cache-dir-versioned`）；Cursor 读 `plugins/local/<插件>/`（`dropin-dir`）。§4.3 原把 Claude 与 Codex 都归入 `cache-dir-versioned`，与 Claude 的实际布局不符。`cli-list-json` 随 agy 在批 E 加入；`extensions-dir` 已随 Gemini 加入（§2.3）。
 - 新增字段：`config_dir`（读取器读的客户端目录，可由环境变量覆盖）、`owned_dirs`（旧安装路径归属判断用的目录）、`cli_locations`（命令不在 PATH 时的查找位置）、`scope_flag`（更新时指定安装范围的选项名）、`messages`（文案槽到文案键的映射；文案本身在运行时与 `locale`，声明不带文字）。
 - 能力标志 `legacy_cleanup`、`marketplace_update`、`reinstall_rewrites_all`、`market_pin` 落在 `capabilities`，built-in 可选、缺省为假；`reinstall_rewrites_all` 只放能力标志，不在 `distribution` 重复。
-- `interactive: trust-prompt` 与 `source` 取值已校验；`trust-prompt` 的运行时行为（继承终端）随 Gemini 在批 E 实现，批 C 没有声明它的驱动。
+- `interactive: trust-prompt` 与 `source` 取值已校验；`trust-prompt` 的运行时行为（继承终端）随 Gemini 在批 E 实现，批 C 没有声明它的驱动。**批 E-gemini 已实现**，见 §2.3。
 
 ### 4.4 内容协议
 
@@ -357,6 +367,9 @@ built-in 驱动从 `agent_pack_clients.py` 里的 Python 字面量移到 `runtim
 7. **Gemini 的 MCP、`$VAR` 展开、`.agents/skills` 别名、AGENTS.md 处理**：只有官方文档依据。
 8. **agy 的 GitHub 地址与市场形式安装**：只文档化，未试。
 9. **Agent Plugins 1.1.0 草案的可移植 hooks**：草案正文未读；它若定稿，`hooks.events` 的映射可以简化。
+10. **Gemini 安装的交互结果**：用户在信任确认处拒绝时的退出码与输出、`extensions uninstall` 是否也要确认、`gemini extensions update` 对本地目录安装的行为（本版 `update` 用卸载后重装代替），需要真实 Gemini CLI 或其源码确认；本批只用桩验证了命令行、终端继承与读回。
+11. **随包提供 `gemini-extension.json`**：版本载体同步、`hooks/hooks.json` 的变量名、`skills/` 的加载行为都没有实测；本版不随包（`shipped: false`），发布包安装因此受阻，见 §2.3「批 E-gemini 已实现」。
+12. **Gemini 扩展内的技能**：`~/.gemini/extensions/<插件>/skills/` 没有作为 inventory 的存储（存储路径不支持通配）；扩展自带的技能只出现在 `extensions list -o json` 的 `skills[]`，本版不读取。
 
 ## 13. 决策记录
 

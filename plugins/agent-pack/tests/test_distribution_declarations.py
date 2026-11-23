@@ -204,14 +204,15 @@ class BuiltinDeclarations(unittest.TestCase):
                           for k, v in by.items() if k != "claude-desktop"},
                          {"claude": ("marketplace-cli", "records-json", "marketplace", "none"),
                           "codex": ("marketplace-cli", "cache-dir-versioned", "marketplace", "none"),
-                          "cursor": ("directory-dropin", "dropin-dir", "bundle-dir", "none")})
+                          "cursor": ("directory-dropin", "dropin-dir", "bundle-dir", "none"),
+                          "gemini": ("marketplace-cli", "extensions-dir", "bundle-dir", "trust-prompt")})
         self.assertEqual(by["claude-desktop"], {"type": "none"})
         self.assertEqual(registry.ids_with("legacy_cleanup"), ("claude", "codex"))
         self.assertEqual(registry.ids_with("marketplace_update"), ("claude", "codex"))
         self.assertEqual(registry.ids_with("reinstall_rewrites_all"), ("cursor",))
         self.assertEqual(registry.ids_with("market_pin"), ("claude",))
         self.assertEqual(registry.ids_of_type("directory-dropin"), ("cursor",))
-        self.assertEqual(registry.ids_of_type("marketplace-cli"), ("claude", "codex"))
+        self.assertEqual(registry.ids_of_type("marketplace-cli"), ("claude", "codex", "gemini"))
 
     def test_the_clients_report_keeps_its_shape(self) -> None:
         data = registry.report(Path("/nonexistent-home"), lambda name: None, lambda name: None)

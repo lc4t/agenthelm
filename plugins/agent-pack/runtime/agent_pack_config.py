@@ -2122,6 +2122,13 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
             warnings.extend(report.pop("warnings"))
             reports[client] = report
             continue
+        if _registry().sync_spec(client) is None:  # sync writes nothing for this client: say why, with the declared reasons
+            reasons = [entry["reason"] for entry in _registry().get(client).get("unsupported", [])
+                       if entry["feature"] in ("sync-skills", "sync-mcp")]
+            warnings.append(f"{client}: not compared with the project, sync does not write this client"
+                            + (f" ({'; '.join(reasons)})" if reasons else ""))
+            reports[client] = {"client": client, "compared": False}
+            continue
         report = client_drift(layout.root, client, home)
         reports[client] = report
         if client in _registry().ids_with_sync("native-package"):  # advisory only: it never changes ``ok`` or the exit code
