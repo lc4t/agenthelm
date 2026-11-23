@@ -24,7 +24,7 @@ npx @sakanano-moe/agenthelm install
 npx @sakanano-moe/agenthelm install --apply
 ```
 
-它检测本机的 Claude Code、Codex 与 Cursor，分别调用各自的市场命令；`--client claude|codex|cursor` 可只装某一个。
+它检测本机的 Claude Code、Codex 与 Cursor，分别调用各自的市场命令；`--client claude|codex|cursor` 可只装某一个。Antigravity（`agy`）不在默认集合里，须显式写 `--client agy`：安装与更新调用 `agy plugin install <目录>`（没有 `plugin update`，更新是卸载后重装），详见 [INSTALL.md](INSTALL.md) 的「Antigravity」一节。
 
 **Claude Code**：一条命令添加市场并安装；`agents-init` 声明了另外三个插件为依赖，会一并装上（需要 Claude Code 2.1.292 及以上）。
 

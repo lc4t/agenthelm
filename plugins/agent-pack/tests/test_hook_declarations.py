@@ -72,9 +72,10 @@ class AdapterTests(unittest.TestCase):
         self.assertIsNone(adapter("Stop", None, "user line only"))
         self.assertIsNone(adapter("Stop", "", None))
 
-    def test_inject_steps_is_not_attached_to_any_builtin_driver(self) -> None:
-        used = {name for client in registry.all_ids() for name in registry.hooks(client).get("output", {}).values()}
-        self.assertNotIn("injectSteps", used)
+    def test_inject_steps_is_used_by_the_antigravity_driver_only(self) -> None:
+        used = {client for client in registry.all_ids()
+                if "injectSteps" in registry.hooks(client).get("output", {}).values()}
+        self.assertEqual(used, {"agy"})
 
 
 class LegacySniffTests(unittest.TestCase):

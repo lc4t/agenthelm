@@ -1,0 +1,205 @@
+{
+  "schema_version": 2,
+  "id": "agy",
+  "display": "Antigravity",
+  "lifecycle": "active",
+  "detect": {
+    "executables": [
+      "agy"
+    ],
+    "dirs": [
+      {
+        "path": "~/.gemini/config"
+      }
+    ],
+    "cli": {
+      "argv": [
+        "plugin",
+        "list",
+        "--json"
+      ],
+      "stream": "stdout",
+      "parse": "json"
+    }
+  },
+  "distribution": {
+    "type": "marketplace-cli",
+    "source": "bundle-dir",
+    "interactive": "none",
+    "installed_state": "cli-list-json",
+    "config_dir": {
+      "path": "~/.gemini/config"
+    },
+    "steps": {
+      "install": [
+        "{cli}",
+        "plugin",
+        "install",
+        "{source_dir}"
+      ],
+      "uninstall": [
+        "{cli}",
+        "plugin",
+        "uninstall",
+        "{plugin}"
+      ],
+      "disable": [
+        "{cli}",
+        "plugin",
+        "disable",
+        "{plugin}"
+      ]
+    },
+    "messages": {
+      "recovery": "reinstall-no-backup",
+      "unchanged": "reinstall-version-unchanged",
+      "describe_update": "update-by-reinstall"
+    }
+  },
+  "content": {
+    "manifest": [
+      "antigravity-plugin",
+      "agent-plugins-1.0"
+    ],
+    "companions": [
+      {
+        "path": "hooks.json",
+        "role": "hooks"
+      },
+      {
+        "path": "mcp_config.json",
+        "role": "mcp",
+        "required_when": "agent-plugins-spec-off"
+      }
+    ],
+    "skills": "agent-skills",
+    "context": "unsupported"
+  },
+  "runtime_cache": [
+    {
+      "base": "~/.gemini/config",
+      "glob": "plugins/<plugin>"
+    }
+  ],
+  "stores": {
+    "skills": [
+      {
+        "scope": "user",
+        "path": "~/.gemini/skills",
+        "format": "dir",
+        "status": "undetermined"
+      },
+      {
+        "scope": "user",
+        "path": "~/.gemini/antigravity-cli/skills",
+        "format": "dir",
+        "status": "undetermined"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.agents/skills",
+        "format": "dir",
+        "status": "documented"
+      }
+    ],
+    "mcp": [
+      {
+        "scope": "user",
+        "path": "~/.gemini/config/mcp_config.json",
+        "format": "json",
+        "root_key": "mcpServers",
+        "status": "observed"
+      }
+    ]
+  },
+  "capabilities": {
+    "default_set": false,
+    "read_only": false,
+    "project_mcp_write": false,
+    "legacy_cleanup": false,
+    "marketplace_update": false,
+    "reinstall_rewrites_all": false,
+    "market_pin": false,
+    "user_mcp_write": true,
+    "project_skill_write": false,
+    "user_skill_write": true,
+    "update_by_reinstall": true
+  },
+  "precedence": [
+    {
+      "kind": "skills",
+      "rule": "precedence-undocumented",
+      "evidence": "unknown",
+      "source_url": null
+    },
+    {
+      "kind": "mcp",
+      "rule": "precedence-undocumented",
+      "evidence": "unknown",
+      "source_url": null
+    }
+  ],
+  "hooks": {
+    "events": {
+      "session-start": "SessionStart",
+      "stop": "Stop"
+    },
+    "output": {
+      "session-start": "injectSteps",
+      "stop": "injectSteps"
+    },
+    "stop_prompt": "off",
+    "config": {
+      "format": "group-event-handlers",
+      "plugin_file": "hooks.json"
+    }
+  },
+  "unsupported": [
+    {
+      "feature": "hook-event:prompt-submit",
+      "reason": "no per-prompt hook event is mapped for Antigravity (PreInvocation is not verified to correspond)"
+    },
+    {
+      "feature": "relocate",
+      "reason": "the user-level Skills directory is undetermined and plugin content cannot be moved"
+    },
+    {
+      "feature": "dedupe",
+      "reason": "the user-level Skills directory is undetermined and plugin content cannot be moved"
+    },
+    {
+      "feature": "sync-skills-project",
+      "reason": "the project-level plugin directory (.agents/plugins/) is documented but not verified"
+    },
+    {
+      "feature": "sync-mcp-project",
+      "reason": "the project-level plugin directory (.agents/plugins/) is documented but not verified"
+    },
+    {
+      "feature": "agents-init-agent-cli",
+      "reason": "needs a template change that would affect existing projects"
+    },
+    {
+      "feature": "nudge-install-hooks",
+      "reason": "hooks ship inside the plugin (hooks.json at the plugin root)"
+    }
+  ],
+  "sync": {
+    "write": "plugin-install",
+    "package_dir": "~/.agent-pack/packages/agy",
+    "companions": {
+      "mcp": "mcp_config.json"
+    }
+  },
+  "mcp": {
+    "adapter": "json",
+    "write": "package",
+    "options": {
+      "remote_url_key": "serverUrl",
+      "remote_headers": "inline",
+      "env_interpolation": "declared-variables",
+      "type_field_required": false,
+      "disabled_key": "disabled"
+    }
+  }
+}

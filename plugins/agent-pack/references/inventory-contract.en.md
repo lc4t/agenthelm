@@ -35,7 +35,7 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor|claude-de
 
 ## MCP entry
 
-`ref`, `name`, `client`, `scope` (`user|local|project`), `store`, `transport` (`stdio|http|sse|unknown`), `command`, `args[]`, `url`, `url_host` (remote only; host name only, no port or query), `env_names[]` (keys of `env`), `env_var_names[]` (environment variable names involved: `env` keys plus `${VAR}` references, names only), `header_names[]`, `has_inline_secret` (boolean: whether an inline credential value exists; no key name, no value), `fingerprint`, `fingerprint_fields[]` (fields that went into the fingerprint: `["command","args"]` or `["url"]`), `origin`, `loaded` (always `"unknown"`), `precedence`, `shadowed_by`, `evidence`, `notes[]`.
+`ref`, `name`, `client`, `scope` (`user|local|project`), `store`, `transport` (`stdio|http|sse|unknown`), `command`, `args[]`, `url`, `url_host` (remote only; host name only, no port or query), `env_names[]` (keys of `env`), `env_var_names[]` (environment variable names involved: `env` keys plus `${VAR}` references, names only), `header_names[]`, `has_inline_secret` (boolean: whether an inline credential value exists; no key name, no value), `fingerprint`, `fingerprint_fields[]` (fields that went into the fingerprint: `["command","args"]` or `["url"]`), `origin`, `loaded` (`"unknown"`; `"no"` for an entry the file itself switches off: the client's driver declares `mcp.options.disabled_key` and the key is true, currently Antigravity's `disabled: true`), `precedence`, `shadowed_by`, `evidence`, `notes[]`.
 
 - **`env` values, `headers` values and tokens are never printed**: only key names (`env_names`, `header_names`). Credential-looking values in `args` and `url` become `<redacted>`, as do URL userinfo and query values; `${VAR:-default}` keeps only `${VAR}`.
 - `fingerprint`: SHA-256 of the **redacted** `command+args` or `url`, used to find duplicates; it excludes `env` and `headers`.
@@ -81,3 +81,7 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor|claude-de
 ## Platforms
 
 Path resolution supports macOS and Linux; Windows paths are described in documentation only and not resolved by this command.
+
+## The `cli` key (only when a client command was asked for)
+
+With `--client agy` (or `all`, and the program exists) the top level gains `cli`: `{<client>: {evidence, ok, reason, plugins[]}}`. `evidence` is `cli` (the client's own `plugin list --json` was read) or `unknown` (it could not be read; `reason` is one of `not-found`, `timeout`, `unreadable`, `nonzero-exit`, `too-large`, `unexpected-format`, and it is no evidence). Keys of `plugins[]`: `name`, `enabled`, `version`, `path`, `skills[]`, `mcp_servers[]`, `hooks[]` (the last three are names). A plain `inventory` runs no client command and has no such key.

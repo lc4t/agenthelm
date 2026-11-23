@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。",
+    "en": "Antigravity (agy) is a declared client: one driver declaration, fixtures and the shipped hooks.json and mcp_config.json. install, update (uninstall then reinstall), check, sync, nudge hook, inventory and doctor know agy; it is not in the default client set, name it with --client agy."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    },
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

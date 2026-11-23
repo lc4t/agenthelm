@@ -30,6 +30,7 @@ if str(RUNTIME_DIR) not in sys.path:
 import agent_pack_clients as registry  # noqa: E402
 import agent_pack_config as core  # noqa: E402
 import agent_pack_ext_common as ext  # noqa: E402
+import agent_pack_mcp_json as mcp_json  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
@@ -179,7 +180,7 @@ def build_plan(home: Path, project: Path, ref: str, to: str, allow_widen: bool =
     _kind, name, src_client, src_scope = parsed
     target_client, target_scope = target
 
-    report = inv.observe(home, root, None, "mcp", "all")
+    report = inv.observe(home, root, inv.clients_with(src_client), "mcp", "all")
     item = next((entry for entry in report["mcps"] if entry["ref"] == ref), None)
     if item is None:
         near = sorted(entry["ref"] for entry in report["mcps"] if entry["name"] == name)
@@ -347,7 +348,7 @@ def apply_edits(home: Path, root: Path, recovery: Path, edits: list[dict], state
             _backup(recovery, "claude.json.before", snapshots[config_path][0])
         if any(e["scope"] == "project" for e in edits):
             _backup(recovery, "project-mcp.json.before", snapshots[project_file][0])
-            file_data = core._read_json(project_file) if snapshots[project_file][0] is not None else {}
+            file_data = mcp_json.read_config(project_file) if snapshots[project_file][0] is not None else {}
         for edit in edits:
             servers = _servers_for(native, config, file_data, edit["scope"], root, create=edit["op"] == "set")
             if edit["op"] == "set":

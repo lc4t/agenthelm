@@ -18,6 +18,7 @@ Standard library only, so every entry point can import it.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Callable
@@ -31,15 +32,15 @@ CAPABILITIES = ("default_set", "read_only", "project_mcp_write")
 # Flags added in schema v2 (design section 4.8); built-in drivers only, optional (absent means false). ``clients`` keeps
 # reporting the three above, so its output does not change when a flag is added here.
 EXTENDED_CAPABILITIES = ("legacy_cleanup", "marketplace_update", "reinstall_rewrites_all", "market_pin",
-                         "user_mcp_write", "project_skill_write", "user_skill_write")
+                         "user_mcp_write", "project_skill_write", "user_skill_write", "update_by_reinstall")
 LIFECYCLES = ("active", "deprecated")
 STORE_STATUSES = ("observed", "documented", "undetermined")
 SCHEMA_VERSIONS = (1, 2)
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
-INSTALLED_STATES = ("records-json", "cache-dir-versioned", "dropin-dir")  # the readers agenthelm.py implements
+INSTALLED_STATES = ("records-json", "cache-dir-versioned", "dropin-dir", "cli-list-json")  # the readers agenthelm.py implements
 INTERACTIVE = ("none", "trust-prompt")
 SOURCES = ("marketplace", "bundle-dir")
-STEP_NAMES = ("add_source", "install", "update_source", "update", "uninstall", "verify")
+STEP_NAMES = ("add_source", "install", "update_source", "update", "uninstall", "disable", "verify")
 PLACEHOLDERS = ("cli", "plugin", "marketplace", "source_dir", "version", "slug")  # slug: design section 4.3 deviation
 MESSAGE_SLOTS = ("recovery", "applied_recovery", "unchanged", "unchanged_next", "describe_update_source",
                  "describe_update", "describe_dropin", "unavailable_next")
@@ -49,7 +50,15 @@ PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 STEP_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:" + "|".join(PLACEHOLDERS) + r")\}){1,128}")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
-OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp"}
+OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp", "content"}
+# ``content`` (design section 4.4): the manifest protocols a client reads, the files it wants beside the manifest, how it
+# takes Skills and what an agents-init entry point is for it.
+CONTENT_MANIFESTS = ("agent-plugins-1.0", "claude-plugin", "codex-plugin", "cursor-plugin", "gemini-extension",
+                     "antigravity-plugin")
+CONTENT_ROLES = ("manifest", "mcp", "hooks")
+CONTENT_SKILLS = ("agent-skills",)
+CONTENT_CONTEXTS = ("agents-md", "pointer-file", "unsupported")
+COMPANION_REQUIRED_WHEN = ("always", "agent-plugins-spec-off")
 HOOK_EVENTS = ("session-start", "prompt-submit", "stop")  # canonical event names (design section 4.7)
 # Output adapters by output format, never by client id; agent_pack_nudge.ADAPTERS implements exactly these.
 HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps")
@@ -58,7 +67,9 @@ HOOKS_KEYS = {"events", "output", "stop_prompt", "shows_system_message", "stop_s
 HOOK_CONFIG_KEYS = {"format", "plugin_file", "user", "project"}
 SNIFF_KEYS = {"priority", "payload_keys", "env", "fallback"}
 STOP_MODES = ("off", "on-completion", "always")
-UNSUPPORTED_FEATURES = tuple(f"hook-event:{event}" for event in HOOK_EVENTS)  # batch E adds the support-matrix names
+# The feature names of the support matrix (design section 6); ``hook-event:<event>`` is the form for the hook events.
+UNSUPPORTED_FEATURES = (*(f"hook-event:{event}" for event in HOOK_EVENTS), "relocate", "dedupe", "sync-skills-project",
+                        "sync-mcp-project", "agents-init-agent-cli", "nudge-install-hooks")
 CACHE_KEYS = {"base", "env", "glob"}
 STORE_KEYS = {"scope", "path", "format", "status", "write_target", "root_key", "managed_by", "trust_required"}
 MANAGED_BY = ("agent-pack-state",)  # entries of this store are recognised through agent-pack's own sync state records
@@ -72,7 +83,8 @@ CLI_STREAMS = ("stdout", "stderr")
 CLI_PARSES = ("json", "text")
 CLI_ARG = re.compile(r"[A-Za-z0-9._:=@/+-]{1,128}")
 # ``sync`` and ``mcp`` (batch D2, design sections 4.5, 4.6, 4.8): how ``sync`` writes a project's package and MCP entries.
-SYNC_WRITES = ("native-package", "plugin-dir")  # links plus user-file entries plus state | a package directory
+SYNC_WRITES = ("native-package", "plugin-dir", "plugin-install")  # links plus user-file entries plus state | a package
+# directory | a package directory the client installs itself (``distribution.steps.install`` with ``{source_dir}``)
 SYNC_KEYS = {"write", "package_dir", "companions", "marketplace", "cleanup"}
 COMPANION_KEYS = {"manifest", "mcp", "remote_mcp", "placeholder_prefix", "type_names"}
 MARKETPLACE_KEYS = {"path", "source_dir"}
@@ -83,10 +95,10 @@ MCP_KEYS = {"adapter", "write", "native_remote", "options", "manual_remove"}
 REMOTE_HEADERS = ("inline", "split-env", "none")
 ENV_INTERPOLATIONS = ("none", "plugin-root-only", "declared-variables", "shell-env")
 MCP_OPTION_KEYS = {"remote_url_key", "remote_headers", "env_interpolation", "type_field_required", "type_names",
-                   "header_fields"}
+                   "header_fields", "disabled_key"}
 HEADER_FIELDS = ("plain", "env", "bearer")
 MCP_OPTION_DEFAULTS = {"remote_url_key": "url", "remote_headers": "inline", "env_interpolation": "shell-env",
-                       "type_field_required": True, "type_names": {}, "header_fields": {}}
+                       "type_field_required": True, "type_names": {}, "header_fields": {}, "disabled_key": None}
 MANUAL_REMOVE_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:scope|name)\}){1,128}")
 DRIVERS_DIR = Path(__file__).resolve().parent / "drivers"
 
@@ -217,8 +229,9 @@ def _check_hooks(data: dict, source: str) -> None:
                f"unsupported[] must be {{feature, reason}} with feature one of {', '.join(UNSUPPORTED_FEATURES)}")
         _check(entry["feature"] not in gone, source, f"unsupported[] lists {entry['feature']} twice")
         gone.add(entry["feature"])
+    gone_events = {name for name in gone if name.startswith("hook-event:")}
     if "hooks" not in data:
-        _check(not gone, source, "unsupported hook events need a hooks declaration")
+        _check(not gone_events, source, "unsupported hook events need a hooks declaration")
         return
     hooks_part = data["hooks"]
     _check(isinstance(hooks_part, dict) and {"events", "output", "stop_prompt"} <= set(hooks_part) <= HOOKS_KEYS, source,
@@ -227,7 +240,7 @@ def _check_hooks(data: dict, source: str) -> None:
     _check(isinstance(events, dict) and set(events) <= set(HOOK_EVENTS) and all(_is_text(v) for v in events.values()), source,
            f"hooks.events maps canonical events ({', '.join(HOOK_EVENTS)}) to native event names")
     for event in HOOK_EVENTS:  # each canonical event is either mapped or declared unsupported, never both, never neither
-        _check((event in events) != (f"hook-event:{event}" in gone), source,
+        _check((event in events) != (f"hook-event:{event}" in gone_events), source,
                f"hook event {event} must be in hooks.events or in unsupported (exactly one)")
     _check(isinstance(output, dict) and set(output) == set(events) and all(v in HOOK_OUTPUTS for v in output.values()), source,
            f"hooks.output must name an adapter ({', '.join(HOOK_OUTPUTS)}) for exactly the mapped events")
@@ -275,18 +288,46 @@ def _check_precedence(entries: Any, source: str) -> None:
                "precedence[].winner must be one of the when.scopes")
 
 
+def _check_content(value: Any, source: str) -> None:
+    _check(isinstance(value, dict) and {"manifest"} <= set(value) <= {"manifest", "companions", "skills", "context"}, source,
+           "content needs manifest (optional: companions, skills, context)")
+    manifests = value["manifest"]
+    _check(isinstance(manifests, list) and manifests and all(item in CONTENT_MANIFESTS for item in manifests)
+           and len(set(manifests)) == len(manifests), source,
+           f"content.manifest must list manifest protocols from {', '.join(CONTENT_MANIFESTS)}")
+    _check(value.get("skills", CONTENT_SKILLS[0]) in CONTENT_SKILLS, source, f"content.skills must be {CONTENT_SKILLS[0]}")
+    _check(value.get("context", CONTENT_CONTEXTS[0]) in CONTENT_CONTEXTS, source,
+           f"content.context must be one of {', '.join(CONTENT_CONTEXTS)}")
+    companions = value.get("companions", [])
+    _check(isinstance(companions, list), source, "content.companions must be a list")
+    paths: set[str] = set()
+    for entry in companions:
+        _check(isinstance(entry, dict) and {"path", "role"} <= set(entry) <= {"path", "role", "required_when"}, source,
+               "content.companions[] needs path, role (optional: required_when)")
+        _check(_is_text(entry["path"], 100) and not entry["path"].startswith("/") and ".." not in entry["path"].split("/"),
+               source, "content.companions[].path must be a relative file path without ..")
+        _check(entry["role"] in CONTENT_ROLES, source, f"content.companions[].role must be one of {', '.join(CONTENT_ROLES)}")
+        _check(entry.get("required_when", COMPANION_REQUIRED_WHEN[0]) in COMPANION_REQUIRED_WHEN, source,
+               f"content.companions[].required_when must be one of {', '.join(COMPANION_REQUIRED_WHEN)}")
+        _check(entry["path"] not in paths, source, f"content.companions lists {entry['path']} twice")
+        paths.add(entry["path"])
+
+
 def _check_sync(value: Any, source: str) -> None:
     _check(isinstance(value, dict) and {"write", "package_dir"} <= set(value) <= SYNC_KEYS, source,
            f"sync needs write and package_dir (optional: {', '.join(sorted(SYNC_KEYS - {'write', 'package_dir'}))})")
     _check(value["write"] in SYNC_WRITES, source, f"sync.write must be one of {', '.join(SYNC_WRITES)}")
     _check_location({"path": value["package_dir"]}, source, "sync.package_dir")
     plugin_dir = value["write"] == "plugin-dir"
-    for key in ("companions", "marketplace", "cleanup"):
+    packaged = value["write"] in ("plugin-dir", "plugin-install")
+    for key in ("marketplace", "cleanup"):
         _check(key not in value or plugin_dir, source, f"sync.{key} applies to plugin-dir writes only")
+    _check("companions" not in value or packaged, source, "sync.companions applies to plugin-dir and plugin-install writes only")
     if "companions" in value:
         companions = value["companions"]
-        _check(isinstance(companions, dict) and {"manifest"} <= set(companions) <= COMPANION_KEYS, source,
-               f"sync.companions needs manifest (optional: {', '.join(sorted(COMPANION_KEYS - {'manifest'}))})")
+        needed = {"manifest"} if plugin_dir else {"mcp"}  # a package the client installs keeps its own plugin.json
+        _check(isinstance(companions, dict) and needed <= set(companions) <= COMPANION_KEYS, source,
+               f"sync.companions needs {', '.join(sorted(needed))} (optional: {', '.join(sorted(COMPANION_KEYS - needed))})")
         for key in ("manifest", "mcp", "remote_mcp"):
             if key in companions:
                 _check(_is_text(companions[key], 100) and not companions[key].startswith("/")
@@ -321,6 +362,9 @@ def mcp_option_problem(options: Any) -> str | None:
     if "remote_url_key" in options and not (isinstance(options["remote_url_key"], str)
                                             and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,31}", options["remote_url_key"])):
         return "mcp.options.remote_url_key must be a plain key name"
+    if "disabled_key" in options and not (isinstance(options["disabled_key"], str)
+                                          and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,31}", options["disabled_key"])):
+        return "mcp.options.disabled_key must be a plain key name"
     if options.get("remote_headers", REMOTE_HEADERS[0]) not in REMOTE_HEADERS:
         return f"mcp.options.remote_headers must be one of {', '.join(REMOTE_HEADERS)}"
     if options.get("env_interpolation", MCP_OPTION_DEFAULTS["env_interpolation"]) not in ENV_INTERPOLATIONS:
@@ -405,6 +449,10 @@ def validate_builtin(data: Any, source: str) -> dict:
            and all(isinstance(v, bool) for v in capabilities.values()), source,
            f"capabilities must hold the booleans {', '.join(CAPABILITIES)} (optional: {', '.join(EXTENDED_CAPABILITIES)})")
     _check_precedence(data.get("precedence", []), source)
+    _check(not capabilities.get("update_by_reinstall") or (
+        isinstance(data["distribution"], dict) and {"install", "uninstall"} <= set(data["distribution"].get("steps", {}))
+        and not {"update", "update_source"} & set(data["distribution"].get("steps", {}))), source,
+        "capabilities.update_by_reinstall needs the install and uninstall steps and no update step")
     for flag in ("user_mcp_write", "user_skill_write"):
         _check(not capabilities.get(flag) or "sync" in data, source, f"capabilities.{flag} needs a sync declaration")
     for flag in ("project_mcp_write", "project_skill_write"):
@@ -412,10 +460,18 @@ def validate_builtin(data: Any, source: str) -> dict:
                f"capabilities.{flag} needs sync.write native-package (a plugin-dir write has no project-level store)")
     if "sync" in data:
         _check_sync(data["sync"], source)
+        if data["sync"]["write"] == "plugin-install":
+            dist = data["distribution"]
+            _check(isinstance(dist, dict) and dist["type"] == "marketplace-cli" and dist.get("source") == "bundle-dir"
+                   and any("{source_dir}" in part for part in dist["steps"]["install"]), source,
+                   "sync.write plugin-install needs a marketplace-cli distribution with source bundle-dir whose install "
+                   "step names {source_dir}")
     if "mcp" in data:
         _check_mcp(data["mcp"], source, stores)
     _check(("sync" in data) == ("mcp" in data) or "sync" not in data, source, "sync needs mcp (the MCP format it writes)")
     _check_hooks(data, source)
+    if "content" in data:
+        _check_content(data["content"], source)
     return data
 
 
@@ -441,7 +497,22 @@ def load_builtin(directory: Path | None = None) -> tuple[dict, ...]:
     return tuple(sorted(drivers, key=lambda item: (not item["capabilities"]["default_set"], item["id"])))
 
 
-BUILTIN: tuple[dict, ...] = load_builtin()
+def _load_all() -> tuple[dict, ...]:
+    """The shipped drivers, plus the ones in ``AGENTHELM_DRIVERS_DIR`` when ``AGENTHELM_TEST_DRIVERS=1`` is set too. The extra
+    directory exists for tests: a driver loaded from it goes through the same validation, may not reuse a shipped id and
+    is data like any other (the synthetic-client guard adds one without touching any code). Without the switch the
+    variable is ignored, so an environment cannot swap in a driver (whose ``steps`` are commands) by accident."""
+    shipped = load_builtin()
+    extra = os.environ.get("AGENTHELM_DRIVERS_DIR")
+    if not extra or os.environ.get("AGENTHELM_TEST_DRIVERS") != "1":
+        return shipped
+    added = load_builtin(Path(extra))
+    _check(not ({item["id"] for item in added} & {item["id"] for item in shipped}), extra,
+           "a test driver may not reuse the id of a shipped driver")
+    return tuple(sorted((*shipped, *added), key=lambda item: (not item["capabilities"]["default_set"], item["id"])))
+
+
+BUILTIN: tuple[dict, ...] = _load_all()
 BUILTIN_IDS = tuple(item["id"] for item in BUILTIN)
 
 
@@ -534,6 +605,28 @@ def all_ids() -> tuple[str, ...]:
     return BUILTIN_IDS
 
 
+def selectable_ids() -> tuple[str, ...]:
+    """The clients a command that writes (``install``, ``update``, ``sync``, hooks) accepts with ``--client``: the default
+    set first, then the other drivers that are not read-only, in registry order. A client outside the default set is
+    acted on only when named."""
+    return tuple(item["id"] for item in BUILTIN
+                 if item["capabilities"]["default_set"] or not item["capabilities"]["read_only"])
+
+
+def hook_client_ids() -> tuple[str, ...]:
+    """The selectable clients that declare hooks, in registry order (what ``nudge hook --client`` accepts)."""
+    selectable = selectable_ids()
+    return tuple(item["id"] for item in BUILTIN if item["id"] in selectable and "hooks" in item)
+
+
+def unsupported(client: str, feature: str) -> str | None:
+    """The reason the driver of ``client`` gives for not supporting ``feature`` (a name of the support matrix); ``None``
+    when it declares no such limit (or the client is unknown)."""
+    driver = get(client)
+    entry = next((item for item in (driver or {}).get("unsupported", []) if item["feature"] == feature), None)
+    return entry["reason"] if entry else None
+
+
 def get(client: str) -> dict | None:
     return next((item for item in BUILTIN if item["id"] == client), None)
 
@@ -549,17 +642,25 @@ def supports(client: str, capability: str) -> bool:
     return bool(driver and driver["capabilities"].get(capability))
 
 
+def _determined(entries: list[dict]) -> tuple[dict, ...]:
+    """The stores whose location is known: an ``undetermined`` store is shown by ``clients`` only, never read or written."""
+    return tuple(store for store in entries if store.get("status") != "undetermined")
+
+
 def store_table(kind: str) -> dict[str, tuple[tuple[str, str], ...]]:
     """``{client: ((scope, path), ...)}`` for ``kind`` (``skills`` | ``mcp``), in declaration order, for the clients that
-    declare at least one such store. ``<project>`` stays a placeholder."""
-    return {item["id"]: tuple((store["scope"], store["path"]) for store in item["stores"][kind])
-            for item in BUILTIN if item["stores"][kind]}
+    declare at least one such store (an ``undetermined`` store is left out). ``<project>`` stays a placeholder."""
+    return {item["id"]: tuple((store["scope"], store["path"]) for store in _determined(item["stores"][kind]))
+            for item in BUILTIN if _determined(item["stores"][kind])}
 
 
-def stores(client: str, kind: str) -> tuple[dict, ...]:
-    """The declared ``kind`` stores of ``client`` (``skills`` | ``mcp``) with all their attributes, in declaration order."""
+def stores(client: str, kind: str, *, with_undetermined: bool = False) -> tuple[dict, ...]:
+    """The declared ``kind`` stores of ``client`` (``skills`` | ``mcp``) with all their attributes, in declaration order.
+    A store with ``status: undetermined`` is left out unless ``with_undetermined``."""
     driver = get(client)
-    return tuple(driver["stores"][kind]) if driver else ()
+    if not driver:
+        return ()
+    return tuple(driver["stores"][kind]) if with_undetermined else _determined(driver["stores"][kind])
 
 
 def per_platform_ids() -> tuple[str, ...]:
@@ -578,14 +679,14 @@ def precedence(client: str, kind: str) -> tuple[dict, ...]:
 def skill_write_targets() -> dict[tuple[str, str], str]:
     """``{(client, scope): path}``: the skills store a ``relocate`` writes to (the entry marked ``write_target``)."""
     return {(item["id"], store["scope"]): store["path"]
-            for item in BUILTIN for store in item["stores"]["skills"] if store.get("write_target")}
+            for item in BUILTIN for store in _determined(item["stores"]["skills"]) if store.get("write_target")}
 
 
 def primary_skill_stores() -> dict[tuple[str, str], str]:
     """``{(client, scope): path}``: the first declared skills store of each scope (refs in other stores get a suffix)."""
     table: dict[tuple[str, str], str] = {}
     for item in BUILTIN:
-        for store in item["stores"]["skills"]:
+        for store in _determined(item["stores"]["skills"]):
             table.setdefault((item["id"], store["scope"]), store["path"])
     return table
 

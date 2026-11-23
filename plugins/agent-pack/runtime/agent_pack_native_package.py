@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import agent_pack_config as core
+import agent_pack_mcp_json as mcp_json
 import agent_pack_sync_scope as scoping
 
 OVERRIDE_CONTAINERS = ("headers", "env")
@@ -188,7 +189,7 @@ def _read_config(home: Path, client: str | None = None) -> dict[str, Any]:
         return {}
     if path.is_symlink():
         raise core.AgentPackError(f"refusing to edit symlinked Claude config: {path}")
-    config = core._read_json(path)
+    config = mcp_json.read_config(path)
     if not isinstance(config.get(_root_key(client), {}), dict):
         raise core.AgentPackError(f"{_root_key(client)} must be an object: {path}")
     return config
@@ -317,7 +318,7 @@ def _read_project_file(path: Path) -> tuple[dict[str, Any], str | None]:
     if path.is_symlink():
         return {}, "mcp-json-symlink"
     try:
-        data = core._read_json(path)
+        data = mcp_json.read_config(path)
     except core.AgentPackError:
         return {}, "mcp-json-unreadable"
     servers = data.get(_root_key(), {})
@@ -1109,7 +1110,7 @@ def _apply(plan: dict[str, Any], built: Path, home: Path, recovery_root: Path | 
                 backup = transaction / "project-mcp.json.before"
                 backup.write_bytes(file_bytes)
                 os.chmod(backup, 0o600)
-            data = core._read_json(project_file) if file_bytes is not None else {}
+            data = mcp_json.read_config(project_file) if file_bytes is not None else {}
             file_servers = data.setdefault(_root_key(client), {})
             file_servers.update(file_set)
             for server in file_drop:

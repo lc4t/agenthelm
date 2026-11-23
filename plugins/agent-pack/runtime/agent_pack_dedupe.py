@@ -440,6 +440,10 @@ def run(args: Any, home: Path) -> int:
         return 0
     if args.desktop_snippet:
         return _run_snippet(args, home, project)
+    declined = ext.unsupported_block(args.keep, "dedupe")
+    if declined:   # a reference to a client that declares it cannot be deduplicated here: say why instead of "not found"
+        sys.stderr.write(declined["message"] + "\n")
+        return 1
     plan, ctx = build_plan(home, project, args.group, args.keep, args.retire_others, args.keep_all, args.ignore,
                            args.unignore, args.note, getattr(args, "recovery_root", None))
     command = _command_text(args, plan)

@@ -64,3 +64,5 @@
 候选的证据是用户的原话，保存在项目内的 `.opinion/inbox.json`，可能含敏感信息（客户名、内部系统、人名、业务细节）。启用本功能的项目建议保持私有，至少不要放进公开渠道。若要公开仓库、放进同步盘或共享目录，是否排除 `.opinion/` 由用户决定。
 
 nudge 只提醒，不替用户决定：第一次 `inbox add` 的返回带 `notice`，每个项目第一次开会话时给一行可见提示（已被 Git 忽略则不提醒），`agenthelm nudge status` 随时显示当前状态。它不会修改 `.gitignore`，也不会删除、改写或拒绝保存任何内容。
+
+- **Antigravity（`agy`）**：hooks 随插件交付，根目录的 `hooks.json` 把 `SessionStart` 与 `Stop` 接到 `agenthelm nudge hook --event … --client agy`（命令用相对路径 `./runtime/agenthelm.py`，因为 hook 在插件目录下运行）；没有 `prompt-submit` 事件。输出是 `injectSteps`（只有给模型的文字，没有用户可见的一行）。`stop` 默认关闭，用 `nudge.stop_prompt` 的对象写法逐个客户端开启（`{"agy": "on-completion"}`）。hook 是否触发、`injectSteps` 是否被接受尚未验证。`nudge install-hooks` 不适用。

@@ -31,6 +31,7 @@ AGENT_PLUGIN_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.js
 PROJECT_PROFILE_NAMESPACE = "moe.sakanano.agent-pack"
 PROJECT_PROFILE_RELATIVE = Path(".agents") / PROJECT_PROFILE_NAMESPACE / "project.json"
 PLUGIN_NAME_RE = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+PLUGIN_SELF = "agent-pack"   # the plugin that ships the companion files a client wants beside its manifest (doctor checks them)
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SECRET_NAME_RE = re.compile(
     r"(?:secret|token|password|passwd|api[_-]?key|authorization|cookie|credential)",
@@ -612,6 +613,9 @@ def _client_skill_roots(client: str, home: Path) -> list[Path]:
     template = agent_pack_clients.primary_skill_stores().get((client, "user"))
     if template is not None:
         return [home / template[2:]]
+    driver = agent_pack_clients.get(client)
+    if driver is not None and any(store["scope"] == "user" for store in driver["stores"]["skills"]):
+        return []   # the client's user-level Skills directory is declared undetermined: nothing is read there
     if client == "codebuddy":  # not a registered client: read-only inventory support kept as it was
         return [home / ".codebuddy" / "skills"]
     raise AgentPackError(f"unsupported client: {client}")
@@ -1229,34 +1233,38 @@ def _native_remote(client: str) -> bool:
     return bool(spec and spec.get("native_remote"))
 
 
-def _write_companions(package_root: Path, companions: dict[str, Any], *, native_remote: bool = False) -> None:
+def _write_companions(package_root: Path, companions: dict[str, Any], *, native_remote: bool = False,
+                      url_key: str = "url") -> None:
     """Write the companion files a client's package declares (``sync.companions``) from the portable ``plugin.json`` and
     ``mcp.json``: a manifest in the client's own layout, and an ``mcp`` projection with prefixed placeholders."""
     import agent_pack_mcp_json  # noqa: PLC0415 - the ``json`` MCP adapter, shipped next to this file
 
     manifest = _read_json(package_root / "plugin.json")
-    manifest_path = package_root / companions["manifest"]
-    manifest_path.parent.mkdir(exist_ok=True)
-    if manifest_path.exists():
-        companion = _read_json(manifest_path)
-    else:
-        companion = {}
-    # Identity fields are owned by the portable plugin.json and are always
-    # regenerated here so the companion manifest can never drift from the
-    # authoritative one (only client-specific presentation such as the
-    # `interface` block is preserved as authored).
-    companion["name"] = manifest["name"]
-    companion["version"] = manifest.get("version", "1.0.0")
-    companion.setdefault(
-        "description", manifest.get("description", "Project capabilities")
-    )
-    companion.setdefault("skills", "./skills/")
+    manifest_key = companions.get("manifest")   # a client that reads the portable plugin.json declares no manifest companion
+    manifest_path = package_root / manifest_key if manifest_key else None
+    companion: dict[str, Any] = {}
+    if manifest_path is not None:
+        manifest_path.parent.mkdir(exist_ok=True)
+        if manifest_path.exists():
+            companion = _read_json(manifest_path)
+        # Identity fields are owned by the portable plugin.json and are always
+        # regenerated here so the companion manifest can never drift from the
+        # authoritative one (only client-specific presentation such as the
+        # `interface` block is preserved as authored).
+        companion["name"] = manifest["name"]
+        companion["version"] = manifest.get("version", "1.0.0")
+        companion.setdefault(
+            "description", manifest.get("description", "Project capabilities")
+        )
+        companion.setdefault("skills", "./skills/")
     mcp_path = package_root / "mcp.json"
     if "mcp" not in companions or not mcp_path.exists():
-        _write_json_atomic(manifest_path, companion)
+        if manifest_path is not None:
+            _write_json_atomic(manifest_path, companion)
         return
-    companion.setdefault("mcpServers", "./" + companions["mcp"])
-    _write_json_atomic(manifest_path, companion)
+    if manifest_path is not None:
+        companion.setdefault("mcpServers", "./" + companions["mcp"])
+        _write_json_atomic(manifest_path, companion)
     mcp = _read_json(mcp_path)
     # Remote MCPs are synchronized through the client's own file with native env-name fields;
     # do not load a second copy from the plugin with ambiguous header expansion.
@@ -1271,7 +1279,7 @@ def _write_companions(package_root: Path, companions: dict[str, Any], *, native_
         # The portable mcp.json carries ${PLUGIN_ROOT}; this projection is what the client loads, and it
         # only expands the prefixed names.
         projected[name] = agent_pack_mcp_json.companion_entry(
-            config, companions.get("placeholder_prefix", ""), companions.get("type_names", {}))
+            config, companions.get("placeholder_prefix", ""), companions.get("type_names", {}), url_key)
     _write_json_atomic(package_root / companions["mcp"], {"mcpServers": projected})
 
 
@@ -1348,7 +1356,8 @@ def _build_package(inventory: Inventory, package_name: str, parent: Path, client
     _portable_package_from_inventory(inventory, package_name, package, client=client, home=home)
     companions = _companion_spec(client)
     if companions is not None:
-        _write_companions(package, companions, native_remote=_native_remote(client))
+        _write_companions(package, companions, native_remote=_native_remote(client),
+                          url_key=_registry().mcp_options(client)["remote_url_key"])
     return package
 
 
@@ -1741,6 +1750,13 @@ def reconcile_project(
             recovery_root=recovery_root, retire_skills=retire_skills, retire_plugins=retire_plugins,
             retire_only=retire_only, only=only, replace_mcp=replace_mcp, replace_skills=replace_skills,
             scope=scope, project_store=project_store, client=client)
+    if client in _registry().ids_with_sync("plugin-install"):
+        import agent_pack_cli_install  # noqa: PLC0415 - shipped next to this file
+
+        return agent_pack_cli_install.sync_project(
+            project, client, home=home, apply=apply, recovery_root=recovery_root, retire_skills=retire_skills,
+            retire_plugins=retire_plugins, retire_only=retire_only, only=only, replace=replace, replace_mcp=replace_mcp,
+            replace_skills=replace_skills, scope=scope, project_store=project_store)
     import agent_pack_native_package  # noqa: PLC0415 - shipped next to this file
 
     native = _native_names()
@@ -2062,6 +2078,41 @@ def client_drift(project: Path, client: str, home: Path | None = None) -> dict[s
     return report
 
 
+def _cli_doctor(client: str, home: Path) -> tuple[dict[str, Any], list[str]]:
+    """The read-only ``detect.cli`` probe of a client (``cli`` evidence) turned into a doctor section and advisory notes: the
+    plugins it lists with their enabled state, whether each carries the companion files the driver declares, and the
+    settings that cannot be read (reported as ``unknown``, never guessed). Runs only for a client named with ``--client``."""
+    import agent_pack_probe  # noqa: PLC0415 - shipped next to this file
+
+    driver = _registry().get(client)
+    result = agent_pack_probe.run_driver_probe(driver, home.expanduser().resolve())
+    section: dict[str, Any] = {"evidence": result["evidence"], "ok": result["ok"], "plugins": [], "companions": [],
+                               "agent_plugins_spec": "unknown"}
+    notes: list[str] = []
+    if not result["ok"]:
+        section["reason"] = result["reason"]
+        return section, [f"{client}: the plugin list could not be read ({result['reason']}); nothing is concluded from it"]
+    wanted = (driver.get("content") or {}).get("companions", [])
+    for entry in agent_pack_probe.plugin_entries(result):
+        name, path = entry["name"], str(entry.get("path", ""))
+        section["plugins"].append({"name": name, "enabled": entry.get("enabled") is not False,
+                                   "version": entry.get("version"), "path": path})
+        if entry.get("enabled") is False:
+            notes.append(f"{client}: plugin {name} is disabled")
+        if name != PLUGIN_SELF or not path:
+            continue
+        for companion in wanted:
+            present = (Path(path) / companion["path"]).is_file()
+            section["companions"].append({"plugin": name, "path": companion["path"], "role": companion["role"],
+                                          "present": present})
+            if not present:
+                notes.append(f"{client}: plugin {name} has no {companion['path']} ({companion['role']})")
+    if any(item["role"] == "mcp" for item in wanted):
+        notes.append(f"{client}: which MCP file the client reads (mcp.json or mcp_config.json) depends on a switch whose "
+                     "state is unknown (agent-plugins-spec); the package ships both")
+    return section, notes
+
+
 def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None) -> dict[str, Any]:
     """Validate the project; with ``clients``, also report each client's drift from it."""
     layout = load_project_layout(project)
@@ -2079,7 +2130,7 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
     for plugin in inventory.plugins:
         for driver in _registry().BUILTIN:
             companions = (driver.get("sync") or {}).get("companions")
-            if not companions:
+            if not companions or "manifest" not in companions:
                 continue
             adapter_path = Path(plugin["path"]) / companions["manifest"]
             if not adapter_path.is_file() or adapter_path.is_symlink():
@@ -2124,6 +2175,9 @@ def doctor(project: Path, clients: Iterable[str] = (), home: Path | None = None)
             continue
         report = client_drift(layout.root, client, home)
         reports[client] = report
+        if "cli" in (_registry().get(client) or {}).get("detect", {}):   # advisory: what the client's own plugin list says
+            report["cli"], notes = _cli_doctor(client, home or Path.home())
+            warnings.extend(notes)
         if client in _registry().ids_with_sync("native-package"):  # advisory only: it never changes ``ok`` or the exit code
             import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
 
@@ -2235,7 +2289,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync_parser = sub.add_parser("sync")
     sync_parser.add_argument("--project", type=Path, default=Path.cwd())
-    sync_parser.add_argument("--client", choices=agent_pack_clients.default_ids(), required=True)
+    sync_parser.add_argument("--client", choices=agent_pack_clients.selectable_ids(), required=True)
     sync_parser.add_argument("--home", type=Path)
     sync_parser.add_argument("--apply", action="store_true")
     sync_parser.add_argument("--replace", action="store_true",
@@ -2259,7 +2313,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reconcile_parser = sub.add_parser("reconcile")
     reconcile_parser.add_argument("--project", type=Path, default=Path.cwd())
-    reconcile_parser.add_argument("--client", choices=agent_pack_clients.default_ids(), required=True)
+    reconcile_parser.add_argument("--client", choices=agent_pack_clients.selectable_ids(), required=True)
     reconcile_parser.add_argument("--replace", action="store_true",
                                   help="claude: also replace Skills / MCP entries this package did not install")
     reconcile_parser.add_argument("--reset-overrides", action="store_true",

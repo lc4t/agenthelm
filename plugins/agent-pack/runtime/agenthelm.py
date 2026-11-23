@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
 import os
@@ -112,6 +113,9 @@ def sha256_file(path: Path) -> str:
 class Env:
     home: Path
     variables: dict[str, str] = field(default_factory=dict)
+    # The clients this run was told about with ``--client``: a client outside the default set is only asked (its command
+    # line is only run) when it is named here.
+    named_clients: frozenset = frozenset()
 
     def child_environment(self) -> dict[str, str]:
         """Environment for client CLIs: they must see the same home this run inspects."""
@@ -385,13 +389,44 @@ def _installed_dropin_dir(env: Env, driver: dict, names: set[str]) -> list[dict]
     return found
 
 
+def cli_plugin_list(env: Env, driver: dict) -> dict:
+    """Run the driver's read-only ``detect.cli`` probe (a plugin list in JSON) with the client's own program, with this run's
+    home and an empty standard input. The result is ``agent_pack_probe.run_probe``'s: ``ok`` false with a reason when the
+    program is missing or its answer is unreadable (a failed probe is no evidence)."""
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_probe  # noqa: PLC0415 - shipped next to this file
+
+    return agent_pack_probe.run_driver_probe(driver, env.home, env.variables)
+
+
+def _installed_cli_list_json(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    """Layout ``cli-list-json``: what the client's own ``plugin list --json`` reports (``cli`` evidence). The program runs
+    only for a client the run named with ``--client``: a check of the default clients never starts it."""
+    if driver["id"] not in env.named_clients or "cli" not in driver["detect"]:
+        return []
+    found: list[dict] = []
+    sys.path.insert(0, str(RUNTIME_DIR))
+    import agent_pack_probe  # noqa: PLC0415 - shipped next to this file
+
+    for item in agent_pack_probe.plugin_entries(cli_plugin_list(env, driver)):
+        if item["name"] not in names:
+            continue
+        entry = {"client": driver["id"], "plugin": item["name"], "version": str(item["version"]) if item.get("version") else None,
+                 "path": str(item.get("path", "")), "enabled": item.get("enabled") is not False}
+        if entry["path"] and Path(entry["path"]).is_symlink():
+            entry["dev"] = "symlink"
+        found.append(entry)
+    return found
+
+
 def _no_others(env: Env, driver: dict, names: set[str]) -> list[dict]:
     return []
 
 
 STATE_READERS = {"records-json": (_installed_records_json, _others_records_json),
                  "cache-dir-versioned": (_installed_cache_dir_versioned, _others_cache_dir_versioned),
-                 "dropin-dir": (_installed_dropin_dir, _no_others)}
+                 "dropin-dir": (_installed_dropin_dir, _no_others),
+                 "cli-list-json": (_installed_cli_list_json, _no_others)}
 
 
 def _state_reader(driver: dict, position: int):
@@ -555,12 +590,14 @@ ORIGIN_LABELS = {"symlink": N_("指向别处的软链"), "local-directory-market
 # Keys are the message keys a driver's ``distribution.messages`` names (plus ``legacy``, which belongs to no client); the
 # texts stay here and in ``locale`` so a declaration never carries prose.
 RECOVERY_HINTS = {
+    "reinstall-no-backup": N_("由 Antigravity 管理，agenthelm 不备份；更新是卸载后重装（客户端没有 plugin update）"),
     "versioned-cache-keeps-old": N_("Claude Code 升级后把旧版本目录留在 ~/.claude/plugins/cache/agenthelm/<插件>/<旧版本>/（客户端行为，agenthelm 不清理）"),
     "managed-by-client-no-backup": N_("由 Codex 管理，agenthelm 不备份；需要回退时用 codex 重新安装指定版本"),
     "dropin-backup-folder": N_("被替换的目录备份在 ~/.agent-pack/recovery/<时间>-cursor-<插件>/replaced-plugin/<插件>/"),
     "legacy": N_("旧安装移入 ~/.agent-pack/recovery/<时间>-agenthelm-migrate/（含 migration.json 清单，可按清单恢复）"),
 }
 STEP_TEXTS = {
+    "update-by-reinstall": N_("Antigravity 卸载 {0}（准备重装到 {1}）"),
     "refresh-own-market": N_("刷新 Claude Code 的 agenthelm 市场"),
     "update-plugin-to-version": N_("Claude Code 更新 {0} → {1}"),
     "upgrade-market-and-plugins": N_("Codex 升级 agenthelm 市场与已装插件"),
@@ -781,7 +818,7 @@ def _advice(diag: dict, client: str) -> dict:
 def install_state(env: Env, latest: dict, findings: list[dict], others: list[dict], declared: list[dict],
                   clients: list[str]) -> dict:
     """Per selected client: none / partial / marketplace(current|behind|ahead) / dev / legacy / mixed / market-conflict."""
-    detected = set(detect_clients(env))
+    detected = set(detect_clients(env, named=True))
     conflict = market_conflict(latest, declared)
     pin = market_pin(latest, declared)
     result: dict = {"clients": {}, "unconfirmed": [
@@ -1197,6 +1234,7 @@ def scaffold_fingerprint(env: Env, scaffold: dict | None) -> dict | None:
 
 CLIENT_NAMES = client_registry.display_names()
 CLIENT_KEYS = client_registry.default_ids()
+SELECTABLE_KEYS = client_registry.selectable_ids()  # what ``--client`` accepts: the default set, then the clients named explicitly
 
 
 def ignored_clients(env: Env) -> list[str]:
@@ -1212,7 +1250,7 @@ def select_clients(env: Env, explicit: list[str] | None) -> dict:
     """Which clients a run covers. ``--client`` wins over the ignore setting; without it, ignored ones are left out."""
     ignored = ignored_clients(env)
     if explicit:
-        chosen = [name for name in CLIENT_KEYS if name in explicit]
+        chosen = [name for name in SELECTABLE_KEYS if name in explicit]
         return {"explicit": chosen, "active": chosen, "ignored": [], "excluded": [n for n in CLIENT_KEYS if n not in chosen]}
     return {"explicit": None, "active": [n for n in CLIENT_KEYS if n not in ignored], "ignored": ignored, "excluded": []}
 
@@ -1425,6 +1463,8 @@ def update_hint(client: str | None) -> str | None:
         return None
     if client_registry.distribution_type(driver) == "directory-dropin":
         return f"{CLI} update"
+    if driver["capabilities"].get("update_by_reinstall"):  # no client command updates it; agenthelm runs the steps
+        return f"{CLI} update --client {driver['id']}"
     executable = driver["detect"].get("executables", [None])[0]
     commands = [" ".join(argv) for name in ("update_source", "update")
                 if (argv := client_registry.expand_step(driver, name, cli=executable or driver["id"],
@@ -1865,10 +1905,13 @@ def github_slug(latest: dict) -> str:
     return match.group(1)
 
 
-def detect_clients(env: Env) -> list[str]:
-    """Default-set clients whose declared detection evidence (executable or configuration directory) is present."""
+def detect_clients(env: Env, *, named: bool = False) -> list[str]:
+    """Default-set clients whose declared detection evidence (executable or configuration directory) is present; with
+    ``named`` also the other selectable clients this run named with ``--client`` (a client outside the default set is
+    looked at only when asked for)."""
     return [driver["id"] for driver in client_registry.BUILTIN
-            if driver["capabilities"]["default_set"]
+            if (driver["capabilities"]["default_set"] or (named and driver["id"] in env.named_clients
+                                                           and driver["id"] in SELECTABLE_KEYS))
             and client_registry.detect(driver, env.home, env.get, lambda name: find_cli(env, name))["detected"]]
 
 
@@ -2083,6 +2126,39 @@ def already_installed_reason(version: str | None, target: str | None) -> str:
     return _("已安装 {0}，已是最新：install 不会改动已安装的插件").format(version)
 
 
+class BundleSources:
+    """Where a ``source: bundle-dir`` client takes each plugin from: a directory per plugin, taken from a local checkout
+    (``--source``) or from the unpacked release. ``values(plugin)`` is what fills ``{source_dir}`` in the client's step;
+    ``problem(plugin)`` says why there is no directory (the release cannot be fetched), else ``None``."""
+
+    def __init__(self, root: Path | None, problem: str | None, bundle: bool) -> None:
+        self.root, self._problem, self.bundle = root, problem, bundle
+
+    def values(self, plugin: str) -> dict[str, str]:
+        if not self.bundle:
+            return {}
+        return {"source_dir": str(self.root / "plugins" / plugin) if self.root else f"<{_('发布包')}>/plugins/{plugin}"}
+
+    def problem(self, plugin: str) -> str | None:
+        return self._problem if self.bundle and self.root is None else None
+
+
+def bundle_sources(driver: dict, latest: dict, source: Path | None, needed: list[str]) -> BundleSources:
+    """The plugin directories for a ``bundle-dir`` client (nothing is fetched for a client that unpacks nothing, or when no
+    plugin is needed). A release is unpacked into a temporary directory that is removed when the process ends."""
+    bundle = client_registry.distribution(driver).get("source") == "bundle-dir"
+    if not bundle or not needed:
+        return BundleSources(None, None, bundle)
+    try:
+        if source is not None:
+            return BundleSources(release_source(latest, Path("."), source), None, True)
+        work = Path(tempfile.mkdtemp(prefix="agenthelm-"))
+        atexit.register(shutil.rmtree, work, True)
+        return BundleSources(release_source(latest, work, None), None, True)
+    except (Unavailable, CheckError) as exc:
+        return BundleSources(None, str(exc), True)
+
+
 def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str], source: Path | None,
                   home: Path, marketplace_source: str | None = None) -> list[Step]:
     slug = marketplace_source or github_slug(latest)
@@ -2098,8 +2174,11 @@ def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str]
             command, blocked = _step_command(env, driver, "add_source", slug=slug, marketplace=MARKETPLACE)
             if command:
                 steps.append(Step("install", client, _("{0} 添加 agenthelm 市场（{1}）").format(name, slug), command, blocked=blocked))
+            bundle = bundle_sources(driver, latest, source, [plugin for plugin in plugins if not present[plugin]])
             for plugin in plugins:
-                command, blocked = _step_command(env, driver, "install", plugin=plugin, marketplace=MARKETPLACE)
+                command, blocked = _step_command(env, driver, "install", plugin=plugin, marketplace=MARKETPLACE,
+                                                 **bundle.values(plugin))
+                blocked = blocked or bundle.problem(plugin)
                 keep_foreign = (client, plugin) in foreign and not present[plugin]  # nothing runs, so a missing CLI is irrelevant
                 steps.append(Step("install", client, _("{0} 安装 {1}").format(name, plugin), command,
                                   blocked=None if keep_foreign else blocked,
@@ -2187,6 +2266,8 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
                 continue
             if kind == "marketplace-cli" and driver["capabilities"].get("marketplace_update"):
                 steps += marketplace_update_steps(env, report, driver, mine)
+            elif kind == "marketplace-cli" and driver["capabilities"].get("update_by_reinstall"):
+                steps += reinstall_update_steps(env, report, driver, mine, source)
             elif kind == "directory-dropin":
                 cursor = sorted({item["plugin"] for item in mine})
                 steps.append(dropin_step(driver, latest, cursor, source, home, _("更新"), env=env))
@@ -2201,6 +2282,39 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
             if item.get("status") not in {"update-available", "conflict"} and not (named and item.get("status") in {"current", "unknown"}):
                 continue
             steps.append(content_step(env, item, report, project, accept, keep, recovery_dir, content_flags=content_flags))
+    return steps
+
+
+def reinstall_update_steps(env: Env, report: dict, driver: dict, behind: list[dict], source: Path | None) -> list[Step]:
+    """Update steps of a client that has no update command (``update_by_reinstall``): per plugin that is behind, uninstall it
+    and install the release's directory again. The client forgets what it knew about the plugin, so a plugin that was
+    disabled before is disabled again afterwards (the ``enabled`` value read back from the client before the update); the
+    description says so. The install step reads the version back like any other."""
+    client = driver["id"]
+    latest = report["_latest"]
+    names = sorted({item["plugin"] for item in behind})
+    enabled = {item["plugin"]: item.get("enabled", True) for item in installed_plugins(env, set(names))
+               if item["client"] == client}
+    bundle = bundle_sources(driver, latest, source, names)
+    steps: list[Step] = []
+    for item in sorted(behind, key=lambda entry: entry["plugin"]):
+        plugin = item["plugin"]
+        scope = item.get("scope")
+        uninstall, blocked = _step_command(env, driver, "uninstall", plugin=plugin, marketplace=MARKETPLACE)
+        install, blocked_install = _step_command(env, driver, "install", plugin=plugin, marketplace=MARKETPLACE,
+                                                 **bundle.values(plugin))
+        blocked = blocked or blocked_install or bundle.problem(plugin)
+        steps.append(Step("update", client, step_description(client, "describe_update", N_("{0} 更新 {1} → {2}"),
+                                                             plugin, item["latest"]),
+                          uninstall, blocked=blocked, scope=scope,
+                          note=_("没有 plugin update 命令：先卸载再重装；会失去已有的启用状态，重装后按读回的启用状态恢复") if not steps else None))
+        steps.append(Step("update", client, _("{0} 重装 {1}（来自发布包）").format(display_name(client), plugin), install,
+                          blocked=blocked, verify=[plugin], targets={plugin: item["latest"]}, scope=scope))
+        if enabled.get(plugin) is False:
+            disable, blocked_disable = _step_command(env, driver, "disable", plugin=plugin, marketplace=MARKETPLACE)
+            if disable:
+                steps.append(Step("update", client, _("{0} 恢复 {1} 的停用状态").format(display_name(client), plugin), disable,
+                                  blocked=blocked_disable, scope=scope))
     return steps
 
 
@@ -2371,6 +2485,7 @@ UNCHANGED_REASONS = {
     "market-entry-version-same": N_("该客户端的市场条目 version 没有变（Claude Code 只看市场条目的 version 判断是否有更新），或市场没有固定到这个版本"),
     "market-not-pinned-here": N_("该客户端的市场没有固定到此版本（可能在跟随默认分支，升级到的是那里的版本）"),
     "release-same-version-rewrote": N_("发布包里的版本与已装的相同，文件已按发布包重写"),
+    "reinstall-version-unchanged": N_("卸载后重装已完成，但读回的版本没有变化（发布包里的版本与已装的相同，或客户端读不到）"),
 }
 UNCHANGED_ADVICE = {"pin-market-ref": pin_market_ref_advice}  # message key -> builds the next step from latest.json
 
@@ -2768,7 +2883,7 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--refresh", action="store_true", help=_("忽略一天的缓存，立即联网"))
 
     def client_filter(command: argparse.ArgumentParser, help_text: str | None = None) -> None:
-        command.add_argument("--client", action="append", choices=CLIENTS,
+        command.add_argument("--client", action="append", choices=SELECTABLE_KEYS,
                              help=help_text or _("只处理这个客户端（可重复）；默认处理检测到的全部客户端（用户配置 ignored_clients 里的除外）"))
 
     def common(command: argparse.ArgumentParser, *, project: bool = True) -> None:
@@ -3026,8 +3141,13 @@ def run_inventory(args: argparse.Namespace, env: Env) -> int:
     import agent_pack_inventory  # noqa: PLC0415 - shipped next to this file
 
     project = (args.project or Path.cwd()).resolve()
+    # A driver's read-only ``detect.cli`` probe runs only for a client the user asked for (named, or through ``all``): the
+    # default clients declare none, so a plain ``inventory`` starts no client program.
+    asked = list(client_registry.all_ids()) if args.client and "all" in args.client else (args.client or [])
+    probes = {name: cli_plugin_list(env, driver) for name in asked if (driver := client_registry.get(name))
+              and "cli" in driver["detect"] and find_cli(env, driver["detect"]["executables"][0])}
     report = agent_pack_inventory.observe(env.home, project, args.client, args.type, args.scope,
-                                          include_description=args.include_description)
+                                          include_description=args.include_description, probes=probes or None)
     if args.output == "json":
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -3192,6 +3312,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_local_only(argv[1:])
     args = parser().parse_args(argv)
     env = current_env(args.home)
+    env.named_clients = frozenset(name for name in (getattr(args, "client", None) or []) if name in SELECTABLE_KEYS)
     home = env.home
     project = None
     if hasattr(args, "no_project") and not args.no_project:

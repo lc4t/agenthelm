@@ -76,6 +76,10 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 - 项目里的入口：`agenthelm project extensions list|dups|show|check|move|dedupe|scope`（菜单第 9 屏「技能与 MCP」）。项目级作用域用 Profile 的 `capabilities.default_scope` / `mcp_scope` / `skill_scope` 声明，`sync` / `reconcile` 加 `--scope user|project|all`，见 [capability-config.md](plugins/agent-pack/references/capability-config.md)。
 - 本版 Claude Desktop 只读，不写 `claude_desktop_config.json`；MCP 条目是否被 Desktop 加载、Claude local 级条目是否弹批准、同步盘符号链接行为均**未确认**，需真机验证。
 
+### Antigravity（`agy`）
+
+`agy` 不在默认客户端集合里，`check`、`install`、`update`、`sync` 只在显式 `--client agy` 时处理它，也只有这时才运行它的只读命令 `agy plugin list --json`（读取已装插件与启用状态）。`install` 把发布包里的插件目录交给 `agy plugin install <目录>`；`agy` 没有 `plugin update`，所以 `update` 对落后的插件先 `agy plugin uninstall <插件>` 再 `install`，重装前处于停用状态的插件会再执行 `agy plugin disable`（预览里写明）。`sync --client agy` 生成含 `mcp.json` 与 `mcp_config.json` 的包再交给 `agy plugin install`，只处理用户级；项目级条目被跳过并说明原因。`inventory --client agy` 与 `agent-pack doctor --client agy` 会把 `agy` 自己的插件列表作为 `cli` 级证据写进输出。`agy` 的 hook 与 MCP 在真实会话里是否生效尚未验证（见 `docs/design/client-protocols.md` 第 12 节）。
+
 ### Cursor 从发布包更新
 
 本机无需保留 agenthelm 仓库：运行 `agenthelm update --client cursor` 预览，确认后追加 `--apply`。版本来源的 `release` 块提供 tag、tarball URL 与 SHA-256；若版本来源没有该块，会从 GitHub 的最新正式 Release 读取 `release.json`，只接受插件版本组合与当前版本来源一致的发布。

@@ -25,6 +25,15 @@ import agent_pack_config as core  # noqa: E402
 PLUGIN_PLACEHOLDERS = ("PLUGIN_ROOT", "PLUGIN_DATA")
 
 
+def read_config(path: Path) -> dict[str, Any]:
+    """The object in a JSON MCP configuration file for a write that merges into it: a 0-byte file (a client may create its
+    configuration empty, so the first write finds nothing in it) is an empty object, any other content is read as before
+    (a file that is not a JSON object stays a refusal). Whitespace only is not empty: it is still refused as damaged."""
+    if not path.is_symlink() and path.is_file() and path.stat().st_size == 0:
+        return {}
+    return core._read_json(path)
+
+
 def is_remote(config: dict[str, Any]) -> bool:
     return config.get("type") != "stdio"
 
@@ -82,13 +91,16 @@ def prefixed_placeholders(value: Any, prefix: str) -> Any:
     return value
 
 
-def companion_entry(config: dict[str, Any], prefix: str, type_names: dict[str, str]) -> dict[str, Any]:
+def companion_entry(config: dict[str, Any], prefix: str, type_names: dict[str, str],
+                    url_key: str = "url") -> dict[str, Any]:
     """The entry of a package's companion ``mcp`` file: prefixed placeholders; the type is kept only when ``type_names``
-    maps it (a type that is not mapped, a plain stdio entry, carries none)."""
+    maps it (a type that is not mapped, a plain stdio entry, carries none); a remote URL goes under ``url_key``."""
     item = prefixed_placeholders(dict(config), prefix)
     kind = item.pop("type", None)
     if kind in type_names:
         item["type"] = type_names[kind]
+    if url_key != "url" and "url" in item:
+        item[url_key] = item.pop("url")
     return item
 
 
