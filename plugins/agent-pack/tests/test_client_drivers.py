@@ -126,8 +126,8 @@ class RegistryTests(unittest.TestCase):
             sub = next(a for a in parser._actions if isinstance(a, __import__("argparse")._SubParsersAction))
             action = next(a for a in sub.choices[command]._actions if a.dest == "client")
             choices[command] = tuple(action.choices)
-        self.assertEqual(choices, {"doctor": registry.all_ids(), "sync": registry.selectable_ids(),
-                                   "bootstrap": registry.default_ids(), "reconcile": registry.selectable_ids()})
+        self.assertEqual(choices, {"doctor": registry.all_ids(), "sync": registry.sync_client_ids(),
+                                   "bootstrap": registry.default_ids(), "reconcile": registry.sync_client_ids()})
         enums = []
 
         def walk(node) -> None:

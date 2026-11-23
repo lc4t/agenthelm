@@ -1,8 +1,8 @@
-"""Guard three (#134, design 7.4): every driver declaration is self-consistent, checked for each file in ``drivers/``.
+"""Guard three, the checks ``test_client_declarations_selfcheck`` does not make (#134, design 7.4).
 
-Vocabulary, store paths against their formats, the feature names of ``unsupported`` against the support matrix of the design
-(section 6), a fixture directory per driver, and the companion files a driver lists against what the plugin ships. The checks run
-over whatever ``drivers/*.json`` holds, so a new driver is covered by adding its file and its fixture directory.
+Over every ``drivers/*.json``: the feature names of ``unsupported`` against the support matrix of the design document (section 6,
+the first column), the companion files a driver ships, the hook file it names, the message keys it uses, and that a fixture tree
+is detected as the client it belongs to.
 """
 from __future__ import annotations
 
@@ -36,30 +36,6 @@ def matrix_feature_names() -> set[str]:
 
 
 class DeclarationGuards(unittest.TestCase):
-    def test_there_are_drivers_and_every_file_is_valid_and_named_for_its_id(self) -> None:
-        self.assertTrue(FILES)
-        for path in FILES:
-            with self.subTest(driver=path.stem):
-                data = json.loads(path.read_text(encoding="utf-8"))
-                registry.validate_builtin(data, path.name)   # vocabulary, structure, cross-field rules
-                self.assertEqual(data["id"], path.stem)
-
-    def test_store_paths_match_their_formats(self) -> None:
-        for path in FILES:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            with self.subTest(driver=data["id"]):
-                for store in data["stores"]["skills"]:
-                    self.assertEqual(store["format"], "dir", store["path"])
-                for store in data["stores"]["mcp"]:
-                    file = store["path"].split("#", 1)[0]
-                    if store["format"] in EXTENSIONS:
-                        self.assertTrue(file.endswith(EXTENSIONS[store["format"]]), store["path"])
-                    self.assertTrue(file.startswith(("~/", "<project>/", "<per-platform>/")), store["path"])
-                for kind in ("skills", "mcp"):
-                    for store in data["stores"][kind]:
-                        self.assertFalse(store.get("write_target") and store.get("status") == "undetermined",
-                                         f"an undetermined store is never a write target: {store['path']}")
-
     def test_unsupported_features_belong_to_the_support_matrix(self) -> None:
         names = matrix_feature_names()
         self.assertTrue({"relocate", "dedupe", "hook-event:prompt-submit", "hook-event:stop"} <= names, names)
@@ -71,16 +47,15 @@ class DeclarationGuards(unittest.TestCase):
                     self.assertIn(entry["feature"], names)
                     self.assertTrue(entry["reason"].strip())
 
-    def test_every_driver_has_a_fixture_directory_and_its_tree_is_detected(self) -> None:
-        for path in FILES:
-            client = path.stem
-            with self.subTest(driver=client):
-                folder = FIXTURES / client
-                self.assertTrue(folder.is_dir() and any(folder.rglob("*")), f"tests/fixtures/clients/{client}/ is missing or empty")
-                home = folder / "home"
-                if home.is_dir() and registry.get(client)["detect"].get("dirs"):
-                    found = registry.detect(registry.get(client), home, {}.get, lambda name: None)
-                    self.assertTrue(found["detected"], f"the fixture tree of {client} is not detected as {client}")
+    def test_a_fixture_tree_is_detected_as_the_client_it_belongs_to(self) -> None:
+        for folder in sorted(path for path in FIXTURES.iterdir() if path.is_dir()):
+            home = folder / "home"
+            driver = registry.get(folder.name)
+            with self.subTest(client=folder.name):
+                self.assertIsNotNone(driver, f"tests/fixtures/clients/{folder.name}/ belongs to no declared client")
+                if home.is_dir() and driver["detect"].get("dirs"):
+                    found = registry.detect(driver, home, {}.get, lambda name: None)
+                    self.assertTrue(found["detected"], f"the fixture tree of {folder.name} is not detected as {folder.name}")
 
     def test_companions_a_driver_lists_ship_in_the_plugin(self) -> None:
         for path in FILES:
