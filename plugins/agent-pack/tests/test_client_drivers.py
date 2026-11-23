@@ -42,7 +42,7 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(agenthelm.CLIENT_NAMES, {"claude": "Claude Code", "codex": "Codex", "cursor": "Cursor"})
         self.assertEqual(nudge.CLIENTS, ("claude", "codex", "cursor"))
         self.assertEqual(inv.CLIENTS, ("claude", "codex", "cursor"))
-        self.assertEqual(inv.ALL_CLIENTS, ("claude", "codex", "cursor", "claude-desktop"))
+        self.assertEqual(inv.ALL_CLIENTS, ("claude", "codex", "cursor", "claude-desktop", "gemini"))
 
     def test_desktop_is_read_only_and_outside_the_default_set(self) -> None:
         desktop = registry.get("claude-desktop")
@@ -59,7 +59,7 @@ class RegistryTests(unittest.TestCase):
     def test_project_write_support_comes_from_the_driver_capability(self) -> None:
         import agent_pack_config as config
         self.assertEqual({client: config.project_write_supported(client) for client in registry.all_ids()},
-                         {"claude": True, "codex": False, "cursor": False, "claude-desktop": False})
+                         {"claude": True, "codex": False, "cursor": False, "claude-desktop": False, "gemini": False})
         for client in registry.all_ids():
             self.assertEqual(config.project_write_supported(client), registry.supports(client, "project_mcp_write"))
         self.assertFalse(config.project_write_supported("unknown-client"))
@@ -87,20 +87,21 @@ class RegistryTests(unittest.TestCase):
                         store.pop(key, None)
             return driver
 
-        self.assertEqual([comparable(item) for item in registry.BUILTIN], snapshot)
+        self.assertEqual([comparable(item) for item in registry.BUILTIN if item["id"] != "gemini"], snapshot)  # gemini: test_gemini_client
         self.assertEqual(sorted(path.stem for path in registry.DRIVERS_DIR.glob("*.json")), sorted(registry.BUILTIN_IDS))
 
     def test_write_targets_are_the_ones_relocate_wrote_before(self) -> None:
         self.assertEqual(registry.skill_write_targets(), {
             ("claude", "user"): "~/.claude/skills", ("claude", "project"): "<project>/.claude/skills",
             ("codex", "user"): "~/.agents/skills", ("codex", "project"): "<project>/.agents/skills",
-            ("cursor", "user"): "~/.cursor/skills", ("cursor", "project"): "<project>/.agents/skills"})
+            ("cursor", "user"): "~/.cursor/skills", ("cursor", "project"): "<project>/.agents/skills",
+            ("gemini", "user"): "~/.gemini/skills", ("gemini", "project"): "<project>/.gemini/skills"})
 
     def test_every_consumer_reads_the_same_stores(self) -> None:
         import agent_pack_config as config
         for kind, table in (("skills", inv.SKILL_STORES), ("mcp", inv.MCP_STORES)):
             expected = {d["id"]: tuple((s["scope"], s["path"]) for s in d["stores"][kind])
-                        for d in registry.BUILTIN if d["id"] in registry.default_ids()}
+                        for d in registry.BUILTIN if d["id"] in (*registry.default_ids(), "gemini") and d["stores"][kind]}
             self.assertEqual(table, expected, kind)
             self.assertEqual(table, {k: v for k, v in registry.store_table(kind).items() if k in expected}, kind)
         self.assertEqual(inv.PROJECT, "<project>")
@@ -162,7 +163,7 @@ class RegistryTests(unittest.TestCase):
             self.assertIn(registry.distribution_type(driver), registry.DISTRIBUTIONS)
             self.assertTrue(set(registry.CAPABILITIES) <= set(driver["capabilities"])
                             <= {*registry.CAPABILITIES, *registry.EXTENDED_CAPABILITIES})
-            self.assertEqual(driver.get("lifecycle", "active"), "active")
+            self.assertIn(driver.get("lifecycle", "active"), registry.LIFECYCLES)
 
 
 class BuiltinLoadingTests(unittest.TestCase):
@@ -196,7 +197,7 @@ class BuiltinLoadingTests(unittest.TestCase):
         loaded = registry.load_builtin(self.folder)
         self.assertEqual([item["id"] for item in loaded], ["synthetic", "alpha"])  # default set first, then the rest
         self.assertEqual(loaded[0]["lifecycle"], "deprecated")
-        self.assertEqual(registry.BUILTIN_IDS, ("claude", "codex", "cursor", "claude-desktop"))  # module state untouched
+        self.assertEqual(registry.BUILTIN_IDS, ("claude", "codex", "cursor", "claude-desktop", "gemini"))  # module state untouched
 
     def test_schema_version_one_and_two_are_accepted_and_nothing_else(self) -> None:
         for version in (1, 2):

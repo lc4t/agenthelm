@@ -403,7 +403,7 @@ class ReadAdapterTests(Fixture):
         self.assertEqual(trust, [("codex", "project")])
         self.assertEqual({c: [s["root_key"] for s in registry.stores(c, "mcp")] for c in registry.all_ids()},
                          {"claude": ["mcpServers"] * 3, "codex": ["mcp_servers"] * 2, "cursor": ["mcpServers"] * 2,
-                          "claude-desktop": ["mcpServers"]})
+                          "claude-desktop": ["mcpServers"], "gemini": []})
 
 
 class EmptyFileTests(Fixture):

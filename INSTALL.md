@@ -70,11 +70,15 @@ npx @sakanano-moe/agenthelm install --client <claude|codex|cursor> --apply
 
 ### 盘点与管理技能、MCP
 
-- `agenthelm inventory`（只读）：各客户端能看到的 Skill 与 MCP、作用域、重复、description 字节数与证据等级。默认读 claude / codex / cursor；`--client claude-desktop` 或 `--client all` 加入 Claude Desktop（只读）。`--output json` 的契约见 [inventory-contract.md](plugins/agent-pack/references/inventory-contract.md)。
+- `agenthelm inventory`（只读）：各客户端能看到的 Skill 与 MCP、作用域、重复、description 字节数与证据等级。默认读 claude / codex / cursor；`--client claude-desktop`、`--client gemini` 或 `--client all` 加入 Claude Desktop（只读）与已弃用的 Gemini CLI（读 `~/.gemini/skills`、`~/.agents/skills` 与项目里的 `.gemini/skills`、`.agents/skills`）。`--output json` 的契约见 [inventory-contract.md](plugins/agent-pack/references/inventory-contract.md)。
 - `agenthelm clients`（只读）：列出客户端驱动。用户声明文件放 `~/.config/agenthelm/clients.d/*.json`，本版只校验、不执行，不支持用它安装新客户端。
 - `agenthelm relocate <ref> --to <客户端>:<作用域>`、`agenthelm dedupe <分组id> …`：默认预览（零写入），`--apply` 必须带预览的 `--expect-plan <plan_digest>`；移走的内容进 `~/.agent-pack/recovery/`，没有 `restore` 命令。契约：[relocate](plugins/agent-pack/references/relocate-contract.md)、[dedupe](plugins/agent-pack/references/dedupe-contract.md)。
 - 项目里的入口：`agenthelm project extensions list|dups|show|check|move|dedupe|scope`（菜单第 9 屏「技能与 MCP」）。项目级作用域用 Profile 的 `capabilities.default_scope` / `mcp_scope` / `skill_scope` 声明，`sync` / `reconcile` 加 `--scope user|project|all`，见 [capability-config.md](plugins/agent-pack/references/capability-config.md)。
 - 本版 Claude Desktop 只读，不写 `claude_desktop_config.json`；MCP 条目是否被 Desktop 加载、Claude local 级条目是否弹批准、同步盘符号链接行为均**未确认**，需真机验证。
+
+### Gemini CLI（已弃用）
+
+`agenthelm install --client gemini`、`agenthelm update --client gemini` 与 `--client all` 才会处理它；默认集合和不带 `--client` 的命令不含它。预览只打印命令；`--apply` 时 `gemini extensions install <插件目录>` 会向你索取文件夹信任确认，命令直接使用你的终端，agenthelm 不代答、不转发输入、不加 `--consent`，没有终端（标准输入不是终端）时不启动命令。安装结果以读回 `~/.gemini/extensions/<插件>/gemini-extension.json` 的版本为准，该目录由 Gemini 签名，agenthelm 只读不写。`update` 是先 `extensions uninstall` 再 `extensions install`：在确认处拒绝时插件会处于未安装状态，重新运行 `install` 即可。用户拒绝确认时命令的退出码，以及卸载本身是否也要确认，尚未确认。Gemini 要求插件目录有 `gemini-extension.json`，本版发布包没有随包提供它：不带 `--source` 的安装在预览里显示为受阻，用 `--source '/path/to/checkout'` 指向带有该文件的目录才会运行命令。
 
 ### Cursor 从发布包更新
 

@@ -196,6 +196,7 @@ class DriverFieldTests(unittest.TestCase):
                                             "glob": "plugins/cache/agenthelm/<plugin>/*"}])
         self.assertEqual(caches["cursor"], [{"base": "~/.cursor", "glob": "plugins/local/<plugin>"}])
         self.assertEqual(caches["claude-desktop"], [])
+        self.assertEqual(caches["gemini"], [])  # an extension directory is signed by the client: not a runtime to run from
 
     def test_validation_rejects_malformed_runtime_cache(self) -> None:
         base = json.loads(json.dumps(registry.get("cursor")))

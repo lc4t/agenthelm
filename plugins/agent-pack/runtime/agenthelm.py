@@ -385,13 +385,39 @@ def _installed_dropin_dir(env: Env, driver: dict, names: set[str]) -> list[dict]
     return found
 
 
+def _installed_extensions_dir(env: Env, driver: dict, names: set[str]) -> list[dict]:
+    """Layout ``extensions-dir``: ``extensions/<plugin>/<manifest>`` under the client's directory, the manifest being the
+    driver's declared companion with role ``manifest``. Read only: the client signs what it installs there, so nothing
+    here ever writes to it. A symlink is a development install (the client's own ``link``)."""
+    found: list[dict] = []
+    manifest = client_registry.manifest_file(driver)
+    base = client_registry.config_dir(driver, env.home, env.get)
+    if manifest is None or base is None:
+        return found
+    for plugin in sorted(names):
+        path = base / "extensions" / plugin
+        if not (path / manifest).is_file():
+            continue
+        try:
+            version = read_json(path / manifest).get("version")
+        except (OSError, ValueError, AttributeError):
+            version = None
+        item = {"client": driver["id"], "plugin": plugin, "version": str(version) if version is not None else None,
+                "path": str(path)}
+        if path.is_symlink():
+            item["dev"] = "symlink"
+        found.append(item)
+    return found
+
+
 def _no_others(env: Env, driver: dict, names: set[str]) -> list[dict]:
     return []
 
 
 STATE_READERS = {"records-json": (_installed_records_json, _others_records_json),
                  "cache-dir-versioned": (_installed_cache_dir_versioned, _others_cache_dir_versioned),
-                 "dropin-dir": (_installed_dropin_dir, _no_others)}
+                 "dropin-dir": (_installed_dropin_dir, _no_others),
+                 "extensions-dir": (_installed_extensions_dir, _no_others)}
 
 
 def _state_reader(driver: dict, position: int):
@@ -1208,11 +1234,19 @@ def ignored_clients(env: Env) -> list[str]:
     return [name for name in CLIENT_KEYS if isinstance(value, list) and name in value]
 
 
+def expand_clients(explicit: list[str]) -> list[str]:
+    """An explicit ``--client`` list with ``all`` replaced by every client ``install`` can address (the default set first,
+    then the opt-in ones, deprecated included: ``all`` means all)."""
+    return list(client_registry.installable_ids()) if "all" in explicit else list(explicit)
+
+
 def select_clients(env: Env, explicit: list[str] | None) -> dict:
-    """Which clients a run covers. ``--client`` wins over the ignore setting; without it, ignored ones are left out."""
+    """Which clients a run covers. ``--client`` wins over the ignore setting; without it, ignored ones are left out.
+    A client outside the default set is covered only when named (or by ``all``)."""
     ignored = ignored_clients(env)
     if explicit:
-        chosen = [name for name in CLIENT_KEYS if name in explicit]
+        wanted = expand_clients(explicit)
+        chosen = [name for name in client_registry.installable_ids() if name in wanted]
         return {"explicit": chosen, "active": chosen, "ignored": [], "excluded": [n for n in CLIENT_KEYS if n not in chosen]}
     return {"explicit": None, "active": [n for n in CLIENT_KEYS if n not in ignored], "ignored": ignored, "excluded": []}
 
@@ -1220,8 +1254,16 @@ def select_clients(env: Env, explicit: list[str] | None) -> dict:
 def active_clients(env: Env, explicit: list[str] | None = None) -> list[str]:
     """Detected clients minus ignored ones (an explicit ``--client`` list is used as given)."""
     if explicit:
-        return list(explicit)
+        return expand_clients(explicit)
     return [name for name in detect_clients(env) if name not in ignored_clients(env)]
+
+
+def deprecation_note(client: str) -> str | None:
+    """Why a deprecated client is not part of the default set (shown when the user names it); None for an active one."""
+    driver = client_registry.get(client)
+    if driver is None or client_registry.lifecycle(driver) != "deprecated":
+        return None
+    return _("{0} 已弃用（厂商已用其他客户端取代它），不在默认客户端里；这里按你的点名处理。").format(display_name(client))
 
 
 def unused_client_hints(env: Env, plugins: list[dict], ignored: list[str]) -> list[str]:
@@ -1249,7 +1291,7 @@ def capability_findings(env: Env, project: Path | None, clients: list[str] | Non
         inventory = capabilities.inventory_project(project)
         if not inventory.skills and not inventory.mcps:
             return []
-        selected = active_clients(env, clients)
+        selected = [name for name in active_clients(env, clients) if client_registry.sync_spec(name)]  # a client sync does not write has no drift
         disabled = read_json(env.config_file).get("capability_check_ignored_clients", []) if env.config_file.is_file() else []
         reports = []
         for client in selected:
@@ -1425,6 +1467,8 @@ def update_hint(client: str | None) -> str | None:
         return None
     if client_registry.distribution_type(driver) == "directory-dropin":
         return f"{CLI} update"
+    if client_registry.source_kind(driver) == "bundle-dir":
+        return f"{CLI} update --client {client}"
     executable = driver["detect"].get("executables", [None])[0]
     commands = [" ".join(argv) for name in ("update_source", "update")
                 if (argv := client_registry.expand_step(driver, name, cli=executable or driver["id"],
@@ -1856,6 +1900,7 @@ def hook(env: Env, project: Path | None, output: str, *, latest_source: str | No
 # ---------------------------------------------------------------- install / update / migrate
 
 CLIENTS = client_registry.default_ids()  # the default set, derived from the driver registry
+CLIENT_CHOICES = (*client_registry.installable_ids(), "all")  # what ``--client`` accepts: the default set, opt-in clients, all
 
 
 def github_slug(latest: dict) -> str:
@@ -1994,6 +2039,7 @@ class Step:
     note: str | None = None
     untouched: bool = False  # an install the tool recognises but leaves alone (development / local)
     pinned: str | None = None  # the ref Claude's marketplace declaration is pinned to (updates only follow it)
+    interactive: str | None = None  # the command asks the user for a confirmation (``trust-prompt``): it gets the terminal
     blocker: str | None = None  # machine-readable cause of ``blocked`` that the user has to resolve (not a missing CLI)
     next: str | None = None
 
@@ -2012,6 +2058,8 @@ class Step:
             data["note"] = self.note
         if self.untouched:
             data["untouched"] = True
+        if self.interactive:
+            data["interactive"] = self.interactive
         return data
 
 
@@ -2093,7 +2141,11 @@ def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str]
         driver = client_registry.get(client)
         present = installed_versions(env, client, plugins)
         kind = client_registry.distribution_type(driver)
-        if kind == "marketplace-cli":
+        if kind == "marketplace-cli" and client_registry.source_kind(driver) == "bundle-dir":
+            for plugin in plugins:  # the client takes a plugin directory: one command (and one confirmation) per plugin
+                steps.append(bundle_dir_step(env, driver, plugin, latest, source, replace=False, target=targets[plugin],
+                                             skipped=already_installed_reason(present[plugin], targets[plugin]) if present[plugin] else None))
+        elif kind == "marketplace-cli":
             name = display_name(client)
             command, blocked = _step_command(env, driver, "add_source", slug=slug, marketplace=MARKETPLACE)
             if command:
@@ -2151,6 +2203,84 @@ def dropin_step(driver: dict, latest: dict, plugins: list[str], source: Path | N
                 targets={plugin: latest.get("plugins", {}).get(plugin, {}).get("version") for plugin in plugins}, note=note)
 
 
+def _inherited_streams() -> dict:
+    """What a command that talks to the user gets: stdin is the user's terminal (left alone), stderr as it is, stdout sent to
+    stderr so a ``--output json`` payload on stdout stays parseable; where stderr has no file descriptor, all are inherited."""
+    try:
+        sys.stderr.fileno()
+    except (AttributeError, OSError, ValueError):
+        return {}
+    return {"stdout": sys.stderr}
+
+
+def bundle_dir_step(env: Env, driver: dict, plugin: str, latest: dict, source: Path | None, *, replace: bool,
+                    target: str | None, skipped: str | None = None) -> Step:
+    """The step of a ``bundle-dir`` client: its declared ``install`` command is given the plugin's directory from the
+    release (or from a local checkout). ``replace`` (an update) first runs the declared ``uninstall``, because the client has
+    no update command for a directory. When the driver declares ``interactive: trust-prompt`` the command asks the user
+    for a confirmation: ``--apply`` hands it the user's terminal and nothing else; this tool does not answer, forward or
+    bypass the question (design decision D-K6), and with no terminal it does not start the command."""
+    client = driver["id"]
+    name = display_name(client)
+    executable = driver["detect"]["executables"][0]
+    found = find_cli(env, executable)
+    shown = str(source / "plugins" / plugin) if source is not None else f"<{_('发布包')}>/plugins/{plugin}"
+    install = client_registry.expand_step(driver, "install", cli=found or executable, plugin=plugin, source_dir=shown)
+    uninstall = client_registry.expand_step(driver, "uninstall", cli=found or executable, plugin=plugin) if replace else None
+    asks = client_registry.interactive(driver) != "none"
+    required = client_registry.required_files(driver)
+    unshipped = [item["path"] for item in driver.get("content", {}).get("companions", []) if not item.get("shipped", True)]
+    blocked = None if found else _("未找到 {0} 命令（已查 PATH 与常见安装位置；可用 AGENTHELM_{1} 指定）").format(executable, executable.upper())
+    blocker = None
+    if blocked is None and source is None and unshipped and not skipped:
+        blocked = _("{0} 要求插件目录里有 {1}，而发布包没有随包提供它，{0} 会拒绝这个目录；用 --source <本地检出> 指向带有该文件的目录。").format(
+            name, _("、").join(unshipped))
+        blocker = "companion-not-shipped"
+    child_env = env.child_environment()
+
+    def run(apply: bool, _recovery_root: Path | None) -> dict:
+        with tempfile.TemporaryDirectory(prefix="agenthelm-") as temporary:
+            root = release_source(latest, Path(temporary), source)
+            directory = root / "plugins" / plugin
+            missing = [path for path in required if not (directory / path).is_file()]
+            if missing:
+                raise CheckError(_("{0} 的 {1} 目录里没有 {2}：{0} 不会接受这个目录。").format(name, f"plugins/{plugin}", _("、").join(missing)))
+            command = client_registry.expand_step(driver, "install", cli=found or executable, plugin=plugin, source_dir=str(directory))
+            outcome: dict = {"checked": list(required), "interactive": asks}
+            if not apply:
+                return outcome
+            if asks and not sys.stdin.isatty():
+                raise CheckError(_("{0} 的安装命令会向你索取确认，需要在交互式终端里运行；当前标准输入不是终端，没有启动命令。"
+                             "请在终端里重新运行这条命令。").format(name))
+            if uninstall:
+                done = subprocess.run(uninstall, capture_output=True, text=True, check=False, env=child_env)
+                if done.returncode != 0:
+                    raise CheckError(_("卸载旧版失败（退出码 {0}）：{1}").format(done.returncode, tail_lines(done.stderr or done.stdout)))
+            if asks:  # the user's terminal, not captured: the question and the answer stay between the user and the client
+                done = subprocess.run(command, check=False, env=child_env, **_inherited_streams())
+                outcome["terminal"] = "inherited"
+            else:
+                done = subprocess.run(command, capture_output=True, text=True, check=False, env=child_env)
+                outcome["output"] = (done.stdout + done.stderr).strip()[-600:]
+            outcome["exit_code"] = done.returncode
+            if done.returncode != 0:
+                detail = _("；未确认：用户拒绝确认时该命令的退出码") if asks else ""
+                raise CheckError(_("命令退出码 {0}{1}").format(done.returncode, detail))
+            return outcome
+
+    notes = [deprecation_note(client)]
+    if asks:
+        notes.append(_("该命令会向你索取确认：--apply 时它直接使用你的终端，请在终端里自己回答；agenthelm 不会代答、转发或绕过确认。"
+                       "是否安装成功以读回的版本为准（未确认：拒绝确认时的退出码与输出）。"))
+    if uninstall:
+        notes.append(_("更新是先卸载再安装：若在确认处拒绝，该插件会处于未安装状态，重新运行 install 即可（未确认：卸载本身是否也要确认）。"))
+    verb = _("更新 {0} → {1}").format(plugin, target) if replace else _("安装 {0}").format(plugin)
+    return Step("update" if replace else "install", client, f"{name} {verb}",
+                [*uninstall, "&&", *install] if uninstall else install, action=run, blocked=blocked, blocker=blocker,
+                verify=[plugin], targets={plugin: target}, skipped=skipped,
+                note=" ".join(note for note in notes if note) or None, interactive="trust-prompt" if asks else None)
+
+
 def market_pin_sync(env: Env, report: dict, project: Path | None, only: str | None) -> dict | None:
     """A1: the market problem (a declaration of the marketplace that disagrees with the registered one) that would make a
     market-pinning client's update steps fail, found before anything runs."""
@@ -2187,6 +2317,9 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
                 continue
             if kind == "marketplace-cli" and driver["capabilities"].get("marketplace_update"):
                 steps += marketplace_update_steps(env, report, driver, mine)
+            elif kind == "marketplace-cli" and client_registry.source_kind(driver) == "bundle-dir":
+                steps += [bundle_dir_step(env, driver, item["plugin"], latest, source, replace=True, target=item["latest"])
+                          for item in mine]
             elif kind == "directory-dropin":
                 cursor = sorted({item["plugin"] for item in mine})
                 steps.append(dropin_step(driver, latest, cursor, source, home, _("更新"), env=env))
@@ -2768,7 +2901,7 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--refresh", action="store_true", help=_("忽略一天的缓存，立即联网"))
 
     def client_filter(command: argparse.ArgumentParser, help_text: str | None = None) -> None:
-        command.add_argument("--client", action="append", choices=CLIENTS,
+        command.add_argument("--client", action="append", choices=CLIENT_CHOICES,
                              help=help_text or _("只处理这个客户端（可重复）；默认处理检测到的全部客户端（用户配置 ignored_clients 里的除外）"))
 
     def common(command: argparse.ArgumentParser, *, project: bool = True) -> None:

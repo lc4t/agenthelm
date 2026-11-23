@@ -31,12 +31,12 @@ CAPABILITIES = ("default_set", "read_only", "project_mcp_write")
 # Flags added in schema v2 (design section 4.8); built-in drivers only, optional (absent means false). ``clients`` keeps
 # reporting the three above, so its output does not change when a flag is added here.
 EXTENDED_CAPABILITIES = ("legacy_cleanup", "marketplace_update", "reinstall_rewrites_all", "market_pin",
-                         "user_mcp_write", "project_skill_write", "user_skill_write")
+                         "user_mcp_write", "project_skill_write", "user_skill_write", "project_trust_required")
 LIFECYCLES = ("active", "deprecated")
 STORE_STATUSES = ("observed", "documented", "undetermined")
 SCHEMA_VERSIONS = (1, 2)
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
-INSTALLED_STATES = ("records-json", "cache-dir-versioned", "dropin-dir")  # the readers agenthelm.py implements
+INSTALLED_STATES = ("records-json", "cache-dir-versioned", "dropin-dir", "extensions-dir")  # the readers agenthelm.py implements
 INTERACTIVE = ("none", "trust-prompt")
 SOURCES = ("marketplace", "bundle-dir")
 STEP_NAMES = ("add_source", "install", "update_source", "update", "uninstall", "verify")
@@ -49,7 +49,7 @@ PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 STEP_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:" + "|".join(PLACEHOLDERS) + r")\}){1,128}")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
-OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp"}
+OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp", "content"}
 HOOK_EVENTS = ("session-start", "prompt-submit", "stop")  # canonical event names (design section 4.7)
 # Output adapters by output format, never by client id; agent_pack_nudge.ADAPTERS implements exactly these.
 HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps")
@@ -58,7 +58,15 @@ HOOKS_KEYS = {"events", "output", "stop_prompt", "shows_system_message", "stop_s
 HOOK_CONFIG_KEYS = {"format", "plugin_file", "user", "project"}
 SNIFF_KEYS = {"priority", "payload_keys", "env", "fallback"}
 STOP_MODES = ("off", "on-completion", "always")
-UNSUPPORTED_FEATURES = tuple(f"hook-event:{event}" for event in HOOK_EVENTS)  # batch E adds the support-matrix names
+# Feature names of the support matrix (design section 6); ``hook-event:*`` are the canonical hook events.
+UNSUPPORTED_FEATURES = (*(f"hook-event:{event}" for event in HOOK_EVENTS), "sync-skills", "sync-mcp", "agents-init-agent-cli")
+# ``content`` (design section 4.4): which manifest protocols a client reads and which companion files it requires.
+MANIFESTS = ("agent-plugins-1.0", "claude-plugin", "codex-plugin", "cursor-plugin", "gemini-extension", "antigravity-plugin")
+COMPANION_ROLES = ("manifest", "mcp", "hooks")
+COMPANION_ENTRY_KEYS = {"path", "role", "required_when", "shipped"}
+CONTENT_KEYS = {"manifest", "companions", "skills", "context"}
+CONTENT_SKILLS = ("agent-skills",)
+CONTENT_CONTEXTS = ("agents-md", "pointer-file", "unsupported")
 CACHE_KEYS = {"base", "env", "glob"}
 STORE_KEYS = {"scope", "path", "format", "status", "write_target", "root_key", "managed_by", "trust_required"}
 MANAGED_BY = ("agent-pack-state",)  # entries of this store are recognised through agent-pack's own sync state records
@@ -205,6 +213,26 @@ def probe_problem(probe: Any) -> str | None:
     if probe["parse"] not in CLI_PARSES:
         return f"detect.cli.parse must be one of {', '.join(CLI_PARSES)}"
     return None
+
+
+def _check_content(value: Any, source: str) -> None:
+    _check(isinstance(value, dict) and {"manifest"} <= set(value) <= CONTENT_KEYS, source,
+           f"content needs manifest (optional: {', '.join(sorted(CONTENT_KEYS - {'manifest'}))})")
+    manifests = value["manifest"]
+    _check(isinstance(manifests, list) and manifests and all(item in MANIFESTS for item in manifests), source,
+           f"content.manifest lists protocols from {', '.join(MANIFESTS)}")
+    companions = value.get("companions", [])
+    _check(isinstance(companions, list), source, "content.companions must be a list")
+    for entry in companions:
+        _check(isinstance(entry, dict) and {"path", "role"} <= set(entry) <= COMPANION_ENTRY_KEYS
+               and _is_text(entry["path"], 100) and not entry["path"].startswith("/") and ".." not in entry["path"].split("/")
+               and entry["role"] in COMPANION_ROLES and (entry.get("required_when") is None or _is_text(entry["required_when"]))
+               and isinstance(entry.get("shipped", True), bool), source,
+               f"content.companions[] needs a relative path and a role ({', '.join(COMPANION_ROLES)}); "
+               "optional: required_when, shipped (false: this release does not ship the file)")
+    _check(value.get("skills", CONTENT_SKILLS[0]) in CONTENT_SKILLS, source, "content.skills must be agent-skills")
+    _check(value.get("context", CONTENT_CONTEXTS[0]) in CONTENT_CONTEXTS, source,
+           f"content.context must be one of {', '.join(CONTENT_CONTEXTS)}")
 
 
 def _check_hooks(data: dict, source: str) -> None:
@@ -416,6 +444,8 @@ def validate_builtin(data: Any, source: str) -> dict:
         _check_mcp(data["mcp"], source, stores)
     _check(("sync" in data) == ("mcp" in data) or "sync" not in data, source, "sync needs mcp (the MCP format it writes)")
     _check_hooks(data, source)
+    if "content" in data:
+        _check_content(data["content"], source)
     return data
 
 
@@ -453,6 +483,47 @@ def distribution(driver: dict) -> dict:
 
 def distribution_type(driver: dict) -> str:
     return distribution(driver)["type"]
+
+
+def lifecycle(driver: dict) -> str:
+    """``active`` (the default) or ``deprecated``: the client's vendor has replaced it (design section 4.1)."""
+    return driver.get("lifecycle", LIFECYCLES[0])
+
+
+def deprecated_ids() -> tuple[str, ...]:
+    return tuple(item["id"] for item in BUILTIN if lifecycle(item) == "deprecated")
+
+
+def installable_ids() -> tuple[str, ...]:
+    """The built-in drivers ``install`` and ``update`` can address by name: every distribution but ``none``. The default
+    set comes first; the others (opt-in, possibly deprecated) are only used when named or with ``--client all``."""
+    return tuple(item["id"] for item in BUILTIN if distribution_type(item) != "none")
+
+
+def interactive(driver: dict) -> str:
+    """``none`` or ``trust-prompt``: whether the install command asks the user for a confirmation (design section 4.3)."""
+    return distribution(driver).get("interactive", INTERACTIVE[0])
+
+
+def source_kind(driver: dict) -> str:
+    """``marketplace`` (the client fetches the source) or ``bundle-dir`` (agenthelm hands it a plugin directory)."""
+    return distribution(driver).get("source", SOURCES[0])
+
+
+def companions(driver: dict, role: str | None = None) -> tuple[dict, ...]:
+    """The companion files ``content.companions`` declares (optionally of one ``role``) that this release ships."""
+    found = driver.get("content", {}).get("companions", [])
+    return tuple(item for item in found if (role is None or item["role"] == role) and item.get("shipped", True))
+
+
+def required_files(driver: dict) -> tuple[str, ...]:
+    """Files every plugin directory handed to this client must hold: all declared companions, shipped or not."""
+    return tuple(item["path"] for item in driver.get("content", {}).get("companions", []))
+
+
+def manifest_file(driver: dict) -> str | None:
+    """The declared companion with role ``manifest`` (the file naming and versioning the plugin for this client)."""
+    return next((item["path"] for item in driver.get("content", {}).get("companions", []) if item["role"] == "manifest"), None)
 
 
 def ids_of_type(kind: str) -> tuple[str, ...]:
@@ -837,10 +908,13 @@ def report(home: Path, getenv: Callable[[str], str | None], find_cli: Callable[[
     clients = []
     for item in BUILTIN:
         found = detect(item, home, getenv, find_cli)
-        clients.append({"id": item["id"], "display": item["display"], "source": "builtin", **found,
-                        "distribution": distribution_type(item),
-                        "capabilities": {key: item["capabilities"][key] for key in CAPABILITIES},
-                        "install_supported": distribution_type(item) != "none"})
+        entry = {"id": item["id"], "display": item["display"], "source": "builtin", **found,
+                 "distribution": distribution_type(item),
+                 "capabilities": {key: item["capabilities"][key] for key in CAPABILITIES},
+                 "install_supported": distribution_type(item) != "none"}
+        if lifecycle(item) != LIFECYCLES[0]:  # reported only when it differs from the default: other entries are unchanged
+            entry["lifecycle"] = lifecycle(item)
+        clients.append(entry)
     declared, warnings = load_declarations(home, getenv)
     for item in declared:
         probe = {"detect": {"executables": item["detect"].get("executables", []),
@@ -863,7 +937,8 @@ def render_text(data: dict) -> str:
             seen = _("已声明，本版未支持安装")
         flags = [key for key, value in item["capabilities"].items() if value]
         lines.append("  " + _("{0}（{1}）：{2}；分发 {3}；能力 {4}").format(
-            item["id"], item["display"], seen, item["distribution"], ", ".join(flags) or "-"))
+            item["id"], item["display"], seen, item["distribution"], ", ".join(flags) or "-")
+            + (_("；已弃用（厂商已用其他客户端取代它）") if item.get("lifecycle") == "deprecated" else ""))
     for warning in data["warnings"]:
         lines.append(_("警告：忽略声明 {0}：{1}").format(warning["file"], warning["reason"]))
     return "\n".join(lines) + "\n"
