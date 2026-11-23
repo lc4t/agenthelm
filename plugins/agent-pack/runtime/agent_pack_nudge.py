@@ -30,8 +30,8 @@ from nudge_text import LANGUAGES, resolve_language, session_flag, text as say
 ENV_DISABLE = "AGENTHELM_NO_NUDGE"
 ENV_DEBUG = "AGENTHELM_NUDGE_DEBUG"
 CLIENTS = client_registry.default_ids()
-EVENTS = ("session-start", "prompt-submit", "stop")
-STOP_MODES = ("off", "on-completion", "always")
+EVENTS = client_registry.HOOK_EVENTS
+STOP_MODES = client_registry.STOP_MODES
 CONFIRM_MODES = ("ask", "digest", "quiet")
 OURS = re.compile(r"agenthelm\.py['\"]?\s+nudge\s+hook")
 SUBPROCESS_TIMEOUT = 5
@@ -59,7 +59,7 @@ DEFAULTS: dict[str, Any] = {
     "capture_hints_per_session": 3,
     "trial_expire_days": 30,
     "reminder_repeat_hours": 24,
-    "stop_prompt": {"claude": "on-completion", "codex": "on-completion", "cursor": "off"},
+    "stop_prompt": client_registry.stop_prompt_defaults(),
     "keywords": DEFAULT_KEYWORDS,
     "completion_keywords": DEFAULT_COMPLETION,
 }
@@ -182,13 +182,17 @@ def payload_directory(payload: dict, client: str, environment: dict) -> Path | N
 
 
 def detect_client(requested: str, payload: dict, environment: dict) -> str:
+    """The client a hook call comes from. Hook commands written now carry ``--client``; payload sniffing is kept only for
+    installs that predate that (their command has no ``--client``) and reads each driver's ``hooks.legacy_sniff``."""
     if requested != "auto":
         return requested
-    if "workspace_roots" in payload or "conversation_id" in payload:
-        return "cursor"
-    if "turn_id" in payload or environment.get("PLUGIN_ROOT"):
-        return "codex"
-    return "claude"
+    fallback = ""
+    for client, sniff in client_registry.sniff_order():
+        if sniff.get("fallback"):
+            fallback = client
+        elif any(key in payload for key in sniff.get("payload_keys", [])) or any(environment.get(name) for name in sniff.get("env", [])):
+            return client
+    return fallback
 
 
 def find_manager(host: Any, env: Any) -> Path | None:
@@ -295,26 +299,53 @@ def session_record(state: dict, session: str) -> dict:
     return record
 
 
-# ---------------------------------------------------------------- output per client
+# ---------------------------------------------------------------- output adapters
 
-def render(client: str, event: str, *, context: str | None = None, system: str | None = None,
-           follow_up: bool = False) -> dict | None:
-    """各客户端的 hook 输出格式。context 为给模型的文字，system 为给用户看的一行。"""
-    if not context and not system:
-        return None
-    if client == "cursor":
-        if event == "session-start":
-            return {"additional_context": context} if context else None
-        return {"followup_message": context} if context and event == "stop" else None
-    if event == "stop" and client == "codex":
-        return {"decision": "block", "reason": context} if context else None
-    name = {"session-start": "SessionStart", "prompt-submit": "UserPromptSubmit", "stop": "Stop"}[event]
+# One adapter per output format, named after the format. Each takes the client's native event name, the text for the model
+# (context) and the one line for the user (system), and returns the JSON object to print or None. A driver picks the adapter of
+# each event in ``hooks.output``; no adapter looks at which client it serves.
+
+def _hook_specific_output(native: str, context: str | None, system: str | None) -> dict | None:
     output: dict[str, Any] = {}
     if system:
         output["systemMessage"] = system
     if context:
-        output["hookSpecificOutput"] = {"hookEventName": name, "additionalContext": context}
+        output["hookSpecificOutput"] = {"hookEventName": native, "additionalContext": context}
     return output
+
+
+def _additional_context(native: str, context: str | None, system: str | None) -> dict | None:
+    return {"additional_context": context} if context else None
+
+
+def _followup_message(native: str, context: str | None, system: str | None) -> dict | None:
+    return {"followup_message": context} if context else None
+
+
+def _decision_block(native: str, context: str | None, system: str | None) -> dict | None:
+    return {"decision": "block", "reason": context} if context else None
+
+
+def _inject_steps(native: str, context: str | None, system: str | None) -> dict | None:
+    """``{"injectSteps": [{"systemMessage": {"systemMessage": text}}]}`` (the documented Antigravity hook output; whether it is
+    accepted at run time is not verified). Only the model-facing text is sent: the format has no user-visible line."""
+    return {"injectSteps": [{"systemMessage": {"systemMessage": context}}]} if context else None
+
+
+ADAPTERS = {"hookSpecificOutput": _hook_specific_output, "additional_context": _additional_context,
+            "followup_message": _followup_message, "decision_block": _decision_block, "injectSteps": _inject_steps}
+
+
+def render(client: str, event: str, *, context: str | None = None, system: str | None = None,
+           follow_up: bool = False) -> dict | None:
+    """The client's hook output for ``event``. context is text for the model, system is one line for the user."""
+    if not context and not system:
+        return None
+    adapter = client_registry.hook_output(client, event)
+    native = client_registry.hook_event_name(client, event)
+    if adapter is None or native is None:
+        return None  # the client has no such hook (declared under unsupported)
+    return ADAPTERS[adapter](native, context, system)
 
 
 # ---------------------------------------------------------------- events
@@ -346,7 +377,7 @@ def session_start(host: Any, env: Any, payload: dict, client: str, root: Path, c
     notice = exposure_notice(manager, root, state, config["lang"])
     if notice:
         shown.append(notice)
-        if client != "claude":
+        if not client_registry.hook_flag(client, "shows_system_message"):
             context = (context or "") + say("relay", config["lang"], notice=notice)
     if shown:
         save_state(host, env, state)
@@ -366,7 +397,7 @@ def exposure_notice(manager: Path, root: Path, state: dict, lang: str) -> str | 
 
 def prompt_submit(host: Any, env: Any, payload: dict, client: str, root: Path, config: dict) -> dict | None:
     prompt = payload.get("prompt")
-    if client == "cursor" or not isinstance(prompt, str) or not prompt.strip() or len(prompt) > MAX_PROMPT_CHARS:
+    if not client_registry.hook_event_name(client, "prompt-submit") or not isinstance(prompt, str) or not prompt.strip() or len(prompt) > MAX_PROMPT_CHARS:
         return None
     lowered = prompt.lower()
     hits = [word for word in config["keywords"] if word in lowered]
@@ -391,7 +422,7 @@ def stop(host: Any, env: Any, payload: dict, client: str, root: Path, config: di
     mode = config["stop_prompt"].get(client, "off")
     if mode == "off" or config["confirm"] != "ask" or payload.get("stop_hook_active") or payload.get("loop_count"):
         return None
-    if client == "cursor" and payload.get("status") not in (None, "completed"):
+    if client_registry.hook_flag(client, "stop_status_gated") and payload.get("status") not in (None, "completed"):
         return None
     session = str(payload.get("session_id") or payload.get("conversation_id") or "")
     inbox = root / ".opinion" / "inbox.json"
@@ -402,7 +433,7 @@ def stop(host: Any, env: Any, payload: dict, client: str, root: Path, config: di
     if record["stop_prompts"] >= config["max_prompts_per_session"]:
         return None
     message = str(payload.get("last_assistant_message") or "").lower()
-    if mode == "on-completion" and client != "cursor" and not any(word in message for word in config["completion_keywords"]):
+    if mode == "on-completion" and not client_registry.hook_flag(client, "stop_status_gated") and not any(word in message for word in config["completion_keywords"]):
         return None
     manager = find_manager(host, env)
     if manager is None:
@@ -503,12 +534,16 @@ def status(args: argparse.Namespace, host: Any) -> dict:
     return result
 
 
-def cursor_commands(runtime: Path) -> dict[str, dict]:
+FLAT_FORMAT = "flat-event-commands"  # a hook file that maps native event names to lists of {command, timeout}
+FLAT_CLIENTS = client_registry.ids_with_hook_config(FLAT_FORMAT)
+
+
+def flat_commands(client: str, runtime: Path) -> dict[str, dict]:
     # POSIX 用 shlex.quote（路径含 $、反引号、双引号时双引号不够）；Windows 的 cmd 不认单引号，保留双引号
     quoted = shlex.quote(str(runtime)) if os.name == "posix" else f'"{runtime}"'
-    base = f"python3 {quoted} nudge hook --client cursor --event"
-    return {"sessionStart": {"command": f"{base} session-start", "timeout": 10},
-            "stop": {"command": f"{base} stop", "timeout": 10}}
+    base = f"python3 {quoted} nudge hook --client {client} --event"
+    return {client_registry.hook_event_name(client, event): {"command": f"{base} {event}", "timeout": 10}
+            for event in EVENTS if client_registry.hook_event_name(client, event)}
 
 
 # ---------------------------------------------------------------- a stable runtime path for the hook command
@@ -560,11 +595,11 @@ def stable_runtime(env: Any, running: Path) -> tuple[Path | None, dict]:
     return None, {"source": None, "ephemeral": str(running), "searched": [str(item) for _, item in candidates]}
 
 
-def merged_cursor_hooks(existing: dict, runtime: Path, remove: bool) -> dict:
+def merged_flat_hooks(client: str, existing: dict, runtime: Path, remove: bool) -> dict:
     data = json.loads(json.dumps(existing)) if existing else {}
     data.setdefault("version", 1)
     hooks = data.setdefault("hooks", {})
-    wanted = cursor_commands(runtime)
+    wanted = flat_commands(client, runtime)
     for event in list(hooks):
         kept = [entry for entry in hooks[event] if not (isinstance(entry, dict) and OURS.search(str(entry.get("command", ""))))]
         if kept:
@@ -580,11 +615,12 @@ def merged_cursor_hooks(existing: dict, runtime: Path, remove: bool) -> dict:
 def install_hooks(args: argparse.Namespace, host: Any) -> dict:
     env = host.current_env(args.home)
     lang = load_config(host, env, None)[0]["lang"]
+    location = client_registry.hooks(args.client)["config"]
     if args.scope == "project":
         project = (args.project or Path.cwd()).expanduser().resolve()
-        target = project / ".cursor" / "hooks.json"
+        target = project / location["project"].removeprefix("<project>/")
     else:
-        target = env.home / ".cursor" / "hooks.json"
+        target = env.home / location["user"].removeprefix("~/")
     try:
         existing = host.read_json(target) if target.is_file() else {}
     except ValueError as exc:
@@ -600,7 +636,7 @@ def install_hooks(args: argparse.Namespace, host: Any) -> dict:
             raise host.CheckError(message)
         return {"ok": True, "applied": False, "target": str(target), "changed": False, "remove": False, "blocked": message,
                 "runtime": where, "hooks": existing.get("hooks", {}), "note": say("note_cursor", lang), "lang": lang}
-    merged = merged_cursor_hooks(existing, runtime, args.remove)
+    merged = merged_flat_hooks(args.client, existing, runtime, args.remove)
     changed = merged != existing
     result = {"ok": True, "applied": False, "target": str(target), "changed": changed, "remove": args.remove,
               "runtime": {**where, "path": str(runtime)}, "hooks": merged.get("hooks", {})}
@@ -633,7 +669,7 @@ def parser() -> argparse.ArgumentParser:
     state.add_argument("--output", choices=("text", "json"), default="text")
     state.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     install = sub.add_parser("install-hooks", help="write the nudge hooks into Cursor's hooks.json (preview by default)")
-    install.add_argument("--client", choices=("cursor",), default="cursor")
+    install.add_argument("--client", choices=FLAT_CLIENTS, default=FLAT_CLIENTS[0])
     install.add_argument("--scope", choices=("user", "project"), default="user")
     install.add_argument("--project", type=Path)
     install.add_argument("--remove", action="store_true", help="remove the entries agenthelm wrote")

@@ -25,9 +25,7 @@ import agent_pack_clients as registry  # noqa: E402
 EXCLUDED = {"agent_pack_clients.py", "i18n_agent_pack.py"}
 
 # file -> number of client-id string constants it still holds. Each is cleared by the batch named next to it.
-CAPS = {
-    "agent_pack_nudge.py": 14,      # hook protocol: events and output formats (batch D)
-}
+CAPS: dict[str, int] = {}   # empty: every runtime module is clear of client names
 DISTRIBUTION_CLEARED = ("agenthelm.py",)  # batch C: install, update, legacy and the install-state readers read the declarations
 SYNC_WRITE_CLEARED = ("agent_pack_config.py", "agent_pack_native_package.py", "agent_pack_sync_scope.py",
                       "agent_pack_mcp_move.py", "agent_pack_mcp_toml.py", "agent_pack_mcp_json.py")  # batch D2: sync writes

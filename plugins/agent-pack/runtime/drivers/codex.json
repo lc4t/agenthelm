@@ -136,6 +136,32 @@
       "source_url": "https://learn.chatgpt.com/docs/extend/mcp?surface=cli"
     }
   ],
+  "hooks": {
+    "events": {
+      "session-start": "SessionStart",
+      "prompt-submit": "UserPromptSubmit",
+      "stop": "Stop"
+    },
+    "output": {
+      "session-start": "hookSpecificOutput",
+      "prompt-submit": "hookSpecificOutput",
+      "stop": "decision_block"
+    },
+    "stop_prompt": "on-completion",
+    "config": {
+      "format": "group-event-handlers",
+      "plugin_file": "hooks/hooks.json"
+    },
+    "legacy_sniff": {
+      "priority": 2,
+      "payload_keys": [
+        "turn_id"
+      ],
+      "env": [
+        "PLUGIN_ROOT"
+      ]
+    }
+  },
   "sync": {
     "write": "plugin-dir",
     "package_dir": "~/.agents/plugins/plugins",

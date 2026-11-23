@@ -73,6 +73,8 @@ class RegistryTests(unittest.TestCase):
             driver["schema_version"] = 1  # the files declare 2 because they use write_target
             driver.pop("lifecycle", None)
             driver.pop("runtime_cache", None)  # added after 6.14.0 (#134 Phase 3)
+            driver.pop("hooks", None)  # hook declarations added after 6.14.0 (#134 batch D1): see test_hook_declarations
+            driver.pop("unsupported", None)
             driver.pop("precedence", None)  # read-side data added after the snapshot (see test_registry_read_side)
             driver.pop("sync", None)  # write-side data added after the snapshot (see test_sync_write_declarations)
             driver.pop("mcp", None)

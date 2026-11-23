@@ -160,6 +160,27 @@
       "source_url": "https://code.claude.com/docs/en/mcp"
     }
   ],
+  "hooks": {
+    "events": {
+      "session-start": "SessionStart",
+      "prompt-submit": "UserPromptSubmit",
+      "stop": "Stop"
+    },
+    "output": {
+      "session-start": "hookSpecificOutput",
+      "prompt-submit": "hookSpecificOutput",
+      "stop": "hookSpecificOutput"
+    },
+    "stop_prompt": "on-completion",
+    "shows_system_message": true,
+    "config": {
+      "format": "group-event-handlers",
+      "plugin_file": "hooks/hooks.json"
+    },
+    "legacy_sniff": {
+      "fallback": true
+    }
+  },
   "sync": {
     "write": "native-package",
     "package_dir": "~/.claude/agent-pack/plugins"
