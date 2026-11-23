@@ -48,7 +48,16 @@ PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 STEP_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:" + "|".join(PLACEHOLDERS) + r")\}){1,128}")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
-OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache"}
+OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported"}
+HOOK_EVENTS = ("session-start", "prompt-submit", "stop")  # canonical event names (design section 4.7)
+# Output adapters by output format, never by client id; agent_pack_nudge.ADAPTERS implements exactly these.
+HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps")
+HOOK_CONFIG_FORMATS = ("group-event-handlers", "flat-event-commands")
+HOOKS_KEYS = {"events", "output", "stop_prompt", "shows_system_message", "stop_status_gated", "config", "legacy_sniff"}
+HOOK_CONFIG_KEYS = {"format", "plugin_file", "user", "project"}
+SNIFF_KEYS = {"priority", "payload_keys", "env", "fallback"}
+STOP_MODES = ("off", "on-completion", "always")
+UNSUPPORTED_FEATURES = tuple(f"hook-event:{event}" for event in HOOK_EVENTS)  # batch E adds the support-matrix names
 CACHE_KEYS = {"base", "env", "glob"}
 STORE_KEYS = {"scope", "path", "format", "status", "write_target", "root_key", "managed_by", "trust_required"}
 MANAGED_BY = ("agent-pack-state",)  # entries of this store are recognised through agent-pack's own sync state records
@@ -180,6 +189,49 @@ def probe_problem(probe: Any) -> str | None:
     return None
 
 
+def _check_hooks(data: dict, source: str) -> None:
+    unsupported = data.get("unsupported", [])
+    _check(isinstance(unsupported, list), source, "unsupported must be a list")
+    gone: set[str] = set()
+    for entry in unsupported:
+        _check(isinstance(entry, dict) and set(entry) == {"feature", "reason"} and entry["feature"] in UNSUPPORTED_FEATURES
+               and _is_text(entry["reason"], 300), source,
+               f"unsupported[] must be {{feature, reason}} with feature one of {', '.join(UNSUPPORTED_FEATURES)}")
+        _check(entry["feature"] not in gone, source, f"unsupported[] lists {entry['feature']} twice")
+        gone.add(entry["feature"])
+    if "hooks" not in data:
+        _check(not gone, source, "unsupported hook events need a hooks declaration")
+        return
+    hooks_part = data["hooks"]
+    _check(isinstance(hooks_part, dict) and {"events", "output", "stop_prompt"} <= set(hooks_part) <= HOOKS_KEYS, source,
+           f"hooks needs events, output, stop_prompt (optional: {', '.join(sorted(HOOKS_KEYS - {'events', 'output', 'stop_prompt'}))})")
+    events, output = hooks_part["events"], hooks_part["output"]
+    _check(isinstance(events, dict) and set(events) <= set(HOOK_EVENTS) and all(_is_text(v) for v in events.values()), source,
+           f"hooks.events maps canonical events ({', '.join(HOOK_EVENTS)}) to native event names")
+    for event in HOOK_EVENTS:  # each canonical event is either mapped or declared unsupported, never both, never neither
+        _check((event in events) != (f"hook-event:{event}" in gone), source,
+               f"hook event {event} must be in hooks.events or in unsupported (exactly one)")
+    _check(isinstance(output, dict) and set(output) == set(events) and all(v in HOOK_OUTPUTS for v in output.values()), source,
+           f"hooks.output must name an adapter ({', '.join(HOOK_OUTPUTS)}) for exactly the mapped events")
+    _check(hooks_part["stop_prompt"] in STOP_MODES, source, f"hooks.stop_prompt must be one of {', '.join(STOP_MODES)}")
+    for flag in ("shows_system_message", "stop_status_gated"):
+        _check(isinstance(hooks_part.get(flag, False), bool), source, f"hooks.{flag} must be a boolean")
+    config = hooks_part.get("config")
+    if config is not None:
+        _check(isinstance(config, dict) and "format" in config and set(config) <= HOOK_CONFIG_KEYS
+               and config["format"] in HOOK_CONFIG_FORMATS and all(_is_text(v, 200) for v in config.values()), source,
+               f"hooks.config needs format ({', '.join(HOOK_CONFIG_FORMATS)}), optional plugin_file / user / project")
+        if config["format"] == "flat-event-commands":
+            _check("user" in config and "project" in config, source, "flat-event-commands needs user and project locations")
+    sniff = hooks_part.get("legacy_sniff")
+    if sniff is not None:
+        _check(isinstance(sniff, dict) and set(sniff) <= SNIFF_KEYS and (sniff.get("fallback") is True or "priority" in sniff)
+               and isinstance(sniff.get("priority", 0), int) and not isinstance(sniff.get("priority", 0), bool)
+               and all(isinstance(sniff.get(k, []), list) and all(_is_text(x) for x in sniff.get(k, [])) for k in ("payload_keys", "env"))
+               and isinstance(sniff.get("fallback", False), bool), source,
+               "hooks.legacy_sniff is {priority, payload_keys, env} or {fallback: true}")
+
+
 def _check_precedence(entries: Any, source: str) -> None:
     _check(isinstance(entries, list), source, "precedence must be a list")
     closed: set[str] = set()  # kinds that already have an unconditional entry: nothing after it can be reached
@@ -254,6 +306,7 @@ def validate_builtin(data: Any, source: str) -> dict:
            and all(isinstance(v, bool) for v in capabilities.values()), source,
            f"capabilities must hold the booleans {', '.join(CAPABILITIES)} (optional: {', '.join(EXTENDED_CAPABILITIES)})")
     _check_precedence(data.get("precedence", []), source)
+    _check_hooks(data, source)
     return data
 
 
@@ -301,6 +354,47 @@ def ids_of_type(kind: str) -> tuple[str, ...]:
 def ids_with(capability: str) -> tuple[str, ...]:
     """The built-in drivers declaring the capability flag ``capability``, in registry order."""
     return tuple(item["id"] for item in BUILTIN if item["capabilities"].get(capability))
+
+
+def hooks(client: str) -> dict:
+    """The ``hooks`` declaration of a built-in driver; ``{}`` for an unknown client or one without hooks."""
+    driver = get(client)
+    return driver.get("hooks", {}) if driver else {}
+
+
+def hook_event_name(client: str, event: str) -> str | None:
+    """The client's native name for the canonical ``event``; ``None`` when the client has no such hook."""
+    return hooks(client).get("events", {}).get(event)
+
+
+def hook_output(client: str, event: str) -> str | None:
+    """The output adapter name the client's ``event`` hook speaks; ``None`` when the event is not mapped."""
+    return hooks(client).get("output", {}).get(event)
+
+
+def hook_flag(client: str, key: str) -> bool:
+    return bool(hooks(client).get(key))
+
+
+def hook_config_format(client: str) -> str | None:
+    return hooks(client).get("config", {}).get("format")
+
+
+def ids_with_hook_config(fmt: str) -> tuple[str, ...]:
+    """The built-in drivers whose hook file has format ``fmt``, in registry order."""
+    return tuple(item["id"] for item in BUILTIN if hook_config_format(item["id"]) == fmt)
+
+
+def stop_prompt_defaults() -> dict[str, str]:
+    """The default stop-prompt mode of each default-set driver that declares hooks."""
+    return {item["id"]: item["hooks"]["stop_prompt"] for item in BUILTIN if item["capabilities"]["default_set"] and "hooks" in item}
+
+
+def sniff_order() -> list[tuple[str, dict]]:
+    """``(id, legacy_sniff)`` of the drivers that can be recognised from an old hook command's payload: by ascending
+    priority, the fallback driver last. Only installs from before hook commands carried ``--client`` rely on this."""
+    found = [(item["id"], item["hooks"]["legacy_sniff"]) for item in BUILTIN if "legacy_sniff" in item.get("hooks", {})]
+    return sorted(found, key=lambda pair: (pair[1].get("fallback", False), pair[1].get("priority", 0)))
 
 
 def expand_step(driver: dict, name: str, **values: str) -> list[str] | None:
@@ -503,6 +597,8 @@ def validate_declaration(data: Any) -> str | None:
         return _("顶层必须是对象")
     if _holds_key(data, "steps"):  # D-R1: a user file never decides which command runs
         return _("含 steps（命令步骤）：用户声明不能决定运行什么命令，只有随包的内置声明可以")
+    if _holds_key(data, "hooks"):  # D-R1: hook declarations pick the commands hooks run and the output they emit
+        return _("含 hooks（hook 事件与输出格式）：用户声明不能决定 hook 运行什么，只有随包的内置声明可以")
     extra = sorted(set(data) - DECLARATION_KEYS)
     if extra:
         return _("含不支持的字段：{0}").format(_("、").join(map(str, extra)))

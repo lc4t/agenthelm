@@ -111,6 +111,18 @@ class NudgeTests(unittest.TestCase):
         self.assertEqual(nudge.detect_client("auto", {"session_id": "s"}, {}), "claude")
         self.assertEqual(nudge.detect_client("cursor", {"turn_id": "t"}, {}), "cursor")
 
+    def test_a_hook_command_without_client_behaves_like_the_explicit_one(self) -> None:
+        """Installs that predate --client keep working: the sniffed client gives byte-identical output."""
+        shapes = {"claude": {}, "codex": {"turn_id": "t"}, "cursor": {"conversation_id": "s1", "workspace_roots": [str(self.project)]}}
+        for client, extra in shapes.items():
+            for event in nudge.EVENTS:
+                def payload(session: str) -> dict:  # a fresh session each time: hints are limited per session
+                    return {"session_id": session, "cwd": str(self.project), "prompt": "以后都先写测试", "source": "startup", **extra}
+                old = self.hook(event, payload(f"{client}-{event}-a"), client="auto")
+                new = self.hook(event, payload(f"{client}-{event}-b"), client=client)
+                dump = lambda output, tag: json.dumps(output, ensure_ascii=False, sort_keys=True).replace(f"{client}-{event}-{tag}", "SID")  # noqa: E731
+                self.assertEqual(dump(old, "a"), dump(new, "b"), (client, event))
+
     # -- session start
     def test_session_start_injects_the_protocol_even_with_nothing_pending(self) -> None:
         output = self.start()

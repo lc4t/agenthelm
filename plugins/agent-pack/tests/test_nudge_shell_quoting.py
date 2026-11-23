@@ -85,7 +85,7 @@ class NudgeShellQuotingTests(unittest.TestCase):
     def test_cursor_hook_command_quotes_runtime_path(self) -> None:
         for name in NASTY:
             runtime = Path("/a") / name / "agenthelm.py"
-            command = nudge.cursor_commands(runtime)["sessionStart"]["command"]
+            command = nudge.flat_commands("cursor", runtime)["sessionStart"]["command"]
             self.assertEqual(shlex.split(command)[1], str(runtime), name)
             self.assertTrue(nudge.OURS.search(command), name)
 
