@@ -2318,9 +2318,10 @@ def install_steps(env: Env, latest: dict, clients: list[str], plugins: list[str]
         present = installed_versions(env, client, plugins)
         kind = client_registry.distribution_type(driver)
         if kind == "marketplace-cli" and client_registry.source_kind(driver) == "bundle-dir":
-            for plugin in plugins:  # the client takes a plugin directory: one command (and one confirmation) per plugin
+            for index, plugin in enumerate(plugins):  # the client takes a plugin directory: one command (and one confirmation) per plugin
                 steps.append(bundle_dir_step(env, driver, plugin, latest, source, replace=False, target=targets[plugin],
-                                             skipped=already_installed_reason(present[plugin], targets[plugin]) if present[plugin] else None))
+                                             skipped=already_installed_reason(present[plugin], targets[plugin]) if present[plugin] else None,
+                                             first=index == 0))
         elif kind == "marketplace-cli":
             name = display_name(client)
             command, blocked = _step_command(env, driver, "add_source", slug=slug, marketplace=MARKETPLACE)
@@ -2390,12 +2391,13 @@ def _inherited_streams() -> dict:
 
 
 def bundle_dir_step(env: Env, driver: dict, plugin: str, latest: dict, source: Path | None, *, replace: bool,
-                    target: str | None, skipped: str | None = None, enabled: bool | None = None) -> Step:
+                    target: str | None, skipped: str | None = None, enabled: bool | None = None, first: bool = True) -> Step:
     """The step of a ``bundle-dir`` client: its declared ``install`` command is given the plugin's directory from the
     release (or from a local checkout). ``replace`` (an update) first runs the declared ``uninstall``, because the client has
     no update command for a directory. When the driver declares ``interactive: trust-prompt`` the command asks the user
     for a confirmation: ``--apply`` hands it the user's terminal and nothing else; this tool does not answer, forward or
-    bypass the question (design decision D-K6), and with no terminal it does not start the command."""
+    bypass the question (design decision D-K6), and with no terminal it does not start the command. The deprecation note of
+    a deprecated client is said once per command: ``first`` is False for the later steps of the same client."""
     client = driver["id"]
     name = display_name(client)
     executable = driver["detect"]["executables"][0]
@@ -2455,7 +2457,7 @@ def bundle_dir_step(env: Env, driver: dict, plugin: str, latest: dict, source: P
                         again.returncode, tail_lines(again.stderr or again.stdout)))
             return outcome
 
-    notes = [deprecation_note(client)]
+    notes = [deprecation_note(client) if first else None]
     if asks:
         notes.append(_("该命令会向你索取确认：--apply 时它直接使用你的终端，请在终端里自己回答；agenthelm 不会代答、转发或绕过确认。"
                        "是否安装成功以读回的版本为准（未确认：拒绝确认时的退出码与输出）。"))
@@ -2509,7 +2511,7 @@ def update_steps(env: Env, report: dict, project: Path | None, source: Path | No
                 steps += marketplace_update_steps(env, report, driver, mine)
             elif kind == "marketplace-cli" and client_registry.source_kind(driver) == "bundle-dir":
                 steps += [bundle_dir_step(env, driver, item["plugin"], latest, source, replace=True, target=item["latest"],
-                                          enabled=item.get("enabled")) for item in mine]
+                                          enabled=item.get("enabled"), first=index == 0) for index, item in enumerate(mine)]
             elif kind == "directory-dropin":
                 cursor = sorted({item["plugin"] for item in mine})
                 steps.append(dropin_step(driver, latest, cursor, source, home, _("更新"), env=env))

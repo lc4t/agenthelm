@@ -143,7 +143,23 @@ class SelectionTests(GeminiFixture):
         self.installed()
         _c, payload = self.run_json("install", "--client", "gemini", "--source", str(self.package))
         self.assertEqual(payload["clients"], ["gemini"])
-        self.assertTrue(all("deprecated" in step["note"] for step in payload["steps"]))
+        self.assertIn("deprecated", payload["steps"][0]["note"])
+
+    def test_the_deprecation_note_is_said_once_per_client_in_one_run(self) -> None:
+        # install: two plugins, two steps, one note; the other notes of the later step stay
+        _c, payload = self.run_json("install", "--client", "gemini", "--source", str(self.package))
+        steps = payload["steps"]
+        self.assertEqual(len(steps), 2)
+        self.assertEqual(sum("deprecated" in (step.get("note") or "") for step in steps), 1)
+        self.assertIn("deprecated", steps[0]["note"])
+        self.assertIn("asks you to confirm", steps[1]["note"])
+        # update: the same, over every behind plugin of the client
+        self.installed("1.0.0")
+        base.write(self.home / ".gemini/extensions/agents-init/gemini-extension.json", {"name": "agents-init", "version": "1.0.0"})
+        _c, payload = self.run_json("update", "--no-project", "--only", "plugins", "--client", "gemini", "--source", str(self.package))
+        steps = [step for step in payload["steps"] if step["client"] == "gemini"]
+        self.assertGreaterEqual(len(steps), 2, steps)
+        self.assertEqual(sum("deprecated" in (step.get("note") or "") for step in steps), 1)
 
     def test_all_covers_every_installable_client_deprecated_included(self) -> None:
         _c, payload = self.run_json("install", "--client", "all", "--source", str(self.package))
