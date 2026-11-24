@@ -135,6 +135,10 @@
     {
       "feature": "agents-init-agent-cli",
       "reason": "supporting Gemini CLI in the agents-init entry files needs a template change that affects existing projects"
+    },
+    {
+      "feature": "nudge-install-hooks",
+      "reason": "hooks ship inside the extension (hooks/hooks.json), so there is nothing for nudge install-hooks to write"
     }
   ]
 }
