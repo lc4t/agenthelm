@@ -506,5 +506,123 @@ raise SystemExit(project_cli.main(sys.argv[1:]))
         self.assertIn("退出码 3", payload["error"]["message"])
 
 
+class ItemsToolOutcomeTests(RealProjectCase):
+    """The item tool's write interface: a timed-out write is an unknown outcome, a timed-out preview is a failure."""
+
+    RUNTIME = PROJECT_CLI.parent
+    ITEMS = """import json, os, sys, time
+from pathlib import Path
+args = sys.argv[1:]
+if args[0] == "list":
+    print(json.dumps({"items": [{"id": "OBS-01", "title": "T", "status": "进行中", "next_action": "x",
+                                  "updated_at": "2026-10-24T07:40:00+08:00", "path": "observations/OBS-01.yaml"}]}))
+    sys.exit(0)
+dry = "--dry-run" in args
+if not dry:
+    Path("marker").write_text("written")
+if os.environ.get("ITEMS_MODE") == ("slow-preview" if dry else "slow"):
+    time.sleep(30)
+if os.environ.get("ITEMS_MODE") == "bad" and not dry:
+    print(json.dumps({"error": "disk full"})); sys.exit(3)
+print(json.dumps({"preview": ["+ x"], "path": "observations/OBS-01.yaml"} if dry else {"ok": True, "id": "OBS-01"}))
+"""
+    ITEMS_WRAPPER = """
+import os, subprocess, sys
+sys.path.insert(0, {runtime!r})
+import project_cli, project_write
+project_write.ITEMS_TOOL_TIMEOUT_SECONDS = 1
+real_run = subprocess.run
+def run(*args, **kwargs):
+    command = args[0]
+    if "tools/items.py" in str(command) and command[2] in ("new", "update") and "--dry-run" not in command:
+        with open({counter!r}, "a") as handle:
+            handle.write("x")
+        if os.environ.get("SIMULATE_NO_START"):
+            raise FileNotFoundError(2, "No such file or directory")
+    return real_run(*args, **kwargs)
+subprocess.run = run
+raise SystemExit(project_cli.main(sys.argv[1:]))
+"""
+
+    def items_project(self) -> Path:
+        root = self.make_project("itemswrite", "research", "--entry-name", "obs")
+        (root / "tools").mkdir()
+        (root / "tools/items.py").write_text(self.ITEMS, encoding="utf-8")
+
+        def change(profile: dict) -> None:
+            profile["entry"]["items"] = {"command": [sys.executable, "tools/items.py"], "write": True,
+                                         "status_map": {"进行中": "active"}}
+        self.edit_profile(root, change)
+        return root
+
+    def record(self, root: Path, *extra: str, mode: str = "", language: str = "zh", no_start: bool = False,
+               output: str = "json") -> tuple[subprocess.CompletedProcess, int]:
+        counter = self.base / "calls"
+        counter.unlink(missing_ok=True)
+        (root / "marker").unlink(missing_ok=True)
+        env = {**self.env, "AGENTHELM_LANG": language, "ITEMS_MODE": mode}
+        if no_start:
+            env["SIMULATE_NO_START"] = "1"
+        script = self.base / "items_wrapper.py"
+        script.write_text(self.ITEMS_WRAPPER.format(runtime=str(self.RUNTIME), counter=str(counter)), encoding="utf-8")
+        result = subprocess.run([sys.executable, str(script), "--project", str(root), "record", "OBS-01", "--log", "x",
+                                 *extra, "--output", output], input="", capture_output=True, text=True, check=False,
+                                env=env, timeout=120)
+        return result, len(counter.read_text()) if counter.exists() else 0
+
+    def test_write_timeout_reports_unknown_outcome(self) -> None:
+        root = self.items_project()
+        for language, expected in (("zh", "写入结果未知"), ("en", "outcome of its write is unknown")):
+            result, calls = self.record(root, "--apply", mode="slow", language=language)
+            payload = json.loads(result.stdout)
+            self.assertEqual((result.returncode, payload["ok"], payload["exit_code"]), (1, False, 1), payload)
+            self.assertEqual(payload["error"]["code"], "outcome_unknown")
+            self.assertIn(expected, payload["error"]["message"])
+            self.assertEqual(len(payload["error"]["next"]), 2)
+            self.assertTrue((root / "marker").is_file(), "the tool wrote before it timed out")
+            self.assertEqual(calls, 1, "the runner never retries")
+
+    def test_write_timeout_text_output(self) -> None:
+        root = self.items_project()
+        for language, expected in (("zh", ("写入结果未知", "只读查询")), ("en", ("is unknown", "read-only query"))):
+            result, calls = self.record(root, "--apply", mode="slow", language=language, output="text")
+            self.assertEqual(result.returncode, 1)
+            for text in expected:
+                self.assertIn(text, result.stderr)
+            self.assertNotIn("写入失败" if language == "zh" else "failed to write", result.stderr)
+            self.assertEqual(calls, 1)
+
+    def test_start_failure_stays_failed(self) -> None:
+        root = self.items_project()
+        for language, expected in (("zh", "无法运行"), ("en", "cannot run")):
+            result, calls = self.record(root, "--apply", mode="slow", language=language, no_start=True)
+            payload = json.loads(result.stdout)
+            self.assertEqual((result.returncode, payload["error"]["code"]), (6, "failed"), payload)
+            self.assertIn(expected, payload["error"]["message"])
+            self.assertNotIn("outcome_unknown", result.stdout)
+            self.assertFalse((root / "marker").exists())
+            self.assertEqual(calls, 1)
+
+    def test_preview_timeout_stays_failed(self) -> None:
+        root = self.items_project()
+        for language, expected in (("zh", "预览未写入"), ("en", "a preview does not write")):
+            result, calls = self.record(root, "--apply", mode="slow-preview", language=language)
+            self.assertEqual(calls, 0, "a failed preview never reaches the write")
+            payload = json.loads(result.stdout)
+            self.assertEqual((result.returncode, payload["error"]["code"]), (6, "failed"), payload)
+            self.assertIn(expected, payload["error"]["message"])
+            self.assertNotIn("outcome_unknown", result.stdout)
+
+    def test_normal_and_nonzero_exit_are_unchanged(self) -> None:
+        root = self.items_project()
+        result, calls = self.record(root, "--apply")
+        payload = json.loads(result.stdout)
+        self.assertEqual((result.returncode, payload["ok"], calls), (0, True, 1), payload)
+        result, calls = self.record(root, "--apply", mode="bad")
+        payload = json.loads(result.stdout)
+        self.assertEqual((result.returncode, payload["error"]["code"], calls), (6, "failed", 1), payload)
+        self.assertIn("disk full", payload["error"]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

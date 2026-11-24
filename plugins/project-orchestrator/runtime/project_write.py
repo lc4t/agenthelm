@@ -28,6 +28,7 @@ from i18n_orchestrator import _  # noqa: E402
 
 TOOL_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TOOL_TIMEOUT_SECONDS = 600
+ITEMS_TOOL_TIMEOUT_SECONDS = 120
 DIFF_LIMIT = 80
 
 
@@ -175,12 +176,23 @@ def _tool_flags(change: dict) -> list[str]:
     return flags
 
 
-def _run_items_tool(provider: Any, arguments: list[str]) -> tuple[int, dict]:
+def _run_items_tool(provider: Any, arguments: list[str], *, writes: bool) -> tuple[int, dict]:
     command = [*provider.entry["items"]["command"], *arguments, "--output", "json"]
     try:
         completed = subprocess.run(command, cwd=provider.root, capture_output=True, text=True, check=False,
-                                   timeout=120)
-    except (OSError, subprocess.TimeoutExpired) as exc:
+                                   timeout=ITEMS_TOOL_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        if writes:
+            # The child may have written before the timeout and killing it does not undo that: never report "failed"
+            # here, and never retry. The tool's JSON is only read after it exits, so nothing confirms the write.
+            raise EntryError(_("项目事项工具运行超过 {0} 秒仍未结束，写入结果未知").format(ITEMS_TOOL_TIMEOUT_SECONDS),
+                             "outcome_unknown",
+                             [_("AgentHelm 已终止它，没有重试；它在超时前可能已经写入"),
+                              _("先核对目标系统，或用该工具已有的只读查询确认结果，再决定是否重跑")]) from exc
+        # --dry-run is documented not to write, so a timed-out preview stays a plain failure and is safe to run again.
+        raise EntryError(_("项目事项工具预览运行超过 {0} 秒仍未结束，预览未写入").format(ITEMS_TOOL_TIMEOUT_SECONDS),
+                         "failed", [" ".join(command)]) from exc
+    except OSError as exc:
         raise EntryError(_("项目事项工具无法运行：{0}").format(exc), "failed", [" ".join(command)]) from exc
     try:
         payload = json.loads(completed.stdout or "{}")
@@ -196,7 +208,7 @@ def _tool_preview(provider: Any, target: str | None, change: dict) -> dict:
     else:
         item = provider.item(target)
         arguments = ["update", item["id"], *_tool_flags(change), "--dry-run"]
-    code, payload = _run_items_tool(provider, arguments)
+    code, payload = _run_items_tool(provider, arguments, writes=False)
     if code != 0:
         raise EntryError(_("项目事项工具拒绝了这次修改：{0}").format(payload.get('error') or payload), "usage")
     lines = payload.get("preview") or (payload.get("diff") or "").splitlines() or [_("（项目工具没有给出预览内容）")]
@@ -214,7 +226,7 @@ def _tool_apply(provider: Any, planned: dict) -> dict:
         arguments = ["update", planned["target"], *_tool_flags(change)]
         if planned["expect_updated_at"]:
             arguments += ["--expect-updated-at", planned["expect_updated_at"]]
-    code, payload = _run_items_tool(provider, arguments)
+    code, payload = _run_items_tool(provider, arguments, writes=True)
     if code != 0:
         if payload.get("code") == "conflict":
             raise EntryError(_("这个事项在你预览之后被修改过，项目工具没有写入"), "conflict",
