@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "INSTALL.md 说明 agy plugin validate --strict 因 hooks/hooks.json 未被加载而返回 1 属预期，普通 validate 与 install 不受影响。",
+    "en": "INSTALL.md explains that agy plugin validate --strict returning 1 because hooks/hooks.json is never loaded is expected; plain validate and install are unaffected."
+  },
+  "changes": [
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
