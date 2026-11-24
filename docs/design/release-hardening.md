@@ -212,10 +212,12 @@ W4 的体积（窗口内全文条数以“最新 N 条”近似；套件版本�
 5. 在沙盒 Pages 或本地 HTTP 服务上做一次真实“跨 5 个版本”的升级演练并记录。
 6. 先发布新客户端（agent-pack minor），**其后**才启用窗口生成；两步分属不同的发布，避免“生成侧先上线”。
 
-### 2.8 实施进度（I4a 已落地，I4b 待下一个发布）
+### 2.8 实施进度（I4a 已发布于 6.15.0，I4b 随 6.16.0 周期启用）
 
 - **消费端（I4a，agent-pack minor）**：`agenthelm.py` 识别 `migrations_window`（`schema` 为 1、`floor` 为对象、`full` 为 `latest.json` 同前缀下的相对路径；缺失、格式错误或更高 schema 一律按无窗口处理，与旧行为逐字节相同）。`behind` 且当前版本低于 `floor[插件]` 时，才从与 `latest.json` 同一来源前缀（无显式来源时再试另一默认来源；本地 `latest.json` 读同目录文件）取全量文件，上限 4 MiB，按日缓存到 `migrations_full.json`（缓存带各插件云端版本戳，版本变化即视为过期；离线或联网失败时用缓存）。取不到全文（离线无缓存、两个来源 404、非法 JSON、不是迁移条目数组、超限）时，在步骤里追加 `gap` 记录并按不兼容处理，不抛异常，也不输出“无迁移”。渲染里 `summary` 缺失不再打印 `None`。
-- **生成侧（I4b，下一个发布）**：`release_workflow.window_migrations` 已作为纯函数就位并有测试，**尚未接入 `build_latest`**，本版 `latest.json` 与 `release/migrations.json` 与不启用窗口时逐字节相同（有测试固定）。启用步骤：在 I4a 发布之后，由 `build_latest` 以窗口参数调用该函数、`consistency_problems` 改为比对窗口化结果。窗口大小 N 与 `legacy` 的归属仍取决于 D2-1，降级口径取决于 D2-2。
+- **生成侧（I4b，已启用）**：`build_latest` 经 `release_workflow.windowed_migrations` 调用 `window_migrations`，`release_meta.py` 比对 `latest.json` 与窗口化生成物（`latest_window_problems`，由 `consistency_problems` 在检查模式下调用；`--write` 先重生成再检查）。决策已定：**D2-1** N = 2 个套件版本的全文窗口，`legacy` 整体在窗口外；**D2-2** 采用 W4（窗口外不兼容条目留 ≤80 字符摘要并清空 `actions`，不删任何条目）。窗口规则见 `release/VERSIONING.md`。窗口版本由 `release/history/<X.Y.Z>/` 目录确定（`window_floor`），候选算最新的一个窗口版本：候选阶段取“最近 1 个已归档版本 + 候选”，转为正式归档后取“最近 2 个归档版本”，两者是同一组条目，所以候选重复生成与候选转正式都不改变窗口。
+- **体积实测（2.7-2）**：N=2 时窗口内是 6.14.0 与 6.15.0 的 8 条全文，窗口化后的 `latest.json` 为 54,827 字节（原 132,561 字节，52 条迁移、13 条 `breaking` 都保留）。**未达 30 KB**：窗口内全文 8 条占 41,815 字节（76%，最大的两条 `opinion-manager` 0.6.0→0.7.0 与 `agent-pack` 1.13.1→1.14.0 共约 24 KB），窗口外 44 条索引约 8.5 KB。2.4 的 30,955 字节估计取的是正文较短的 6.12.0 与 6.13.0；体积由窗口里的条目正文决定，N 不变时随每次发布的正文大小波动。
+- **回归矩阵（2.7-1，含生成物）**：`tests/test_migration_window_matrix.py` 在原有两种合成下限之外，对 `build_latest` 生成的真实窗口逐 tag（v6.8.0、v6.11.0 至 v6.15.0）核对 `breaking` 判定，并实跑各 tag 的 `check` 命令（全量、窗口化加同级 `release/migrations.json`、仅窗口化三种来源）：不崩溃、输出无 `None`、退出码一致、不丢“不兼容”标记；6.15.0 取到全文时输出与全量逐字一致，取不到时提示窗口外说明不可用。
 - **回归矩阵（2.7-1）**：`tests/test_migration_window_matrix.py` 逐 tag（v6.8.0、v6.11.0、v6.12.0、v6.13.0、v6.13.1、v6.14.0）用各自的 `agenthelm.py` 读取窗口化与全量 `latest.json`，两种下限（历史中位、全部在窗口外）下所有插件的所有版本的 `breaking`、变更类别与各步 `(版本, breaking)` 一致。缺 tag 时跳过，`AGENTHELM_REQUIRE_TAGS=1` 下失败。
 
 ---
@@ -266,7 +268,7 @@ wc -l scripts/release_meta.py scripts/release_model.py scripts/release_workflow.
 | I2 | promote 真实推送与 Environment | 创建 Environment、App 令牌（或旁路验证）、推送 + 显式分派 Pages；VERSIONING.md 更新步骤 5 | 同上；文档变更无需片段 | I1 稳定一个发布；沙盒演练通过 | 沙盒演练四项；连续 3 次真实发布由工作流 promote |
 | I3 | promote 轮询触发 | `schedule` 轮询 `npm view`；去掉第二次点击的决定（决策 D1-1） | 同上 | I2 稳定 3 次 | 批准前不推送、批准后一个周期内完成；无重复 promote |
 | I4a | agent-pack：窗口外迁移按需拉取 | `migrations_between` 读取 `migrations_window`，按需拉取与缓存，`None` 保护与离线/失败降级 | agent-pack minor | 决策 D2-1、D2-2 | 2.7 的 3、5 |
-| I4b | 生成窗口化 latest.json | `build_latest`/`consistency_problems`、VERSIONING.md、测试 | 套件内部工具变更，`suite` patch（实施时以门禁实测为准，未确认） | I4a 已发布 | 2.7 的 1、2、4 |
+| I4b | 生成窗口化 latest.json（已实施） | `build_latest`/`consistency_problems`、VERSIONING.md、测试 | `suite` minor（`latest.json` 对老客户端的内容变少，值得发布说明；门禁实测通过） | I4a 已发布 | 2.7 的 1、4 已满足；2 的体积未达 30 KB（见 2.8） |
 | I5 | 发布工具拆分（前置重构 + 拆模块） | 3.3；先消除 `SimpleNamespace` | 无发布影响（`scripts/`；以门禁实测为准，未确认） | 无；建议在 I4b 之后 | 拆分前后门禁夹具输出一致；`ci_gate` / `release.yml` 命令行不变 |
 
 ---
@@ -277,8 +279,8 @@ wc -l scripts/release_meta.py scripts/release_model.py scripts/release_workflow.
 - **D1-2 推送令牌**。倾向：GitHub App 安装令牌 + 规则集旁路（官方文档确认 App 可旁路）。替代：`GITHUB_TOKEN` 需先验证 Actions 能否旁路（未确认）；PAT 排除（绑定个人账号、过期与权限过宽）。
 - **D1-3 是否把 Environment 绑定 npm 受信发布者**。倾向：不绑，避免“先改 npm、再改工作流”的顺序风险与 2 天首发失效窗口。替代：绑定可让“只有经审批的作业才能发布 npm”，但暂存模式下已有 2FA 人工批准，增益有限。
 - **D1-4 沙盒演练**。倾向：用一次性沙盒仓库验证 `main` 规则集旁路。替代：只做真仓库干跑，第一次真实 promote 带手动后备。
-- **D2-1 窗口的 N 与 `legacy` 的归属**。倾向：N=2 个套件版本的全文窗口（约 31 KB 量级，实测值见 2.4），并把 `legacy` 整体视为窗口外。替代：N=12（D3 字面，几乎不省）；按日期截止。
-- **D2-2 窗口外条目的降级口径**。倾向：W4（不兼容条目留 ≤80 字符摘要且清空 `actions`）。替代：留完整 `actions`（更安全，约多 15 KB）；完全索引化（体积最小，但老客户端会打印 `None`，必须配合客户端修复，不推荐）。
+- **D2-1 窗口的 N 与 `legacy` 的归属**（**已决定并实施**：N=2，`legacy` 整体在窗口外；实测体积见 2.8）。原倾向：N=2 个套件版本的全文窗口（约 31 KB 量级，实测值见 2.4），并把 `legacy` 整体视为窗口外。替代：N=12（D3 字面，几乎不省）；按日期截止。
+- **D2-2 窗口外条目的降级口径**（**已决定并实施**：W4）。原倾向：W4（不兼容条目留 ≤80 字符摘要且清空 `actions`）。替代：留完整 `actions`（更安全，约多 15 KB）；完全索引化（体积最小，但老客户端会打印 `None`，必须配合客户端修复，不推荐）。
 - **D3-1 工具预算口径**。倾向：改为“每模块 ≤ 350 行、总量 ≤ 1,100 行”，拆分在 I4b 后做。替代：保持 800 行总预算并删除功能（需先评估旧 `--since` 入口）。
 
 ## 6. 未核实清单

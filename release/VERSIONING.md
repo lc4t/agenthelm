@@ -58,7 +58,13 @@ CI 的各套件和升级矩阵在 Python 设置成功且任务未取消时分别
 | 迁移汇总 | `release/history/**/migrations.json` 加候选计划的迁移条目，生成 `release/migrations.json` 与 `latest.json.migrations` |
 | 发布说明 | 当前计划生成的 CHANGELOG 标记段；正式发布计划与片段归档在 `release/history/<套件版本>/` |
 
-既有手写迁移一次性原样导入 `release/history/legacy/migrations.json`。汇总不是第二个可编辑来源。`latest.json` 暂时仍携带全量迁移历史：能读 `migrations_window` 并按需拉取全文的客户端先发布（agent-pack 的消费端已就绪），窗口化的生成侧在其后的发布才启用，两步分属不同的发布；窗口大小与 `legacy` 的归属见设计稿 `docs/design/release-hardening.md` 第 2 节（D2-1、D2-2），未定之前不启用。
+既有手写迁移一次性原样导入 `release/history/legacy/migrations.json`。汇总不是第二个可编辑来源。`latest.json` 只对最近 2 个套件版本携带迁移全文（窗口），全量历史仍在 `release/migrations.json`（Pages 同发布，内容不变）。规则：
+
+- **窗口**：`release/history/<X.Y.Z>/` 目录里版本最高的 2 个；`legacy` 与更早的目录整体在窗口外。待发布的 `release/candidate.json` 算最新的一个窗口版本，因此候选只占 1 个已归档版本的位置（重复生成候选结果相同；候选转正式归档后窗口不变）。窗口只读 `release/history/` 与候选文件，不读 git tag，解压的 tarball 里结果相同。
+- **降级**：窗口外条目只留 `plugin/from/to/change_kind/breaking/date`；其中 `breaking` 条目另留不超过 80 字符的 `summary` 并清空 `actions`。不删除任何条目，不兼容条目数不减。老版本客户端因此仍显示“不兼容”与一句话，只是不再列出操作清单。
+- **`migrations_window`**：`{"schema": 1, "floor": {插件: 版本}, "full": "release/migrations.json"}`。`floor[插件]` 是该插件窗口外条目的最大 `to`：当前版本低于它的客户端（agent-pack 6.15.0 起）按需取全文，取不到时明确提示并按可能不兼容处理；没有窗口外条目的插件没有 `floor`。
+- **门禁**：`since_problems`、`migration_problems`、`check-release` 仍读全量；`release_meta.py` 比对 `latest.json` 与窗口化生成物，手改 `migrations` 或 `migrations_window` 会报 `latest.json: migrations differ …`。功能 PR 不改 `latest.json`，它在候选生成时随发布提交更新。
+- **手工恢复**：`latest.json` 被改坏或需要核对时运行 `python3 scripts/release_meta.py --write` 重新生成（`release/migrations.json` 同步重写，二者都不是可编辑来源）；要读完整历史直接看 `release/migrations.json`。扩大窗口只需调大 `release_workflow.WINDOW_VERSIONS`（不小于版本目录数时 `floor` 为空，所有条目带全文），这是套件变更，需要片段并经候选生成。
 
 ## 候选发布
 

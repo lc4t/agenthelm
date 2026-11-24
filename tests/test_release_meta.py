@@ -90,6 +90,68 @@ class ReleaseMetaTests(unittest.TestCase):
             self.assertTrue(any(expected in problem for problem in problems), expected)
 
 
+class WindowedLatestTests(unittest.TestCase):
+    """latest.json carries the windowed history; a hand edit of it is found by the consistency check."""
+
+    def entry(self, to: str, *, breaking: bool = False) -> dict:
+        return {"plugin": "p", "from": "1.0.0", "to": to, "change_kind": "code", "breaking": breaking, "date": "2026-01-01",
+                "summary": "完整说明" * 30, "actions": ["do it"]}
+
+    def tree(self, temporary: str) -> Path:
+        root = Path(temporary)
+        for name, entries in {"legacy": [self.entry("1.1.0", breaking=True)], "6.1.0": [self.entry("1.2.0")],
+                              "6.2.0": [self.entry("1.3.0")], "6.3.0": [self.entry("1.4.0")]}.items():
+            (root / "release/history" / name).mkdir(parents=True)
+            (root / "release/history" / name / "migrations.json").write_text(json.dumps(entries), encoding="utf-8")
+        return root
+
+    def generate(self, root: Path) -> dict:
+        with mock.patch.object(release_meta, "ROOT", root):
+            migrations, window = release_meta.windowed_latest_migrations()
+            latest = {"migrations": migrations, "migrations_window": window}
+            (root / "latest.json").write_text(release_meta.dump(latest), encoding="utf-8")
+            return latest
+
+    def test_the_windowed_file_passes_and_is_repeatable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.tree(temporary)
+            first = self.generate(root)
+            with mock.patch.object(release_meta, "ROOT", root):
+                self.assertEqual(release_meta.latest_window_problems(), [])
+            self.assertEqual(self.generate(root), first)
+            self.assertEqual(first["migrations_window"]["floor"], {"p": "1.2.0"})
+            by_to = {e["to"]: e for e in first["migrations"]}
+            self.assertEqual(sorted(by_to), ["1.1.0", "1.2.0", "1.3.0", "1.4.0"])  # nothing removed
+            self.assertEqual((by_to["1.1.0"]["actions"], len(by_to["1.1.0"]["summary"])), ([], 80))
+            self.assertNotIn("summary", by_to["1.2.0"])
+            self.assertEqual(by_to["1.4.0"], self.entry("1.4.0"))
+
+    def test_hand_edits_to_the_windowed_file_are_found(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.tree(temporary)
+            latest = self.generate(root)
+            edits = {
+                "drops an entry": lambda data: data["migrations"].pop(),
+                "restores outside text": lambda data: data["migrations"][0].update(summary="x"),
+                "clears a breaking mark": lambda data: data["migrations"][-1].update(breaking=False),
+                "moves the floor": lambda data: data["migrations_window"]["floor"].update(p="9.9.9"),
+                "removes the block": lambda data: data.pop("migrations_window"),
+                "un-windows the file": lambda data: data.update(migrations=[self.entry(e["to"]) for e in data["migrations"]]),
+            }
+            for label, edit in edits.items():
+                changed = json.loads(json.dumps(latest))
+                edit(changed)
+                (root / "latest.json").write_text(release_meta.dump(changed), encoding="utf-8")
+                with self.subTest(label), mock.patch.object(release_meta, "ROOT", root):
+                    self.assertTrue(release_meta.latest_window_problems(), label)
+
+    def test_without_release_history_latest_json_is_not_windowed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(release_meta, "ROOT", Path(temporary)), \
+                    mock.patch.object(release_meta, "read_migrations", return_value=[self.entry("1.1.0")]):
+                self.assertEqual(release_meta.windowed_latest_migrations(), ([self.entry("1.1.0")], None))
+
+
 ATTACH_SPEC = importlib.util.spec_from_file_location("attach_release", ROOT / "scripts/attach_release.py")
 attach_release = importlib.util.module_from_spec(ATTACH_SPEC)
 ATTACH_SPEC.loader.exec_module(attach_release)

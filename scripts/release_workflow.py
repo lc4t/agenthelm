@@ -239,6 +239,7 @@ def history_migrations(meta):
 
 
 WINDOW_SCHEMA = 1
+WINDOW_VERSIONS = 2  # suite versions whose migrations keep their full text in latest.json (D2-1)
 WINDOW_FULL = 'release/migrations.json'
 WINDOW_SUMMARY_MAX = 80
 WINDOW_INDEX_KEYS = ('plugin', 'from', 'to', 'change_kind', 'breaking', 'date')
@@ -249,8 +250,8 @@ def _version_key(value):
 
 
 def window_migrations(entries, floor, full=WINDOW_FULL):
-    """Pure: the windowed ``latest.json`` migrations and its ``migrations_window`` block (not wired into
-    ``build_latest`` yet; see docs/design/release-hardening.md section 2).
+    """Pure: the windowed ``latest.json`` migrations and its ``migrations_window`` block (see
+    docs/design/release-hardening.md section 2; ``window_floor`` derives the floor).
 
     ``floor`` maps a plugin to the version its full-text window starts after: an entry with ``to`` newer than the
     floor keeps its full text, as does every entry of a plugin with no floor. Older entries become index entries;
@@ -269,6 +270,41 @@ def window_migrations(entries, floor, full=WINDOW_FULL):
             index['actions'] = []
         result.append(index)
     return result, {'schema': WINDOW_SCHEMA, 'floor': dict(sorted(floor.items())), 'full': full}
+
+
+def window_floor(meta, versions=WINDOW_VERSIONS):
+    """The per-plugin floor of the full-text window, or None when there is no release history yet.
+
+    The window is the newest ``versions`` suite versions among the ``release/history/<X.Y.Z>/`` directories. A pending
+    candidate counts as the newest one (its fragments become ``history/<suite>`` at the formal release), so the window
+    does not move between a candidate and its formal release, and regenerating a candidate gives the same result.
+    ``legacy`` and any other directory is outside the window. No git tag is read, so a tarball gives the same result.
+    A plugin's floor is the newest ``to`` among its outside entries; a plugin with no outside entry has no floor."""
+    paths = sorted((meta.ROOT / HISTORY).glob('*/migrations.json'))
+    path = meta.ROOT / CANDIDATE
+    candidate = meta.read_json(path) if path.is_file() else None
+    if not paths and candidate is None:
+        return None
+    releases = sorted({p.parent.name for p in paths if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', p.parent.name)}, key=_version_key)
+    keep = max(versions - (1 if candidate else 0), 0)
+    inside = set(releases[len(releases) - keep:])
+    key = lambda e: (e['plugin'], e['from'], e['to'])
+    kept = {key(e) for e in (candidate or {}).get('migrations', [])}
+    outside = []
+    for path in paths:
+        entries = meta.read_json(path)
+        (kept.update(key(e) for e in entries) if path.parent.name in inside else outside.extend(entries))
+    floor = {}
+    for entry in outside:
+        if key(entry) not in kept and (entry['plugin'] not in floor or _version_key(entry['to']) > _version_key(floor[entry['plugin']])):
+            floor[entry['plugin']] = entry['to']
+    return floor
+
+
+def windowed_migrations(meta, entries):
+    """``(migrations, migrations_window)`` for latest.json; the window is None while there is no release history."""
+    floor = window_floor(meta)
+    return (entries, None) if floor is None else window_migrations(entries, floor)
 
 
 def release_files(meta, release, candidate):

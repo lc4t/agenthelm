@@ -169,6 +169,11 @@ def read_migrations() -> list[dict]:
     return read_json(path) if path.is_file() else []
 
 
+def windowed_latest_migrations() -> tuple[list[dict], dict | None]:
+    """The migrations latest.json carries: the full history outside, full text only inside the window (release_workflow)."""
+    return release_workflow.windowed_migrations(types.SimpleNamespace(**globals()), read_migrations())
+
+
 def build_latest(plugins: list[dict]) -> dict:
     index = read_json(ROOT / "index.json")
     entries = {}
@@ -180,13 +185,15 @@ def build_latest(plugins: list[dict]) -> dict:
                 for pack in item["content"]["packs"]
             }
         entries[item["manifest"]["name"]] = entry
+    migrations, window = windowed_latest_migrations()
     return {
         "schema": 1,
         "marketplace": MARKETPLACE_NAME,
         "repository": plugins[0]["manifest"]["repository"],
         "released_at": index["site"]["updated_at"],
         "plugins": entries,
-        "migrations": read_migrations(),
+        "migrations": migrations,
+        **({"migrations_window": window} if window else {}),
     }
 
 
@@ -254,7 +261,7 @@ def declaration_problems(label: str, entry: dict) -> list[str]:
     return problems
 
 
-def consistency_problems(plugins: list[dict]) -> list[str]:
+def consistency_problems(plugins: list[dict], check_latest: bool = True) -> list[str]:
     """Drift between hand-written files that must agree with plugin.json."""
     problems: list[str] = []
     index = read_json(ROOT / "index.json")
@@ -294,7 +301,22 @@ def consistency_problems(plugins: list[dict]) -> list[str]:
     cli = read_json(ROOT / CLI_PACKAGE)["version"]
     if cli != suite:
         problems.append(f"{CLI_PACKAGE} version {cli} must equal the release version {suite}")
-    return problems + migration_problems(plugins)
+    return problems + migration_problems(plugins) + (latest_window_problems() if check_latest else [])
+
+
+def latest_window_problems() -> list[str]:
+    """latest.json must carry exactly the windowed form of the full history (a hand edit cannot drop or alter an entry)."""
+    path = ROOT / LATEST_FILE
+    if not path.is_file():
+        return []
+    migrations, window = windowed_latest_migrations()
+    latest = read_json(path)
+    problems = []
+    if latest.get("migrations") != migrations:
+        problems.append(f"{LATEST_FILE}: migrations differ from the windowed {MIGRATIONS_FILE}; run scripts/release_meta.py --write")
+    if latest.get("migrations_window") != window:
+        problems.append(f"{LATEST_FILE}: migrations_window differs from the generated window; run scripts/release_meta.py --write")
+    return problems
 
 
 def git(*args: str) -> str | None:
@@ -407,7 +429,8 @@ def main(argv: list[str] | None = None) -> int:
             item["content"] = content
     generated[MARKETPLACE_FILE] = dump(build_marketplace(plugins))
     generated[LATEST_FILE] = dump(build_latest(plugins))
-    problems = consistency_problems(plugins)
+    # --write regenerates latest.json, so its current bytes are only judged when checking.
+    problems = consistency_problems(plugins, check_latest=not args.write)
     for relative, content in generated.items():
         path = ROOT / relative
         if args.write:
