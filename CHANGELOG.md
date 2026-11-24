@@ -1,7 +1,7 @@
 # 更新记录
 
 <!-- release-plan:start -->
-## 2026-11-23 — agenthelm 6.15.0
+## 2026-11-24 — agenthelm 6.15.0
 
 ### agent-pack 1.15.0
 
@@ -9,6 +9,7 @@
 - check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。
 - Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。
 - 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。
+- 修正 Antigravity（agy）的 hook：按官方文档的载荷键（workspacePaths、conversationId）找项目目录与会话，Stop 改用 {"decision":"continue"} 输出；既有客户端的 hook 行为不变。
 - install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。
 - 内置客户端声明改为数据文件，行为不变。
 - 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。

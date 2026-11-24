@@ -57,9 +57,9 @@
       "to": "1.15.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-23",
-      "summary": "候选版场景下，runtime status 提示的下一条命令带上 --latest。; check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。; Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。; 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。; install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。; 内置客户端声明改为数据文件，行为不变。; 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。; nudge 与 hook 输出改读客户端声明：事件名映射、输出格式、停止提示默认值与旧安装的载荷嗅探都来自 drivers/*.json，既有三个客户端的输出不变。; 客户端读取侧改为读驱动声明：优先级、读取格式与受管条目进入声明；0 字节的 MCP 配置文件不再被判为损坏。; 同级插件的查找统一为一个解析函数：已装用户级运行时时，优先于客户端缓存里的副本。; sync 的写入侧改读客户端声明：包目的地、MCP 写入格式与选项、Codex 的 TOML 写入与残留清理、Cursor 的请求头写法、作用域与遮蔽发现都进入声明；既有三个客户端写出的文件与输出不变。; 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。; check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。",
-      "summary_en": "In a candidate (-rc.N) scenario, the next command that runtime status suggests carries --latest.; When check finds duplicate Skill / MCP groups, it adds one line pointing at inventory, dedupe and relocate.; When Cursor has no release information, the last line of check no longer says everything is up to date; it says it cannot tell.; Antigravity (agy) is a declared client: one driver declaration, fixtures and the shipped hooks.json and mcp_config.json. install, update (uninstall then reinstall), check, sync, nudge hook, inventory and doctor know agy; it is not in the default client set, name it with --client agy.; install, update and legacy cleanup now follow the client distribution declarations: command steps, how installed plugins are read and per-client wording are declared data; the output for the existing three clients is unchanged.; Built-in client declarations are now data files; behavior is unchanged.; Adds a declaration for Gemini CLI as a deprecated client (gemini, outside the default set: name it with --client gemini or --client all). install / update use its extensions install / uninstall commands; that command asks you to confirm folder trust, so --apply hands it your terminal and agenthelm does not answer, forward or bypass the question, and does not start the command without a terminal. Adds read-only reading of installed extensions (~/.gemini/extensions). This release does not ship the gemini-extension.json that Gemini requires, so an install without --source is blocked in the preview; the behaviour of the real Gemini CLI is not verified in this version. Output for the existing claude / codex / cursor clients is unchanged.; The nudge and hook output now follow the client declarations: event names, output formats, stop-prompt defaults and the legacy payload sniffing come from drivers/*.json; output for the three existing clients is unchanged.; The read side now follows the client driver declarations: precedence, read formats and managed entries are declared data, and a 0-byte MCP configuration file is no longer reported as corrupt.; Sibling plugins are now found by one resolver; an installed user-level runtime is preferred over client-cache copies.; The write side of sync now follows the client declarations: package destinations, the MCP write format and its options, Codex TOML writing and residual cleanup, the Cursor headers form, and scope and shadowing findings are declared data; the files and output written for the existing three clients are unchanged.; The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.; check reads the latest.json migration window: when far behind it fetches the full migration notes, and when they are unavailable it says so and treats the update as possibly incompatible; a breaking step without a summary no longer shows None.",
+      "date": "2026-11-24",
+      "summary": "候选版场景下，runtime status 提示的下一条命令带上 --latest。; check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。; Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。; 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。; 修正 Antigravity（agy）的 hook：按官方文档的载荷键（workspacePaths、conversationId）找项目目录与会话，Stop 改用 {\"decision\":\"continue\"} 输出；既有客户端的 hook 行为不变。; install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。; 内置客户端声明改为数据文件，行为不变。; 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。; nudge 与 hook 输出改读客户端声明：事件名映射、输出格式、停止提示默认值与旧安装的载荷嗅探都来自 drivers/*.json，既有三个客户端的输出不变。; 客户端读取侧改为读驱动声明：优先级、读取格式与受管条目进入声明；0 字节的 MCP 配置文件不再被判为损坏。; 同级插件的查找统一为一个解析函数：已装用户级运行时时，优先于客户端缓存里的副本。; sync 的写入侧改读客户端声明：包目的地、MCP 写入格式与选项、Codex 的 TOML 写入与残留清理、Cursor 的请求头写法、作用域与遮蔽发现都进入声明；既有三个客户端写出的文件与输出不变。; 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。; check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。",
+      "summary_en": "In a candidate (-rc.N) scenario, the next command that runtime status suggests carries --latest.; When check finds duplicate Skill / MCP groups, it adds one line pointing at inventory, dedupe and relocate.; When Cursor has no release information, the last line of check no longer says everything is up to date; it says it cannot tell.; Antigravity (agy) is a declared client: one driver declaration, fixtures and the shipped hooks.json and mcp_config.json. install, update (uninstall then reinstall), check, sync, nudge hook, inventory and doctor know agy; it is not in the default client set, name it with --client agy.; Fix the Antigravity (agy) hooks: find the project and the conversation from the documented payload keys (workspacePaths, conversationId) and answer Stop with a {\"decision\":\"continue\"} output; the hooks of the existing clients are unchanged.; install, update and legacy cleanup now follow the client distribution declarations: command steps, how installed plugins are read and per-client wording are declared data; the output for the existing three clients is unchanged.; Built-in client declarations are now data files; behavior is unchanged.; Adds a declaration for Gemini CLI as a deprecated client (gemini, outside the default set: name it with --client gemini or --client all). install / update use its extensions install / uninstall commands; that command asks you to confirm folder trust, so --apply hands it your terminal and agenthelm does not answer, forward or bypass the question, and does not start the command without a terminal. Adds read-only reading of installed extensions (~/.gemini/extensions). This release does not ship the gemini-extension.json that Gemini requires, so an install without --source is blocked in the preview; the behaviour of the real Gemini CLI is not verified in this version. Output for the existing claude / codex / cursor clients is unchanged.; The nudge and hook output now follow the client declarations: event names, output formats, stop-prompt defaults and the legacy payload sniffing come from drivers/*.json; output for the three existing clients is unchanged.; The read side now follows the client driver declarations: precedence, read formats and managed entries are declared data, and a 0-byte MCP configuration file is no longer reported as corrupt.; Sibling plugins are now found by one resolver; an installed user-level runtime is preferred over client-cache copies.; The write side of sync now follows the client declarations: package destinations, the MCP write format and its options, Codex TOML writing and residual cleanup, the Cursor headers form, and scope and shadowing findings are declared data; the files and output written for the existing three clients are unchanged.; The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.; check reads the latest.json migration window: when far behind it fetches the full migration notes, and when they are unavailable it says so and treats the update as possibly incompatible; a breaking step without a summary no longer shows None.",
       "declaration": 2,
       "actions": [],
       "user_action_required": [],
@@ -73,7 +73,7 @@
       "to": "6.11.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-23",
+      "date": "2026-11-24",
       "summary": "refresh 与 entry 在 private/.gitignore 是另一种语言的工具原文时，预览中列出并在 --apply 时先备份再换成项目文件语言的版本；check 给出信息级提示。; check 在 Profile 与内容锁记录的渲染输入不一致时给出提示（信息级，不影响退出码）。; agents-init 的拒绝与回滚提示全部走翻译：中文界面显示中文，英文界面输出不变。; 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。",
       "summary_en": "refresh and entry list a private/.gitignore that holds the tool's text in the other language and, on --apply, back it up and replace it with the project file language's version; check reports it as information.; check now reports when the Profile no longer matches the render inputs recorded in the content lock (information only, exit code unchanged).; agents-init refusal and rollback messages now go through translation: Chinese in the Chinese interface, unchanged text in English.; The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.",
       "declaration": 2,
@@ -91,7 +91,7 @@
       "to": "0.7.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-23",
+      "date": "2026-11-24",
       "summary": "各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。",
       "summary_en": "The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.",
       "declaration": 2,
@@ -107,7 +107,7 @@
       "to": "1.13.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-23",
+      "date": "2026-11-24",
       "summary": "修复更新内容预览在英文界面下“默认”与动作之间缺空格（defaultkeep your version）。; 项目工具超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。; 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。",
       "summary_en": "Fix the missing separator between the default marker and the action in the English update-content preview (defaultkeep your version).; A project tool that times out is reported as an unknown write outcome, distinct from a failure to start, instead of being treated as not written.; The plugins' English catalogs are now sorted by key, so branches that add messages in parallel merge without conflicts; the loaded translations are unchanged.",
       "declaration": 2,
@@ -118,7 +118,7 @@
       "default_for_existing": "on"
     }
   ],
-  "changelog": "## 2026-11-23 — agenthelm 6.15.0\n\n### agent-pack 1.15.0\n\n- 候选版场景下，runtime status 提示的下一条命令带上 --latest。\n- check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。\n- Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。\n- 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。\n- install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。\n- 内置客户端声明改为数据文件，行为不变。\n- 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。\n- nudge 与 hook 输出改读客户端声明：事件名映射、输出格式、停止提示默认值与旧安装的载荷嗅探都来自 drivers/*.json，既有三个客户端的输出不变。\n- 客户端读取侧改为读驱动声明：优先级、读取格式与受管条目进入声明；0 字节的 MCP 配置文件不再被判为损坏。\n- 同级插件的查找统一为一个解析函数：已装用户级运行时时，优先于客户端缓存里的副本。\n- sync 的写入侧改读客户端声明：包目的地、MCP 写入格式与选项、Codex 的 TOML 写入与残留清理、Cursor 的请求头写法、作用域与遮蔽发现都进入声明；既有三个客户端写出的文件与输出不变。\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n- check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。\n\n### agents-init 6.11.0\n\n- refresh 与 entry 在 private/.gitignore 是另一种语言的工具原文时，预览中列出并在 --apply 时先备份再换成项目文件语言的版本；check 给出信息级提示。\n- check 在 Profile 与内容锁记录的渲染输入不一致时给出提示（信息级，不影响退出码）。\n- agents-init 的拒绝与回滚提示全部走翻译：中文界面显示中文，英文界面输出不变。\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n\n### opinion-manager 0.7.1\n\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n\n### project-orchestrator 1.13.0\n\n- 修复更新内容预览在英文界面下“默认”与动作之间缺空格（defaultkeep your version）。\n- 项目工具超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n\n### suite 6.15.0\n\n- 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。\n- 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。\n- check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。\n- 新增只做检查、不推送的 promote 干跑工作流，并移除发布工作流中未使用的权限。\n",
+  "changelog": "## 2026-11-24 — agenthelm 6.15.0\n\n### agent-pack 1.15.0\n\n- 候选版场景下，runtime status 提示的下一条命令带上 --latest。\n- check 发现重复的 Skill / MCP 分组时，追加一行提示 inventory、dedupe、relocate。\n- Cursor 没有发布信息时，check 的末行不再写“全部为最新”，改为明确说无法判断。\n- 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。\n- 修正 Antigravity（agy）的 hook：按官方文档的载荷键（workspacePaths、conversationId）找项目目录与会话，Stop 改用 {\"decision\":\"continue\"} 输出；既有客户端的 hook 行为不变。\n- install、update 与旧安装清理改为读客户端的分发声明：命令步骤、已装插件状态的读取方式与每客户端文案进入声明；既有三个客户端的输出不变。\n- 内置客户端声明改为数据文件，行为不变。\n- 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。\n- nudge 与 hook 输出改读客户端声明：事件名映射、输出格式、停止提示默认值与旧安装的载荷嗅探都来自 drivers/*.json，既有三个客户端的输出不变。\n- 客户端读取侧改为读驱动声明：优先级、读取格式与受管条目进入声明；0 字节的 MCP 配置文件不再被判为损坏。\n- 同级插件的查找统一为一个解析函数：已装用户级运行时时，优先于客户端缓存里的副本。\n- sync 的写入侧改读客户端声明：包目的地、MCP 写入格式与选项、Codex 的 TOML 写入与残留清理、Cursor 的请求头写法、作用域与遮蔽发现都进入声明；既有三个客户端写出的文件与输出不变。\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n- check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。\n\n### agents-init 6.11.0\n\n- refresh 与 entry 在 private/.gitignore 是另一种语言的工具原文时，预览中列出并在 --apply 时先备份再换成项目文件语言的版本；check 给出信息级提示。\n- check 在 Profile 与内容锁记录的渲染输入不一致时给出提示（信息级，不影响退出码）。\n- agents-init 的拒绝与回滚提示全部走翻译：中文界面显示中文，英文界面输出不变。\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n\n### opinion-manager 0.7.1\n\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n\n### project-orchestrator 1.13.0\n\n- 修复更新内容预览在英文界面下“默认”与动作之间缺空格（defaultkeep your version）。\n- 项目工具超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。\n- 各插件的英文目录改为按键排序，并行新增文案的分支合并时不再冲突；加载出的译文不变。\n\n### suite 6.15.0\n\n- 新增客户端 Antigravity（agy）：只靠一份驱动声明、夹具和随包的 hooks.json 与 mcp_config.json 接入。install、update（卸载后重装）、check、sync、nudge hook、inventory、doctor 认识 agy；不在默认客户端集合里，须 --client agy。\n- 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。\n- check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。\n- 新增只做检查、不推送的 promote 干跑工作流，并移除发布工作流中未使用的权限。\n",
   "explain": [
     {
       "fragment": "0-candidate-latest-hint.json",
@@ -163,6 +163,11 @@
     {
       "fragment": "134-agy-client.json",
       "scope": "suite",
+      "level": "patch"
+    },
+    {
+      "fragment": "134-agy-hook-payload.json",
+      "scope": "agent-pack",
       "level": "patch"
     },
     {
@@ -248,7 +253,7 @@
   ],
   "removed": [],
   "overrides": {},
-  "date": "2026-11-23",
+  "date": "2026-11-24",
   "source_files": {
     ".github/workflows/pages.yml": {
       "sha256": "5af7d749068cd4ce58970efffed508a9e315587c88c44a890e360b7a8a528603",
@@ -311,7 +316,7 @@
       "kind": "file"
     },
     "docs/design/client-protocols.md": {
-      "sha256": "7c40bf5a64a61ebef325bf69ccdf9975f47f9f4e362df88e0faeb87cb6b27c9c",
+      "sha256": "c9419882a63f7e83d337816edc5f8713f33154ebf95beeea2c3845c2cd11daba",
       "kind": "file"
     },
     "docs/design/mcp-skill-multi-project.md": {
@@ -455,11 +460,11 @@
       "kind": "file"
     },
     "plugins/agent-pack/references/nudge.en.md": {
-      "sha256": "57b345293ff94e009afb2db2971e6f41323c7be4be8737bdbc529fc61aafd188",
+      "sha256": "1089926433bed878d86351ee9b8bfc03d4fe7cb06296bde87d182a121ff4252f",
       "kind": "file"
     },
     "plugins/agent-pack/references/nudge.md": {
-      "sha256": "f564f3c4e1d62cdb27bc2bceef9ae3ca4bf3e9cc854007120c10375da73c6897",
+      "sha256": "94aea110a9874231a63ba9bb97dafccb53c105bddab884ce3fa637fa01427b68",
       "kind": "file"
     },
     "plugins/agent-pack/references/relocate-contract.en.md": {
@@ -475,7 +480,7 @@
       "kind": "file"
     },
     "plugins/agent-pack/runtime/agent_pack_clients.py": {
-      "sha256": "0150e0ab94897dfb9157dcaafe275ee5ced2edd7efec77b4ec68fe896dddd336",
+      "sha256": "a839aa2d1d474d490365b803cbb427ff14f896fd0c06f89911edcc1dbefa052a",
       "kind": "file"
     },
     "plugins/agent-pack/runtime/agent_pack_config.py": {
@@ -515,7 +520,7 @@
       "kind": "file"
     },
     "plugins/agent-pack/runtime/agent_pack_nudge.py": {
-      "sha256": "2e237fedff7a917a1c0ca1d2b91ec6b3cd02aea65e03de38b1f918da7343d2ac",
+      "sha256": "0ef5ea4346051e5a4d3c48467a9c070f4bdf75f81a83c7f61e14f1e32a0d9bf7",
       "kind": "file"
     },
     "plugins/agent-pack/runtime/agent_pack_probe.py": {
@@ -543,7 +548,7 @@
       "kind": "file"
     },
     "plugins/agent-pack/runtime/drivers/agy.json": {
-      "sha256": "db8845d62361431216ceb6757606afbf15bf769f0a53343deb57c0bfcc0f6974",
+      "sha256": "deb6ed71b81f5dad16ff7c1951fd1dd2ee2a57366648028c617afcc1a1134dbe",
       "kind": "file"
     },
     "plugins/agent-pack/runtime/drivers/claude-desktop.json": {
@@ -747,7 +752,11 @@
       "kind": "file"
     },
     "plugins/agent-pack/tests/test_agy_client.py": {
-      "sha256": "2d49fca61f6dc3f954d5563d3c4bc7ce4388e675b751f5b6a1f9ed61b11525ef",
+      "sha256": "6f6d1878f32a1156f15b1f3507c315714f8ea450c39232eb103d46072c583112",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agy_hook_payload.py": {
+      "sha256": "4727f64d57d19ca340ae5156e3b0f3fc0ad194ed2a5c8f4d89a1b3dac8d3313d",
       "kind": "file"
     },
     "plugins/agent-pack/tests/test_agy_static_files.py": {
@@ -803,7 +812,7 @@
       "kind": "file"
     },
     "plugins/agent-pack/tests/test_hook_declarations.py": {
-      "sha256": "55084de1ec2cfba80a15217c67855900350d25c2d25edb49c19172acd174d00b",
+      "sha256": "6a402ce919ca821ff847b329f3c6c9acbdab8b0287447305523aa2a5323835b9",
       "kind": "file"
     },
     "plugins/agent-pack/tests/test_install_residuals.py": {
