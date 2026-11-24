@@ -1,6 +1,5 @@
 # 更新记录
 
-<!-- release-plan:start -->
 ## 2026-11-24 — agenthelm 6.15.0
 
 ### agent-pack 1.15.0
@@ -43,7 +42,6 @@
 - 新增已弃用的 Gemini CLI 客户端声明（gemini，不在默认集合，须 --client gemini 或 --client all 点名）：install / update 用其 extensions install / uninstall 命令，该命令会向你索取文件夹信任确认，--apply 时直接使用你的终端，agenthelm 不代答、不转发、不绕过，没有终端时不启动命令；新增只读的已装扩展状态读取（~/.gemini/extensions）。本版发布包没有随包提供 Gemini 要求的 gemini-extension.json，不带 --source 的安装会在预览里受阻；真实 Gemini CLI 的行为尚未在本版验证。既有 claude / codex / cursor 的输出不变。
 - check 能读取 latest.json 的迁移窗口：落后很多版本时按需取全量迁移说明，取不到时明确提示并按可能不兼容处理；不兼容步骤缺摘要时不再显示 None。
 - 新增只做检查、不推送的 promote 干跑工作流，并移除发布工作流中未使用的权限。
-<!-- release-plan:end -->
 
 
 ## 2026-11-21 — agenthelm 6.14.0

@@ -4,15 +4,17 @@
     "zh": "修复更新内容预览在英文界面下“默认”与动作之间缺空格（defaultkeep your version）。",
     "en": "Fix the missing separator between the default marker and the action in the English update-content preview (defaultkeep your version)."
   },
-  "changes": [{
-    "scope": "project-orchestrator",
-    "level": "patch",
-    "actions": [],
-    "user_action_required": [],
-    "touches": [],
-    "default_for_existing": "off",
-    "template_changes": [],
-    "contracts": []
-  }],
+  "changes": [
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
   "suite": null
 }

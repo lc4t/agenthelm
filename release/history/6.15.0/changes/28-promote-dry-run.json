@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "新增只做检查、不推送的 promote 干跑工作流，并移除发布工作流中未使用的权限。",
+    "en": "Add a checks-only promote dry-run workflow and drop an unused permission from the release workflow."
+  },
+  "changes": [
+    {
+      "scope": "suite",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
