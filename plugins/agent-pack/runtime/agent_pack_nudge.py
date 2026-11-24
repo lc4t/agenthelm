@@ -176,10 +176,25 @@ def find_project(host: Any, start: Path | None) -> Path | None:
 
 
 def payload_directory(payload: dict, client: str, environment: dict) -> Path | None:
+    """The project directory a hook call names: the keys every client is read for, then the ones the client's driver declares
+    (``hooks.payload.project_dir``; a list of paths gives its first entry), so a declared key never changes what another
+    client's payload resolves to."""
     roots = payload.get("workspace_roots")
     candidate = (roots[0] if isinstance(roots, list) and roots else None) or payload.get("cwd") \
         or environment.get("CURSOR_PROJECT_DIR") or environment.get("CLAUDE_PROJECT_DIR")
+    for key in client_registry.hook_payload_keys(client, "project_dir") if not candidate else ():
+        value = payload.get(key)
+        candidate = (value[0] if isinstance(value, list) and value else value) or candidate
     return Path(candidate) if isinstance(candidate, str) and candidate else None
+
+
+def payload_session(payload: dict, client: str, *keys: str) -> str:
+    """The session id of a hook call: the first of ``keys`` (the ones each event has always read) that is set, then the keys the
+    client's driver declares (``hooks.payload.session``)."""
+    for key in (*keys, *client_registry.hook_payload_keys(client, "session")):
+        if payload.get(key):
+            return str(payload[key])
+    return ""
 
 
 def detect_client(requested: str, payload: dict, environment: dict) -> str:
@@ -327,14 +342,23 @@ def _decision_block(native: str, context: str | None, system: str | None) -> dic
     return {"decision": "block", "reason": context} if context else None
 
 
+def _decision_continue(native: str, context: str | None, system: str | None) -> dict | None:
+    """``{"decision": "continue", "reason": text}``: the documented Antigravity ``Stop`` output (the reason is injected as a system
+    message and the agent carries on; any other decision lets it stop). Whether it is accepted at run time is not verified."""
+    return {"decision": "continue", "reason": context} if context else None
+
+
 def _inject_steps(native: str, context: str | None, system: str | None) -> dict | None:
-    """``{"injectSteps": [{"systemMessage": {"systemMessage": text}}]}`` (the documented Antigravity hook output; whether it is
-    accepted at run time is not verified). Only the model-facing text is sent: the format has no user-visible line."""
+    """``{"injectSteps": [{"systemMessage": {"systemMessage": text}}]}`` (the documented Antigravity ``SessionStart`` output; the
+    nesting differs from the plain ``systemMessage`` string the ``PreInvocation`` description uses, and which is accepted at run
+    time is not verified). Only the model-facing text is sent: the format has no user-visible line. ``Stop`` does not take it
+    (see ``_decision_continue``)."""
     return {"injectSteps": [{"systemMessage": {"systemMessage": context}}]} if context else None
 
 
 ADAPTERS = {"hookSpecificOutput": _hook_specific_output, "additional_context": _additional_context,
-            "followup_message": _followup_message, "decision_block": _decision_block, "injectSteps": _inject_steps}
+            "followup_message": _followup_message, "decision_block": _decision_block, "injectSteps": _inject_steps,
+            "decision_continue": _decision_continue}
 
 
 def render(client: str, event: str, *, context: str | None = None, system: str | None = None,
@@ -355,7 +379,7 @@ def session_start(host: Any, env: Any, payload: dict, client: str, root: Path, c
     manager = find_manager(host, env)
     if manager is None:
         return None
-    session = str(payload.get("session_id") or payload.get("conversation_id") or "")
+    session = payload_session(payload, client, "session_id", "conversation_id")
     source = str(payload.get("source") or "startup")
     if (root / ".opinion" / "inbox.json").is_file():
         run_manager(manager, "inbox", "expire", "--project", str(root), "--days", str(config["trial_expire_days"]), lang=config["lang"])
@@ -404,7 +428,7 @@ def prompt_submit(host: Any, env: Any, payload: dict, client: str, root: Path, c
     hits = [word for word in config["keywords"] if word in lowered]
     if not hits:
         return None
-    session = str(payload.get("session_id") or "")
+    session = payload_session(payload, client, "session_id")
     state = load_state(host, env)
     record = session_record(state, session)
     if record["capture_hints"] >= config["capture_hints_per_session"]:
@@ -425,7 +449,7 @@ def stop(host: Any, env: Any, payload: dict, client: str, root: Path, config: di
         return None
     if client_registry.hook_flag(client, "stop_status_gated") and payload.get("status") not in (None, "completed"):
         return None
-    session = str(payload.get("session_id") or payload.get("conversation_id") or "")
+    session = payload_session(payload, client, "session_id", "conversation_id")
     inbox = root / ".opinion" / "inbox.json"
     if not session or not inbox.is_file() or session not in inbox.read_text(encoding="utf-8", errors="replace"):
         return None

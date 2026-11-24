@@ -95,7 +95,11 @@ class DeclarationTests(unittest.TestCase):
         self.assertEqual(registry.hook_event_name("agy", "session-start"), "SessionStart")
         self.assertEqual(registry.hook_event_name("agy", "stop"), "Stop")
         self.assertIsNone(registry.hook_event_name("agy", "prompt-submit"))
-        self.assertEqual(registry.hook_output("agy", "stop"), "injectSteps")
+        self.assertEqual(registry.hook_output("agy", "session-start"), "injectSteps")
+        self.assertEqual(registry.hook_output("agy", "stop"), "decision_continue")   # Stop takes a decision, not injectSteps
+        self.assertEqual(registry.hook_payload_keys("agy", "project_dir"), ("workspacePaths",))
+        self.assertEqual(registry.hook_payload_keys("agy", "session"), ("conversationId",))
+        self.assertEqual(registry.hook_payload_keys("claude", "project_dir"), ())
         options = registry.mcp_options("agy")
         self.assertEqual((options["remote_url_key"], options["env_interpolation"], options["type_field_required"]),
                          ("serverUrl", "declared-variables", False))
@@ -466,8 +470,7 @@ class OtherCommandTests(Fixture):
         import agent_pack_nudge as nudge
         self.assertEqual(nudge.render("agy", "session-start", context="hello"),
                          {"injectSteps": [{"systemMessage": {"systemMessage": "hello"}}]})
-        self.assertEqual(nudge.render("agy", "stop", context="bye"),
-                         {"injectSteps": [{"systemMessage": {"systemMessage": "bye"}}]})
+        self.assertEqual(nudge.render("agy", "stop", context="bye"), {"decision": "continue", "reason": "bye"})
         self.assertIsNone(nudge.render("agy", "prompt-submit", context="x"))   # unsupported: no such hook
         self.assertIsNone(nudge.render("agy", "session-start"))
         self.assertIn("agy", nudge.HOOK_CLIENTS)

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "修正 Antigravity（agy）的 hook：按官方文档的载荷键（workspacePaths、conversationId）找项目目录与会话，Stop 改用 {\"decision\":\"continue\"} 输出；既有客户端的 hook 行为不变。",
+    "en": "Fix the Antigravity (agy) hooks: find the project and the conversation from the documented payload keys (workspacePaths, conversationId) and answer Stop with a {\"decision\":\"continue\"} output; the hooks of the existing clients are unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

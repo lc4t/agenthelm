@@ -148,12 +148,20 @@
     },
     "output": {
       "session-start": "injectSteps",
-      "stop": "injectSteps"
+      "stop": "decision_continue"
     },
     "stop_prompt": "off",
     "config": {
       "format": "group-event-handlers",
       "plugin_file": "hooks.json"
+    },
+    "payload": {
+      "project_dir": [
+        "workspacePaths"
+      ],
+      "session": [
+        "conversationId"
+      ]
     }
   },
   "unsupported": [
