@@ -28,6 +28,22 @@ codex plugin marketplace add lc4t/agenthelm --ref vX.Y.Z-rc.N
 
 验收用的临时项目一律由仓库内的 `release/acceptance/mkfixture.py` 生成，验收提示词不再内嵌生成器。它依赖 `plugins/agent-pack/tests` 里的 `make_project`，该目录不在 npm 包内，因此 `<extracted-package-dir>` 必须是目标 tag 的 **GitHub tarball 解压目录**：`python3 -I release/acceptance/mkfixture.py <kind> <outdir> <extracted-package-dir>`，kind 为 `clean | token | home | multisource | credname | wrapped`，末行打印项目根；参数错误退出码 2。`tests/test_acceptance_fixture.py` 逐个 kind 运行它，防止 `make_project` 接口漂移。各 kind 的用例用途见脚本 docstring。
 
+## 本地验证须在“临时 tag 指向 HEAD”的环境里再跑一遍
+
+候选版与正式版的本地验证（`check-release`、五套测试、升级矩阵）除了在普通状态下通过，还必须在**一个临时本地 tag 已指向 HEAD** 的环境里再跑一遍，跑完删除该临时 tag，不推送。
+
+原因：6.14.0 的 rc.1 Release 工作流在测试步骤失败。agent-pack 的“旧运行时”回归测试用 `git describe` 取最新发布 tag；rc tag 指向被测提交后，当前运行时被当成旧运行时（修复见 #159）。没有 tag 指向 HEAD 的本地环境复现不了这类问题。
+
+```sh
+git fetch --tags origin
+git tag v<套件版本>-rc.N HEAD     # 临时本地 tag，只在本机；正式版用 v<套件版本>
+# 在此环境里重跑：check-release、五套测试（均设 AGENTHELM_REQUIRE_TAGS=1）、升级矩阵
+git tag -d v<套件版本>-rc.N       # 跑完立即删除，不 push
+git tag --points-at HEAD          # 应无该临时 tag
+```
+
+临时 tag 不得推送；真正的 tag 仍由维护者按 `release/VERSIONING.md` 在发布分支顶端创建。
+
 ## 云端先行：验收提示词先在 Linux 沙盒逐字预跑
 
 适用于每一份发给实机验收会话的提示词。目的是在占用实机之前，先发现提示词本身的错误，并让每个用例的预期来自真实输出。
