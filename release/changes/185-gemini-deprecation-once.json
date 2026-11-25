@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "已弃用的 Gemini 的弃用说明在一次 install / update 的输出里只出现一次（放在该客户端的第一个步骤），文字不变；其他客户端的输出不变。",
+    "en": "The deprecation note of the deprecated Gemini client appears once per install / update run (on the client's first step) with the same wording; the output for the other clients is unchanged."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
