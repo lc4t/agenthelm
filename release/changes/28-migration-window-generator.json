@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "latest.json 只保留最近两个套件版本的完整迁移说明，更早的条目降为索引（不兼容条目保留一句摘要），全文仍在 release/migrations.json。",
+    "en": "latest.json keeps full migration text only for the newest two suite versions; older entries become index entries (breaking ones keep a one-line summary), and the full history stays in release/migrations.json."
+  },
+  "changes": [
+    {
+      "scope": "suite",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

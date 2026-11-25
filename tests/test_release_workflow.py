@@ -398,11 +398,89 @@ class WindowMigrationsTests(unittest.TestCase):
         self.assertTrue(all(e['summary'] and len(e['summary']) <= 80 and e['actions'] == [] for e in result if e['breaking']))
         self.assertLess(len(json.dumps(result, ensure_ascii=False)), len(json.dumps(full, ensure_ascii=False)) // 4)
 
-    def test_latest_json_is_still_the_unwindowed_generated_file(self):
-        latest = (ROOT / 'latest.json').read_text(encoding='utf-8')
+    def test_the_generated_latest_json_is_windowed_while_the_full_history_stays_whole(self):
         built = meta.build_latest(meta.load_plugins())
-        self.assertNotIn('migrations_window', built)
-        self.assertNotIn('migrations_window', json.loads(latest))
-        self.assertEqual(latest, meta.dump(built))
-        self.assertEqual(built['migrations'], meta.read_migrations())
-        self.assertEqual((ROOT / 'release/migrations.json').read_text(encoding='utf-8'), meta.dump(meta.read_migrations()))
+        full = meta.read_migrations()
+        self.assertEqual(built['migrations_window']['schema'], 1)
+        self.assertEqual(built['migrations_window']['full'], 'release/migrations.json')
+        self.assertEqual((ROOT / 'release/migrations.json').read_text(encoding='utf-8'), meta.dump(full))
+        self.assertEqual([(e['plugin'], e['from'], e['to'], e['breaking']) for e in built['migrations']],
+                         [(e['plugin'], e['from'], e['to'], e['breaking']) for e in full])
+        self.assertEqual(sum(e['breaking'] for e in built['migrations']), sum(e['breaking'] for e in full))
+        self.assertLess(len(meta.dump(built)), len(meta.dump(full)) // 2)
+        self.assertEqual(meta.dump(built), meta.dump(meta.build_latest(meta.load_plugins())))  # deterministic
+
+
+class WindowFloorTests(unittest.TestCase):
+    """The window is derived from release/history/<X.Y.Z>/ only: no git, no tag, nothing outside the work tree."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.meta = types.SimpleNamespace(ROOT=self.root, read_json=meta.read_json)
+
+    def entry(self, to, plugin='a'):
+        major, minor, _ = to.split('.')
+        return {'plugin': plugin, 'from': f'{major}.{int(minor) - 1}.0', 'to': to, 'change_kind': 'code', 'breaking': False,
+                'date': '2026-01-01', 'summary': 's', 'actions': []}
+
+    def history(self, name, *entries):
+        path = self.root / 'release/history' / name
+        path.mkdir(parents=True, exist_ok=True)
+        (path / 'migrations.json').write_text(json.dumps(list(entries)), encoding='utf-8')
+
+    def candidate(self, suite, *entries):
+        (self.root / 'release').mkdir(exist_ok=True)
+        (self.root / 'release/candidate.json').write_text(json.dumps({'suite': suite, 'migrations': list(entries)}), encoding='utf-8')
+
+    def test_no_history_and_no_candidate_means_no_window(self):
+        self.assertIsNone(workflow.window_floor(self.meta))
+        self.assertEqual(workflow.windowed_migrations(self.meta, [self.entry('1.1.0')]), ([self.entry('1.1.0')], None))
+
+    def test_the_newest_two_versions_are_inside_and_legacy_is_always_outside(self):
+        self.history('legacy', self.entry('1.1.0'), self.entry('9.0.0', 'old'))
+        for number, version in enumerate(['6.9.0', '6.10.0', '6.11.0'], 2):  # 6.9.0 sorts after 6.10.0 as text, not as a version
+            self.history(version, self.entry(f'1.{number}.0'))
+        self.assertEqual(workflow.window_floor(self.meta), {'a': '1.2.0', 'old': '9.0.0'})
+
+    def test_a_directory_ahead_of_two_versions_is_the_boundary(self):
+        self.history('legacy', self.entry('1.1.0'))
+        self.history('6.1.0', self.entry('1.2.0'))
+        self.history('6.2.0', self.entry('1.3.0'))
+        self.assertEqual(workflow.window_floor(self.meta), {'a': '1.1.0'})  # two versions: both inside, legacy outside
+        self.history('6.3.0', self.entry('1.4.0'))
+        self.assertEqual(workflow.window_floor(self.meta), {'a': '1.2.0'})
+
+    def test_a_candidate_is_the_newest_window_version_and_its_formal_release_does_not_move_the_window(self):
+        self.history('legacy', self.entry('1.1.0'))
+        self.history('6.1.0', self.entry('1.2.0'))
+        self.history('6.2.0', self.entry('1.3.0'))
+        self.candidate('6.3.0', self.entry('1.4.0'))
+        candidate_floor = workflow.window_floor(self.meta)
+        self.assertEqual(candidate_floor, {'a': '1.2.0'})  # 6.2.0 plus the candidate; 6.1.0 is already outside
+        self.assertEqual(workflow.window_floor(self.meta), candidate_floor)  # regenerating changes nothing
+        (self.root / 'release/candidate.json').unlink()
+        self.history('6.3.0', self.entry('1.4.0'))  # the formal release archives the same entries
+        self.assertEqual(workflow.window_floor(self.meta), candidate_floor)
+
+    def test_a_candidate_without_migrations_still_takes_a_window_slot(self):
+        self.history('6.1.0', self.entry('1.2.0'))
+        self.history('6.2.0', self.entry('1.3.0'))
+        self.candidate('6.3.0')
+        self.assertEqual(workflow.window_floor(self.meta), {'a': '1.2.0'})
+
+    def test_a_plugin_with_no_outside_entry_has_no_floor_and_keeps_its_full_text(self):
+        self.history('legacy', self.entry('1.1.0'))
+        self.history('6.1.0', self.entry('1.2.0', 'b'))
+        entries = [self.entry('1.1.0'), self.entry('1.2.0', 'b')]
+        result, window = workflow.windowed_migrations(self.meta, entries)
+        self.assertEqual(window['floor'], {'a': '1.1.0'})
+        self.assertEqual(result[1], entries[1])
+        self.assertNotIn('summary', result[0])
+
+    def test_an_entry_listed_in_a_window_version_and_in_legacy_stays_in_full(self):
+        shared = self.entry('1.2.0')
+        self.history('legacy', self.entry('1.1.0'), shared)
+        self.history('6.1.0', shared)
+        self.assertEqual(workflow.window_floor(self.meta), {'a': '1.1.0'})
