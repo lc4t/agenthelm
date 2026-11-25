@@ -146,6 +146,8 @@ python3 runtime/wf.py 笔记 9月1号                                 # 在项�
 
 工具运行超过时限时，入口终止它并报告「写入结果未知」（`error.code` 为 `outcome_unknown`，退出码 1），不报告成功也不自动重试：子进程可能在超时前已经写入。先核对目标系统，或用该工具已有的只读查询确认，再决定是否重跑。命令没有启动（缺文件、无权限）仍是 `failed`（退出码 6），表示没有写入；工具自己以非零退出码结束同样是 `failed`。
 
+事项工具的写接口（`entry.items`，`new` / `update`）同样处理：写入调用超过 120 秒仍未结束时报告 `outcome_unknown`（退出码 1），不重试，先用该工具的 `list` 或其他只读查询核对。`--dry-run` 预览不写入，预览超时仍是 `failed`（退出码 6），可以直接重新预览；命令没有启动或工具以非零退出码结束同样是 `failed`。
+
 ## 迁移工具
 
 运行 `runtime/case_workspace.py migrate --project <项目> --map <映射.json>` 先预演。审阅映射后追加 `--apply`。映射必须有 `schema_version: "1.0"` 和 `moves` 数组，每项包含项目相对 `source`、`target`；目标必须处于 cases 的一个 Case 目录内。可选 `records` 数组包含 `path`（目标 CASE.md）、`content`（项目创建器预先生成的正文），工具只负责排他创建，不替项目认定状态。
