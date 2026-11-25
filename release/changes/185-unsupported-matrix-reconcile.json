@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "Gemini 的驱动声明补上 nudge-install-hooks（hooks 随扩展交付，与支持矩阵一致），并新增守卫：矩阵标不支持或不适用的功能必须由驱动声明，驱动声明的不支持项矩阵里也要有。",
+    "en": "The Gemini driver now declares nudge-install-hooks (hooks ship inside the extension, as the support matrix says), and a new guard reconciles the matrix with the drivers in both directions."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "off",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

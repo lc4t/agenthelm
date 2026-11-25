@@ -35,7 +35,37 @@ def matrix_feature_names() -> set[str]:
     return names
 
 
+def matrix_unsupported_by_client() -> dict[str, set[str]]:
+    """Per client column of the support matrix: the feature names a cell marks 不支持 or 不适用. A cell that opens with the word
+    names the backticked features in the cell, or (when it has none) the features of the row's first column; ``不支持（`name`…``
+    inside a longer cell names that one feature."""
+    text = DESIGN.read_text(encoding="utf-8")
+    section = text[text.index("## 6. "):text.index("## 7. ")]
+    rows = [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in section.splitlines()
+            if line.startswith("|") and not line.startswith("| ---")]
+    header = rows[0]
+    found: dict[str, set[str]] = {name: set() for name in header[1:]}
+    for row in rows[1:]:
+        row_names = set(re.findall(r"`([a-z][a-z0-9:-]*)`", row[0])) & set(registry.UNSUPPORTED_FEATURES)
+        for client, cell in zip(header[1:], row[1:]):
+            inline = set(re.findall(r"不支持（`([a-z][a-z0-9:-]*)`", cell))
+            if cell.startswith(("不支持", "不适用")):
+                inline |= set(re.findall(r"`([a-z][a-z0-9:-]*)`", cell)) & set(registry.UNSUPPORTED_FEATURES) or row_names
+            found[client] |= inline
+    return found
+
+
 class DeclarationGuards(unittest.TestCase):
+    def test_what_the_matrix_marks_unsupported_is_declared_by_the_driver(self) -> None:
+        marked = matrix_unsupported_by_client()
+        self.assertEqual(set(marked), {"agy", "gemini"})
+        self.assertTrue({"nudge-install-hooks", "relocate"} <= marked["agy"] and "sync-mcp" in marked["gemini"], marked)
+        for client, names in marked.items():
+            declared = {entry["feature"] for entry in registry.get(client).get("unsupported", [])}
+            with self.subTest(client=client):
+                self.assertEqual(sorted(names - declared), [], f"{client}: the matrix says unsupported, the driver does not declare it")
+                self.assertEqual(sorted(declared - names), [], f"{client}: the driver declares it unsupported, the matrix does not say so")
+
     def test_unsupported_features_belong_to_the_support_matrix(self) -> None:
         names = matrix_feature_names()
         self.assertTrue({"relocate", "dedupe", "hook-event:prompt-submit", "hook-event:stop"} <= names, names)
