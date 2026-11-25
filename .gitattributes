@@ -1,0 +1,4 @@
+# Release verification tools: kept in the repository, left out of `git archive` (the release tarball). The npm package
+# only ships bin/ and runtime/ (see packages/cli/package.json), so these are in neither.
+/release/verify export-ignore
+/release/verify/** export-ignore

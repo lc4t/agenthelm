@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "normalize": {"names": {"tree": "<TREE>", "home": "<HOME>", "project": "<PROJECT>", "work": "<WORK>", "fixture": "<FIXTURE>"}, "regex": []},
+  "commands": [
+    {"name": "version", "argv": ["python3", "{runtime}/agenthelm.py", "--version"]},
+    {"name": "clients-json", "argv": ["python3", "{runtime}/agenthelm.py", "clients", "--output", "json"], "stubs": ["claude", "codex"]},
+    {"name": "clients-text", "argv": ["python3", "{runtime}/agenthelm.py", "clients"], "stubs": ["claude"]},
+    {"name": "check-no-project", "argv": ["python3", "{runtime}/agenthelm.py", "check", "--offline", "--no-project", "--latest", "{latest}", "--output", "json"]},
+    {"name": "check-project", "fixture": "clean", "argv": ["python3", "{runtime}/agenthelm.py", "check", "--offline", "--project", "{project}", "--latest", "{latest}", "--output", "json"]},
+    {"name": "inventory-token", "fixture": "token", "argv": ["python3", "{runtime}/agenthelm.py", "inventory", "--project", "{project}", "--output", "json"], "stdout_json": true},
+    {"name": "doctor", "argv": ["python3", "{runtime}/agenthelm.py", "doctor", "--latest", "{latest}", "--no-project", "--output", "json"], "expect_exit": [0, 1]}
+  ]
+}
