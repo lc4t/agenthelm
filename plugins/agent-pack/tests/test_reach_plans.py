@@ -386,6 +386,26 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(compared, 52)
         self.assertGreater(changed, 20, "the new impact output really appears in most of the previews")
 
+    # Keys that other changes add to the inventory output (MCP target judgement): they are not this change's business, and a
+    # missing key is a no-op, so the test holds with and without them.
+    OTHER_ENTRY_KEYS = ("target", "target_class")
+    OTHER_GROUP_KEYS = ("target_relation",)
+    OTHER_TOP_KEYS = ("mcp_hints",)
+
+    def without_other_keys(self, text: str) -> str:
+        """The JSON text re-serialised in the form the commands print it, minus the keys added by other changes."""
+        document = json.loads(text)
+        if isinstance(document, dict):
+            for key in self.OTHER_TOP_KEYS:
+                document.pop(key, None)
+            for entry in document.get("mcps", []):
+                for key in self.OTHER_ENTRY_KEYS:
+                    entry.pop(key, None)
+            for group in document.get("duplicates", {}).get("mcps", []):
+                for key in self.OTHER_GROUP_KEYS:
+                    group.pop(key, None)
+        return json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+
     def test_inventory_and_the_group_list_are_byte_identical(self) -> None:
         for lang in ("en", "zh"):
             for args in (("inventory", "--output", "json"), ("inventory",), ("dedupe", "--list", "--output", "json"), ("dedupe", "--list")):
@@ -393,12 +413,26 @@ class BaselineTests(unittest.TestCase):
                 new = self.run_tree(RUNTIME, *args, lang=lang)
                 self.assertEqual(old[0], 0, args)
                 self.assertTrue(old[1].strip(), "the command printed something")
+                if "json" in args:
+                    self.assertEqual(self.without_other_keys(old[1]), old[1], "the old output is printed in this very form")
+                    new = (new[0], self.without_other_keys(new[1]))
                 self.assertEqual(old, new, f"{lang} {args}")
 
     def test_the_comparison_notices_a_difference(self) -> None:
         old = self.run_tree(self.old, "dedupe", "--list", "--output", "json", lang="en")[1]
         self.assertNotEqual(self.stripped(old, True), self.stripped(old.replace('"claude"', '"claudX"', 1), True))
         self.assertNotEqual(self.run_tree(self.old, "inventory", lang="en"), self.run_tree(self.old, "inventory", "--bogus", lang="en"))
+        inventory = self.run_tree(self.old, "inventory", "--output", "json", lang="en")[1]
+        self.assertEqual(self.without_other_keys(inventory), inventory)
+        changed = json.loads(inventory)
+        changed["mcps"][0]["transport"] = "injected"
+        self.assertNotEqual(self.without_other_keys(json.dumps(changed)), inventory, "another difference is still reported")
+        changed = json.loads(inventory)
+        changed["mcps"][0].update(target={"kind": "x"}, target_class="t")
+        changed["mcp_hints"] = []
+        for group in changed["duplicates"]["mcps"]:
+            group["target_relation"] = "same"
+        self.assertEqual(self.without_other_keys(json.dumps(changed)), inventory, "the keys of other changes are ignored")
 
 
 if __name__ == "__main__":
