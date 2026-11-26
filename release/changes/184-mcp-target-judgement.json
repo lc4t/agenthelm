@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "inventory 与 dedupe 判断 MCP 目标：指纹相同但目标不同或无法确认的条目不再算重复，改列入 mcp_hints；每条 MCP 新增 target 与 target_class。",
+    "en": "inventory and dedupe now judge the MCP target: entries with the same fingerprint but a different or unconfirmed target are no longer duplicates and are listed in mcp_hints; every MCP entry gains target and target_class."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

@@ -18,7 +18,8 @@ import agent_pack_inventory as inv  # noqa: E402
 
 NEW_SKILL_KEYS = ["description_chars", "when_to_use_chars", "when_to_use_bytes", "skill_md_lines", "dir_bytes", "file_count",
                   "is_symlink", "link_target_kind", "name_matches_dir", "frontmatter_ok", "loaded", "precedence", "shadowed_by", "ref"]
-NEW_MCP_KEYS = ["env_var_names", "has_inline_secret", "fingerprint_fields", "url_host", "loaded", "precedence", "shadowed_by", "ref"]
+NEW_MCP_KEYS = ["env_var_names", "has_inline_secret", "fingerprint_fields", "url_host", "loaded", "precedence", "shadowed_by", "ref",
+                "target", "target_class"]
 DOC_CLAUDE_SKILLS = "https://code.claude.com/docs/en/skills"
 DOC_CLAUDE_MCP = "https://code.claude.com/docs/en/mcp"
 SECRETS = ("sk-abcdefghijklmnopqrstuv", "supersecretvalue", "hunter2token", "Bearer zzzsecret", "qqquerysecret")
@@ -405,10 +406,18 @@ class McpTests(Fixture):
 
     def test_same_fingerprint_under_different_names(self) -> None:
         self.write(self.home / ".cursor" / "mcp.json", {"mcpServers": {
-            "a": {"command": "uvx", "args": ["tool"]}, "b": {"command": "uvx", "args": ["tool"], "env": {"K": "v"}},
+            "a": {"command": "uvx", "args": ["tool"]}, "b": {"command": "uvx", "args": ["tool"]},
             "c": {"command": "uvx", "args": ["other"]}}})
         groups = [item for item in self.observe()["duplicates"]["mcps"] if item["kind"] == "same-fingerprint"]
         self.assertEqual([group["names"] for group in groups], [["a", "b"]])
+        self.assertEqual(groups[0]["target_relation"], "same")
+
+    def test_same_fingerprint_with_a_different_env_value_is_a_hint_not_a_duplicate(self) -> None:
+        self.write(self.home / ".cursor" / "mcp.json", {"mcpServers": {
+            "a": {"command": "uvx", "args": ["tool"]}, "b": {"command": "uvx", "args": ["tool"], "env": {"K": "v"}}}})
+        report = self.observe()
+        self.assertEqual([item for item in report["duplicates"]["mcps"] if item["kind"] == "same-fingerprint"], [])
+        self.assertEqual([(hint["names"], hint["differs_in"]) for hint in report["mcp_hints"]], [(["a", "b"], ["env"])])
 
     def test_transport_inference(self) -> None:
         self.write(self.home / ".cursor" / "mcp.json", {"mcpServers": {
@@ -445,7 +454,13 @@ class McpTests(Fixture):
         self.skill(self.home / ".claude" / "skills", "a")
         report = self.observe()
         self.assertEqual(list(report), ["schema_version", "generated_by", "project", "clients", "filters", "skills", "mcps",
-                                        "summary", "duplicates", "overlap_hints", "unknown"])
+                                        "summary", "duplicates", "overlap_hints", "unknown"])  # no ``mcp_hints`` without a hint
+        self.write(self.home / ".cursor" / "mcp.json", {"mcpServers": {
+            "p": {"command": "uvx", "args": ["tool"]}, "q": {"command": "uvx", "args": ["tool"], "cwd": "/elsewhere"}}})
+        hinted = self.observe()
+        self.assertEqual(list(hinted)[-1], "mcp_hints")
+        self.assertEqual(sorted(hinted["mcp_hints"][0]), sorted([
+            "kind", "id", "client", "names", "stores", "fingerprint", "target_relation", "differs_in", "reasons", "refs"]))
         self.assertEqual(sorted(report["skills"][0]), sorted([
             "name", "client", "scope", "store", "path", "frontmatter", "description_bytes", "skill_md_bytes", "content_sha256",
             "origin", "symlink", "version", "stale", "evidence", "issues", *NEW_SKILL_KEYS]))
