@@ -137,9 +137,12 @@ def _client_row(names: list[str], client: dict, entries: list[dict], adds: list[
 
 
 def impact(disposition: dict, facts: dict) -> dict:
-    """The ``impact`` object of a plan (design section 3.7). ``disposition`` is ``{kind, name, names?, retire[], add[],
-    other_machines}`` (``names``: the entry names the disposition concerns when ``name`` is only a label); ``retire[]`` items are ``{phys, is_link, real, scope}`` and ``add[]`` items ``{client | store, scope,
-    digest, ref_for}``; ``facts`` is ``{clients[], entries[]}`` (see ``read_facts``)."""
+    """The ``impact`` object of a plan (design section 3.7).
+
+    ``disposition`` is ``{kind, name, names?, retire[], add[], other_machines}``: ``names`` lists the entry names the
+    disposition concerns when ``name`` is only a label; ``retire[]`` items are ``{phys, is_link, real, scope}``; ``add[]``
+    items are ``{client, scope, store, digest, ref_for}`` (see ``add_item``). ``facts`` is ``{clients[], entries[]}`` as
+    ``read_facts`` builds it."""
     kind, name = disposition["kind"], disposition["name"]
     retired = {item["phys"] for item in disposition["retire"]}
     retired_dirs = [item["real"] for item in disposition["retire"] if not item["is_link"] and item.get("real")]
@@ -174,7 +177,7 @@ def _display(client: str) -> str:
 
 
 def _reason_phrases(reasons: list[str]) -> str:
-    return "；".join(_(REASON_TEXT[code]) for code in reasons if code in REASON_TEXT) or "-"
+    return _("；").join(_(REASON_TEXT[code]) for code in reasons if code in REASON_TEXT) or "-"
 
 
 def warnings(result: dict) -> list[dict]:

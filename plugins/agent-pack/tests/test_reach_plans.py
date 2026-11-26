@@ -276,5 +276,130 @@ class McpRelocateTests(McpBase):
         self.assertEqual(len(digests), 1)
 
 
+class BaselineTests(unittest.TestCase):
+    """Nothing but the new keys changes: the runtime of the previous release (``PREVIOUS``, from its tag) and this tree run the
+    same commands on the same fixture; after removing ``impact``, the ``impact-*`` warnings, ``plan_digest`` and ``next``
+    the previews are equal key by key, and ``inventory`` and ``dedupe --list`` are equal byte for byte."""
+
+    PREVIOUS = "v6.15.0"
+    REQUIRE_TAGS = os.environ.get("AGENTHELM_REQUIRE_TAGS") == "1"
+    DROPPED = ("Impact", "  Reason:", "Plan digest:", "To apply:", "A user-level entry affects", "If this entry is shared")
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import subprocess
+        import tempfile
+        root = TESTS.parents[2]
+        found = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"refs/tags/{cls.PREVIOUS}"],
+                               capture_output=True, text=True, check=False)
+        archive = subprocess.run(["git", "-C", str(root), "archive", cls.PREVIOUS, "plugins/agent-pack/runtime"],
+                                 capture_output=True, check=False) if found.returncode == 0 else None
+        if archive is None or archive.returncode:
+            if cls.REQUIRE_TAGS:
+                raise AssertionError(f"AGENTHELM_REQUIRE_TAGS=1 but the tag {cls.PREVIOUS} is missing: git fetch --tags origin")
+            raise unittest.SkipTest(f"the tag {cls.PREVIOUS} is not in this clone")
+        cls.scratch = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.scratch.cleanup)
+        base = Path(cls.scratch.name).resolve()
+        subprocess.run(["tar", "-x", "-C", str(base)], input=archive.stdout, check=True)
+        cls.old = base / "plugins" / "agent-pack" / "runtime"
+        cls.home, cls.project = base / "home", base / "proj"
+        cls.home.mkdir()
+        cls.project.mkdir()
+        cls.build()
+
+    @classmethod
+    def build(cls) -> None:
+        def skill(base: Path, name: str, text: str = "same") -> None:
+            (base / name).mkdir(parents=True, exist_ok=True)
+            (base / name / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: A skill used to compare two runtimes of the tool\n---\n{text}\n", encoding="utf-8")
+        skill(cls.home / ".agents" / "skills", PDF)
+        skill(cls.project / "skills", PDF)
+        (cls.project / ".agents").mkdir()
+        os.symlink("../skills", cls.project / ".agents" / "skills")
+        (cls.project / ".claude" / "skills").mkdir(parents=True)
+        os.symlink(f"../../.agents/skills/{PDF}", cls.project / ".claude" / "skills" / PDF)
+        for name, user, project in (("dup", "same", "same"), ("drift", "one", "two")):
+            skill(cls.home / ".claude" / "skills", name, user)
+            skill(cls.project / ".claude" / "skills", name, project)
+        skill(cls.home / ".claude" / "skills", "solo")
+        entry = {"command": "npx", "args": ["-y", "demo-server"], "env": {"K": "${K}"}}
+        (cls.home / ".claude.json").write_text(json.dumps({"mcpServers": {"demo": entry}}), encoding="utf-8")
+        (cls.project / ".mcp.json").write_text(json.dumps({"mcpServers": {"demo": entry, "other": {"command": "npx", "args": ["-y", "other"]}}}),
+                                               encoding="utf-8")
+
+    def run_tree(self, runtime: Path, *args: str, lang: str) -> tuple[int, str]:
+        import subprocess
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("AGENTHELM_", "XDG_"))}
+        env.update(HOME=str(self.home), AGENTHELM_LANG=lang, NO_COLOR="1")
+        proc = subprocess.run([sys.executable, str(runtime / "agenthelm.py"), *args, "--home", str(self.home),
+                               "--project", str(self.project)], capture_output=True, text=True, env=env, check=False)
+        return proc.returncode, proc.stdout
+
+    def group(self, kind: str, client: str, key: str) -> str:
+        import hashlib
+        return "g-" + hashlib.sha256(f"{kind}|{client}|{key}".encode("utf-8")).hexdigest()[:10]
+
+    def stripped(self, text: str, as_json: bool):
+        if as_json:
+            document = json.loads(text)
+            plan = document.get("plan")
+            if isinstance(plan, dict):
+                for key in ("impact", "plan_digest", "next"):
+                    plan.pop(key, None)
+                plan["warnings"] = [w for w in plan["warnings"] if not w["code"].startswith("impact-")]
+            return document
+        return [line for line in text.splitlines() if not line.startswith(self.DROPPED)
+                and not line.startswith(("影响面", "  原因：", "计划指纹", "确认后执行", "用户级条目影响", "若该条目"))]
+
+    def test_only_the_new_keys_differ_from_the_previous_release(self) -> None:
+        codex = self.group("skill", "codex", PDF)
+        cases = [
+            ("dedupe", codex, "--keep", KEEP_SHARED, "--retire-others"),
+            ("dedupe", self.group("skill", "claude", "dup"), "--keep", "skill:dup@claude:user", "--retire-others"),
+            ("dedupe", self.group("skill", "claude", "dup"), "--keep", "skill:dup@claude:project", "--retire-others"),
+            ("dedupe", self.group("skill", "claude", "drift"), "--keep", "skill:drift@claude:project", "--retire-others"),
+            ("dedupe", self.group("mcp", "claude", "demo"), "--keep", "mcp:demo@claude:project", "--retire-others"),
+            ("dedupe", self.group("skill", "claude", "dup"), "--keep-all", "--note", "fine"),
+            ("relocate", "skill:solo@claude:user", "--to", "codex:user"),
+            ("relocate", "skill:solo@claude:user", "--to", "codex:project"),
+            ("relocate", "skill:solo@claude:user", "--to", "codex:user", "--keep-source"),
+            ("relocate", "skill:dup@claude:project", "--to", "claude:user", "--allow-widen"),
+            ("relocate", "skill:pdf-notes@codex:user#agents", "--to", "cursor:user"),
+            ("relocate", "mcp:other@claude:project", "--to", "claude:user", "--allow-widen"),
+            ("relocate", "mcp:other@claude:project", "--to", "claude:local"),
+        ]
+        compared = changed = 0
+        for lang in ("en", "zh"):
+            for as_json in (True, False):
+                for case in cases:
+                    args = [*case, *(("--output", "json") if as_json else ())]
+                    old_code, old_out = self.run_tree(self.old, *args, lang=lang)
+                    new_code, new_out = self.run_tree(RUNTIME, *args, lang=lang)
+                    label = f"{lang} {'json' if as_json else 'text'} {' '.join(case[:3])}"
+                    self.assertIn(old_code, (0, 1), label)     # the command ran on both sides (a usage error is 2)
+                    self.assertEqual(old_code, new_code, label)
+                    self.assertEqual(self.stripped(old_out, as_json), self.stripped(new_out, as_json), label)
+                    compared += 1
+                    changed += old_out != new_out
+        self.assertEqual(compared, 52)
+        self.assertGreater(changed, 20, "the new impact output really appears in most of the previews")
+
+    def test_inventory_and_the_group_list_are_byte_identical(self) -> None:
+        for lang in ("en", "zh"):
+            for args in (("inventory", "--output", "json"), ("inventory",), ("dedupe", "--list", "--output", "json"), ("dedupe", "--list")):
+                old = self.run_tree(self.old, *args, lang=lang)
+                new = self.run_tree(RUNTIME, *args, lang=lang)
+                self.assertEqual(old[0], 0, args)
+                self.assertTrue(old[1].strip(), "the command printed something")
+                self.assertEqual(old, new, f"{lang} {args}")
+
+    def test_the_comparison_notices_a_difference(self) -> None:
+        old = self.run_tree(self.old, "dedupe", "--list", "--output", "json", lang="en")[1]
+        self.assertNotEqual(self.stripped(old, True), self.stripped(old.replace('"claude"', '"claudX"', 1), True))
+        self.assertNotEqual(self.run_tree(self.old, "inventory", lang="en"), self.run_tree(self.old, "inventory", "--bogus", lang="en"))
+
+
 if __name__ == "__main__":
     unittest.main()
