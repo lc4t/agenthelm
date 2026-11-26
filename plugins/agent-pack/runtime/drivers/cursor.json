@@ -97,6 +97,34 @@
       "source_url": null
     }
   ],
+  "compat_reads": {
+    "skills": [
+      {
+        "scope": "user",
+        "path": "~/.claude/skills",
+        "status": "documented",
+        "source_url": "https://cursor.com/docs/skills"
+      },
+      {
+        "scope": "user",
+        "path": "~/.codex/skills",
+        "status": "documented",
+        "source_url": "https://cursor.com/docs/skills"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.claude/skills",
+        "status": "documented",
+        "source_url": "https://cursor.com/docs/skills"
+      },
+      {
+        "scope": "project",
+        "path": "<project>/.codex/skills",
+        "status": "documented",
+        "source_url": "https://cursor.com/docs/skills"
+      }
+    ]
+  },
   "hooks": {
     "events": {
       "session-start": "sessionStart",

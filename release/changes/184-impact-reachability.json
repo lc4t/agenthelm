@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "dedupe 与 relocate 的预览新增影响面（impact）：退役或迁移前先按各客户端读取的文件位置算出谁会失去、保留或改读哪一份，符号链接悬空与「其他机器上的该项目不再带有它」写成警告；只多信息，不改写入语义，状态仍为 ready。",
+    "en": "dedupe and relocate previews gain an impact section: before retiring or moving a Skill or MCP entry they work out, from the file locations each client reads, who loses it, keeps it or reads a different copy; dangling symlinks and \"projects on other machines no longer carry it\" become warnings. Information only: writes are unchanged and the status stays ready."
+  },
+  "changes": [
+    {
+      "scope": "agent-pack",
+      "level": "minor",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}

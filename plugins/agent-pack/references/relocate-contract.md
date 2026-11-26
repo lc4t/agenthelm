@@ -36,6 +36,10 @@ agenthelm relocate <ref> --to <客户端>:<作用域> [--mode copy|link] [--proj
 - 输出、`relocate.json` 与计划里只有名字、作用域、路径与 16 位条目摘要，没有 env 值、headers 或令牌；只有 `claude.json.before` 与 `mcp/*.json` 含用户自己的值。
 - 项目 Profile 的 `mcp_scope` 与目标作用域不一致时 `warnings` 含 `declaration-differs`（下次 sync 会按声明处理）。
 
+## 影响面（`plan.impact`）
+
+Skill 与 MCP 的预览都新增键 `impact`：源（`retire_source` 为真时被归档）与目标（新增的副本）一起计算，目标存储被多个客户端共读时每个读者各有一行（`gained`）。`--keep-source` 时没有被归档的条目，只有 `gained` 与 `other-machines-lose-it`；`native`（零写入）与被阻止的计划没有 `impact`。项目级迁到用户级时 `scope_notes` 含 `other-machines-lose-it`，警告 `impact-other-machines` 提示「若该条目随项目仓库同步，其他机器上的该项目不再带有它」，工具不检查它是否已提交。其余键、取值与警告码与 `agenthelm dedupe` 契约的「影响面」一节相同（该节是字段说明的权威来源）。`plan_digest` 含 `impact`，与界面语言无关；`status` 不因影响面改变。
+
 ## JSON
 
 `{schema_version, command: "relocate", mode: "preview"|"apply", plan, applied}`。`plan`：`ref`、`kind`、`source`、`target`、`mode`、`retire_source`、`direction`（`narrow|same|widen`）、`status`（`ready|blocked|native`）、`steps[{id,action,promise,...}]`、`blocked[{code,message,...}]`、`warnings[{code,message}]`、`confirmations[{id,text,flag}]`、`recovery_base`、`plan_digest`、`next.apply`。`promise`：`certain`（文件级事实）、`best-effort`（需重启客户端或重新进入项目才能确认出现）、`cannot-promise`（工具只保证文件改动，不保证客户端行为）。`plan_digest` 与界面语言无关（不含 `message` / `text`）。`applied.status`：`applied|rolled-back|refused|native`。键只追加；输出不含文件内容，只有名字、路径（`~` 与 `<project>` 缩写）与摘要。

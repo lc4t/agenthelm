@@ -22,6 +22,19 @@ agenthelm dedupe <分组id> --keep <mcp ref> --desktop-snippet [--output json|te
 
 `--desktop-snippet`：输出 `claude_desktop_config.json` 的路径（macOS `~/Library/Application Support/Claude/`，Linux `~/.config/Claude/`）、要合并进 `mcpServers` 的 JSON 片段（只含 `command`/`args`/`url` 结构，环境变量只列名字并以 `<在此填入你的 NAME>` 占位）与「完全退出并重启 Desktop」提示。含内联凭据的条目 `blocked: inline-secret`，不生成片段。远程 `url`、请求头、SSE 是否被 Desktop 加载官方文档未说明，片段带 `notes` 标「未确认」；`promise` 恒为 `cannot-promise`。不读不写 Desktop 配置文件。
 
+## 影响面（`plan.impact`，仅 `--keep … --retire-others`）
+
+预览在计划里新增键 `impact`：先算「这次退役之后，每个客户端还能读到什么」，再把结果写成警告（设计与取舍见 `docs/design/inventory-recommendations.md` §3）。`--keep-all`、`--ignore`、`--unignore` 不改配置，没有 `impact`。
+
+- **`schema`**（1）、`kind`（`skill|mcp`）、`name`、`basis`（恒为 `file`：按各客户端读取的文件位置计算，是否真正加载取决于客户端设置，本命令不读取）。
+- **`clients{<客户端 id>: …}`**：按驱动声明的读取位置（`stores`，不含 `undetermined`）逐客户端给出 `detected`、`reads[]`、`before[]` / `after[]`（条目引用）、`after_stores[]`（处置后仍可读到副本的位置）、`verdict`、`evidence`（`file|unknown`）、`reasons[]`，以及符号链接被一并失效时的 `via_before[{ref,path,chain[],resolved}]`。默认客户端集合内的客户端始终列出；集合之外的已注册客户端只在本机检测到时列出；处置前后都没有副本的客户端不列出。
+- **`verdict`**：`unchanged`（处置前后可读到的内容摘要集合相同）｜`lost`（处置前有、处置后没有）｜`replaced`（仍有同名条目但内容摘要集合不同）｜`gained`（处置前没有、处置后有）｜`uncertain`｜`unknown`。`uncertain` 的原因：`compat-copy-present`（驱动 `compat_reads` 声明的兼容位置里有同名副本，只影响 `lost` 的判定）、`project-approval-unknown`（剩下的副本只在声明了 `approval_required` 的存储里，如 Claude 项目级 `.mcp.json`）、`project-trust-unknown`（只在声明了 `trust_required` 的存储里）。`unknown` 的原因：`evidence-unknown`、`store-undetermined`、`link-chain-too-deep`（链超过 8 层或成环）。`lost` 的原因：`link-target-retired`、`entry-retired`、`no-other-copy`。证据不足时只给原因代码，不写 `lost`，也不写「不受影响」。
+- **`lost_clients[]` / `uncertain_clients[]` / `unknown_clients[]`**、**`dangling_after[]`**（处置后会悬空的符号链接路径）、**`scope_notes[]`**：`affects-all-projects`（退役的是用户级条目，所有项目的该客户端都受影响；本机项目清单未提供）、`other-machines-lose-it`（仅 `relocate`：项目级迁到用户级，工具不检查它是否已提交）。
+- **Skill 的物理语义**：退役项按 `realpath(父目录)/名字` 判定；退役的是真实目录时，解析进该目录的符号链接都会悬空；退役的是符号链接本身时，只有这条链接消失。
+- **MCP**：条目没有链；退役集合是（存储，名字）。同指纹异名的分组按成员名字整体判定。
+- **`warnings` 新增码**（`message` 随界面语言，不进 `plan_digest`）：`impact-lost-client`（每个 `lost` 客户端一条，带 `client`、`ref`）、`impact-uncertain`（每个 `uncertain` 或 `unknown` 客户端一条，带 `client`、`reasons`）、`impact-dangling-link`（带 `paths`）、`impact-other-machines`。**`status` 不因影响面改变**（只有警告，不新增阻止项，也不新增确认标志）；文本预览把它们渲染成「影响面：…」一组而不再逐条打印「注意：」。
+- `impact` 进入 `plan_digest`：预览之后文件变化使影响面改变时，`--apply` 因指纹不一致拒绝且零写入。`impact` 只含引用、路径（`~`、`<project>` 缩写）、内容摘要与代码，不含文件内容、env 值或令牌。新增的键只追加，`schema_version` 保持 1。
+
 ## JSON
 
 `{schema_version, command: "dedupe", mode: "list"|"preview"|"apply"|"desktop-snippet", ...}`。`plan` 的键：`group`、`kind`、`disposition`、`status`（`ready|blocked|manual-only`）、`members[]`、`steps[{id,action,promise}]`、`blocked[{code,message}]`、`warnings[{code,message}]`、`manual[]`、`retire[]`、`plan_digest`、`next.apply`。`plan_digest` 与界面语言无关。键只追加；输出不含 env 值、headers 值或令牌。

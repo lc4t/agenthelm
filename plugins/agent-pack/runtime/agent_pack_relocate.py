@@ -23,6 +23,7 @@ if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
+import agent_pack_reach as reach  # noqa: E402
 import agent_pack_clients as client_registry  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
@@ -190,6 +191,11 @@ def build_plan(home: Path, project: Path, ref: str, to: str, mode: str = "copy",
                               from_=plan["source"]["path"]))
         steps.append(ext.step("s5", "confirm-in-client", "cannot-promise" if plan.get("sync_folder") else "best-effort",
                               client=target_client))
+        retire = [reach.retire_item(source_path, item["scope"])] if plan["retire_source"] else []
+        add = reach.add_item("skill", name, target_client, target_scope, store, item["content_sha256"])
+        reach.attach(plan, {"kind": "skill", "name": name, "retire": retire, "add": [add],
+                            "other_machines": item["scope"] == "project" and target_scope == "user"},
+                     reach.facts_for("skill", [name], home, project))
     plan["status"] = "blocked" if blocks else "ready"
     ctx.update(source=source_path, target=target_path, manifest=manifest, home=home, project=project,
                recovery_override=recovery_override)
@@ -319,8 +325,11 @@ def render_text(plan: dict, applied: dict | None, command: str, color: bool = Fa
         if entry.get("backup"):
             lines.append(_("  先备份：{0}").format(entry["backup"]))
     for warning in plan["warnings"]:
+        if warning["code"].startswith("impact-"):   # shown as the impact block below
+            continue
         text = _("注意：{0}").format(warning["message"])
         lines.append(ext.red(text, color) if warning["code"] == "widen" else text)
+    lines.extend(reach.render_lines(plan["impact"]) if plan.get("impact") else [])
     for entry in plan["confirmations"]:
         lines.append(_("需要确认（{0}）：{1}").format(entry["flag"], entry["text"]))
     for entry in plan["blocked"]:

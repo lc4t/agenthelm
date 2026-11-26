@@ -79,12 +79,13 @@ class RegistryTests(unittest.TestCase):
             driver.pop("precedence", None)  # read-side data added after the snapshot (see test_registry_read_side)
             driver.pop("sync", None)  # write-side data added after the snapshot (see test_sync_write_declarations)
             driver.pop("mcp", None)
+            driver.pop("compat_reads", None)  # impact-only data added after the snapshot (see test_reach)
             driver["distribution"] = registry.distribution_type(driver)  # the step declarations (batch C) are tested apart
             for flag in registry.EXTENDED_CAPABILITIES:  # schema v2 flags: tested in test_distribution_declarations
                 driver["capabilities"].pop(flag, None)
             for kind in driver["stores"].values():
                 for store in kind:
-                    for key in ("write_target", "status", "root_key", "managed_by", "trust_required"):
+                    for key in ("write_target", "status", "root_key", "managed_by", "trust_required", "approval_required"):
                         store.pop(key, None)
             return driver
 
