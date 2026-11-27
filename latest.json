@@ -2,10 +2,10 @@
   "schema": 1,
   "marketplace": "agenthelm",
   "repository": "https://github.com/lc4t/agenthelm",
-  "released_at": "2026-11-24",
+  "released_at": "2026-11-27",
   "plugins": {
     "agent-pack": {
-      "version": "1.15.0",
+      "version": "1.16.0",
       "source": "./plugins/agent-pack"
     },
     "agents-init": {
@@ -33,7 +33,7 @@
       }
     },
     "project-orchestrator": {
-      "version": "1.13.0",
+      "version": "1.14.0",
       "source": "./plugins/project-orchestrator",
       "content": {
         "project-orchestrator/case-template": {
@@ -58,23 +58,7 @@
       "to": "1.12.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-09",
-      "summary": "Cursor 可在没有本地仓库时从 GitHub 发布包更新：下载后校验 SHA-256、归档路径与每个插件的身份和版本，全部通过才替换 ~/.cursor/plugins/local 下的插件并读回；check 与 update 对 Cursor 不可用的口径一致；发布工作流在上传前校验 release.json 与归档。; 内容刷新按实际执行刷新的 agents-init 副本判断是否落后，并遵循 --client 与忽略设置；其他客户端的旧副本只提示升级，不再阻塞内容更新；所有可用副本过旧时写明客户端、版本、路径和下一步命令（#48）。; 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。; rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。; 远程 HTTP MCP 支持以环境变量名引用令牌（headers 的 ${NAME} 或 Codex 的 bearer_token_env_var），按 Claude Code / Codex / Cursor 翻译并写入 Codex 原生 config.toml；doctor 只报告缺少的变量名；transfer 新增 --update 预览并显式替换同名 Skill / MCP；check 与会话开始提示项目声明与本机客户端的差异；README 补充多机同步流程。",
-      "summary_en": "Cursor can update from a GitHub release archive without a local checkout: the download is verified for SHA-256, archive paths and each plugin's identity and version before anything under ~/.cursor/plugins/local is replaced, then read back; check and update agree when Cursor is unavailable; the release workflow validates release.json and the archive before publishing.; Content refresh decides staleness from the agents-init copy that actually runs it, honoring --client and ignore settings; older copies in other clients only produce an upgrade note instead of blocking; when every usable copy is too old the client, version, path and next command are reported (#48).; Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49).; rc.3 acceptance polish (#50): project health headings show both visible and expanded counts; the pinned-ref note says \"plugin latest version\" and states when the target is unknown; check --hook honours --latest / --offline / --client; the Claude update summary names where old version directories remain; check merges the sync-folder and machine-local lines; the English UI states that migration notes are Chinese-only; runtime status no longer implies newer content for side-by-side directories; Codex candidate acceptance is documented.; Remote HTTP MCP servers can reference a token by environment variable name (headers ${NAME} or Codex bearer_token_env_var), translated for Claude Code, Codex and Cursor, and written to Codex's native config.toml; doctor reports only the names of missing variables; transfer gains --update to preview and explicitly replace same-name Skills / MCP servers; check and the session-start notice report drift between project declarations and local clients; the README documents the multi-machine workflow.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [
-        "~/.cursor/plugins/local/<插件>（update --client cursor --apply 时替换）",
-        "~/.agent-pack/recovery/<时间>-cursor-<插件>/（替换前备份）",
-        ".agents/mcp.json",
-        "~/.codex/config.toml（仅 sync --client codex --apply 时写入 mcp_servers 远程条目）",
-        "~/.agent-pack/state/codex-remote-<项目>.json（记录写入的条目归属，不含令牌值）",
-        "~/.agent-pack/recovery/（替换前的备份）",
-        "~/.config/agenthelm/config.json（capability_check_ignored_clients，可选）"
-      ],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-09"
     },
     {
       "plugin": "agents-init",
@@ -82,48 +66,7 @@
       "to": "6.9.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-11-09",
-      "summary": "项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。; 按变更片段生成版本与发布提交，先发布产物再推进 main；初始化器版本读取插件清单。; 接管项目中登记了受管区块的 AGENTS.md / CLAUDE.md 只比较受管区块：区块外用户正文不再因整文件模板变化被报为待处理；整文件 --accept / --merge 被拒绝并指向 --mode region；旧保留决定保留，刷新时清除不再适用的整文件基线（#45）。; 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。",
-      "summary_en": "Project file language: projects with language=en get complete English entry, rules, Opinion placeholder, summary and managed-region templates; the memory index, retirement marker and summary-section check follow the project language; add documentation pairing and glossary gates. Existing files are never rewritten automatically.; Generate versions and release commits from change fragments; publish artifacts before promoting main, and read the initializer version from its manifest.; For adopted projects, AGENTS.md / CLAUDE.md files with recorded managed regions are compared by region only: text outside the regions no longer becomes a pending change when the whole-file template changes; whole-file --accept / --merge are rejected in favor of --mode region; earlier keep decisions are preserved and obsolete whole-file baselines are dropped on refresh (#45).; Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49).",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [
-        {
-          "what": "language=en 的既有项目：下次内容刷新会把已有中文模板文件整份替换为英文；先预览 `--mode refresh`，改过的文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响。",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        "AGENTS.md",
-        "AGENT.RULES.md",
-        "CLAUDE.md",
-        "AGENT.md",
-        "docs/refs/README.md",
-        ".agents/moe.sakanano.agent-pack/content.lock.json"
-      ],
-      "template_changes": [
-        {
-          "path": "AGENTS.md",
-          "class": "semantic"
-        },
-        {
-          "path": "AGENT.RULES.md",
-          "class": "semantic"
-        },
-        {
-          "path": "CLAUDE.md",
-          "class": "semantic"
-        },
-        {
-          "path": "AGENT.md",
-          "class": "semantic"
-        },
-        {
-          "path": "docs/refs/README.md",
-          "class": "semantic"
-        }
-      ],
-      "default_for_existing": "on"
+      "date": "2026-11-09"
     },
     {
       "plugin": "opinion-manager",
@@ -131,15 +74,7 @@
       "to": "0.5.2",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-09",
-      "summary": "项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。",
-      "summary_en": "Project file language: projects with language=en get complete English entry, rules, Opinion placeholder, summary and managed-region templates; the memory index, retirement marker and summary-section check follow the project language; add documentation pairing and glossary gates. Existing files are never rewritten automatically.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-09"
     },
     {
       "plugin": "project-orchestrator",
@@ -147,15 +82,7 @@
       "to": "1.11.4",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-09",
-      "summary": "项目文件语言：language=en 的项目使用完整英文入口、规则、Opinion 占位、摘要与受管区块模板；记忆索引与退役标记、摘要小节检查按项目语言处理；新增文档中英配对与术语一致性门禁。既有文件不自动改写。; Case 命令 `case.py new` / `update` 新增 `--dry-run`：运行与写入相同的校验并返回目标路径与 unified diff，不建立目录、不改文件；省略该参数仍直接写入，旧脚本无需迁移。补充写操作命令盘点与 hook 例外说明。; 修正内容更新的退出码与输出：内容步骤被阻塞时 update --apply 返回非零；update --diff 只输出差异；已保留文件再次点名 --merge 时标为已决定保留；分别说明历史模板无法重新渲染、渲染结果与内容锁摘要不一致、来源不可用（#49）。; rc.3 验收小问题（#50）：project health 标题同时给出可见项数与展开项数；固定 ref 提示改称“插件最新版本”并在目标 tag 未知时明说；check --hook 使用 --latest / --offline / --client；update 的 Claude 汇总说明旧版本目录位置；check 合并同步盘与本机专属目录两行；英文界面标注迁移说明仅有中文；runtime status 的旁置目录措辞不再暗示内容更新；补充 Codex 候选版验收文档。",
-      "summary_en": "Project file language: projects with language=en get complete English entry, rules, Opinion placeholder, summary and managed-region templates; the memory index, retirement marker and summary-section check follow the project language; add documentation pairing and glossary gates. Existing files are never rewritten automatically.; Add `--dry-run` to `case.py new` and `update`: run the same validation and return the target path and a unified diff without creating directories or changing files. Omitting it still writes immediately, so existing scripts need no migration. Document the write-command inventory and the hook exception.; Fix content update exit codes and output: update --apply exits non-zero when the content step is blocked; update --diff prints only the diff; kept files named with --merge show as kept by decision; distinguish unrenderable historical templates, renders that miss the content-lock digest, and unavailable sources (#49).; rc.3 acceptance polish (#50): project health headings show both visible and expanded counts; the pinned-ref note says \"plugin latest version\" and states when the target is unknown; check --hook honours --latest / --offline / --client; the Claude update summary names where old version directories remain; check merges the sync-folder and machine-local lines; the English UI states that migration notes are Chinese-only; runtime status no longer implies newer content for side-by-side directories; Codex candidate acceptance is documented.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-09"
     },
     {
       "plugin": "agent-pack",
@@ -163,18 +90,7 @@
       "to": "1.13.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-10",
-      "summary": "agent-pack：sync / reconcile 新增 --only mcp|skills|plugins，可只同步 MCP 而不碰用户级 Skill（反之亦然）；--replace 的范围可按类型拆分为 --replace-mcp 与 --replace-skills；预览按类型汇总冲突数量，并提示会影响所有项目的用户级内容。MCP 工具 agent_pack_sync / agent_pack_reconcile 同步增加 only、replaceMcp、replaceSkills。不带这些参数时行为不变。; agent-pack：MCP 条目里的 ${HOME} 等系统变量不再被当作凭据键，同步时展开为本机路径；合并多个来源时 ${PLUGIN_ROOT} 按各自来源解析，引用的文件找不到时 sync 与 doctor 阻塞并指出条目与路径。; 新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。; agent-pack：reconcile --retire-plugin 退役插件时一并清理各客户端的入口：Claude 指向该插件的用户级 Skill 链接，Codex 个人市场条目与插件副本（先归档到 recovery 再移除，预览逐项列出）；出于安全不自动处理的项（Claude MCP 条目与安装记录、Codex 缓存其它版本与 config.toml）在输出的 residuals 中列出并给出手工步骤。; agent-pack：不可移植的 MCP 条目在三个客户端的 sync 与 doctor 中一律一行报错、退出码 2；Codex 与 Cursor 的 sync 预览与 --apply 使用同一套校验。; 接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。; 切换项目文件语言后，check 比较 Profile 的 language 与内容锁记录的上次渲染语言，不一致时提示用 fix update-content 或 init_project.py --mode refresh 预览整份替换（仅提示，不改写文件，不影响退出码与指纹）；update --only content 在“没有需要更新的内容”后给出同一提示；修正 MIGRATION.md 与 INSTALL.md 的说明（#79）。; update 输出措辞与备份位置：--client 选定的客户端不再被称为“其他客户端”；预览被阻塞时不再提示追加 --apply；update 的预览写明被替换文件的备份位置、apply 写出实际路径（内容步骤与 Cursor 都覆盖），--recovery-dir 对 Cursor 步骤同样生效；config 的写子命令（含 project-language）支持 --recovery-dir（#80）。; nudge install-hooks 经 npx 等包运行器的临时缓存运行时：hook 命令改用已安装的稳定入口（Cursor 插件目录，其次 runtime install 的 current），找不到则预览警告、--apply 拒绝写入（退出码 2）；--remove 与既有 hook 条目不受影响；INSTALL.md 与 nudge.md 说明这一点（#81）。; agent-pack：项目或 HOME 的路径里含 credential、secret、token 等字样时，sync --client claude 不再把启动器的 --env-file 路径误判为疑似密钥；令牌形的参数值仍然阻塞且不回显。; agent-pack：被启动器包装的 MCP 条目引用 ${PLUGIN_ROOT}（包内 Skill 路径等）或 ${PLUGIN_DATA} 时能正常启动，不再报 credential env file missing key: PLUGIN_ROOT；启动器按自身位置推导包根，PLUGIN_DATA 由客户端展开后经 --plugin-data 传入。",
-      "summary_en": "agent-pack: sync and reconcile gain --only mcp|skills|plugins, so MCP entries can be synced without touching user-level Skills (and the reverse); --replace can be limited per type with --replace-mcp and --replace-skills; the preview counts conflicts per type and warns about user-level content that affects every project. The MCP tools agent_pack_sync and agent_pack_reconcile gain only, replaceMcp and replaceSkills. Behaviour without these options is unchanged.; agent-pack: system variables such as ${HOME} in MCP entries are no longer treated as credential keys and are expanded to this machine's paths at sync; with several mcp_sources, ${PLUGIN_ROOT} resolves per source, and sync and doctor block with the entry and path when the referenced file is missing.; Add inbox adopt: adopting a candidate and writing it to OPINION.md now takes one preview and one confirmation; decide --to formal now says it is not written yet.; agent-pack: reconcile --retire-plugin now also cleans every client entry of the retired plugin: Claude user-level Skill links pointing into it, and the Codex personal marketplace entry and plugin copy (archived to recovery first; the preview lists each step). Entries that are not cleaned automatically for safety (Claude MCP entries and install record, other Codex cache versions, config.toml) are listed under residuals with a manual step.; agent-pack: a non-portable MCP entry now fails sync and doctor with a one-line error and exit code 2 on all three clients, and the Codex and Cursor sync preview runs the same checks as --apply.; Recreating a deleted AGENTS.md / CLAUDE.md of an adopted project with --accept now restores its registered managed regions; update --only content hints at the missing file.; After switching the project file language, check compares the Profile's language with the language the content lock recorded at the last render and, when they differ, points to fix update-content or init_project.py --mode refresh for a preview of the full replacement (advisory only: no files are rewritten, exit code and fingerprint are unchanged); update --only content adds the same hint after \"nothing to update\"; correct MIGRATION.md and INSTALL.md (#79).; update wording and backup location: a client chosen with --client is no longer called an \"other client\"; a blocked preview no longer tells you to add --apply; update previews name where replaced files will be backed up and --apply prints the actual path (content step and Cursor); --recovery-dir now also applies to Cursor steps; the config write sub-commands (including project-language) accept --recovery-dir (#80).; nudge install-hooks run from a package runner's temporary cache (npx and similar): the hook commands now use an installed stable entry (Cursor's plugin directory, then the runtime install's current); when none exists the preview warns and --apply refuses to write (exit code 2); --remove and existing hook entries are unaffected; INSTALL.md and nudge.md explain this (#81).; agent-pack: paths containing words such as credential, secret or token (project or HOME directory) no longer make sync --client claude reject the launcher's --env-file path as a possible secret; token-shaped argument values are still blocked and never echoed.; agent-pack: launcher-wrapped MCP entries that reference ${PLUGIN_ROOT} (e.g. package Skill paths) or ${PLUGIN_DATA} now start correctly instead of failing with 'credential env file missing key: PLUGIN_ROOT'; the launcher derives the package root from its own location and receives PLUGIN_DATA from the client via --plugin-data.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [
-        "AGENTS.md",
-        "CLAUDE.md"
-      ],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-10"
     },
     {
       "plugin": "agents-init",
@@ -182,18 +98,7 @@
       "to": "6.9.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-10",
-      "summary": "接管项目的 AGENTS.md / CLAUDE.md 被删除后，--accept 重建时带回已登记的受管区块；update --only content 对缺失文件给出恢复提示。",
-      "summary_en": "Recreating a deleted AGENTS.md / CLAUDE.md of an adopted project with --accept now restores its registered managed regions; update --only content hints at the missing file.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [
-        "AGENTS.md",
-        "CLAUDE.md"
-      ],
-      "template_changes": [],
-      "default_for_existing": "off"
+      "date": "2026-11-10"
     },
     {
       "plugin": "opinion-manager",
@@ -201,15 +106,7 @@
       "to": "0.6.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-10",
-      "summary": "新增 inbox adopt：候选从「采纳」到写入 OPINION.md 合并成一次预览与一次确认；decide --to formal 明确提示尚未写入。",
-      "summary_en": "Add inbox adopt: adopting a candidate and writing it to OPINION.md now takes one preview and one confirmation; decide --to formal now says it is not written yet.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-10"
     },
     {
       "plugin": "agent-pack",
@@ -217,15 +114,7 @@
       "to": "1.13.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-15",
-      "summary": "文档：说明 nudge install-hooks 选中的稳定入口不含版本号，可能是旧版本；安装 hook 前先更新插件或 runtime use 到目标版本。; 退役 Claude 插件时，列出由该插件安装、且内容未被改动的 MCP 条目作为残留（含手工移除步骤），不再静默遗留。; update/migrate 预览里所有步骤都不可用或失败时，不再提示“确认后追加 --apply 执行”，改为说明没有可执行步骤；部分可执行时说明 --apply 只执行其余步骤。; 恢复 `python3 -I`、`-P` 与 PYTHONSAFEPATH=1 下运行 agent_pack_config.py 的能力（入口自行加入脚本目录并复用同一模块对象）。; agenthelm 顶层命令支持 --version，输出套件版本（读自发布内容的 index.json）；插件缓存里没有 index.json 时输出 agent-pack 插件版本并标注套件版本未知。",
-      "summary_en": "Docs: explain that the stable entry chosen by nudge install-hooks carries no version and may be an old one; update the plugin or runtime use the target version before installing the hooks.; Retiring a Claude plugin now lists the MCP entries it installed (and the user has not changed) as residuals with a manual removal step, instead of leaving them silently.; When every step in an update/migrate preview is unavailable or failed, the preview no longer says to add --apply; it explains that nothing is runnable, and for partial previews states that --apply runs only the remaining steps.; Restore running agent_pack_config.py under `python3 -I`, `-P` and PYTHONSAFEPATH=1 (the entry adds its own directory and keeps a single module object).; The top-level agenthelm command now supports --version and prints the suite version (read from the release content's index.json); in plugin caches without index.json it prints the agent-pack plugin version and says the suite version is unknown.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-15"
     },
     {
       "plugin": "agents-init",
@@ -233,15 +122,7 @@
       "to": "6.9.2",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-15",
-      "summary": "agents-init 的 adopt 预览按实际规则写明备份位置：随 --recovery-dir 变化，缺省时写出默认目录；备份目录在项目内时预览阶段就给出与 apply 相同的拒绝提示。; agents-init 的 --agent-cli、--project-type、--stack 现在可重复传参（也可逗号分隔，或混用），不再静默只保留最后一个值；--help 写明两种写法。",
-      "summary_en": "The agents-init adopt preview now names the backup location that apply will really use: it follows --recovery-dir, shows the default folder otherwise, and rejects a backup folder inside the project at preview time like apply does.; agents-init --agent-cli, --project-type and --stack can now be repeated (or comma-separated, or mixed) instead of silently keeping only the last value; --help documents both spellings.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-15"
     },
     {
       "plugin": "project-orchestrator",
@@ -249,15 +130,7 @@
       "to": "1.11.5",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-15",
-      "summary": "health 的“私有目录没被 git 忽略 / 下有文件被跟踪”现在可用 fix --skip 登记（项目级，被跟踪文件列表变化后重新提示）；fix --skip 遇到不支持跳过的发现时说明原因。",
-      "summary_en": "health findings for private directories (not git-ignored / tracked files inside) can now be registered with fix --skip (project scope, re-prompted when the tracked file list changes); fix --skip explains when a finding cannot be skipped.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-15"
     },
     {
       "plugin": "agent-pack",
@@ -265,19 +138,7 @@
       "to": "1.14.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-21",
-      "summary": "确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。; 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。; 新增声明式客户端驱动注册表（agent_pack_clients）：claude / codex / cursor 与只读的 claude-desktop 由数据声明，客户端名单与 --client 选项改为从注册表派生（既有输出不变）；新增只读命令 agenthelm clients 列出各驱动的检测结果、分发驱动类型与能力标志；预留 ~/.config/agenthelm/clients.d/*.json 用户声明文件，本版只校验，不执行其中任何内容，也不据此安装。; agent-pack 的“旧运行时”回归测试只取早于被测提交的正式发布 tag：候选 tag（含指向被测提交的 -rc.N）不再被当作旧运行时，避免打 rc tag 后 Release 工作流的测试步骤失败。; agenthelm check 对有 opinion.lock.json 的项目运行一次只读的 opinion-manager migrate 预览（5 秒超时、零写入）：有可迁移到标签按需加载的内容时给出一条建议（目标 Profile、更新摘要、未完成的收件箱记录数与可直接复制的预览命令），手工改动或 catalog 冲突时给一条简短说明，其余情况一律静默。建议项不改退出码、不计入 up_to_date；会话开始的 hook 与 nudge 不调用 migrate；check --output json 在有提示时多一个 opinion_migrate 数组，既有字段不变。不迁移则保持原样，不影响现有行为。; 新增只读命令 agenthelm inventory：列出各客户端能看到的 Skill 与 MCP（含 ~/.agents/skills、项目级与 Claude 本地级存储）、重复、description 字节数与可识别来源，输出带 schema_version 的稳定 JSON。; inventory 与 doctor 以独立目标 claude-desktop 只读 Claude Desktop 的 claude_desktop_config.json（须点名或用 --client all，不在默认客户端内）；doctor --client claude 对同名条目给建议级 shadowed-by 提示。; 文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。; agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。; agent-pack 支持把声明为 project 的 MCP 写到 Claude 项目级存储：默认 local（~/.claude.json 里该项目路径下，写前备份、保持权限、失败回滚），或用 --project-store file 写项目根 .mcp.json（含机器路径的条目被拒绝）。目标不可写或结构无法识别时跳过并警告，不回退写用户级。; agent-pack 支持把声明为 project 的 Skill 写到项目的 .claude/skills（相对符号链接，同步盘内改为复制，同名冲突需 --replace-skills），并在作用域改变时预览「写入新位置」与「从旧位置退役」两步：Skill 的旧位置同一事务归档，MCP 的旧位置只给手工移除命令。同名多存储且官方文档明确优先级时给出建议级屏蔽提示，不影响 ok 与退出码。; 新增 agenthelm relocate：把一个 Skill 复制或迁移到另一个客户端/作用域，默认预览，带计划指纹确认；不覆盖已有目录，读回校验，失败回滚，源只归档不删除；放宽作用域需 --allow-widen。; 新增 agenthelm dedupe：处置 inventory 报告的重复分组。Skill 副本可保留一份并归档其余（可恢复，不删除）；MCP 副本只给官方手工命令，不编辑配置；全部保留与忽略只写机器级决定文件；另提供只读的 Claude Desktop 配置可粘贴片段。; agenthelm relocate 支持 MCP：在 Claude 的 user / local / 项目 .mcp.json 之间复制或迁移条目；预览=应用，不覆盖同名目标，内联密钥值与本机路径不能进入 .mcp.json，只收窄不放宽（放宽需 --allow-widen）。已受管的源条目由 agent-pack 原子改写 ~/.claude.json 并先逐字节备份、可回滚；未受管条目只复制并给手工命令。; agenthelm dedupe --keep --retire-others 对 MCP 副本：已受管的条目由 agent-pack 退役（原 JSON 片段存入 0600 恢复目录、先逐字节备份 ~/.claude.json、原子改写、失败按字节回滚）；未受管的条目仍只给官方手工命令；证据不明的成员仍只读，跨客户端同指纹仍只是建议保留。",
-      "summary_en": "Confirmation frequency is tunable: inbox brief gains the ask / digest / quiet confirmation modes, nudge gains the confirm and prompt_cooldown_hours settings and asks the gate before stop, and the docs state the hard limits of the hook path and the boundary of the model-judged path.; The candidate inbox gains trigger, purpose, exclusion and relation fields (missing ones only warn); the rule line and OPINION.md frame written on adopt follow the project file language. The lock of an en project carries language, which older runtimes cannot read.; Adds a declarative client-driver registry (agent_pack_clients): claude / codex / cursor and the read-only claude-desktop are declared as data, and the client lists and --client choices derive from it (existing output unchanged). New read-only command agenthelm clients lists each driver's detection result, distribution driver type and capability flags. Reserves user declarations in ~/.config/agenthelm/clients.d/*.json: this version only validates them, never executes anything in them and never installs from them.; The agent-pack older-runtime regression test now takes only the latest official release tag strictly before the commit under test: candidate tags, including an -rc.N tag on that very commit, are no longer mistaken for an older runtime, so the Release workflow's test step no longer fails once an rc tag exists.; agenthelm check now runs one read-only opinion-manager migrate preview (5 s timeout, zero writes) for projects that have opinion.lock.json. When content can move to on-demand tag loading it prints one advisory line (target profile, update summary, unfinished inbox records and a copyable preview command); a manual-edit or catalog conflict gets a short note; every other case stays silent. The advisory does not change the exit code or up_to_date; the session-start hook and the nudge never call migrate; check --output json gains an opinion_migrate array only when a hint is shown, existing fields unchanged. If you do not migrate, nothing changes and current behaviour is unaffected.; Add the read-only command agenthelm inventory: list the Skills and MCP servers each client can see (including ~/.agents/skills, project-level and Claude local-level stores), duplicates, description bytes and recognizable origin, as stable JSON carrying schema_version.; inventory and doctor read Claude Desktop's claude_desktop_config.json read-only as the separate target claude-desktop (must be named or use --client all; not in the default client set); doctor --client claude adds an advisory shadowed-by hint for same-name entries.; Documentation update: README, INSTALL, MIGRATION and the plugin Skills cover skills and MCP management, scope declarations, client drivers, the language=en launcher update path and 6.14.0 migration notes; the write-command inventory is completed.; agent-pack adds scope declaration: the Project Profile keys capabilities.default_scope / mcp_scope / skill_scope and --scope on sync and reconcile. Entries declared project-level are no longer written to the user level (skipped with a warning for now; project-level writes follow in later releases), the preview is grouped by scope and shows the narrowing impact; without the new keys behavior and output are unchanged.; agent-pack can write MCP servers declared project-level to Claude's project stores: local by default (under the project's path in ~/.claude.json, backed up first, permissions kept, rolled back on failure) or, with --project-store file, the project's .mcp.json (entries tied to this machine are refused). An unwritable or unrecognized target is skipped with a warning, never written to the user level instead.; agent-pack can write Skills declared project-level to the project's .claude/skills (relative symbolic links, copies inside sync folders, a same-name conflict needs --replace-skills), and previews a scope change as two steps: write the new location and retire the old one. A Skill's old location is archived in the same transaction; an MCP entry's old location only gets a manual removal command. Same-name entries in several stores get an advisory shadow notice where the official documentation states the precedence; ok and the exit code are unaffected.; Add agenthelm relocate: copy or move one Skill to another client/scope. Preview by default, confirmed with a plan digest; never overwrites an existing directory, reads back and verifies, rolls back on failure and only archives (never deletes) the source; widening the scope needs --allow-widen.; Add agenthelm dedupe: handle the duplicate groups inventory reports. Skill copies can be kept once with the rest archived (recoverable, never deleted); MCP copies get only the official manual command and no config is edited; keep-all and ignore write only a machine-level decision file; plus a read-only paste-ready Claude Desktop config snippet.; agenthelm relocate now handles MCP entries: copy or move them between Claude's user, local and project .mcp.json scopes; preview equals apply, an existing target is never overwritten, inline secrets and machine paths cannot enter .mcp.json, narrowing only (widening needs --allow-widen). A managed source entry is retired by an atomic edit of ~/.claude.json with a byte-exact backup first and rollback; an unmanaged entry is only copied, with a manual command.; agenthelm dedupe --keep --retire-others now retires managed MCP copies itself (original JSON fragment into a 0600 recovery directory, byte-exact backup of ~/.claude.json first, atomic edit, byte-exact rollback); unmanaged copies still get only the official manual command; members with unknown evidence stay read-only and cross-client same-fingerprint copies remain keep-recommended advice.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [
-        "capabilities.default_scope",
-        "capabilities.mcp_scope",
-        "capabilities.skill_scope"
-      ],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-21"
     },
     {
       "plugin": "agents-init",
@@ -285,30 +146,7 @@
       "to": "6.10.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-11-21",
-      "summary": "文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。; agent-pack 新增作用域声明：Project Profile 的 capabilities.default_scope / mcp_scope / skill_scope 与 sync、reconcile 的 --scope。声明为 project 的条目不再写入用户级（本版跳过并警告，项目级写入随后续版本提供），预览按作用域分组并给出收窄影响；不写新键时行为与输出不变。; language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。",
-      "summary_en": "Documentation update: README, INSTALL, MIGRATION and the plugin Skills cover skills and MCP management, scope declarations, client drivers, the language=en launcher update path and 6.14.0 migration notes; the write-command inventory is completed.; agent-pack adds scope declaration: the Project Profile keys capabilities.default_scope / mcp_scope / skill_scope and --scope on sync and reconcile. Entries declared project-level are no longer written to the user level (skipped with a warning for now; project-level writes follow in later releases), the preview is grouped by scope and shows the narrowing impact; without the new keys behavior and output are unchanged.; Projects with language=en no longer get files that contain Chinese: the root launcher (header comment and error/guidance messages) and private/.gitignore follow the project file language; zh and default-language output is byte-identical. Projects generated earlier with --language en keep a Chinese launcher until it is replaced after a preview.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [
-        {
-          "what": "以前用 --language en 生成的项目：根目录启动器（默认 ./menu，名称见 Profile 的 entry.launcher）仍是中文版。先运行 `agenthelm check` 查看差异，再运行 `agenthelm fix` 预览（默认不写入），确认后用 `agenthelm fix --apply` 整份替换为英文版；你改过启动器时该文件会被阻止，需逐文件选择保留、合并或接受。language=zh 或缺省的项目不受影响；已存在的 private/.gitignore 不会被改写。",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        "capabilities.default_scope",
-        "capabilities.mcp_scope",
-        "capabilities.skill_scope",
-        "entry.launcher"
-      ],
-      "template_changes": [
-        {
-          "path": "skills/agents-init/launcher.en.sh",
-          "class": "semantic"
-        }
-      ],
-      "default_for_existing": "on"
+      "date": "2026-11-21"
     },
     {
       "plugin": "opinion-manager",
@@ -316,199 +154,7 @@
       "to": "0.7.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-11-21",
-      "summary": "确认频率可调：inbox brief 增加 ask / digest / quiet 三种确认模式，nudge 增加 confirm 与 prompt_cooldown_hours 配置并在 stop 前先问 gate；文档补充 hook 路径的硬限制与模型自判路径的边界。; 收件箱记录展示快照，采纳预览返回 shown_matches 与 added_lines；新增询问节流 gate（只记账，状态在 .opinion/ask-state.json）。; 候选收件箱新增条件、目的、不适用与关系备注（缺失仅警告），采纳写入的规则行与 OPINION.md 框架随项目文件语言；en 项目的锁带 language，旧运行时读不了。; 公开 catalog 新增 1.1.0（31 条规则与 10 个模板）：zh/en 双语文字与 trigger / purpose / exclude，行为语义与 1.0.0 一致；两个场景模板另声明常驻集合与四个按需标签（decisions、files、reports、maintenance），选择它们时 profile 预览生成 schema 2.2 的标签加载声明，经确认后才生效，--no-tags 保持完整读取。既有项目不会自动变化，可用 updates 查看并经完整预览确认升级。; 公开规则与模板支持 {zh, en} 双语字段与可选的 trigger / purpose / exclude；profile、compose 按项目语言选取文字，en 项目选用缺译文的公开规则时预览给出 untranslated 警告（不阻断）。; 收件箱新增只读 check（报告缺条件/目的的候选与 OPINION.md 行）、revise（修订候选并留痕）和机械关系提示（relations，仅供参考）。; opinion 规则可以路由到某个 skill：inbox add / revise 新增 --route-skill、--route-when、--route-final、--route-on，渲染成 OPINION.md 自定义段里带机器可读标记的一行，并自动追加「skill 自身执行时不再触发」与「skill 不可用时降级」两条约束；新增只读 inbox routes list 列出路由并做机械检查。路由只能提高调用概率，不能保证。; 新增 opinion_manager.py migrate：把用户现有的 Opinion（Profile 2.0 / 2.1）迁移到标签选择加载。默认预览（零写入，失败路径也一样），--apply --confirm <指纹> 才写入；写入前备份到 .opinion/backups/<时间戳>-migrate/ 并写 manifest，复用 profile → compose → verify 的原子写与读回，失败按备份逐字节还原；--rollback 只在当前状态等于迁移后状态时还原。用户的 custom 段与手工追加的内容原样保留、常驻，不替用户猜标签；2.1 默认不动，--tags 才改用标签。另新增 catalog 1.1.0 的体积守卫测试。既有项目不会自动变化。; opinion-manager 的主 Skill 说明按 Profile 版本区分读取命令：2.1 声明用 context bundle，2.2 标签声明用 context select --tag；保留 fallback 时完整读取的条件。; opinion-manager 新增标签选择引擎（Profile schema 2.2）：一条规则可带多个标签，context select --tag 按标签并集读取规则，core 输出常驻规则与标签索引，check 由标签派生交付信号；自定义规则可用 [tags …] 行尾标记带标签，inbox add / revise 新增 --tag。既有 2.0 与 2.1 的 Profile 与 OPINION.md 字节不变。; opinion-manager 的 lifecycle 支持 Profile schema 2.2 的标签记账：use 事件新增 loaded_tags 与 routing_miss_tags，取值校验自 loading.tags；有标签漏读的使用与规则束漏读一样阻断转正式；status 对标签输出 loaded_in、exercised_in、routing_misses 与 unused_tags。2.1 的 loaded_bundles、routing_miss、bundles 输出不变。",
-      "summary_en": "Confirmation frequency is tunable: inbox brief gains the ask / digest / quiet confirmation modes, nudge gains the confirm and prompt_cooldown_hours settings and asks the gate before stop, and the docs state the hard limits of the hook path and the boundary of the model-judged path.; The inbox records a shown snapshot, the adopt preview returns shown_matches and added_lines, and a new ask-throttling gate command keeps its bookkeeping in .opinion/ask-state.json.; The candidate inbox gains trigger, purpose, exclusion and relation fields (missing ones only warn); the rule line and OPINION.md frame written on adopt follow the project file language. The lock of an en project carries language, which older runtimes cannot read.; The public catalog gains 1.1.0 (31 rules and 10 templates): zh/en text with trigger / purpose / exclude, behaviourally identical to 1.0.0. The two scenario templates also declare a resident set and four on-demand tags (decisions, files, reports, maintenance); selecting them makes the profile preview generate a schema 2.2 tag-loading declaration that only takes effect after confirmation, and --no-tags keeps full reading. Existing projects do not change automatically; updates lists the new versions and the upgrade needs a full preview and confirmation.; Public rules and templates accept {zh, en} localized fields and optional trigger / purpose / exclude; profile and compose pick text by the project language, and an en project that selects a public rule without a translation gets an untranslated warning in the preview (not blocking).; The inbox gains a read-only check (reports candidates and OPINION.md lines missing a trigger or purpose), revise (edit a candidate with history) and mechanical relation hints (relations, for reference only).; Opinion rules can route to a skill: inbox add / revise gain --route-skill, --route-when, --route-final and --route-on, rendered as a line in the custom section of OPINION.md with a machine-readable marker plus two automatic constraints (no re-trigger while the skill runs, fallback when it is unavailable); a new read-only inbox routes list shows the routes and runs mechanical checks. A route raises the chance of the skill being called but cannot guarantee it.; Add opinion_manager.py migrate: migrate a user's existing Opinion (Profile 2.0 / 2.1) to tag-based loading. It previews by default (nothing is written, failure paths included) and writes only with --apply --confirm <fingerprint>; before writing it backs up to .opinion/backups/<timestamp>-migrate/ with a manifest, reuses the atomic profile → compose → verify write and read-back, and restores the backup byte for byte on failure; --rollback restores only while the current state still equals the migrated state. The user's custom section and hand-written additions are kept as written and always loaded; no tags are guessed for the user. 2.1 stays untouched unless --tags is given. Also adds a size-budget test for catalog 1.1.0. Existing projects do not change automatically.; The opinion-manager Skill now tells agents which read command to use per Profile version: context bundle for 2.1 declarations, context select --tag for 2.2 tag declarations; the full-read fallback conditions are unchanged.; opinion-manager gains a tag selection engine (Profile schema 2.2): a rule can carry several tags, context select --tag reads the union of the chosen tags, core prints the always-loaded rules with a tag index, and check derives delivery signals from tags; custom rules can carry tags through a trailing [tags …] marker, and inbox add / revise gain --tag. Existing 2.0 and 2.1 Profiles and OPINION.md bytes are unchanged.; opinion-manager lifecycle now records tags for Profile schema 2.2: use events gain loaded_tags and routing_miss_tags, validated against loading.tags; a use with a missed tag blocks formalization just like a missed bundle; status reports loaded_in, exercised_in, routing_misses and unused_tags per tag. The 2.1 loaded_bundles, routing_miss and bundles output are unchanged.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [
-        {
-          "what": "可选：运行 opinion_manager.py updates 查看公开规则与模板的 1.1.0，需要时按完整预览确认升级（手工修改会保留；场景模板的标签加载声明随预览一并生成，不需要时加 --no-tags）",
-          "session": "current"
-        },
-        {
-          "what": "可选：运行 opinion_manager.py migrate --project <项目> 查看迁移预览，确认后加 --apply --confirm <指纹> 写入；不迁移则保持原样（2.1 项目要改用标签再加 --tags）；写入前自动备份，可用 --rollback 回滚",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        "opinion.lock.json",
-        ".opinion/backups",
-        ".opinion/profiles",
-        "OPINION.md",
-        ".opinion/lifecycle"
-      ],
-      "template_changes": [
-        {
-          "path": "catalog/README.md",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.align-requirements/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.assumptions-authority/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.batch-questions/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.bilingual-terms/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.calculations/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.chinese-response/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.clean-deliverable/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.complete-options/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.conclusion-first/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.concrete-titles/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.consistent-items/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.device-readable/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.editable-diagrams/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.evidence-inference/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.maintenance-chinese/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.maintenance-project-language/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.markdown-structure/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.portable-files/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.report-context/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.report-formats/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.report-review/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.response-brief/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.response-dense/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.rules-tools/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.semantic-wrap/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.solutions-proportional/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.solutions-three-level/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.tables-compact/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.tables-list-first/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.test-evidence/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/rules/om.versioned-files/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/delivery-standard/compact-tables/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/delivery-standard/list-first/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/development-standard/chinese-maintenance/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/development-standard/project-language/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/response-style/brief-chinese/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/response-style/dense-chinese/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/scenario/concise-project/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/scenario/reviewed-project/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/work-method/proportional/versions/1.1.0.json",
-          "class": "semantic"
-        },
-        {
-          "path": "catalog/templates/work-method/three-level/versions/1.1.0.json",
-          "class": "semantic"
-        }
-      ],
-      "default_for_existing": "on"
+      "date": "2026-11-21"
     },
     {
       "plugin": "project-orchestrator",
@@ -516,15 +162,7 @@
       "to": "1.12.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-21",
-      "summary": "文档更新：README、INSTALL、MIGRATION 与各插件 Skill 补充技能与 MCP 管理、作用域声明、client 驱动、language=en 启动器更新办法及 6.14.0 迁移说明；write-commands 盘点补全。; 技能与 MCP 清单向 agenthelm inventory 要求全部客户端，包含只读的 Claude Desktop 条目，并在按项目看里归入「仅 Desktop 应用」。; 技能与 MCP 视图：英文措辞不再依赖数量（修正「1 groups」），缺失的 Claude Desktop 配置不再计为未知项；新增用真实 agenthelm inventory 的端到端测试。; 项目菜单新增第 9 屏「技能与 MCP」（只读）：按客户端、按项目、按重复查看与技能体检；检查屏对重复发现增加跳转；原有 1–8 号不变。; 新增 agenthelm project extensions list / dups / show / check：只读地列出技能与 MCP、重复组、条目详情与机械体检；数据来自 agenthelm inventory，能力状态里增加 extensions 一项。; 新增 agenthelm project extensions move / dedupe / scope：默认预览、--apply 才写。move 与 dedupe 转发 agenthelm relocate / dedupe 并原样展示其计划，应用时用 --expect-plan 回传同一摘要，摘要不一致即拒绝；scope 把生效范围写成 Project Profile 的 mcp_scope / skill_scope 声明（先备份、原子写入）。写入后重新读取 inventory 与计划比对。; 菜单第 9 屏的「移动或复制」「设置生效范围」成为真实向导，条目详情与重复组里新增 m / s / d / p：选条目、选目标、预览（计划、blocked、将进入项目目录的提示）、输入 yes（放宽另需键入条目名）、执行、再取 inventory 读回；读回不一致显示「读回失败」与恢复目录，菜单退出码为 1。证据未知的条目与 MCP 条目只给手工命令与可粘贴片段；没有对应 agenthelm dedupe 分组的重复只读展示。; language=en 的项目不再生成含中文的文件：根目录启动器（含头部注释与报错/指引文案）与 private/.gitignore 随项目文件语言生成；zh 与缺省语言的输出逐字节不变。以前用 --language en 生成的项目，其启动器仍是中文，需预览后整份替换。",
-      "summary_en": "Documentation update: README, INSTALL, MIGRATION and the plugin Skills cover skills and MCP management, scope declarations, client drivers, the language=en launcher update path and 6.14.0 migration notes; the write-command inventory is completed.; The Skills & MCP views ask agenthelm inventory for all clients, including the read-only Claude Desktop entries, and group them under Desktop app only in the by-project view.; Skills & MCP views: English wording no longer depends on a count (fixes \"1 groups\"), a missing Claude Desktop config is no longer counted as an unknown item; adds an end-to-end test against the real agenthelm inventory.; The project menu gains screen 9, Skills & MCP (read-only): view by client, by project and by duplicate, plus a skill check; the health screen links duplicate findings to it. Entries 1-8 are unchanged.; Add agenthelm project extensions list / dups / show / check: a read-only view of skills and MCP servers, duplicate groups, entry details and mechanical checks, fed by agenthelm inventory; capabilities gains an extensions item.; Add agenthelm project extensions move / dedupe / scope: preview by default, --apply writes. move and dedupe forward to agenthelm relocate / dedupe and show their plan as is, and --apply sends the same digest back with --expect-plan (a changed digest is refused); scope writes the effective scope as a Project Profile mcp_scope / skill_scope declaration (backed up first, atomic write). After a write the inventory is read again and compared with the plan.; The Move or copy and Set the effective scope items of menu screen 9 become real wizards, and the entry detail and duplicate groups gain m / s / d / p: pick an entry, pick a target, preview (plan, blocked, the notice that content enters the project), type yes (widening also needs the entry name), run, then read the inventory back; a mismatch shows read-back failed with the recovery directory and the menu exits with 1. Entries with unknown evidence and MCP entries only get manual commands and paste-ready snippets; duplicates without a matching agenthelm dedupe group are shown read-only.; Projects with language=en no longer get files that contain Chinese: the root launcher (header comment and error/guidance messages) and private/.gitignore follow the project file language; zh and default-language output is byte-identical. Projects generated earlier with --language en keep a Chinese launcher until it is replaced after a preview.",
-      "declaration": 2,
-      "actions": [],
-      "user_action_required": [],
-      "touches": [],
-      "template_changes": [],
-      "default_for_existing": "on"
+      "date": "2026-11-21"
     },
     {
       "plugin": "agent-pack",
@@ -599,12 +237,8 @@
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-21",
-      "summary": "迁入 plugins/agents-init/ 并经 agenthelm 市场分发；初始化器在客户端缓存中查找同级插件；新增内容锁与 --mode refresh。",
-      "actions": [
-        "安装方式不兼容：旧的 agent-pack 复制 + ~/.claude/skills 软链需运行 npx @sakanano-moe/agenthelm migrate --install",
-        "按仓库根路径引用 skills/agents-init/ 或根 plugin.json 的脚本需改为 plugins/agents-init/",
-        "已初始化的项目与 Profile 无需修改；新项目 runtime.distribution 为 marketplace"
-      ]
+      "summary": "迁入 plugins/agents-init/ 并经 agenthelm 市场分发；初始化器在客户端缓存中查找同级插件；新增内容锁与 --mode refre…",
+      "actions": []
     },
     {
       "plugin": "agent-pack",
@@ -612,11 +246,7 @@
       "to": "1.6.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-21",
-      "summary": "新增 agenthelm check / install / update / migrate / doctor 与会话开始静默检查；Codex 适配器生成的 .mcp.json 改用 ${CLAUDE_PLUGIN_ROOT}。",
-      "actions": [
-        "会话开始每天至多联网检查一次；AGENTHELM_NO_UPDATE_CHECK=1 或 ~/.config/agenthelm/config.json 的 update_check=false 可关闭"
-      ]
+      "date": "2026-10-21"
     },
     {
       "plugin": "project-orchestrator",
@@ -624,9 +254,7 @@
       "to": "1.7.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-10-21",
-      "summary": "新增默认 Case 工具 runtime/case.py 与 Case 模板内容包；新增只读交付物台账 runtime/assets.py、人用查找入口 runtime/wf.py 与同义词示例内容包。",
-      "actions": []
+      "date": "2026-10-21"
     },
     {
       "plugin": "opinion-manager",
@@ -634,9 +262,7 @@
       "to": "0.4.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-21",
-      "summary": "声明公开目录的内容包清单；规则、模板与命令行为不变。",
-      "actions": []
+      "date": "2026-10-21"
     },
     {
       "plugin": "agent-pack",
@@ -644,9 +270,7 @@
       "to": "1.6.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-22",
-      "summary": "未安装任何插件时，check 提示运行 install，不再显示“全部为最新”。",
-      "actions": []
+      "date": "2026-10-22"
     },
     {
       "plugin": "agent-pack",
@@ -654,11 +278,7 @@
       "to": "1.6.2",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-22",
-      "summary": "inventory 纳入市场安装；locate 默认排除旧方式安装；Opinion 检查修复 macOS 符号链接问题；联网超时放宽到 10 秒，站点不可达时从 GitHub Release 获取发布包信息；解包启用安全过滤。",
-      "actions": [
-        "下游若依赖 locate 返回旧方式安装的路径，改用 --include-legacy 或改为市场安装路径"
-      ]
+      "date": "2026-10-22"
     },
     {
       "plugin": "agent-pack",
@@ -666,11 +286,7 @@
       "to": "1.6.3",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-23",
-      "summary": "自动找到 ChatGPT.app 自带的 Codex 命令行；migrate 一并清理 Codex 的旧 @personal 插件缓存；check 把旧方式安装单独列为待迁移，不再算作可更新。",
-      "actions": [
-        "Codex 命令行不在 PATH 时可用 AGENTHELM_CODEX / AGENTHELM_CLAUDE 指定"
-      ]
+      "date": "2026-10-23"
     },
     {
       "plugin": "project-orchestrator",
@@ -678,12 +294,7 @@
       "to": "1.8.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-10-25",
-      "summary": "新增不需要 AI Agent 的项目入口 runtime/project_cli.py（找资料、看进展、项目指南、检查、修复与更新、记录事项、项目工具，含 --demo 演示）；case.py 新增 plan_create / plan_update 与 --expect-sha256；同义词示例改为场景中立的词组。",
-      "actions": [
-        "已初始化的项目可运行 agenthelm project 打开菜单；生成根目录启动器见 agents-init 6.6.0 的 --mode entry",
-        "项目自己的事项工具要在菜单里显示，按 case-workspaces.md「项目入口适配」声明 entry.items"
-      ]
+      "date": "2026-10-25"
     },
     {
       "plugin": "agent-pack",
@@ -691,11 +302,7 @@
       "to": "1.7.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-25",
-      "summary": "新增 agenthelm runtime（install / update / use / status）用户级运行时与 agenthelm project 入口；npm 包携带全部四个插件的发布内容。",
-      "actions": [
-        "想脱离 AI 客户端与 npx 使用：运行一次 npx @sakanano-moe/agenthelm runtime install --apply（离线用 --source <发布包>）"
-      ]
+      "date": "2026-10-25"
     },
     {
       "plugin": "agents-init",
@@ -703,12 +310,7 @@
       "to": "6.6.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-10-25",
-      "summary": "新项目默认生成根目录启动器 menu（--entry-name 可改、--no-entry 不生成）、Profile 的 entry 段与 README「怎样使用」；新增 --mode entry 为已初始化的项目补上入口；AGENTS.md 模板增加「人用入口」；项目契约模板内容包 1.1.0。",
-      "actions": [
-        "已初始化的项目：--mode entry --entry-name <名称> 预览后 --apply；已有同名文件用 --keep / --accept 选择",
-        "模板更新时 AGENTS.md 若改过，在 agenthelm update 里逐个选择 --keep 或 --accept"
-      ]
+      "date": "2026-10-25"
     },
     {
       "plugin": "agent-pack",
@@ -716,12 +318,7 @@
       "to": "1.8.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-25",
-      "summary": "Claude Code 端补齐：sync / reconcile --client claude（为 Claude 单独生成包，只增删改本包装过的 Skill 与 MCP，旧安装记录指向 Codex 包时自动迁移）；bootstrap --client claude 支持 --skill / --mcp 按组件安装；MCP 条目上的本机认证值（headers / env）默认保留，--reset-overrides 才丢弃；doctor --client 对比客户端与项目，报告缺失、多余、内容不同、悬空与本机覆盖。对外描述改为英文优先。",
-      "actions": [
-        "用 bootstrap 指向 Codex 包装过 Claude 的项目：运行一次 sync --client claude 预览后 --apply，迁到 Claude 自己的包",
-        "想核对客户端与项目是否一致：doctor --project <项目> --client claude（可重复 --client）"
-      ]
+      "date": "2026-10-25"
     },
     {
       "plugin": "agents-init",
@@ -729,9 +326,7 @@
       "to": "6.6.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-25",
-      "summary": "对外描述改为英文优先：插件描述、Codex 插件简介、长描述与默认提示、Skill 触发描述与站点元数据。功能、模板与内容包不变。",
-      "actions": []
+      "date": "2026-10-25"
     },
     {
       "plugin": "opinion-manager",
@@ -739,9 +334,7 @@
       "to": "0.4.2",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-25",
-      "summary": "对外描述改为英文优先：Codex 插件描述、简介、长描述与默认提示、Skill 触发描述。规则、模板与命令行为不变。",
-      "actions": []
+      "date": "2026-10-25"
     },
     {
       "plugin": "project-orchestrator",
@@ -749,9 +342,7 @@
       "to": "1.8.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-25",
-      "summary": "对外描述改为英文优先：Codex 插件简介与长描述、Skill 触发描述。功能与内容包不变。",
-      "actions": []
+      "date": "2026-10-25"
     },
     {
       "plugin": "agents-init",
@@ -759,12 +350,7 @@
       "to": "6.7.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-10-27",
-      "summary": "脚手架一致性：新增内容包 agents-init/project-skeleton（期望骨架清单）与 scaffold.py；init_project.py 新增 --mode check / add-skeleton / profile / repair-lock / decide / case-naming；--mode entry 新建内容锁条目时写当前包版本而不是 0.0.0；refresh 把 --keep 记入决定文件；project.schema.json 声明审计字段、work.case.directory_naming 与 work.case.command。",
-      "actions": [
-        "已存在的 0.0.0 内容锁：运行 agenthelm fix repair-lock 预览，确认后 --apply",
-        "项目首次 agenthelm check 会列出脚手架差异；不想要的用 agenthelm fix --skip <ID> --reason … 永久跳过，决定写入 .agents/moe.sakanano.agent-pack/check-decisions.json 并随项目同步"
-      ]
+      "date": "2026-10-27"
     },
     {
       "plugin": "agent-pack",
@@ -772,12 +358,7 @@
       "to": "1.9.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-27",
-      "summary": "agenthelm check 纳入项目脚手架与本机状态（只读）：新增 --show-skipped / --reprompt / --fingerprint / --explain；新增 agenthelm fix（转交 project fix）；运行时未安装的提示说明 agenthelm / wf 命令是否可用；检测项目是否位于 iCloud / Dropbox / OneDrive / Google Drive 同步盘。",
-      "actions": [
-        "check --strict 在存在未解决的脚手架差异时也返回 1",
-        "需要两台机器比较脚手架：各自运行 check --fingerprint --output json，再用 --explain <对方的文件> 对比"
-      ]
+      "date": "2026-10-27"
     },
     {
       "plugin": "project-orchestrator",
@@ -785,9 +366,7 @@
       "to": "1.9.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-27",
-      "summary": "health 汇总脚手架差异（建议处理，不改变退出码）；fix 新增 add-skeleton / profile / repair-lock / case-naming / sync-folder，--skip <ID> --reason / --unskip <ID> 记录决定；交互时每项可选 采用 / 永久跳过 / 稍后 / 查看差异；update-content 的 --keep 持久化到决定文件。",
-      "actions": []
+      "date": "2026-10-27"
     },
     {
       "plugin": "agents-init",
@@ -796,52 +375,8 @@
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-28",
-      "summary": "新项目的 Profile 带 sop 段（root=sops）并建立 sops/；骨架清单（内容包 agents-init/project-skeleton 1.1.0）新增 {sop_root}/.gitkeep，仅对声明了 sop 段的项目生效；project.schema.json 声明 sop 段。 init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；新增 Profile 顶层 language（项目文件语言）与 --language {auto,zh,en}，决定新建 Case 的小节名与 README 追加的“怎样使用”；模板、决定文件与指纹不随界面语言变化。 接管已有内容的目录：新增 --mode scan / adopt / region 与受管区块（regions.py）；CLAUDE.md 模板改为一行 @AGENTS.md 导入桩；AGENTS.md 模板增加“用户规则”一行；内容锁记录受管区块与渲染输入；项目契约模板内容包 1.2.0。",
-      "actions": [
-        "已有项目无需改动：没有 sop 段的项目 check / health 不会多出任何差异",
-        "想启用 SOP：在 Profile 加 \"sop\": {\"root\": \"sops\"}，运行 agenthelm fix add-skeleton，或运行 agenthelm project sop init --apply",
-        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json",
-        "新项目想用英文的 Case 与 README：init 时加 --language en（auto 取当前界面语言）；已有项目保持中文，要改在 Profile 顶层写 \"language\": \"en\"，已有文件不会被改写",
-        "已初始化的项目：agenthelm update（或 fix update-content）会列出 CLAUDE.md 与 AGENTS.md 的变化，没改过的先备份再替换，改过的逐个 --keep / --accept",
-        "想接管一个已有内容的目录：先 init_project.py --mode scan 看冲突与推荐，再 --mode adopt 预览，确认后 --apply；改动已有文件须带 --recovery-dir",
-        "外部脚本若读取 CLAUDE.md 里的路由文字，改为读取 AGENTS.md（CLAUDE.md 现在只有 @AGENTS.md 导入）"
-      ],
-      "declaration": 2,
-      "user_action_required": [
-        {
-          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}；解析 agenthelm 文字输出的脚本改用 --output json",
-          "session": "current"
-        },
-        {
-          "what": "CLAUDE.md 未改动过的项目：update-content 预览里确认替换为 @AGENTS.md 导入桩（先备份）；改动过的逐个选择 --keep 或 --accept",
-          "session": "current"
-        },
-        {
-          "what": "AGENTS.md 模板多了一行“用户规则”（指向 AGENT.USER.md）：同样在 update-content 里逐文件选择",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        "CLAUDE.md",
-        "AGENTS.md",
-        ".agents/moe.sakanano.agent-pack/content.lock.json",
-        "Profile: language（新增，可选）、sop（新增，可选）"
-      ],
-      "default_for_existing": "on",
-      "template_changes": [
-        {
-          "path": "CLAUDE.md",
-          "class": "semantic"
-        },
-        {
-          "path": "AGENTS.md",
-          "class": "semantic"
-        },
-        {
-          "path": "skills/agents-init/skeleton.json",
-          "class": "semantic"
-        }
-      ]
+      "summary": "新项目的 Profile 带 sop 段（root=sops）并建立 sops/；骨架清单（内容包 agents-init/project-skeleton …",
+      "actions": []
     },
     {
       "plugin": "agents-init",
@@ -850,44 +385,8 @@
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "refresh / adopt / region / profile / entry / migrate 替换文件前自动备份到 ~/.agent-pack/recovery/<UTC 时间>-agenthelm-<模式>/，不再要求先提供 --recovery-dir（显式传入仍然优先，必须在项目外；备份目录不可写时在改动任何文件之前失败），输出写明备份位置与还原方法。refresh 遇到没有基线的已定制文件：写明原因与差异摘要，--diff 查看完整差异，--append 保留原文并追加带标记的区块（AGENTS.md / CLAUDE.md），--accept 丢弃本地行需 --confirm-discard。新增 --mode language（只改 Profile 的 language），check 报告 project_language。 同一批次还包括：schema 补入 opinion.nudge、形态与 schema 冲突的自有值改为信息级说明（#38）、check 统计 schema 未声明的字段（#41）；脚手架发现分三级并支持 --mode accept-current（#37）；AGENTS.md 模板新增“隐私约定”，引用 Profile 的 privacy.forbidden_default_reads，已有项目用 update-content --append AGENTS.md 补入受管区块 privacy-contract（#40）；接管决定理由区分“保留”与“保留并追加区块”。内容包 agents-init/project-contract 升到 1.3.0。 之后补入：refresh 新增 --merge / --pick（用历史内容包重新渲染基线做三方合并，取不到旧包时退回 --keep / --append / --accept）、--required-only（--mode check 的退出码只看“需要处理”）；契约文件是符号链接时逐项处置，不再拖垮其他文件；写文件或写内容锁失败不再残留临时文件；重复 --keep 等不再重写决定文件；内容锁可选记录 file_versions 与 render_inputs.privacy_declared；AGENT.RULES.md 的隐私一行改为指向 Profile 字段；schema 补声明 opinion.nudge 与 work.case.schema。",
-      "actions": [
-        "refresh --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
-        "替换文件的模式不必再传 --recovery-dir；备份在 ~/.agent-pack/recovery/，输出里有路径",
-        "已有项目没有 language 时 check 会说明按中文生成；想改：agenthelm config project-language en（预览，--apply 写入，只改 Profile）",
-        "已有项目的 AGENTS.md 没改过：agenthelm update 直接更新；改过的：agenthelm update --only content --append AGENTS.md 保留原文并补入受管区块（先备份）；仅当项目声明了私有路径（privacy.forbidden_default_reads 非空）且 AGENTS.md 里还没有这条隐私约定时，才追加隐私约定区块 privacy-contract，未声明则不追加、预览会写明。不处理则 check 提示 privacy-contract，可 fix --skip",
-        "成熟项目的脚手架差异不想逐项处理：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入）",
-        "你改过、新模板也变了的文件可以三方合并：agenthelm update --only content --merge <文件>（预览），确认后加 --apply；冲突块用 --pick <文件>#<序号>=mine|theirs|both 逐块选择；取不到旧包时退回 --keep / --append / --accept",
-        "AGENT.RULES.md 的“默认禁止读取”一行改为指向 Profile 的 privacy.forbidden_default_reads：没改过的随 update-content 更新，改过的走 --keep / --append / --accept / --merge"
-      ],
-      "declaration": 2,
-      "user_action_required": [
-        {
-          "what": "已有项目的 AGENTS.md 可能增加“隐私约定”：没改过的 update-content 直接更新；改过的选 --append AGENTS.md 补入受管区块（原文不变）；仅当声明了私有路径（privacy.forbidden_default_reads 非空）且 AGENTS.md 里还没有这条约定时，才追加 privacy-contract 区块",
-          "session": "new"
-        }
-      ],
-      "touches": [
-        "~/.agent-pack/recovery/（替换文件前的备份）",
-        "Profile: language（仅在运行 --mode language --apply 时写入）",
-        "CLAUDE.md、AGENTS.md（仅在选择 --append 时追加带标记的区块）",
-        "AGENTS.md（受管区块 privacy-contract）",
-        "Profile: privacy.forbidden_default_reads（只读引用）",
-        "AGENT.template.md 中 AGENTS.md 的“隐私约定”小节",
-        "AGENT.RULES.md（“隐私与外部系统”的一行）",
-        "Profile: opinion.nudge、work.case.schema（schema 新增声明，可选，只读比较）"
-      ],
-      "default_for_existing": "advisory",
-      "template_changes": [
-        {
-          "path": "AGENTS.md",
-          "class": "semantic"
-        },
-        {
-          "path": "AGENT.RULES.md",
-          "class": "semantic"
-        }
-      ]
+      "summary": "refresh / adopt / region / profile / entry / migrate 替换文件前自动备份到 ~/.agent-pack/r…",
+      "actions": []
     },
     {
       "plugin": "agents-init",
@@ -896,74 +395,8 @@
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "6.8.0（接管已有内容的目录、受管区块、发布声明；命令行输出多语言）与 6.8.1（替换文件前自动备份并输出恢复位置、没有基线文件的差异与追加区块、项目文件语言）合并后的对照条目：发布门禁拿上一个发布版本 v6.8.0（6.7.0）比较时需要它。客户端按 6.8.0、6.8.1 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 新项目的 Profile 带 sop 段（root=sops）并建立 sops/；骨架清单（内容包 agents-init/project-skeleton 1.1.0）新增 {sop_root}/.gitkeep，仅对声明了 sop 段的项目生效；project.schema.json 声明 sop 段。 init_project.py 与 scaffold.py 的命令行输出与提示改为按语言显示（中文 / 英文），默认英文；新增 Profile 顶层 language（项目文件语言）与 --language {auto,zh,en}，决定新建 Case 的小节名与 README 追加的“怎样使用”；模板、决定文件与指纹不随界面语言变化。 接管已有内容的目录：新增 --mode scan / adopt / region 与受管区块（regions.py）；CLAUDE.md 模板改为一行 @AGENTS.md 导入桩；AGENTS.md 模板增加“用户规则”一行；内容锁记录受管区块与渲染输入；项目契约模板内容包 1.2.0。 同一批次还包括：schema 补入 opinion.nudge、形态与 schema 冲突的自有值改为信息级说明（#38）、check 统计 schema 未声明的字段（#41）；脚手架发现分三级并支持 --mode accept-current（#37）；AGENTS.md 模板新增“隐私约定”，引用 Profile 的 privacy.forbidden_default_reads，已有项目用 update-content --append AGENTS.md 补入受管区块 privacy-contract（#40）；接管决定理由区分“保留”与“保留并追加区块”。内容包 agents-init/project-contract 升到 1.3.0。 之后补入：refresh 新增 --merge / --pick（用历史内容包重新渲染基线做三方合并，取不到旧包时退回 --keep / --append / --accept）、--required-only（--mode check 的退出码只看“需要处理”）；契约文件是符号链接时逐项处置，不再拖垮其他文件；写文件或写内容锁失败不再残留临时文件；重复 --keep 等不再重写决定文件；内容锁可选记录 file_versions 与 render_inputs.privacy_declared；AGENT.RULES.md 的隐私一行改为指向 Profile 字段；schema 补声明 opinion.nudge 与 work.case.schema。 rc.3 内容更新与合并：点名文件时即使内容锁已是最新也交给 refresh（先 --keep / --append 再 --merge 不再得到“没有需要更新的内容”）；没有基线摘要的文件 --merge 只给一条原因与出路；状态词、处置词随界面语言；--diff 只输出差异；建议命令带文件名；已按决定保留的文件不再提示“建议先保留”；隐私约定的预览为条件式并说明“未声明私有路径，不追加隐私约定”（JSON 增加 privacy_contract）；CLAUDE.md 是软链接时单独标阻塞的用例补齐。",
-      "actions": [
-        "已有项目无需改动：没有 sop 段的项目 check / health 不会多出任何差异",
-        "想启用 SOP：在 Profile 加 \"sop\": {\"root\": \"sops\"}，运行 agenthelm fix add-skeleton，或运行 agenthelm project sop init --apply",
-        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json",
-        "新项目想用英文的 Case 与 README：init 时加 --language en（auto 取当前界面语言）；已有项目保持中文，要改在 Profile 顶层写 \"language\": \"en\"，已有文件不会被改写",
-        "已初始化的项目：agenthelm update（或 fix update-content）会列出 CLAUDE.md 与 AGENTS.md 的变化，没改过的先备份再替换，改过的逐个 --keep / --accept",
-        "想接管一个已有内容的目录：先 init_project.py --mode scan 看冲突与推荐，再 --mode adopt 预览，确认后 --apply；改动已有文件须带 --recovery-dir",
-        "外部脚本若读取 CLAUDE.md 里的路由文字，改为读取 AGENTS.md（CLAUDE.md 现在只有 @AGENTS.md 导入）",
-        "refresh --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
-        "已有项目的 AGENTS.md 没改过：agenthelm update 直接更新；改过的：agenthelm update --only content --append AGENTS.md 保留原文并补入受管区块（先备份）；仅当项目声明了私有路径（privacy.forbidden_default_reads 非空）且 AGENTS.md 里还没有这条隐私约定时，才追加隐私约定区块 privacy-contract，未声明则不追加、预览会写明。不处理则 check 提示 privacy-contract，可 fix --skip",
-        "成熟项目的脚手架差异不想逐项处理：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入）",
-        "你改过、新模板也变了的文件可以三方合并：agenthelm update --only content --merge <文件>（预览），确认后加 --apply；冲突块用 --pick <文件>#<序号>=mine|theirs|both 逐块选择；取不到旧包时退回 --keep / --append / --accept",
-        "AGENT.RULES.md 的“默认禁止读取”一行改为指向 Profile 的 privacy.forbidden_default_reads：没改过的随 update-content 更新，改过的走 --keep / --append / --accept / --merge",
-        "没有基线摘要的已定制文件（锁里没有它的起点）无法三方合并：--merge 只给出一条原因和 --keep / --append / --accept <文件> 的出路，不猜基线",
-        "内容预览（update --only content、init_project.py --mode refresh、fix update-content）：状态词与处置词随界面语言，--diff 只输出差异，建议命令都带文件名；点名文件（--merge / --diff / --keep / --accept / --append / --pick）时，即使内容锁已是最新也照常处理，不再回答“没有需要更新的内容”",
-        "解析 refresh / update --only content 文本输出的脚本改用 --output json（状态词随界面语言，JSON 字段值不变）"
-      ],
-      "declaration": 2,
-      "user_action_required": [
-        {
-          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply；解析 agenthelm 文字输出的脚本改用 --output json。界面语言只影响命令输出；写进项目文件的语言是项目 Profile 的 language（缺省中文），用 agenthelm config project-language zh|en 查看或设置",
-          "session": "current"
-        },
-        {
-          "what": "CLAUDE.md 未改动过的项目：update-content 预览里确认替换为 @AGENTS.md 导入桩（先备份）；改动过的逐个选择 --keep 或 --accept",
-          "session": "current"
-        },
-        {
-          "what": "AGENTS.md 模板多了一行“用户规则”（指向 AGENT.USER.md）：同样在 update-content 里逐文件选择",
-          "session": "current"
-        },
-        {
-          "what": "已有项目的 AGENTS.md 可能增加“隐私约定”：没改过的 update-content 直接更新；改过的选 --append AGENTS.md 补入受管区块（原文不变）；仅当声明了私有路径（privacy.forbidden_default_reads 非空）且 AGENTS.md 里还没有这条约定时，才追加 privacy-contract 区块",
-          "session": "new"
-        }
-      ],
-      "touches": [
-        "CLAUDE.md",
-        "AGENTS.md",
-        ".agents/moe.sakanano.agent-pack/content.lock.json",
-        "Profile: language（新增，可选）、sop（新增，可选）",
-        "~/.agent-pack/recovery/（替换文件前的备份）",
-        "AGENTS.md（受管区块 privacy-contract）",
-        "Profile: privacy.forbidden_default_reads（只读引用）",
-        "AGENT.template.md 中 AGENTS.md 的“隐私约定”小节",
-        "AGENT.RULES.md（“隐私与外部系统”的一行）",
-        "Profile: opinion.nudge、work.case.schema（schema 新增声明，可选，只读比较）"
-      ],
-      "default_for_existing": "on",
-      "template_changes": [
-        {
-          "path": "CLAUDE.md",
-          "class": "semantic"
-        },
-        {
-          "path": "AGENTS.md",
-          "class": "semantic"
-        },
-        {
-          "path": "skills/agents-init/skeleton.json",
-          "class": "semantic"
-        },
-        {
-          "path": "AGENT.RULES.md",
-          "class": "semantic"
-        }
-      ]
+      "summary": "6.8.0（接管已有内容的目录、受管区块、发布声明；命令行输出多语言）与 6.8.1（替换文件前自动备份并输出恢复位置、没有基线文件的差异与追加区块、项目文件…",
+      "actions": []
     },
     {
       "plugin": "project-orchestrator",
@@ -971,13 +404,7 @@
       "to": "1.10.0",
       "change_kind": "both",
       "breaking": false,
-      "date": "2026-10-28",
-      "summary": "新增 SOP（标准作业流程）管理：runtime/sop.py（创建、谈清约定、执行前检查、版本快照、触发索引、周期到期、按 SOP 建立执行 Case 并逐步记录）、agenthelm project sop 子命令与菜单项、health 汇总流程问题与到期提醒；Case Schema 新增可选字段 sop（内容包 case-template 1.1.0）；新增样例内容包 sop-samples 1.0.0；事件触发（case.created / case.closed，可按标签过滤，case.py 与 record 在结果里带 sop_events）；创建时必须谈清“范围与私有目录”（scope）；私有目录约定（读取前确认、默认不进 git、用到的 Case 标为 private）：sop private / confirm-read、case.py --sensitivity 与自动标记、health 检查；样例 knowledge-digest；前置条件支持“仅当”；演示模式支持 SOP；新增 references/sop.md 与 sop-interview.md。",
-      "actions": [
-        "已有项目无需改动；没有 sops/ 目录时 SOP 相关功能静默跳过",
-        "行为变化：资料索引（find / refs / check）不再过滤 sensitivity 非 shared 的 Case，它们的文件也会被登记并能找到；依赖“private 的 Case 搜不到”的项目，请把内容放在资料根之外的私有目录（privacy.forbidden_default_reads）",
-        "自定义了 work.case.schema 的项目：想让 Case 记录 SOP 来源，需在自己的 Schema 增加可选字符串字段 sop（格式 <id>@<主.次.修订>）"
-      ]
+      "date": "2026-10-28"
     },
     {
       "plugin": "agent-pack",
@@ -985,13 +412,7 @@
       "to": "1.10.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-29",
-      "summary": "新增 agenthelm local-only（check / fix / config）：把同步盘里的 .venv、node_modules 等本机专属目录外置到 ~/.local/share/agenthelm/local-only/ 并留软链接，检查 HOME 一致、链接状态、体积阈值与包管理器（npm、pnpm 无法外置，建议 yarn 或 bun），check --fingerprint 带本机环境段；新增只读 MCP Tool agent_pack_cloud_sync_safety_check；agenthelm check / health / 会话开始提示汇总同步盘问题。",
-      "actions": [
-        "已有项目无需改动：不在同步盘里、也没有 local-only 配置的项目，check / health / 会话开始提示的输出与退出码不变",
-        "在同步盘里的项目：check 会多出“同步目录里有本机专属目录”等发现，agenthelm check --strict 与会话开始的一行提示把需要处理的项算作未处理；不需要的用 fix --skip <ID> --reason … 跳过",
-        "想把依赖移出同步盘：agenthelm local-only fix（预览）→ --apply；各设备的 HOME 绝对路径必须一致"
-      ]
+      "date": "2026-10-29"
     },
     {
       "plugin": "project-orchestrator",
@@ -999,11 +420,7 @@
       "to": "1.11.0",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-29",
-      "summary": "health 汇总同步盘里的本机专属目录问题（area=同步盘，ID 以 local: 开头，决定只记在这台机器上）；fix local-only 展示 agenthelm local-only fix 的预览；fix sync-folder 的指引改为推荐 local-only，不再建议对 npm 无效的 .nosync 做法。",
-      "actions": [
-        "已有项目无需改动：不在同步盘里、也没有 local-only 配置的项目，health 的输出与退出码不变"
-      ]
+      "date": "2026-10-29"
     },
     {
       "plugin": "project-orchestrator",
@@ -1012,43 +429,8 @@
       "change_kind": "both",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "1.10.0（SOP 管理）、1.11.0（同步盘本机专属目录汇总）、1.11.1（私密 Case 标注、台账结构升级）与 1.11.2（没有基线文件的差异摘要、追加区块、丢弃确认）合并后的对照条目：6.9.0 不单独发布，随 6.10.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。v6.10.0 发布后可删除（之后门禁对照 v6.10.0）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。Case 的小节名与默认文字按 Profile 的 language（zh | en，缺省 zh）选择；SOP 文件（小节名、步骤子项、前置条件写法、占位标记、样例）与 sop run 写进执行 Case 的清单、记录同样按项目 language 生成，解析器两套词表都认，sop new 新增 --language。 同一批次还包括：fix --accept-current 一次接受当前全部脚手架差异；health 把同类脚手架建议合并为一行（--details 逐项展开）并分“需要处理 / 可选 / 信息”三级，只有“需要处理”的参与退出码；声明了 work.case.command 的项目不再被要求默认的 Case 目录结构。 之后补入：fix update-content 透传 --merge / --pick / --diff；预览里 kept-by-decision、merge 等状态用可读文字；步骤失败时打印原因而不是抛出异常；项目维护流程不再把被忽略的客户端当作可用。 rc.3 输出整理：project health 把同类建议合并（同步盘 + 本机专属目录一条，各客户端插件版本不一致一条，--details 展开）；fix update-plugins 预览同一迁移说明只列一次；fix update-content 的 --diff 显示差异、状态词随语言、--merge 取不到基线时写明原因。",
-      "actions": [
-        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply（写入 ~/.config/agenthelm/config.json 的 language，其余设置原样保留）；中文系统 locale 本来就是中文；解析 agenthelm 文字输出的脚本改用 --output json",
-        "fix update-content --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（菜单里选 a 即已确认）",
-        "成熟项目的脚手架建议太多：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入随项目同步的决定文件）",
-        "依赖 project health 里 doctor-version-skew 这个 finding id 的脚本：多个插件版本不一致时 id 变为 doctor-version-skew:<插件名>（只有一个时仍是 doctor-version-skew）；JSON 的 findings、各级条数和退出码不变",
-        "project health 默认把“项目位于同步盘 + 本机专属目录”“各客户端插件版本不一致”各合并为一行，--details 展开逐项",
-        "fix update-content 的 --diff 现在会显示差异（以前不显示）；--merge 取不到基线时预览在该文件行写明原因"
-      ],
-      "declaration": 2,
-      "user_action_required": [
-        {
-          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply；解析 agenthelm 文字输出的脚本改用 --output json。界面语言只影响命令输出；写进项目文件的语言是项目 Profile 的 language（缺省中文），用 agenthelm config project-language zh|en 查看或设置",
-          "session": "current"
-        },
-        {
-          "what": "资料索引（find / wf / refs / check）不再过滤 sensitivity 非 shared 的 Case，私密 Case 的文件也能被找到；此前依赖“private 搜不到”的项目，把内容放进资料根之外的私有目录",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        "资料索引（用户缓存）",
-        "Profile: sop、privacy.forbidden_default_reads（新增，可选）",
-        "sops/、private/（启用 SOP 后）",
-        ".agents/moe.sakanano.agent-pack/check-decisions.json（仅运行 fix --accept-current --apply 时写入）"
-      ],
-      "default_for_existing": "on",
-      "template_changes": [
-        {
-          "path": "templates/CASE.en.md",
-          "class": "cosmetic"
-        },
-        {
-          "path": "references/case.schema.json",
-          "class": "semantic"
-        }
-      ]
+      "summary": "1.10.0（SOP 管理）、1.11.0（同步盘本机专属目录汇总）、1.11.1（私密 Case 标注、台账结构升级）与 1.11.2（没有基线文件的差异摘…",
+      "actions": []
     },
     {
       "plugin": "opinion-manager",
@@ -1057,27 +439,8 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂存观点候选，状态 pending / trial / formal / held / rejected；裁决必须 --confirmed；不写 OPINION.md、Profile 或锁。SKILL.md 增加自动采集、匹配与集中确认的协议。提示与协议支持中文、英文（--lang）。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。 0.5.1：inbox 命令与协议里代入命令行的项目路径、插件脚本路径、会话 ID 做 shell 引用（路径含空格、引号、$、反引号、中文时候选暂存不再静默失败）。 context core / bundle 输出的框架文字（标题、指纹行、规则束索引）在英文界面下输出英文，OPINION.md、锁、指纹与规则正文不随界面语言变化。",
-      "actions": [
-        "候选保存在项目内的 .opinion/inbox.json，含用户原话，可能含敏感信息：建议项目保持私有；若要公开仓库或让他人看到，是否排除 .opinion/ 由你决定（工具只提醒，不会自动修改 .gitignore）",
-        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
-      ],
-      "declaration": 2,
-      "user_action_required": [
-        {
-          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}；解析 agenthelm 文字输出的脚本改用 --output json",
-          "session": "current"
-        },
-        {
-          "what": ".opinion/inbox.json 保存用户原话，可能含敏感信息：自行决定是否把 .opinion/ 排除出 Git",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        ".opinion/inbox.json"
-      ],
-      "default_for_existing": "advisory",
-      "template_changes": []
+      "summary": "新增候选收件箱 inbox（add / list / decide / present / expire / pending / brief）：工作中低成本暂…",
+      "actions": []
     },
     {
       "plugin": "opinion-manager",
@@ -1085,14 +448,7 @@
       "to": "0.5.1",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-10-31",
-      "summary": "会话开始注入的 Opinion 协议、inbox pending 的提示命令里的项目路径、插件脚本路径与会话 ID 做 shell 引用（shlex.quote）：路径含空格（macOS 的 iCloud Drive 项目）、引号、$、反引号或中文时，inbox add / decide 不再因参数被拆开而静默失败。 context core / bundle 输出的框架文字（标题、指纹行、规则束索引）在英文界面下输出英文，OPINION.md、锁、指纹与规则正文不随界面语言变化。",
-      "actions": [],
-      "declaration": 2,
-      "user_action_required": [],
-      "touches": [],
-      "default_for_existing": "on",
-      "template_changes": []
+      "date": "2026-10-31"
     },
     {
       "plugin": "agent-pack",
@@ -1101,13 +457,8 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时提醒暂存；任务完成时请用户集中确认。Claude Code、Codex 读取随附的 hooks/hooks.json，Cursor 用 nudge install-hooks 写入 hooks.json。阈值写在 Project Profile 的 opinion.nudge 或用户配置的 nudge。提示语言按 nudge.language、AGENTHELM_LANG、系统 locale 决定（中文 / 英文），最后用英文。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。",
-      "actions": [
-        "Codex 需要在 /hooks 中审阅并信任插件 hook 后才会运行",
-        "Cursor：运行 agenthelm nudge install-hooks --client cursor 预览，确认后加 --apply；stop 提示默认关闭",
-        "不想要提示：AGENTHELM_NO_NUDGE=1，或把 nudge.enabled 设为 false",
-        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
-      ]
+      "summary": "新增 agenthelm nudge 与随附 hook：会话开始注入观点候选采集协议和试行候选，并在待确认候选堆积或久未处理时提示；工作中命中长期偏好关键词时…",
+      "actions": []
     },
     {
       "plugin": "agent-pack",
@@ -1116,39 +467,8 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "新增 agenthelm config（show / language / language-hint / project-language）：设置界面语言、开关“语言未设置”的提示、设置项目文件语言，默认只预览，--apply 才写入，只改要改的键并先备份；界面显示为英文且没有任何地方指定界面语言时，check 与会话开始的提示说明当前语言并给出命令。agenthelm update 增加 --append / --confirm-discard / --diff：没有基线的已定制文件显示差异摘要与原因，可保留原文并追加带标记的区块；--accept 丢弃本地行需 --confirm-discard；替换文件后输出备份目录与还原方法，仍需选择时不再显示“完成”并以非零退出。 同一批次还包括：install / update 失败原因与读回验证、--client 与 ignored_clients、显式版本来源不再被缓存覆盖并统一 --refresh；check 的 Profile 未声明字段统计（--show-extras）与形态冲突说明；fix --accept-current 与按类别归并（--details）；协议与提示里的路径 shell 引用；运行时目录带 rc 后缀。 之后补入：check 的“安装状态”诊断（未安装 / 部分安装 / 市场 / 开发版或本地 / 旧方式 / 多处 / 市场冲突，开发版与本地安装不被 update / migrate 改动）；钩子出错时记录最近一次错误摘要（nudge status、doctor 可见，--clear-errors 清除）；三方合并在 update / fix 里可达（--merge / --pick / --diff）；旧方式安装按路径归属计入 --client；英文界面下 local-only 用户配置错误的判断、全角标点与占位词等漏翻；软链接的配置文件写入保持链接；备份失败清楚报错；runtime use 校验版本名。",
-      "actions": [
-        "--accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
-        "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
-        "install 对已安装的插件改为跳过并提示改用 update；install / update 在步骤“成功但读回版本没变”时显示“完成，无变化”及原因，整体退出码为 1",
-        "步骤失败时显示命令、退出码和客户端 stderr；失败后只有同一客户端的后续步骤不执行，其他客户端继续",
-        "check --strict 与会话开始的提示只统计“需要处理”的脚手架差异；缺文件等可选差异不再让 --strict 失败（CI 想看全部差异用 check --output json）",
-        "只用其中一两个客户端：check / update / install / migrate 加 --client，或 agenthelm config ignore-client <claude|codex|cursor> --apply",
-        "候选版（rc）与正式版的运行时目录分开（runtimes/6.11.0-rc.N 与 6.11.0）；从仓库检出安装的拿不到后缀，仍共用 6.11.0，内容不同时需先移走旧目录",
-        "check 新增“安装状态”诊断（--output json 的 install_state）；开发版、本地目录与软链接安装默认不被 update / migrate / install 改动，预览标“不会改动”，要纳入管理由你决定",
-        "钩子内部出错仍静默，最近一次错误摘要可用 agenthelm nudge status 查看，--clear-errors 清除；agenthelm doctor 也会提示",
-        "update --only content 与 fix update-content 支持 --merge <文件>、--pick <文件>#<序号>=mine|theirs|both、--diff <文件>（三方合并，联网只发生在显式 --merge 时）"
-      ],
-      "declaration": 2,
-      "user_action_required": [
-        {
-          "what": "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
-          "session": "current"
-        },
-        {
-          "what": "CI 里用 agenthelm check --strict 的项目：脚手架差异分成需要处理 / 可选 / 信息三级，只有“需要处理”的让 --strict 失败",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        "~/.config/agenthelm/config.json（language、language_hint；仅在运行 agenthelm config … --apply 时写入）",
-        "~/.agent-pack/recovery/（替换文件前的备份）",
-        "~/.config/agenthelm/config.json（ignored_clients；仅在运行 agenthelm config ignore-client … --apply 时写入）",
-        "~/.local/share/agenthelm/runtimes/<版本>[-rc.N]/",
-        "~/.local/state/agenthelm/hook-errors.json（仅钩子出错时写，最多 5 条）"
-      ],
-      "default_for_existing": "advisory",
-      "template_changes": []
+      "summary": "新增 agenthelm config（show / language / language-hint / project-language）：设置界面语言、…",
+      "actions": []
     },
     {
       "plugin": "project-orchestrator",
@@ -1157,10 +477,8 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case 的文件，结果带 sensitivity 字段并在菜单里标注“私密”；台账只是索引，不做可见性过滤，凭据类文件名仍不登记。旧台账自动重建。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。Case 的小节名与默认文字按 Profile 的 language（zh | en，缺省 zh）选择，新增 templates/CASE.en.md，解析器同时认中英文小节名，内容包 case-template 升到 1.1.0（含 CASE.en.md）；SOP 文件（小节名、步骤子项、前置条件写法、占位标记、样例）与 sop run 写进执行 Case 的清单、记录同样按项目 language 生成，解析器两套词表都认，sop new 新增 --language。",
-      "actions": [
-        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或在 ~/.config/agenthelm/config.json 写 {\"language\": \"zh\"}（中文系统 locale 本来就是中文）；解析 agenthelm 文字输出的脚本改用 --output json"
-      ]
+      "summary": "交付物台账（find / wf / refs / check）登记 sensitivity 不是 shared 的 Case，find 能找到私密 Case …",
+      "actions": []
     },
     {
       "plugin": "project-orchestrator",
@@ -1169,19 +487,8 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-31",
-      "summary": "fix update-content / 菜单“检查与维护”处理没有基线的已定制文件：预览写明原因和差异摘要（本地行数、模板行数、会新增与丢弃的行数），菜单里 d 查看差异、p 保留原文并追加带标记的区块（AGENTS.md / CLAUDE.md），a 采用新模板时提示会丢弃多少行；fix 新增 --append / --confirm-discard；某一步失败时输出失败原因并以非零退出，不再抛出异常。 同一批次还包括：fix --accept-current 一次接受当前全部脚手架差异；health 把同类脚手架建议合并为一行（--details 逐项展开）并分“需要处理 / 可选 / 信息”三级，只有“需要处理”的参与退出码；声明了 work.case.command 的项目不再被要求默认的 Case 目录结构。 之后补入：fix update-content 透传 --merge / --pick / --diff；预览里 kept-by-decision、merge 等状态用可读文字；步骤失败时打印原因而不是抛出异常；项目维护流程不再把被忽略的客户端当作可用。",
-      "actions": [
-        "fix update-content --accept 会丢弃本地内容时需再加 --confirm-discard <文件>（菜单里选 a 即已确认）",
-        "成熟项目的脚手架建议太多：agenthelm fix --accept-current --reason \"<原因>\"（先预览，--apply 写入随项目同步的决定文件）"
-      ],
-      "declaration": 2,
-      "user_action_required": [],
-      "touches": [
-        "~/.agent-pack/recovery/（替换文件前的备份）",
-        ".agents/moe.sakanano.agent-pack/check-decisions.json（仅运行 fix --accept-current --apply 时写入）"
-      ],
-      "default_for_existing": "on",
-      "template_changes": []
+      "summary": "fix update-content / 菜单“检查与维护”处理没有基线的已定制文件：预览写明原因和差异摘要（本地行数、模板行数、会新增与丢弃的行数），菜单里…",
+      "actions": []
     },
     {
       "plugin": "agent-pack",
@@ -1190,65 +497,8 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-10-29",
-      "summary": "1.10.0（同步盘本机专属目录 local-only）、1.11.0（观点自动采集 nudge 与 hook）与 1.11.1（agenthelm config、语言提示、没有基线文件的差异摘要与追加区块、备份位置输出）合并后的对照条目：6.9.0、6.10.0 都不单独发布，随 6.11.0 一起发布，发布门禁拿上一个发布版本 v6.8.0（1.9.0）比较时需要它。客户端按 1.10.0、1.11.0 分步显示，这一条被更窄的条目取代，不重复展示。发布后可删除。 命令行输出与提示改为按语言显示（中文 / 英文），默认英文；按 AGENTHELM_LANG、用户配置的 language、系统 locale 决定。 同一批次还包括：install / update 失败原因与读回验证、--client 与 ignored_clients、显式版本来源不再被缓存覆盖并统一 --refresh；check 的 Profile 未声明字段统计（--show-extras）与形态冲突说明；fix --accept-current 与按类别归并（--details）；协议与提示里的路径 shell 引用；运行时目录带 rc 后缀。 之后补入：check 的“安装状态”诊断（未安装 / 部分安装 / 市场 / 开发版或本地 / 旧方式 / 多处 / 市场冲突，开发版与本地安装不被 update / migrate 改动）；钩子出错时记录最近一次错误摘要（nudge status、doctor 可见，--clear-errors 清除）；三方合并在 update / fix 里可达（--merge / --pick / --diff）；旧方式安装按路径归属计入 --client；英文界面下 local-only 用户配置错误的判断、全角标点与占位词等漏翻；软链接的配置文件写入保持链接；备份失败清楚报错；runtime use 校验版本名。 rc.3 升级主路径：update 预览在 Claude 的市场声明与已登记市场不一致（或未登记）时直接标阻塞并给出下一步，不再等到 apply 第一步才失败；固定 ref 等于目标版本时 check 不再报 market-conflict，固定在旧 ref 时提示更新只会跟随该 ref；Codex“完成，无变化”附固定市场的命令；运行时是候选版时会话开始提示带 @<当前版本>；Cursor 在 update 预览为“不可用”时不再计入“可更新”，单列为“不可用，需 --source 本地源”；runtime install 安装候选版默认不切换 current（新增 --use）。输出整理：check --output json 的 summary.scaffold_info 与文本“脚手架·信息”条数一致，同一插件版本的不兼容说明在一次输出中只出现一次。",
-      "actions": [
-        "需要继续看到中文：设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply（写入 ~/.config/agenthelm/config.json 的 language，其余设置原样保留）；中文系统 locale 本来就是中文；解析 agenthelm 文字输出的脚本改用 --output json",
-        "--accept 会丢弃本地内容时需再加 --confirm-discard <文件>（脚本里用 --accept 的需要补上）",
-        "install 对已安装的插件改为跳过并提示改用 update；install / update 在步骤“成功但读回版本没变”时显示“完成，无变化”及原因，整体退出码为 1",
-        "步骤失败时显示命令、退出码和客户端 stderr；失败后只有同一客户端的后续步骤不执行，其他客户端继续",
-        "check --strict 与会话开始的提示只统计“需要处理”的脚手架差异；缺文件等可选差异不再让 --strict 失败（CI 想看全部差异用 check --output json）",
-        "只用其中一两个客户端：check / update / install / migrate 加 --client，或 agenthelm config ignore-client <claude|codex|cursor> --apply",
-        "候选版（rc）与正式版的运行时目录分开（runtimes/6.11.0-rc.N 与 6.11.0）；从仓库检出安装的拿不到后缀，仍共用 6.11.0，内容不同时需先移走旧目录",
-        "check 新增“安装状态”诊断（--output json 的 install_state）；开发版、本地目录与软链接安装默认不被 update / migrate / install 改动，预览标“不会改动”，要纳入管理由你决定",
-        "钩子内部出错仍静默，最近一次错误摘要可用 agenthelm nudge status 查看，--clear-errors 清除；agenthelm doctor 也会提示",
-        "update --only content 与 fix update-content 支持 --merge <文件>、--pick <文件>#<序号>=mine|theirs|both、--diff <文件>（三方合并，联网只发生在显式 --merge 时）",
-        "改了 ~/.claude/settings.json 里的市场 ref 后，先重启 Claude Code 再运行 agenthelm update；预览标“阻塞”时按提示重启，或运行 claude plugin marketplace add <源>#<ref>",
-        "试用候选版运行时：agenthelm runtime install --apply --use（或装好后 agenthelm runtime use <版本> --apply）；不加 --use 时候选版（-rc.N）只装在旁边、current 不变；稳定版和首次安装的行为不变",
-        "解析 check --output json 的脚本：summary.plugins_behind 不再包含“不可用”的 Cursor（改读新增的 summary.plugins_unavailable）；summary.scaffold_info 现在包含 Profile 备注，与文本里的“脚手架·信息”条数一致",
-        "Cursor 在 update 预览里是“不可用”时：有本地仓库用 update --source <本地仓库>；不用 Cursor 用 agenthelm config ignore-client cursor --apply（Cursor 直接从发布版本更新见 #47，不在 6.11.0）",
-        "候选版运行时的会话开始提示与 check 建议命令为 npx @sakanano-moe/agenthelm@<当前版本> check（该版本需已发布到 npm）；稳定版不变",
-        "内容预览（update --only content、init_project.py --mode refresh、fix update-content）：状态词与处置词随界面语言，--diff 只输出差异，建议命令都带文件名；点名文件（--merge / --diff / --keep / --accept / --append / --pick）时，即使内容锁已是最新也照常处理，不再回答“没有需要更新的内容”"
-      ],
-      "declaration": 2,
-      "user_action_required": [
-        {
-          "what": "命令行输出默认改为英文：需要继续看到中文，设置环境变量 AGENTHELM_LANG=zh，或运行 agenthelm config language zh --apply；解析 agenthelm 文字输出的脚本改用 --output json。界面语言只影响命令输出；写进项目文件的语言是项目 Profile 的 language（缺省中文），用 agenthelm config project-language zh|en 查看或设置",
-          "session": "current"
-        },
-        {
-          "what": "当界面显示为英文且没有设置界面语言时，agenthelm check 和会话开始的提示会说明当前语言并给出设置命令（中文界面不提示）；不想看到：agenthelm config language-hint off",
-          "session": "current"
-        },
-        {
-          "what": "启用了 opinion-manager 的项目里，随插件的 hook 会在会话开始注入协议、并在命中偏好关键词时提醒暂存；不需要时设置 AGENTHELM_NO_NUDGE=1 关闭",
-          "session": "current"
-        },
-        {
-          "what": ".opinion/inbox.json 保存用户原话，可能含敏感信息：公开仓库、同步盘或他人可见的项目，自行决定是否把 .opinion/ 排除出 Git（工具不会替你修改 .gitignore）",
-          "session": "current"
-        },
-        {
-          "what": "项目位于 iCloud / Dropbox / OneDrive 等同步目录时，check / health 会多出 local: 开头的发现；按提示处理或用 fix --skip 记录决定",
-          "session": "current"
-        },
-        {
-          "what": "CI 里用 agenthelm check --strict 的项目：脚手架差异分成需要处理 / 可选 / 信息三级，只有“需要处理”的让 --strict 失败",
-          "session": "current"
-        }
-      ],
-      "touches": [
-        "hooks/hooks.json（随插件）",
-        "~/.config/agenthelm/config.json（language、nudge、local_only）",
-        ".opinion/inbox.json",
-        ".agents/moe.sakanano.agent-pack/local-only.json",
-        "~/.agent-pack/recovery/（替换文件前的备份）",
-        "~/.config/agenthelm/config.json（ignored_clients；仅在运行 agenthelm config ignore-client … --apply 时写入）",
-        "~/.local/share/agenthelm/runtimes/<版本>[-rc.N]/",
-        "~/.local/state/agenthelm/hook-errors.json（仅钩子出错时写，最多 5 条）",
-        "~/.local/share/agenthelm/current（候选版安装不再自动切换；runtime use 或 --use 才切换）"
-      ],
-      "default_for_existing": "on",
-      "template_changes": []
+      "summary": "1.10.0（同步盘本机专属目录 local-only）、1.11.0（观点自动采集 nudge 与 hook）与 1.11.1（agenthelm conf…",
+      "actions": []
     },
     {
       "plugin": "agent-pack",
@@ -1257,22 +507,8 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-11-01",
-      "summary": "rc.3 升级主路径：update 预览在 Claude 的市场声明与已登记市场不一致（或未登记）时直接标阻塞并给出下一步，不再等到 apply 第一步才失败；固定 ref 等于目标版本时 check 不再报 market-conflict，固定在旧 ref 时提示更新只会跟随该 ref；Codex“完成，无变化”附固定市场的命令；运行时是候选版时会话开始提示带 @<当前版本>；Cursor 在 update 预览为“不可用”时不再计入“可更新”，单列为“不可用，需 --source 本地源”；runtime install 安装候选版默认不切换 current（新增 --use）。输出整理：check --output json 的 summary.scaffold_info 与文本“脚手架·信息”条数一致，同一插件版本的不兼容说明在一次输出中只出现一次。",
-      "actions": [
-        "改了 ~/.claude/settings.json 里的市场 ref 后，先重启 Claude Code 再运行 agenthelm update；预览标“阻塞”时按提示重启，或运行 claude plugin marketplace add <源>#<ref>",
-        "试用候选版运行时：agenthelm runtime install --apply --use（或装好后 agenthelm runtime use <版本> --apply）；不加 --use 时候选版（-rc.N）只装在旁边、current 不变；稳定版和首次安装的行为不变",
-        "解析 check --output json 的脚本：summary.plugins_behind 不再包含“不可用”的 Cursor（改读新增的 summary.plugins_unavailable）；summary.scaffold_info 现在包含 Profile 备注，与文本里的“脚手架·信息”条数一致",
-        "Cursor 在 update 预览里是“不可用”时：有本地仓库用 update --source <本地仓库>；不用 Cursor 用 agenthelm config ignore-client cursor --apply（Cursor 直接从发布版本更新见 #47，不在 6.11.0）",
-        "候选版运行时的会话开始提示与 check 建议命令为 npx @sakanano-moe/agenthelm@<当前版本> check（该版本需已发布到 npm）；稳定版不变",
-        "内容预览（update --only content、init_project.py --mode refresh、fix update-content）：状态词与处置词随界面语言，--diff 只输出差异，建议命令都带文件名；点名文件（--merge / --diff / --keep / --accept / --append / --pick）时，即使内容锁已是最新也照常处理，不再回答“没有需要更新的内容”"
-      ],
-      "declaration": 2,
-      "user_action_required": [],
-      "touches": [
-        "~/.local/share/agenthelm/current（候选版安装不再自动切换；runtime use 或 --use 才切换）"
-      ],
-      "default_for_existing": "on",
-      "template_changes": []
+      "summary": "rc.3 升级主路径：update 预览在 Claude 的市场声明与已登记市场不一致（或未登记）时直接标阻塞并给出下一步，不再等到 apply 第一步才失败…",
+      "actions": []
     },
     {
       "plugin": "agents-init",
@@ -1280,18 +516,7 @@
       "to": "6.8.2",
       "change_kind": "code",
       "breaking": false,
-      "date": "2026-11-01",
-      "summary": "rc.3 内容更新与合并：点名文件时即使内容锁已是最新也交给 refresh（先 --keep / --append 再 --merge 不再得到“没有需要更新的内容”）；没有基线摘要的文件 --merge 只给一条原因与出路；状态词、处置词随界面语言；--diff 只输出差异；建议命令带文件名；已按决定保留的文件不再提示“建议先保留”；隐私约定的预览为条件式并说明“未声明私有路径，不追加隐私约定”（JSON 增加 privacy_contract）；CLAUDE.md 是软链接时单独标阻塞的用例补齐。",
-      "actions": [
-        "没有基线摘要的已定制文件（锁里没有它的起点）无法三方合并：--merge 只给出一条原因和 --keep / --append / --accept <文件> 的出路，不猜基线",
-        "内容预览（update --only content、init_project.py --mode refresh、fix update-content）：状态词与处置词随界面语言，--diff 只输出差异，建议命令都带文件名；点名文件（--merge / --diff / --keep / --accept / --append / --pick）时，即使内容锁已是最新也照常处理，不再回答“没有需要更新的内容”",
-        "解析 refresh / update --only content 文本输出的脚本改用 --output json（状态词随界面语言，JSON 字段值不变）"
-      ],
-      "declaration": 2,
-      "user_action_required": [],
-      "touches": [],
-      "default_for_existing": "on",
-      "template_changes": []
+      "date": "2026-11-01"
     },
     {
       "plugin": "project-orchestrator",
@@ -1300,17 +525,50 @@
       "change_kind": "code",
       "breaking": true,
       "date": "2026-11-01",
-      "summary": "rc.3 输出整理：project health 把同类建议合并（同步盘 + 本机专属目录一条，各客户端插件版本不一致一条，--details 展开）；fix update-plugins 预览同一迁移说明只列一次；fix update-content 的 --diff 显示差异、状态词随语言、--merge 取不到基线时写明原因。",
-      "actions": [
-        "依赖 project health 里 doctor-version-skew 这个 finding id 的脚本：多个插件版本不一致时 id 变为 doctor-version-skew:<插件名>（只有一个时仍是 doctor-version-skew）；JSON 的 findings、各级条数和退出码不变",
-        "project health 默认把“项目位于同步盘 + 本机专属目录”“各客户端插件版本不一致”各合并为一行，--details 展开逐项",
-        "fix update-content 的 --diff 现在会显示差异（以前不显示）；--merge 取不到基线时预览在该文件行写明原因"
-      ],
+      "summary": "rc.3 输出整理：project health 把同类建议合并（同步盘 + 本机专属目录一条，各客户端插件版本不一致一条，--details 展开）；fix…",
+      "actions": []
+    },
+    {
+      "plugin": "agent-pack",
+      "from": "1.15.0",
+      "to": "1.16.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-27",
+      "summary": "dedupe 与 relocate 的预览新增影响面（impact）：退役或迁移前先按各客户端读取的文件位置算出谁会失去、保留或改读哪一份，符号链接悬空与「其他机器上的该项目不再带有它」写成警告；只多信息，不改写入语义，状态仍为 ready。; inventory 与 dedupe 判断 MCP 目标：指纹相同但目标不同或无法确认的条目不再算重复，改列入 mcp_hints；每条 MCP 新增 target 与 target_class。; 已弃用的 Gemini 的弃用说明在一次 install / update 的输出里只出现一次（放在该客户端的第一个步骤），文字不变；其他客户端的输出不变。; Gemini 的驱动声明补上 nudge-install-hooks（hooks 随扩展交付，与支持矩阵一致），并新增守卫：矩阵标不支持或不适用的功能必须由驱动声明，驱动声明的不支持项矩阵里也要有。",
+      "summary_en": "dedupe and relocate previews gain an impact section: before retiring or moving a Skill or MCP entry they work out, from the file locations each client reads, who loses it, keeps it or reads a different copy; dangling symlinks and \"projects on other machines no longer carry it\" become warnings. Information only: writes are unchanged and the status stays ready.; inventory and dedupe now judge the MCP target: entries with the same fingerprint but a different or unconfirmed target are no longer duplicates and are listed in mcp_hints; every MCP entry gains target and target_class.; The deprecation note of the deprecated Gemini client appears once per install / update run (on the client's first step) with the same wording; the output for the other clients is unchanged.; The Gemini driver now declares nudge-install-hooks (hooks ship inside the extension, as the support matrix says), and a new guard reconciles the matrix with the drivers in both directions.",
       "declaration": 2,
+      "actions": [],
       "user_action_required": [],
       "touches": [],
-      "default_for_existing": "on",
-      "template_changes": []
+      "template_changes": [],
+      "default_for_existing": "on"
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.13.0",
+      "to": "1.14.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-27",
+      "summary": "项目事项工具的写入调用超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。; 「技能与 MCP」菜单读取 inventory 的 target_class：指纹相同但目标不同的 MCP 不再列为「不同名 · 同指纹」重复组，mcp_hints 以一行信息显示在按重复看的末尾，不计入重复数。旧版 agent-pack 没有这两个键时分组与输出不变。",
+      "summary_en": "A project item tool write that times out is reported as an unknown outcome, distinct from a failure to start, instead of being treated as not written.; The Skills & MCP menu reads target_class from the inventory: MCP entries with the same fingerprint but a different target no longer form a \"different names, same fingerprint\" duplicate group, and mcp_hints appear as one line at the end of the by-duplicate view without counting as duplicates. With an older agent-pack that lacks both keys, grouping and output are unchanged.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "template_changes": [],
+      "default_for_existing": "on"
     }
-  ]
+  ],
+  "migrations_window": {
+    "schema": 1,
+    "floor": {
+      "agent-pack": "1.14.0",
+      "agents-init": "6.10.0",
+      "opinion-manager": "0.7.0",
+      "project-orchestrator": "1.12.0"
+    },
+    "full": "release/migrations.json"
+  }
 }

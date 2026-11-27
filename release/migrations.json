@@ -1258,5 +1258,37 @@
     "touches": [],
     "default_for_existing": "on",
     "template_changes": []
+  },
+  {
+    "plugin": "agent-pack",
+    "from": "1.15.0",
+    "to": "1.16.0",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-27",
+    "summary": "dedupe 与 relocate 的预览新增影响面（impact）：退役或迁移前先按各客户端读取的文件位置算出谁会失去、保留或改读哪一份，符号链接悬空与「其他机器上的该项目不再带有它」写成警告；只多信息，不改写入语义，状态仍为 ready。; inventory 与 dedupe 判断 MCP 目标：指纹相同但目标不同或无法确认的条目不再算重复，改列入 mcp_hints；每条 MCP 新增 target 与 target_class。; 已弃用的 Gemini 的弃用说明在一次 install / update 的输出里只出现一次（放在该客户端的第一个步骤），文字不变；其他客户端的输出不变。; Gemini 的驱动声明补上 nudge-install-hooks（hooks 随扩展交付，与支持矩阵一致），并新增守卫：矩阵标不支持或不适用的功能必须由驱动声明，驱动声明的不支持项矩阵里也要有。",
+    "summary_en": "dedupe and relocate previews gain an impact section: before retiring or moving a Skill or MCP entry they work out, from the file locations each client reads, who loses it, keeps it or reads a different copy; dangling symlinks and \"projects on other machines no longer carry it\" become warnings. Information only: writes are unchanged and the status stays ready.; inventory and dedupe now judge the MCP target: entries with the same fingerprint but a different or unconfirmed target are no longer duplicates and are listed in mcp_hints; every MCP entry gains target and target_class.; The deprecation note of the deprecated Gemini client appears once per install / update run (on the client's first step) with the same wording; the output for the other clients is unchanged.; The Gemini driver now declares nudge-install-hooks (hooks ship inside the extension, as the support matrix says), and a new guard reconciles the matrix with the drivers in both directions.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "template_changes": [],
+    "default_for_existing": "on"
+  },
+  {
+    "plugin": "project-orchestrator",
+    "from": "1.13.0",
+    "to": "1.14.0",
+    "change_kind": "code",
+    "breaking": false,
+    "date": "2026-11-27",
+    "summary": "项目事项工具的写入调用超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。; 「技能与 MCP」菜单读取 inventory 的 target_class：指纹相同但目标不同的 MCP 不再列为「不同名 · 同指纹」重复组，mcp_hints 以一行信息显示在按重复看的末尾，不计入重复数。旧版 agent-pack 没有这两个键时分组与输出不变。",
+    "summary_en": "A project item tool write that times out is reported as an unknown outcome, distinct from a failure to start, instead of being treated as not written.; The Skills & MCP menu reads target_class from the inventory: MCP entries with the same fingerprint but a different target no longer form a \"different names, same fingerprint\" duplicate group, and mcp_hints appear as one line at the end of the by-duplicate view without counting as duplicates. With an older agent-pack that lacks both keys, grouping and output are unchanged.",
+    "declaration": 2,
+    "actions": [],
+    "user_action_required": [],
+    "touches": [],
+    "template_changes": [],
+    "default_for_existing": "on"
   }
 ]

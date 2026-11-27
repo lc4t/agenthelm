@@ -1,5 +1,27 @@
 # 更新记录
 
+<!-- release-plan:start -->
+## 2026-11-27 — agenthelm 6.16.0
+
+### agent-pack 1.16.0
+
+- dedupe 与 relocate 的预览新增影响面（impact）：退役或迁移前先按各客户端读取的文件位置算出谁会失去、保留或改读哪一份，符号链接悬空与「其他机器上的该项目不再带有它」写成警告；只多信息，不改写入语义，状态仍为 ready。
+- inventory 与 dedupe 判断 MCP 目标：指纹相同但目标不同或无法确认的条目不再算重复，改列入 mcp_hints；每条 MCP 新增 target 与 target_class。
+- 已弃用的 Gemini 的弃用说明在一次 install / update 的输出里只出现一次（放在该客户端的第一个步骤），文字不变；其他客户端的输出不变。
+- Gemini 的驱动声明补上 nudge-install-hooks（hooks 随扩展交付，与支持矩阵一致），并新增守卫：矩阵标不支持或不适用的功能必须由驱动声明，驱动声明的不支持项矩阵里也要有。
+
+### project-orchestrator 1.14.0
+
+- 项目事项工具的写入调用超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。
+- 「技能与 MCP」菜单读取 inventory 的 target_class：指纹相同但目标不同的 MCP 不再列为「不同名 · 同指纹」重复组，mcp_hints 以一行信息显示在按重复看的末尾，不计入重复数。旧版 agent-pack 没有这两个键时分组与输出不变。
+
+### suite 6.16.0
+
+- INSTALL.md 说明 agy plugin validate --strict 因 hooks/hooks.json 未被加载而返回 1 属预期，普通 validate 与 install 不受影响。
+- latest.json 只保留最近两个套件版本的完整迁移说明，更早的条目降为索引（不兼容条目保留一句摘要），全文仍在 release/migrations.json。
+<!-- release-plan:end -->
+
+
 ## 2026-11-24 — agenthelm 6.15.0
 
 ### agent-pack 1.15.0

@@ -1,0 +1,2067 @@
+{
+  "schema": 1,
+  "baseline": "v6.15.0",
+  "suite": "6.16.0",
+  "plugins": {
+    "agent-pack": {
+      "version": "1.16.0",
+      "source": "./plugins/agent-pack"
+    },
+    "agents-init": {
+      "version": "6.11.0",
+      "source": "./plugins/agents-init",
+      "content": {
+        "agents-init/project-contract": {
+          "version": "1.5.0",
+          "kind": "template"
+        },
+        "agents-init/project-skeleton": {
+          "version": "1.1.0",
+          "kind": "manifest"
+        }
+      }
+    },
+    "opinion-manager": {
+      "version": "0.7.1",
+      "source": "./plugins/opinion-manager",
+      "content": {
+        "opinion-manager/catalog": {
+          "version": "1.1.0",
+          "kind": "catalog"
+        }
+      }
+    },
+    "project-orchestrator": {
+      "version": "1.14.0",
+      "source": "./plugins/project-orchestrator",
+      "content": {
+        "project-orchestrator/asset-synonyms": {
+          "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/case-template": {
+          "version": "1.1.0",
+          "kind": "sample"
+        },
+        "project-orchestrator/sop-samples": {
+          "version": "1.0.0",
+          "kind": "sample"
+        }
+      }
+    }
+  },
+  "migrations": [
+    {
+      "plugin": "agent-pack",
+      "from": "1.15.0",
+      "to": "1.16.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-27",
+      "summary": "dedupe 与 relocate 的预览新增影响面（impact）：退役或迁移前先按各客户端读取的文件位置算出谁会失去、保留或改读哪一份，符号链接悬空与「其他机器上的该项目不再带有它」写成警告；只多信息，不改写入语义，状态仍为 ready。; inventory 与 dedupe 判断 MCP 目标：指纹相同但目标不同或无法确认的条目不再算重复，改列入 mcp_hints；每条 MCP 新增 target 与 target_class。; 已弃用的 Gemini 的弃用说明在一次 install / update 的输出里只出现一次（放在该客户端的第一个步骤），文字不变；其他客户端的输出不变。; Gemini 的驱动声明补上 nudge-install-hooks（hooks 随扩展交付，与支持矩阵一致），并新增守卫：矩阵标不支持或不适用的功能必须由驱动声明，驱动声明的不支持项矩阵里也要有。",
+      "summary_en": "dedupe and relocate previews gain an impact section: before retiring or moving a Skill or MCP entry they work out, from the file locations each client reads, who loses it, keeps it or reads a different copy; dangling symlinks and \"projects on other machines no longer carry it\" become warnings. Information only: writes are unchanged and the status stays ready.; inventory and dedupe now judge the MCP target: entries with the same fingerprint but a different or unconfirmed target are no longer duplicates and are listed in mcp_hints; every MCP entry gains target and target_class.; The deprecation note of the deprecated Gemini client appears once per install / update run (on the client's first step) with the same wording; the output for the other clients is unchanged.; The Gemini driver now declares nudge-install-hooks (hooks ship inside the extension, as the support matrix says), and a new guard reconciles the matrix with the drivers in both directions.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "template_changes": [],
+      "default_for_existing": "on"
+    },
+    {
+      "plugin": "project-orchestrator",
+      "from": "1.13.0",
+      "to": "1.14.0",
+      "change_kind": "code",
+      "breaking": false,
+      "date": "2026-11-27",
+      "summary": "项目事项工具的写入调用超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。; 「技能与 MCP」菜单读取 inventory 的 target_class：指纹相同但目标不同的 MCP 不再列为「不同名 · 同指纹」重复组，mcp_hints 以一行信息显示在按重复看的末尾，不计入重复数。旧版 agent-pack 没有这两个键时分组与输出不变。",
+      "summary_en": "A project item tool write that times out is reported as an unknown outcome, distinct from a failure to start, instead of being treated as not written.; The Skills & MCP menu reads target_class from the inventory: MCP entries with the same fingerprint but a different target no longer form a \"different names, same fingerprint\" duplicate group, and mcp_hints appear as one line at the end of the by-duplicate view without counting as duplicates. With an older agent-pack that lacks both keys, grouping and output are unchanged.",
+      "declaration": 2,
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "template_changes": [],
+      "default_for_existing": "on"
+    }
+  ],
+  "changelog": "## 2026-11-27 — agenthelm 6.16.0\n\n### agent-pack 1.16.0\n\n- dedupe 与 relocate 的预览新增影响面（impact）：退役或迁移前先按各客户端读取的文件位置算出谁会失去、保留或改读哪一份，符号链接悬空与「其他机器上的该项目不再带有它」写成警告；只多信息，不改写入语义，状态仍为 ready。\n- inventory 与 dedupe 判断 MCP 目标：指纹相同但目标不同或无法确认的条目不再算重复，改列入 mcp_hints；每条 MCP 新增 target 与 target_class。\n- 已弃用的 Gemini 的弃用说明在一次 install / update 的输出里只出现一次（放在该客户端的第一个步骤），文字不变；其他客户端的输出不变。\n- Gemini 的驱动声明补上 nudge-install-hooks（hooks 随扩展交付，与支持矩阵一致），并新增守卫：矩阵标不支持或不适用的功能必须由驱动声明，驱动声明的不支持项矩阵里也要有。\n\n### project-orchestrator 1.14.0\n\n- 项目事项工具的写入调用超时时报告「写入结果未知」，与启动失败区分，不再当作没有写入。\n- 「技能与 MCP」菜单读取 inventory 的 target_class：指纹相同但目标不同的 MCP 不再列为「不同名 · 同指纹」重复组，mcp_hints 以一行信息显示在按重复看的末尾，不计入重复数。旧版 agent-pack 没有这两个键时分组与输出不变。\n\n### suite 6.16.0\n\n- INSTALL.md 说明 agy plugin validate --strict 因 hooks/hooks.json 未被加载而返回 1 属预期，普通 validate 与 install 不受影响。\n- latest.json 只保留最近两个套件版本的完整迁移说明，更早的条目降为索引（不兼容条目保留一句摘要），全文仍在 release/migrations.json。\n",
+  "explain": [
+    {
+      "fragment": "169-items-tool-write-timeout.json",
+      "scope": "project-orchestrator",
+      "level": "minor"
+    },
+    {
+      "fragment": "184-impact-reachability.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "184-mcp-target-judgement.json",
+      "scope": "agent-pack",
+      "level": "minor"
+    },
+    {
+      "fragment": "184-menu-target-class.json",
+      "scope": "project-orchestrator",
+      "level": "patch"
+    },
+    {
+      "fragment": "185-agy-validate-strict-note.json",
+      "scope": "suite",
+      "level": "patch"
+    },
+    {
+      "fragment": "185-gemini-deprecation-once.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "185-unsupported-matrix-reconcile.json",
+      "scope": "agent-pack",
+      "level": "patch"
+    },
+    {
+      "fragment": "28-migration-window-generator.json",
+      "scope": "suite",
+      "level": "minor"
+    }
+  ],
+  "removed": [],
+  "overrides": {},
+  "date": "2026-11-27",
+  "source_files": {
+    ".gitattributes": {
+      "sha256": "6bdb6a2e4d2638abda2816f5005d2e86c341add1563305d692f65e55a7b171db",
+      "kind": "file"
+    },
+    ".github/workflows/pages.yml": {
+      "sha256": "5af7d749068cd4ce58970efffed508a9e315587c88c44a890e360b7a8a528603",
+      "kind": "file"
+    },
+    ".github/workflows/promote.yml": {
+      "sha256": "583344ff7b3a4ac157742766f1fd82ce70e250ffb2e2960ad9c8eb071ceca9e7",
+      "kind": "file"
+    },
+    ".github/workflows/release.yml": {
+      "sha256": "7cecf00fa3f586be73dfc0b2d0ca8b5c0be01b5d34233f55a9bae18f5788ef43",
+      "kind": "file"
+    },
+    ".github/workflows/tests.yml": {
+      "sha256": "dfc810a970716c0ff664cdc909d1d23c1f1ad63b1630f6008297187b45397869",
+      "kind": "file"
+    },
+    ".gitignore": {
+      "sha256": "53f0c100a33a56ebada040287b3d0f5dbab21c6ec6b66209fec5515c508f1144",
+      "kind": "file"
+    },
+    ".nojekyll": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "file"
+    },
+    "CONTRIBUTING.md": {
+      "sha256": "05e94b560f1e2fea08662998de11f354d91203f4fdb5708b6e909801745f7ab6",
+      "kind": "file"
+    },
+    "INSTALL.md": {
+      "sha256": "7f6157e751eb8a93975bc5306c3a86912a786a2da75f3b3046521ed404151b0b",
+      "kind": "file"
+    },
+    "LICENSE": {
+      "sha256": "430a287aadb76895d8cc8adbc378a6353d1d9fb8405edb338a6f718299fa2593",
+      "kind": "file"
+    },
+    "MIGRATION.md": {
+      "sha256": "56c1d7594ec816bf3a830fcf11fce092abd339f0ea15c863655f417fa3fdbdc8",
+      "kind": "file"
+    },
+    "README.md": {
+      "sha256": "59adc5857269c040d4ccb9772319de3337bb43e3f200390ac210c76175021752",
+      "kind": "file"
+    },
+    "archive/README.md": {
+      "sha256": "166e4a791fdd957b115b557426af71671cd7cf650b091232566a89d560a877d3",
+      "kind": "file"
+    },
+    "docs/ci-version-audit.md": {
+      "sha256": "4241ccf6a09e38eb4f56e10c96f078546be054de544a6a7d30928e223dd731c6",
+      "kind": "file"
+    },
+    "docs/design/case-state-authority.md": {
+      "sha256": "b38bd6d22f9bdffc7b7fca53024447309e60cb7cd3234841eff8b7aa0f4707ad",
+      "kind": "file"
+    },
+    "docs/design/client-drivers.md": {
+      "sha256": "795b024343f6c5c87ef49ffe69316fe9c08583073b6d502a92a90ad7de2258d7",
+      "kind": "file"
+    },
+    "docs/design/client-protocols.md": {
+      "sha256": "c9419882a63f7e83d337816edc5f8713f33154ebf95beeea2c3845c2cd11daba",
+      "kind": "file"
+    },
+    "docs/design/inventory-recommendations.md": {
+      "sha256": "fa9ba70577da60fa0d21f58998db6327985dacfae7924648b819deb27d732d05",
+      "kind": "file"
+    },
+    "docs/design/mcp-skill-multi-project.md": {
+      "sha256": "fb4cd547f26f4ad8ff39415de028e0fb972f23166c57906f0ed26e531c8d25cc",
+      "kind": "file"
+    },
+    "docs/design/opinion-progressive-loading.md": {
+      "sha256": "5a359d6f43546c5ab86759b77041b6b46adb5ecc6216f242872c5e22e0c7d8b5",
+      "kind": "file"
+    },
+    "docs/design/opinion-skill-import.md": {
+      "sha256": "87b63547b0e34320422e63946f31205825b5fc651da33a6b1dd632dd27c090ec",
+      "kind": "file"
+    },
+    "docs/design/opinion-skill-routing.md": {
+      "sha256": "07e8d164f54d9be3d401d7de453e4f79d5ccabcc54a975537ca308673380bfe2",
+      "kind": "file"
+    },
+    "docs/design/progressive-loading.md": {
+      "sha256": "83e3a19aa4ffed0c886b5d029f041d22f1f06da28c4a48ff61d378f8070bf3ea",
+      "kind": "file"
+    },
+    "docs/design/release-hardening.md": {
+      "sha256": "1aefb794936db822ab35811adfdc900481149fc525289af2c12e478c6c2d08ed",
+      "kind": "file"
+    },
+    "docs/design/skills-mcp-menu.md": {
+      "sha256": "1821ed8ae22c7f618a7c721e3ff8e6b3abb303975ba24763e3da1d118bf770f5",
+      "kind": "file"
+    },
+    "docs/i18n-policy.en.md": {
+      "sha256": "d965b82fe1c9f6d2cbdf2452d82789a83fda80fee5e82d0fbdaa38fe18e586b1",
+      "kind": "file"
+    },
+    "docs/i18n-policy.md": {
+      "sha256": "fa5bb55236942704c32f2d92dbf269ddb988ca6e73543a77cb87bc59f7f5a275",
+      "kind": "file"
+    },
+    "docs/release-acceptance.md": {
+      "sha256": "72bf0d3a0022622521d2bed37d8fffaa7fa91def10c118fb583775d7abe9d205",
+      "kind": "file"
+    },
+    "docs/write-commands.md": {
+      "sha256": "5e0207ff21a382c03a6182c0d72100efe9920f0ead205f7f60ced46c487f2796",
+      "kind": "file"
+    },
+    "index.html": {
+      "sha256": "a757638345c525565f691b3c85daf9adfdf3d424dcec610adf805b4631c8487c",
+      "kind": "file"
+    },
+    "index.json": {
+      "sha256": "3b8d56607504a5ab0fe60186467f6d35eebfaf315032b59954e7fc8a4f5857ea",
+      "kind": "file"
+    },
+    "llms.txt": {
+      "sha256": "4c26140f5cb1a3d9481a39217321f4d511f2627386cb1bbb9c8673408dd05b5a",
+      "kind": "file"
+    },
+    "packages/cli/.gitignore": {
+      "sha256": "6aeb32af681a9f4cd292a1fb8393c7d7b815736c1118ba5c3865e92c7e7616d7",
+      "kind": "file"
+    },
+    "packages/cli/README.md": {
+      "sha256": "69883fb98f57f086e47325145a4cc8f2760542b6358e4ead22a997af4ec95579",
+      "kind": "file"
+    },
+    "packages/cli/README.zh-CN.md": {
+      "sha256": "480963974304cecd8aa0f38e687569a0e1287f5af4013f41b3ce659e9fcc6da1",
+      "kind": "file"
+    },
+    "packages/cli/bin/agenthelm.js": {
+      "sha256": "2a5b874d97c4ce4b4f52ea48d0bd6d9f19671420322b145498d546fe0f67e54f",
+      "kind": "executable"
+    },
+    "packages/cli/package.json": {
+      "sha256": "67071e30a726ba5497df616c90317050c763524f24d706323185a7552d742406",
+      "kind": "file"
+    },
+    "packages/cli/scripts/sync-runtime.mjs": {
+      "sha256": "b682f28676b226cacb3cf018f8df1e386d2c19ed8b14edc6ea379280e244c319",
+      "kind": "file"
+    },
+    "plugins/agent-pack/.codex-plugin/plugin.json": {
+      "sha256": "85f6793795f2b94546fd449e5c43e1b645eda7818593f6350dad40e725cbc041",
+      "kind": "file"
+    },
+    "plugins/agent-pack/.mcp.json": {
+      "sha256": "ea7e3368798d7387bba1989b732c47a39d5fad07cd951ad3b0be0ba05a370d46",
+      "kind": "file"
+    },
+    "plugins/agent-pack/hooks.json": {
+      "sha256": "b72bffc55e3a584504bb3ff6de81a203f11bd06c27e61e03de0ce2a3b33b3c3e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/hooks/hooks.json": {
+      "sha256": "866f39c2f7447c9dd9b32f654962207bfc87c3ca907f21e5abfa0b292a939cdf",
+      "kind": "file"
+    },
+    "plugins/agent-pack/mcp.json": {
+      "sha256": "b9d6fdc0edaeca21c5b6ecacde6973f23da33da2508f27694a209b0ad475e7e0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/mcp_config.json": {
+      "sha256": "efcd14d1400933e56203d951f0b9cfb31dab744098be329339bc8d8a79cdb5db",
+      "kind": "file"
+    },
+    "plugins/agent-pack/plugin.json": {
+      "sha256": "660da81a61a929be20fdc3af37f1ef264bee624ef24d4ebe6807175da9ab1623",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/capability-config.md": {
+      "sha256": "8e94902613206f92d2c32fc0b8735ca01c2366e7766b5fa37e951b4e0f67d1e9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/check-opinion-migrate.en.md": {
+      "sha256": "a278058cbb6b9c5231d04c9e41b578c8b5002a841ab0040330b46f830d0cc5df",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/check-opinion-migrate.md": {
+      "sha256": "5d54267b5a0793463cb027816492bbec88a8bb066a4300362b7ea9cfc42ddd05",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/dedupe-contract.en.md": {
+      "sha256": "39964bb5570c7531f9027094c3b509bf273e21d79dd0448344a0a3e421b8ab14",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/dedupe-contract.md": {
+      "sha256": "851cd5a017f51e1498a482b5c7cc352307d88fc7573c126f412a971b00875850",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/inventory-contract.en.md": {
+      "sha256": "6c10d74a59c305bb77303ccc619519eeb8130c091a84b45f97ef1924cc75b38a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/inventory-contract.md": {
+      "sha256": "7488f64e973892e29f15d83a3e7b2880e234f2ab554f54351ed823dc55f78be3",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/local-only.md": {
+      "sha256": "8672e4f1809de5b16c8586e3ea0b0ba1ce740b4315f3b1192797da818d55bdfe",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/nudge.en.md": {
+      "sha256": "1089926433bed878d86351ee9b8bfc03d4fe7cb06296bde87d182a121ff4252f",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/nudge.md": {
+      "sha256": "94aea110a9874231a63ba9bb97dafccb53c105bddab884ce3fa637fa01427b68",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/relocate-contract.en.md": {
+      "sha256": "d15d6ed4b05cd343a17e67896b3bad83aa7b27ad9e29ebb486002b6312da8205",
+      "kind": "file"
+    },
+    "plugins/agent-pack/references/relocate-contract.md": {
+      "sha256": "74398cceea539ed655ef8dd1c016847ed236e23936fe70c95889f31458a4372f",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_cli_install.py": {
+      "sha256": "361ee404df273a1001da421f6fd2a63e10c21922f8d78fc4a2ea6a50615f6f66",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_clients.py": {
+      "sha256": "88227a051802190a5feb44178de7dcdd238f516e22b81a4cc64888b9bad247cf",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_config.py": {
+      "sha256": "f19b1ef5ffe0f0e1d48328e37ae8626a3dba456a0c6c9441e12664069bfdd1c5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_dedupe.py": {
+      "sha256": "fbb4f5a3b16ee99a87ccffcde6e1b7de8370936929f2903506747a95946148db",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_desktop.py": {
+      "sha256": "d5771e4600c7b68491c541a9346cde4ed19b7576747bd769794e1f2cc1c000ed",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_ext_common.py": {
+      "sha256": "3a6899a4bb6a256c7149673a5eafcf4c022bf15decb5352f2d24fc1903374c19",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_inventory.py": {
+      "sha256": "1974e507d3c3b4f6f9dee7caecb49006e09ed7ee19707a55aba0dd9ebf8ba2fa",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_mcp_json.py": {
+      "sha256": "81a81c088057557ac7c61bbb166323bd9e662274bfde9f86c754526467122c16",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_mcp_move.py": {
+      "sha256": "f2504cbe6157d79171d1bc65d6f29aac2b5f21a96da2de26c1cc424ca1d7a088",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_mcp_target.py": {
+      "sha256": "38fe7889e1872673d4b0801076dcb5ab8ccfac3b98323ca36d9c0f26a58aa4b9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_mcp_toml.py": {
+      "sha256": "296ef63fa8fcca74de4f20d5d76df427f5dee78d5dab186da9797ab9ec4ea475",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_native_package.py": {
+      "sha256": "ce3b243b6bdd6fdea7bcf42508a4fd3c8d4284114940afaeac14b65264035029",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_nudge.py": {
+      "sha256": "0ef5ea4346051e5a4d3c48467a9c070f4bdf75f81a83c7f61e14f1e32a0d9bf7",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_probe.py": {
+      "sha256": "89546f99f6ed62ee1644b2791f89502daea34a86d9fd41d9d795747d79662b75",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_reach.py": {
+      "sha256": "beda309dc6028c6facf6cf90077142f611faf1f49d745c4459e34658c69096ad",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_relocate.py": {
+      "sha256": "1986ccb598cfb4e405acb53497d1a93a8e19918b66fb3bcd7c55fe6a871335a2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_store_read.py": {
+      "sha256": "af083ae670e27aaf9a4b841c220ee173012202a1d25acd41a9784e9ff7b5636b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agent_pack_sync_scope.py": {
+      "sha256": "31168be8105c227be93e2ee7525a33230db7d014fd5189b40c0c9c2231d6673f",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agenthelm.py": {
+      "sha256": "2ced562520041fd56faa1db6456272665aa2f8a76e6373025005350c9d5db963",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/agenthelm_runtime.py": {
+      "sha256": "f432f1d0fb515b54f7dea21994136ea26fc31ad4b4b92cee2039b76a351117c1",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/drivers/agy.json": {
+      "sha256": "deb6ed71b81f5dad16ff7c1951fd1dd2ee2a57366648028c617afcc1a1134dbe",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/drivers/claude-desktop.json": {
+      "sha256": "d1c38a2e283d8c329b8b74bd3dc1d558012e525f654d8707d2aa743a79396b60",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/drivers/claude.json": {
+      "sha256": "1657f50c02cc04347b68e16beed6814c8e9a24dfa783d4a131fda495a7b12d1a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/drivers/codex.json": {
+      "sha256": "7ea9e34c92711bbb831d0a14963d379c51501c34935a19f0420d6fc53bcf81f0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/drivers/cursor.json": {
+      "sha256": "fab3b7870a520b6239220ae46b14ed3e8eeed6a3832271d3be326f7c783900d4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/drivers/gemini.json": {
+      "sha256": "3ad549abee2c99143deafbef21a9316070be3347048231a9932f584c101b0a73",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/i18n_agent_pack.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/local_only.py": {
+      "sha256": "20719347faec39b2420b2afdb60953024e7e4022f5b6a737b6ffe02089e6b5a9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/locale/en.json": {
+      "sha256": "2c90a744a8284c70fbeb212ca1b8ee3f5ffa2d7a91b1531ee7fc052233895b97",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/mcp_env_launcher.py": {
+      "sha256": "3ee9eca4cca44d82bf83a96f038f8562d10d872d3bd93c2ef89ff6ef19dcb11d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/mcp_server.py": {
+      "sha256": "9ce7ee8a3e88759c7bf3c5a154fb979c53f27028d5d900d6437c868881b7c264",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/nudge_text.py": {
+      "sha256": "1922b5c421b88dbaa5dc729a49d1bd1bb8c8d95054203da998a73ed0363f06e7",
+      "kind": "file"
+    },
+    "plugins/agent-pack/runtime/user_settings.py": {
+      "sha256": "cac8a33bf6c8ae0ae132a5aebff1d6c060238d3fd1b3210b1da2103e1e6e422b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/skills/agent-pack/SKILL.md": {
+      "sha256": "10cb9146b5ba52e7b8ecf5fc6c00ec27e1cf180d5b556dd07733eeb35ab93a38",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/builtin_drivers_v6_14_0.json": {
+      "sha256": "39a93e2599a6ef4efcd38de42d1095ccceb86d7a67f7283f554c061c7e79c621",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/agy/bin/agy": {
+      "sha256": "edaef4c9051b67fecf0c36d7f23ec5cdba10f79741822e46e9b8e7f224dcd8b6",
+      "kind": "executable"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/agy/home/.gemini/config/mcp_config.json": {
+      "sha256": "5c7dfc9f74aaa58d16e593bca6807042742074a61ac4ca6c83752eef2249a544",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/agy/plugin/hooks.json": {
+      "sha256": "7d96a9dc6e97dce616a8af23c1eb9675ff91d9c81d95484b45ec3a4112ccfd88",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/agy/plugin/mcp_config.json": {
+      "sha256": "e9e2c24ffb838b9ee2d40cc993c5f4c3d7c40cf28bf6f15ba9be993db0aba1dd",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/agy/plugin/plugin.json": {
+      "sha256": "04bb6b928276e798b4317c92b4f124994928a367da65b772aeac8936e03c7b1a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/agy/plugin/skills/sample-skill/SKILL.md": {
+      "sha256": "bd48ffa0efbed045a8da2c4cbc01aa97480104dd9b3f855766a00964b46f3ad0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/README.md": {
+      "sha256": "b10c4f3224ddb9fd06f11e6276244a01a1cf1e5f7581de166a0d34173facb810",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/bin/gemini": {
+      "sha256": "deda70bd938c5de44726964e964cbea0cc2c8431d1fd9d92f27a30d46f248229",
+      "kind": "executable"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/home/.gemini/extensions/agent-pack/gemini-extension.json": {
+      "sha256": "2f4d81955b8563eb66a7c618bcd5fce1ba44fb0e8545769d99ca947eef14a0c0",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/home/.gemini/extensions/extension-enablement.json": {
+      "sha256": "75799578c97fc246f21bb2b6a9042aed930ebebf3f2cd025c1650af3aa333d63",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/home/.gemini/skills/linked-demo/SKILL.md": {
+      "sha256": "524e229000f7ca071d17aedfafcfa86edf139ed4e8557276f2e73fe0718e31db",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/package/plugins/agent-pack/gemini-extension.json": {
+      "sha256": "3e6dc663ef21659d6adefc042c6c00e69299024da764bd60812b7c454c4fc851",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/package/plugins/agent-pack/plugin.json": {
+      "sha256": "425509aaa8b89d4ba691be4376357683326142613036b9eb6c665a045886aac7",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/package/plugins/agent-pack/skills/demo/SKILL.md": {
+      "sha256": "3ea8908725b2e2d32cbbdb4b62dbc9fb2eb008cadd6f5482c9588b122ccddf98",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/package/plugins/agents-init/gemini-extension.json": {
+      "sha256": "23a17fc0bbed14e13566c1eb258097a5b01e0ca96a745a314ec7683c0997a1b5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/package/plugins/agents-init/plugin.json": {
+      "sha256": "7a97c3d706fb0923c2fd552aee62351b15d92a118ad3a49a9256ad8ee81fbdd4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/fixtures/clients/gemini/package/plugins/agents-init/skills/demo/SKILL.md": {
+      "sha256": "3ea8908725b2e2d32cbbdb4b62dbc9fb2eb008cadd6f5482c9588b122ccddf98",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_config.py": {
+      "sha256": "32871ccd59c60b5a26fa8e9848fd81b038a5e2fc82fb5d8093ba46aeea01c0ab",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agent_pack_nudge.py": {
+      "sha256": "66987846b72d6ff82a63ca730a935238f998842c5496f23a966bf5598a9242e2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm.py": {
+      "sha256": "76f431be53d0f0f0e27122d94cc8dce722122d49595a21f2261ec337e30634eb",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_check_opinion_migrate.py": {
+      "sha256": "90e0e6782f7de22318390c335c9f30661c546f8ebc9788c9dec9b4a26561742e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_check_output.py": {
+      "sha256": "355cd7e3de621d2a13ee46a72799eaaddeed7da19208155b4f3bbbfec2424c16",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_companion.py": {
+      "sha256": "a33eaf61a9b56c7a2681051636c9bd28024df9546726c572a65f34adab1961d2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_lock_errors.py": {
+      "sha256": "c8c6cde5b14c25e7934b6293a4730a65cf1bb5709da5f7811cdf5191374507ca",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_content_merge.py": {
+      "sha256": "3f05cd318a3d366199cb329b5a685e6c5029c7edc3984bb4c531eed60418f334",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_cursor_release.py": {
+      "sha256": "8d25a03c4a3725d1a4c6569eee8de861d52836812f5970ade599de194869ae07",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_install_state.py": {
+      "sha256": "24d65a7afb78cd3564ff1a7f0a1186c48db751c83b555379be5f375c8f70ee45",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_language_drift.py": {
+      "sha256": "350f5a45415f9ee17c01307d4791a924350cfd4a6a40913cbb87a792267cc74a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_migration_window.py": {
+      "sha256": "53e3800c50a5fb66fed6321b27407cb036ae5781265909aceee2fe5128d10b99",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_region_restore.py": {
+      "sha256": "bc0b94f43e546c91d15eb8633f821983d41802468c7fb28ffd04679ceb2c03ee",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_reporting.py": {
+      "sha256": "6b43db0895d67f4adfa6a7bb01574006604e2488ef80f5464e57511fadae05ff",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_runtime.py": {
+      "sha256": "92fb92cdcb1aa49a4a150e79f15ddc23c43763b9c6c0b53dbf043116aa2d132a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_scaffold.py": {
+      "sha256": "19e04bb6b12b103cc46572ee7240aff6763a4d677a60d1ccec8321de579b18ec",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_update_path.py": {
+      "sha256": "cbffc0f20d5c0c13e4af69c1af675c82e7e973a09d1f342909260556c4d2753b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_update_wording.py": {
+      "sha256": "66e7b8816d45daff8f0160b7b55cb7e8c2b68effe57bea70a23b37fd69f4e54b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agenthelm_version.py": {
+      "sha256": "c778a3a9e48b622a24f17ec752b90ab2e0d1254c5e91a21c8b74ed21d39ce06e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agy_client.py": {
+      "sha256": "6f6d1878f32a1156f15b1f3507c315714f8ea450c39232eb103d46072c583112",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agy_hook_payload.py": {
+      "sha256": "4727f64d57d19ca340ae5156e3b0f3fc0ad194ed2a5c8f4d89a1b3dac8d3313d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_agy_static_files.py": {
+      "sha256": "9735ef5b29dbc6301ee2d8d2783908c2d824a8e7b29a3ccd7e12f4eae55e3733",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_candidate_latest_hint.py": {
+      "sha256": "99a8c528752166a2c0a7b77fee922ada753f2948f4be73dc10b9ed2513fee3b3",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_check_duplicate_hint.py": {
+      "sha256": "0e6a28fb6695490c6e06b463cf048bb42df43d49553465ca6cc8f06829145839",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_client_declaration_guards.py": {
+      "sha256": "824087d5287c55c6284d183333ca88cee182b7cf225efe854495dfaa8098498e",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_client_declarations_selfcheck.py": {
+      "sha256": "18966b8fc6dd3d5daf7b82a7aef02fbe937dee4e72fb816ad3078be31212c179",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_client_drivers.py": {
+      "sha256": "8765e820843c6f07739e5f6cda95e0dc243202e4dab74a6cd49d16a1707905cd",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_client_protocol_guard.py": {
+      "sha256": "fe4e50e5019384607650f88e2f867abf396e7d6b3288a87ef422a7b86d5cd760",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_dedupe.py": {
+      "sha256": "a957c7571dd36a78bba94257e8a128eb5374eae6b1bee94be94e415ffe9fe6f1",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_dedupe_mcp.py": {
+      "sha256": "25e3e7bb1f745109704953ce63fc1dcefafee7a1ce27d2b342e960e275377c19",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_distribution_declarations.py": {
+      "sha256": "517d3a523d77b6f2e36571df5f29da8a07b170742b5cf71ad1d6b9e20b4ddef5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_distribution_regression.py": {
+      "sha256": "f120a34a7c4de6504913ee87f3e8dda49d441e9822670657c90b7c3ec8083d62",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_gemini_client.py": {
+      "sha256": "f9027be9c940c6800df9cb970682cf5c9e14e1e23f8bea156d83209755bbf900",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_hook_capability_clients.py": {
+      "sha256": "6cd7ac94e247d73219f7906eaadb6ce7287da03026b88f4abe74f5a23ee925d2",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_hook_declarations.py": {
+      "sha256": "6a402ce919ca821ff847b329f3c6c9acbdab8b0287447305523aa2a5323835b9",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_install_residuals.py": {
+      "sha256": "c4cc457b9601a0885d02a0dcd3622f8cf36e519b61eb1e285a330084e501555d",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_inventory_desktop.py": {
+      "sha256": "44a79c626b4eff2a085d5248e5bccdfa825fb9bc48e7dcb6a67eae2b7c18c4bc",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_inventory_observe.py": {
+      "sha256": "e3f0e3b74de5c05dec183928161e7e2fe34c70fee5eec5ba7174194997171116",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_isolated_entry.py": {
+      "sha256": "c4b75907d5e51c66b257d229d7209382442f93f5bab3e7b4235185f02ed7b7c8",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_launcher_plugin_root.py": {
+      "sha256": "fc72812cd3de695362346919e1da84ca0b3eab99b39f0282c08d7c6e224782b3",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_local_only.py": {
+      "sha256": "7612c56891324e2965d1078e3ebe2baa01963a6524ed95d2b3d12c9920b4fa23",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_mcp_placeholders.py": {
+      "sha256": "d1b45a6359260eff244fc69eb8f5d124d59da35c2eeee3ed44bdb78d4464f574",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_mcp_target.py": {
+      "sha256": "dca7851b1730e6dee0e65f8a7d297716cacf09652e9605e7149e9f71cab2bc9b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_native_package.py": {
+      "sha256": "10df150ee687b109191bd151770c128f843d4f45a76e7906e0632e9c86714e71",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_confirm.py": {
+      "sha256": "3710d8c92bad6668bcd786370c66549ed5380418d62727fdc0187145b3a26b83",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_shell_quoting.py": {
+      "sha256": "da1aca44e3cdce6dc544416b3a215cb8a34598aca6cacf18ee0f82a5b757c4f5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_nudge_stable_hook.py": {
+      "sha256": "3de1dac8252dbf976664fc92c5ac77b6b1ee435b8108f15755cb876cdcca34fe",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_project_skills.py": {
+      "sha256": "a0b5d879d557b12ebc7675fef23641f55bcceac2b8288acdf13553b547504eb4",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_project_store_write.py": {
+      "sha256": "6c6e92b053861377c5a398c9055839c821f95d943988146f09c38b5a6c866667",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_rc_acceptance_polish.py": {
+      "sha256": "7c1d7ccd9e70a801f512accc1082d454e083121e3fb560b5b2da4596f562a987",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_reach.py": {
+      "sha256": "9724c0a976037f9462928f3336733f96917353599622d1ec96b7e1b228ee3379",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_reach_plans.py": {
+      "sha256": "9fb1d20eda2dc38993134c52702344bff1048ec92561a090d6e945fb4dda3ed3",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_registry_read_side.py": {
+      "sha256": "d1b21486e14319ec07fb6e84353b963d0bc4dcfe6ebf598f1e95f4addb4c2d15",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_relocate.py": {
+      "sha256": "06882a24a1a39667b42c34e527c01cba2f3dbd0cb8a984cc4f8dcf1de0041173",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_relocate_mcp.py": {
+      "sha256": "6488a2e69bd079f45854882b067c5506f4d3584dcae03182f5f5563cb177b9f8",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_remote_mcp.py": {
+      "sha256": "6647992df50f61ef0ff455934f76d8ab7d704b1bcefc228714c5988351a3df56",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_resolve_plugin.py": {
+      "sha256": "8ec45dedc1c0428e8406a448f2c8dca933c884d8b5c0f299ed23bf51ec8f3b09",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_retire_residuals.py": {
+      "sha256": "0af321a9e695ae8e99383b667ca279ba32d354ecb1b9401438ee6f12fd75f5ae",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_scope_declaration.py": {
+      "sha256": "2416029f47302de2e04aa8ba56cd4bcf40792560ad839af9ef668d18243ea708",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_only.py": {
+      "sha256": "e950c59d80d6e8a4ce57102146194e6e50e3769d831094fdc47ec612d5653817",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_preview_parity.py": {
+      "sha256": "7d353fca28be8509a220c34299787ffabf6610418edf16646b8ddaee2bdec69a",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_write_declarations.py": {
+      "sha256": "9de30a4f680d56b15f6110155ec5af1a40dfdfa4fa0edb41fa33545e4cb485c8",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_sync_write_regression.py": {
+      "sha256": "200a606266937131229ffe485e1b1cd3f065eb11c7706fd7f8d13f9db8c0d0b5",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_synthetic_client_guard.py": {
+      "sha256": "18d79c3b777b98f6cde4a220caf1e045b82c8390dd410bfd57892f6fc4c3492b",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_user_settings.py": {
+      "sha256": "1256bac96fb5d8a0bbc7ecb6c2a5dfb9b884f935146c2ffd88004269c0054a19",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_w1b_upgrade_path.py": {
+      "sha256": "8ca0f19cef615913522b8cb59768f0be6b22b4cd2a68f1d8b65ad006c6885188",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_w3g_followups.py": {
+      "sha256": "a554b3343c0f6e679d2ff3264da7ffaa7494f391efa71053f7c1f42bfc2fbb17",
+      "kind": "file"
+    },
+    "plugins/agent-pack/tests/test_zero_byte_config.py": {
+      "sha256": "30ce3d515f7f689aff423096e1244c436ddf9063cffa9e2ae0ffb7b6083386f8",
+      "kind": "file"
+    },
+    "plugins/agents-init/.codex-plugin/plugin.json": {
+      "sha256": "4291dda69ad0990db34dc75b81fe1197b89017cbb5a493a1375b1a471baa5f03",
+      "kind": "file"
+    },
+    "plugins/agents-init/content.json": {
+      "sha256": "00d8c5614fdb6b9139651e7c59cb3324070b34e5e40a67ba0f9c725f6b366fd3",
+      "kind": "file"
+    },
+    "plugins/agents-init/plugin.json": {
+      "sha256": "7c59c3de2f075e1e3c594f0182d780790a919f66e2ba4b91a4398c9eb329623d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/AGENT.template.md": {
+      "sha256": "4fe1115569c12ab007cd7d388f49c2a4c579864d5c0bf04a3180ea4b0796220d",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/SKILL.md": {
+      "sha256": "b2ee1720fa53837e418e7920209dde7a301fb298ed3f1ff5e85510e662285cb0",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/index.html": {
+      "sha256": "bb92e5c822332097a54e61bed39eeb4346676e0eb0b9870fb96352fe9ef02620",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/launcher.en.sh": {
+      "sha256": "105a8800889d4479b1ccb3cfe3ac7e1d92cb4b9c7642a089d64c297eb80e8189",
+      "kind": "executable"
+    },
+    "plugins/agents-init/skills/agents-init/launcher.sh": {
+      "sha256": "cf27d6cca786905a192446ea4eefe5635942914c3358c78d12117af912107cad",
+      "kind": "executable"
+    },
+    "plugins/agents-init/skills/agents-init/project.schema.json": {
+      "sha256": "bc0c0ca3a6cccf1afcb114669dec3d2d83a3b41e26527b541c5820e6b4312e5a",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/adopt.py": {
+      "sha256": "fdcec0b047eb06fdf88b6b72c84348b61e2cac24e5511277e81e9c240e2446dd",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/baseline.py": {
+      "sha256": "b48b6768cc2f0afcee5d17ed8f0ba1627837196066f956f43afe22a4d8cfd690",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/i18n_init.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/init_project.py": {
+      "sha256": "7683161bdb6eeb2242c15cc2d8245326cfe197eef198c6c4d94a493ea2c3e31a",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/locale/en.json": {
+      "sha256": "a534f7493f849b5c073f154f64e98e37202039be69621db1121f07d3493314d5",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/merge3.py": {
+      "sha256": "85bf4fffa61dce7186904244ea38744ff4c9d345438300d8cd5ca433d6084ae2",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/regions.py": {
+      "sha256": "70cd90d25a96cffdb7705566ed3a2fccf036bff88c4180505993837458e11591",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/scaffold.py": {
+      "sha256": "0028e700d643909a9aca41d4ccf538e6374c05ff9c7b92ddbacf9fee36ef9ddb",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_adopt.py": {
+      "sha256": "868e42c3b734fa4398095fd6fdcd42056c607ecb60bdb0183917e67dee9b940b",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_adopt_recovery_preview.py": {
+      "sha256": "b782fa67218ebc61d55481b10602cf798c3eae813b4b349345970003cc7fe802",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_ai_contract.py": {
+      "sha256": "fa9f4aece53a8558da67e16b5dcb3c50c29533d2a36b7378a49093747d522a4c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_error_messages_i18n.py": {
+      "sha256": "0aa40c975707a82996db7b68dabfd554edaaa620c4c833d5a93b2fda5f3884a2",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_fixtures.py": {
+      "sha256": "5348ead601c632264ba2ca9772eaf5d39d4020b5e260b0d9636e43059bd36407",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_init_project.py": {
+      "sha256": "8a7a323469839f2be04d907de0ee8b43d5a2b0629dd220d4a716cff8253b8e23",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_launcher_language.py": {
+      "sha256": "0cf1b35102bb79d72a94a7470e143c9f85b51b41e8291a8fd3a152a3610997ba",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_merge.py": {
+      "sha256": "940079db6033784251141703272984ebabd700dd03c5fd006cf8265660e47f7b",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_multi_value_options.py": {
+      "sha256": "327711530005de38042eff0d3aafa09ab4b70f8f994524c2293230968364c320",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_private_ignore_language.py": {
+      "sha256": "4f23d4b18b55c5d0a7eda63587c76ea326b0f77196b01cb39b3c2d9ab8b77333",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_rc1_to_rc2_rehearsal.py": {
+      "sha256": "bc6b686cb14c9a53729fbfaddfd6eaaf8cb773ff070ccbf3c647985618d5ee3c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_render_input_drift.py": {
+      "sha256": "8dae78feb2af49ee5a9a1f51c0aca82b4657b463724515517467126501abc365",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_scaffold.py": {
+      "sha256": "49331cc57e0f8dceeb58ba7a90502f712c43ac21cc15dbde5ad3f2673ac59b2c",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/scripts/test_upgrade_matrix.py": {
+      "sha256": "bb09538abda7ff2c753423d0859be05c0b9f26ebbe87911447480c2591f8266e",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/skeleton.json": {
+      "sha256": "4a7c2ccaed293bc63ae2f3b3e6c8fa5e906292462f81c41a0fc88fcb22a3eeeb",
+      "kind": "file"
+    },
+    "plugins/agents-init/skills/agents-init/skill.json": {
+      "sha256": "0d84645a5e755ae8b59e40e289b4830ee690a52ac13d8d9dd56587d1297a32a4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/.codex-plugin/plugin.json": {
+      "sha256": "1db7c1e901bd077b7d27bb40e2889e88cdba3fdc4a40a81b9c24efd337d102e6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/README.md": {
+      "sha256": "246b5c9896eb0b8a1187626ecabb113aec48de0060e6f8f3612cc1a8e04d970c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/.gitkeep": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.align-requirements/versions/1.0.0.json": {
+      "sha256": "26b95f2edce0d4942b3652c624b270a29fd75caa1fc5717debdffca126241091",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.align-requirements/versions/1.1.0.json": {
+      "sha256": "13b83b21cf168b7aac9324f119781f8a7ef167817fccfc344248c06ad0b55042",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.assumptions-authority/versions/1.0.0.json": {
+      "sha256": "85b02b03bbf8447f703820026d9ebe6e9ac1182000c90451dad4c81cd23c23d6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.assumptions-authority/versions/1.1.0.json": {
+      "sha256": "9b09876d87f31e96e6fc72327b00f42ef33a75ced6a90aa8056c1c4a853891a5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.batch-questions/versions/1.0.0.json": {
+      "sha256": "2cad060df9195bf6f47083b0443fb92a9e1735989991aab34aae0c2651d18337",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.batch-questions/versions/1.1.0.json": {
+      "sha256": "3a94132fb0b3c2ddde4d475460eb27eee07de016474ecdb71ee79f80d80720d2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.bilingual-terms/versions/1.0.0.json": {
+      "sha256": "420531760d1ab5ffe52395a680597cb652574027e542fd4684b7166e14918c39",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.bilingual-terms/versions/1.1.0.json": {
+      "sha256": "a4088be89abc358e845ede0059d48e561e88db32244f3ff61e5f95315137712f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.calculations/versions/1.0.0.json": {
+      "sha256": "e54f87a7993d5908a1adfff07534b85af96a317d90b6eda6b84d3f8701331a18",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.calculations/versions/1.1.0.json": {
+      "sha256": "a63091197230f82018cb0d806cf316f047f56e45f3a60e4ddfea4704792d9244",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.chinese-response/versions/1.0.0.json": {
+      "sha256": "6bd3337a65a81251fad64555a7702016807c64e78aeb9709cb50cdc7325662c5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.chinese-response/versions/1.1.0.json": {
+      "sha256": "096dc9a1446ef259349f0cd26b284cfa62a3ce3dab445e7a0bcd44cdb0386c65",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.clean-deliverable/versions/1.0.0.json": {
+      "sha256": "f0af00b2666ca7146447f17c8e13ca01c9e0d73c01883797787b44c045b06df2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.clean-deliverable/versions/1.1.0.json": {
+      "sha256": "8d75b649d05a5c774ccde496708ec52fa369e1843d7138985585e8d9f04ec033",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.complete-options/versions/1.0.0.json": {
+      "sha256": "ef9ee103ee35dea554ae5d72735ebdeb7b0e16bf707b2362ef31be004c63110b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.complete-options/versions/1.1.0.json": {
+      "sha256": "61f68e08a26a7f05df0d93b784135d5f45883c025b14049e50ca076c6c4f3000",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.conclusion-first/versions/1.0.0.json": {
+      "sha256": "2c0975c3fba8d4553b69a714fd324a1240c10ba0429904740db853cf10d8f8d3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.conclusion-first/versions/1.1.0.json": {
+      "sha256": "56fb508b615bfcd87ccb3fe28e7a3ad8e3214ecf98b8a10d0c3e8ff1158963bc",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.concrete-titles/versions/1.0.0.json": {
+      "sha256": "019d017fc9181339f1f969fd3e81323761e28b755c4ef434fb6af4d55925f538",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.concrete-titles/versions/1.1.0.json": {
+      "sha256": "0b73490415ee802a7f56210f95fb4a16aadf317b3d7b0a1b454c8668d4b58c3a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.consistent-items/versions/1.0.0.json": {
+      "sha256": "dd7030332d69d2eb91a7b1af34a3ac37d49e4018365da1e7a2d10afd71ed66f0",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.consistent-items/versions/1.1.0.json": {
+      "sha256": "469d766d152c5e6016b40f819210def87431513d02c6af156dcf547c146e7070",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.device-readable/versions/1.0.0.json": {
+      "sha256": "0afce0068b778ffa8c623cc1ff208192f70e03434f0ace4fd303565ba728a75b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.device-readable/versions/1.1.0.json": {
+      "sha256": "4119293934f793261f9de6c0b284eaecfbbc631f097d962c5fef033f00acbabb",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.editable-diagrams/versions/1.0.0.json": {
+      "sha256": "68d293ebd061527d948e892b9f4503a74043ed37ecf2a922cdd9047f508e2ed8",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.editable-diagrams/versions/1.1.0.json": {
+      "sha256": "d99260419700ca8470f2d2aea5833e8fd3250c1565ee8aad22c9491a271a3d29",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.evidence-inference/versions/1.0.0.json": {
+      "sha256": "01593b17d08a67ee41b28d96e454b25d752fd5eccc341476a75d2bfb541884f2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.evidence-inference/versions/1.1.0.json": {
+      "sha256": "f44065db407191f229375f1a76a282468618e5dbd39dd014c4bbc6a33856b60c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-chinese/versions/1.0.0.json": {
+      "sha256": "6a6659917a0bccda3750f79727ea433eb63d40426aa2a212b65499a8160fc181",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-chinese/versions/1.1.0.json": {
+      "sha256": "a2ba7d257ec73f3ff8aae12407aab79e0f76e2c58ac30fd2607b14b0939f0218",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-project-language/versions/1.0.0.json": {
+      "sha256": "c29d447ac315533a52a6c242d7cc52b1668d9945c87c1f922dce261872730235",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.maintenance-project-language/versions/1.1.0.json": {
+      "sha256": "ce1cbd2b5cf976dbb618ff2b0a03fd4a2c75ea7cd90fd9cf5b3f4e7ea97f4504",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.markdown-structure/versions/1.0.0.json": {
+      "sha256": "3647daeb2f4e4f532c8f77a033703bd3b36bbdd355a1f1f6ce8ac1e19afb66d7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.markdown-structure/versions/1.1.0.json": {
+      "sha256": "5e026f87da514f3bdb3c883bc1cd202e0414dc656f0021e35b47223b76f48a9a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.portable-files/versions/1.0.0.json": {
+      "sha256": "f638ce7554a11e8f793b63ee01ea0ca65a8df405b3ca34da1ad8865960908057",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.portable-files/versions/1.1.0.json": {
+      "sha256": "d2af355593b8fffba6d19b558bb1edf23bf367f647af2d938d3cb9b1565ef0f1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-context/versions/1.0.0.json": {
+      "sha256": "c423df33e1ad8dbf7d060b15fb23b35b68ebf924beb76ac129b346e5cf46c917",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-context/versions/1.1.0.json": {
+      "sha256": "4c6f467b8fe75f878d4f946f8a8f88049d3a28dddbc18368c5705f84e4b47cb2",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-formats/versions/1.0.0.json": {
+      "sha256": "1fa5a40415061366227cdba554bc811bfabdc764b110adfdfedf5935e2239774",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-formats/versions/1.1.0.json": {
+      "sha256": "9ad59f85e307b0db19bdfb0d8bc31e26d39fb70523ea246980e7ab00a70f1e09",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-review/versions/1.0.0.json": {
+      "sha256": "054ebce7547cf7254a0d9d03af8b651daf6ae6361c921e3fa111aea7f9d96d4e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.report-review/versions/1.1.0.json": {
+      "sha256": "c607bd8730f9a48fa7dd0be4d7c404454618eb8f0340b698c3c3acec0784cb91",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-brief/versions/1.0.0.json": {
+      "sha256": "1d64ac6bedde9fd7205c6e517bb484acebedd08fe82f06aa761cf04bf010414a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-brief/versions/1.1.0.json": {
+      "sha256": "f50c23c0f658e9a2d14f491413e3f2819fba1eb4d8e5ba6610c166bc89b6da22",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-dense/versions/1.0.0.json": {
+      "sha256": "5dda9f066dae841df986a190f00ea0bc56c0d3b0ce42ebffa9b2e1910dc0c4b9",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.response-dense/versions/1.1.0.json": {
+      "sha256": "d77749efa3632c92ff4578b2c5fac0ec4f0e5d11649898a0e4a81908e212be26",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.rules-tools/versions/1.0.0.json": {
+      "sha256": "6f0657b70bd2e15e0dc68b95a9ef77234cd4af79d40a9a9f8a8158da16323a8d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.rules-tools/versions/1.1.0.json": {
+      "sha256": "230320a6db7fa104d10397835144980b2bb6f2d9764e1f61896e4a4fecd71575",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.semantic-wrap/versions/1.0.0.json": {
+      "sha256": "77890d37d6e21bf0568df250d5ec6398699c595728decf624d2f6ac8887802d7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.semantic-wrap/versions/1.1.0.json": {
+      "sha256": "109922c31ce787651ce8bdacb417d2a55eb59207b82a665a7867634bfbb899a6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-proportional/versions/1.0.0.json": {
+      "sha256": "4ba50387659bc4e4593026a2ab253abda0f9d0e8e959063957dc58d72dbd5dac",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-proportional/versions/1.1.0.json": {
+      "sha256": "270405661e4e8bc4e553da72cbd0b101c2b2dad83deb121e657f2f64612f81c3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-three-level/versions/1.0.0.json": {
+      "sha256": "c9c2c2bad29e79a649ce04c95c9a2cb5a7ba6b92e5318878d7d5a40e50df7b6d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.solutions-three-level/versions/1.1.0.json": {
+      "sha256": "e092af0ea720db5d59d727e778a01f1251aa8dd69a3f1cb1d4f3befd783b2838",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-compact/versions/1.0.0.json": {
+      "sha256": "0822de141431d920e6bf8ae0cc7a07641ad34e4248d252133f5a488fc17610f4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-compact/versions/1.1.0.json": {
+      "sha256": "d292b63d74d8dcb83516b9031afe4f60402b2e4e4c1db8bc2f9275431988dd02",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-list-first/versions/1.0.0.json": {
+      "sha256": "8e4d9f8d0382ca9a4a06a31e64bc402bfe1d2f8fd80f576670d28de26565fe15",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.tables-list-first/versions/1.1.0.json": {
+      "sha256": "27a37e8d5265f16aabed620bb4b6084707b5bd8412f3c7d55ad420ffd6cec1da",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.test-evidence/versions/1.0.0.json": {
+      "sha256": "5fb88ea8478601128a5662077beb8180126c3c7529a9e54fa4b324a47e1b9304",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.test-evidence/versions/1.1.0.json": {
+      "sha256": "e326dc4f447ff22ee270b7271bb9dc3414888b4e7f2c5ae3a889be58102ac630",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.versioned-files/versions/1.0.0.json": {
+      "sha256": "b5cc996847cf20f4764be135c4a5189a30f16dd26d4eaeda38bf6318820c256c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/rules/om.versioned-files/versions/1.1.0.json": {
+      "sha256": "3e8cbf610d5d5e1db63bf5c8fc5b32adf1d0489216cfc3248146a688fe17bb2d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/.gitkeep": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/compact-tables/versions/1.0.0.json": {
+      "sha256": "b0d988b5e62017ce4784466f590fdc3ac3693412541ab71f788beac0658c25e1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/compact-tables/versions/1.1.0.json": {
+      "sha256": "f0b724526a56c6aa9f22388a2696c093ae6d33fb7c04325413818def2008dd03",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/list-first/versions/1.0.0.json": {
+      "sha256": "3ea2774fb2f3fb5943d83eae3d36c637b4bcc6bbc45c54cf4428de0db1c4240f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/delivery-standard/list-first/versions/1.1.0.json": {
+      "sha256": "f998047856cf540ea66ef67146c10d4562f16d0e97b90d00184538fe97548034",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/chinese-maintenance/versions/1.0.0.json": {
+      "sha256": "3d268a6a323d4bac1afcd5b8539b65f4019ab112850b223c61ee06615840248d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/chinese-maintenance/versions/1.1.0.json": {
+      "sha256": "8e2cb128b93efc3e6c04c418fc68a16c32eb200b7231d3829b3a4c3423cd17d3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/project-language/versions/1.0.0.json": {
+      "sha256": "6f2d69873b198ce0cf7fac509cbb8f4702de37c8d98ff3c5ec31578022e0d990",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/development-standard/project-language/versions/1.1.0.json": {
+      "sha256": "5f0e8750efdabbf4b3de84258c1f978d103d60afcc157798b4271468595239fe",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/brief-chinese/versions/1.0.0.json": {
+      "sha256": "951aacd484989835be5811730510a103d2efe044342f275066f64765d747448b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/brief-chinese/versions/1.1.0.json": {
+      "sha256": "6e1fd5bf2d343ae3f769ba5df60e2a9754a147935a3fbd12272ff2488d956264",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/dense-chinese/versions/1.0.0.json": {
+      "sha256": "72479e811a3db0a9c50401a60f0c06694e00014a558ad1c20ed78945e99edcfa",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/response-style/dense-chinese/versions/1.1.0.json": {
+      "sha256": "8c2a06377aba9876ab875c32e9df33cf508dc2b5ac05b10d3363c68c07c36b26",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/concise-project/versions/1.0.0.json": {
+      "sha256": "efa1adfed739a206699cd6ae34b620d8c4717343959ffe63fe7ecc0456b16614",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/concise-project/versions/1.1.0.json": {
+      "sha256": "6ead723134faf73b2c63ea5f73b89b460bdade4a6c850ad50459450da152fcea",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/reviewed-project/versions/1.0.0.json": {
+      "sha256": "4b51fcccb57c237eee3fff56b2a73c86252bb7ee9cb5e71d1aa2cfc0d6062aa1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/scenario/reviewed-project/versions/1.1.0.json": {
+      "sha256": "056c2da8c8bcacfce3fe4da1c41e4c0c1715b1c8a5121a102e23b0b772359b26",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/proportional/versions/1.0.0.json": {
+      "sha256": "e73ea29f532d09813b00ed161e9beb7ab079eb56dda5ecffda1c30cc630d0bd8",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/proportional/versions/1.1.0.json": {
+      "sha256": "12724039f6f7a45d9846549a638c6db78daba3b156fd0bde5d4704687c951cf1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/three-level/versions/1.0.0.json": {
+      "sha256": "0fa27605f23901f7d120d5d6c4ee63f14dbe12c4da53b1e3287da3d4b68da5ef",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/catalog/templates/work-method/three-level/versions/1.1.0.json": {
+      "sha256": "1d594f1d70693d5c2a7498293c08b81d32cc23fa8609da3f163802f57f60976f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/content.json": {
+      "sha256": "36b7de66c932af3858c4a7e44915785296db8e3e5ed68ffeee846979f6046f7a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/plugin.json": {
+      "sha256": "16959a54d3b05d264e8c495ae0f5fc96cfcd1b8946ae1cce9f3ea967c0b0669a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/inbox.en.md": {
+      "sha256": "10139eca11e316a551cb4fde94439b9332be1d5b468b0e0e12371c9715ef187f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/inbox.md": {
+      "sha256": "c220215aa606a6e6627ae16bcb6bfb40a1439a4f4de7c0d0b992c3550b7364a0",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/lock.schema.json": {
+      "sha256": "17c317f70cb7f79a2c8e3bbecd89349cca989ab28d9bf63205ba71a7f92d6393",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/onboarding.md": {
+      "sha256": "715f3c6f1854447c89d96a22ba52bc7f069ab24858bbdf0a0509ebec341f35cc",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/profile.schema.json": {
+      "sha256": "fd74b5ed85339f0d63fd73a7d37867744eb1a029afd1d3321a9fcd3e6e4edd15",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/rule.schema.json": {
+      "sha256": "fdfe071a982ffaa8406a17bf843b62feb495a1afe33c3e8ebbabdcaba37abd4c",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/template.schema.json": {
+      "sha256": "e09d817be51125ee766a703fc6c8a6d327ef3974e2d2a63c7cd5c5c64845b7f5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/versioned-template.schema.json": {
+      "sha256": "0fccaa0024b5505c7d575bec69e68e037792fec291f36fe7177e4790d85bf242",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/references/versioning.md": {
+      "sha256": "62a6b2a42080bcc1c57c2eaf9a6d9914f5383c6aa9474887e7c4ae686bc3c921",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/constants.py": {
+      "sha256": "e2cad8fc6a6b5f1163ecbe5cc18f59b1fd21bd09830f3878009399a0678551b6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/context.py": {
+      "sha256": "7553cd632c70c9aad064fdc525eca97dd678af7f8558349cf025d3205b4cd870",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/i18n_opinion.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox.py": {
+      "sha256": "f37eaf50cfd5adef104674b7847026cb9bdb210825b5ee8f6daa88bd4f13cb65",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox_relations.py": {
+      "sha256": "c6fc83e1856fffe30d23eb7aecb9953cc0cbb0659f9aee3c1217f56bb243fe38",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox_routes.py": {
+      "sha256": "ba269a9eb62afa74425b51a795d7a134196ca2c6bae0160eecf9368e53a2a783",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/inbox_text.py": {
+      "sha256": "addd949e0eb169b18bcaf8ae46747ba47a60a3e7c865690418716f71c8a40d6a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/lifecycle.py": {
+      "sha256": "5bfe536405cd7e8205e5a2124c43ae29599cd063e874a6b4516ebcbcd89ebf62",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/locale/en.json": {
+      "sha256": "f0d6025c8c7478c94242a263e45c771007c4d86fbd327aebef69912e5c6c8eb7",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/migrate.py": {
+      "sha256": "908a5e296f3508a6bf26536db48736a4dd1d43a71f29d28d7bce9191bee9cbea",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/opinion_manager.py": {
+      "sha256": "7082cc87e0a0836e36599673c1a5d688546fd0a06042d060592db9049bb3e38d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/rule_lines.py": {
+      "sha256": "81d6ec2ffaaf7bbbf10fda030424d712feb97ba6dfaee4064fbcb9908a2acb43",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/tags.py": {
+      "sha256": "02aa32551716b2f2e0882a2b105d99653992aa610f4f238d7c998321154f7111",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/runtime/versioned.py": {
+      "sha256": "4fba5eee05f1828e67d2fcdbc4ccb048b9510ca6357f60be0c278cac6aaa2a77",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/skills/opinion-manager/SKILL.md": {
+      "sha256": "75db3b249c540522fa5e3c0be4546a2c5b451a3477d094f34066fafb640588b6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/skills/opinion-manager/agents/openai.yaml": {
+      "sha256": "0ee12b199e78e0456d95ea69ede4476eab507360a7f377f366e76b365e557a0e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/templates/.gitkeep": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.opinion/inbox.json": {
+      "sha256": "9b7c2b6d7bb373743311ee1ad3629638cd76a5660e33e18891afd8e2fbf3690b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "7574036e82e77b4aff6fe1e76000358fdcd18df9d032f57d31012c6feca6867f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/.opinion/profiles/private.my-opinion/versions/1.0.1.json": {
+      "sha256": "2f7cf3893b11ee99842bad4f2cc8f95fdedec491057962c8b1699f7534b342f1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/OPINION.md": {
+      "sha256": "a4ac717a5616b77b41c4aac0aa8ede75492b9292a7fa4d650a06b742b8154ee4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/adopted-20/opinion.lock.json": {
+      "sha256": "47c9b96970ad744b2eafa371c04ca5bbf4b7d4c26d162793e7132771524c779d",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "6983cae7f399458cec5870190a7f8b2aee9c182c07104161b21d32135304a8f6",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/OPINION.md": {
+      "sha256": "13f520d10006d6b94d1a1259baedb83751c7834f418e6ca3e7e58818267a3aa1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/atomic-20/opinion.lock.json": {
+      "sha256": "b31f4d2820c7b398da56241be6c203e890ecdab9ae3eb4a016cf0200f149dceb",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/blank/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/blank/OPINION.md": {
+      "sha256": "f1bb28acabba80bd125632ffeb9eea7c9fed97e7abc66fbfa0471550671cfb2a",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "473b933a131cc8c03a2f773f689ab9ebba02ddc72b671dcfa6a71ec6b00b1eca",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/OPINION.md": {
+      "sha256": "10df8c6c49e28193750324df2a7a604b71926597117636f6b7b9ec6c4299629e",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/bundles-21/opinion.lock.json": {
+      "sha256": "9d0896ae9c15235f2d7a2fe14d081a2d1b5cb0cc08537fa6ac9e3009634b6fb0",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "7574036e82e77b4aff6fe1e76000358fdcd18df9d032f57d31012c6feca6867f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/OPINION.md": {
+      "sha256": "419b89d3be5310024bad2e5478135907283f246590b2888dbccb0b247219a818",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/edited-20/opinion.lock.json": {
+      "sha256": "6502107d363f7af5bf92a32280d9e8b0435fea32a9b32c5adb6b13e0e81a0946",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/.agents/moe.sakanano.agent-pack/project.json": {
+      "sha256": "fc9fe7401c2fa101ffe6a68373ee97bce5c970349d3537b6319a47ed866bec60",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/.opinion/profiles/private.my-opinion/versions/1.0.0.json": {
+      "sha256": "7574036e82e77b4aff6fe1e76000358fdcd18df9d032f57d31012c6feca6867f",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/OPINION.md": {
+      "sha256": "da0fa79a99898839c39bfdaccfec4ac34c89cda75145a054418b0a5af6d0fc9b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/fixtures/migrate-v6.13.1/reviewed-20/opinion.lock.json": {
+      "sha256": "6502107d363f7af5bf92a32280d9e8b0435fea32a9b32c5adb6b13e0e81a0946",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_catalog_bilingual.py": {
+      "sha256": "7c1660faad62a8ced515b18f3f24bb7fb1ca0f8496614c94a0b7c59e409cfa09",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_catalog_no_routes.py": {
+      "sha256": "19f9523517b3e814d5317bac1a2447512d691a46130c379823bda49913cf5285",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_context.py": {
+      "sha256": "8b6d72db88a7868d4e75fa86ba4a6acbc907bd63bda52e4127879aadbc1420c3",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox.py": {
+      "sha256": "05fd733bb67ebad281c7587054e0cb0610f013e1d45226146b0dd52932cd61b4",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_check_revise.py": {
+      "sha256": "fa6ab890e74a5fcbdd5645b3069b0d6df729282705fadd2136f3af8daf3b39bf",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_confirm_modes.py": {
+      "sha256": "199a52eea7906f07d65469cc7962eca0f9ce46559daa31b7526d646e2f1c1118",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_fields.py": {
+      "sha256": "ccfe99148abd7f9813b00a3f40f7db1e3a2cf8673a866e060dc93a4366144aac",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_routes.py": {
+      "sha256": "8947f516aa12abfd50fedca9e8445cf27dc217da9f04f5e909998086dccb13b1",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_inbox_shown_gate.py": {
+      "sha256": "ca010d47cc7c95c019a7e221b17680a5fa6136a97faf8c9eed05eb66b5e85c16",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_lifecycle.py": {
+      "sha256": "0f0de228a46f9919efdb469a45c403a1caf21265885d0cbb98365b4c963b58cf",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_loading_budget.py": {
+      "sha256": "d58c1fca96bf5b3fe94153c6cc6eac7bdec3ae32d1402a7f6cc30f74e1be8661",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_migrate.py": {
+      "sha256": "b03ebf1ce563c26f7803b79eccadfe5e00cf841af2dc1b4147a30337b683fa11",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_onboarding.py": {
+      "sha256": "699263ac8a49481fb4743bf01f950c481f68018c461e4b637644fefcf2979bfb",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_opinion_manager.py": {
+      "sha256": "51cb89d66aeb5089805c716e9957773816b8955e89903df66b8979326c1cde9b",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_shell_quoting.py": {
+      "sha256": "fbcf26c48b9fcac33b2d5cb7564986b6601edaa2cce36bc285771e0cd4fef081",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_tags.py": {
+      "sha256": "9f745577856e0934926caf00a5119e48498a042fa46c7a8dcc40f52fca4d6309",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_template_loading.py": {
+      "sha256": "43542a9d9faf07b162ac3192431b138ae1236ad19ab11e05aa5da762a174a522",
+      "kind": "file"
+    },
+    "plugins/opinion-manager/tests/test_versioned.py": {
+      "sha256": "a36fa6ea911566c55b58f479acb6175eb354862d1180fd31c990cdbdfca8c99e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/.codex-plugin/plugin.json": {
+      "sha256": "712714a3bf16baa2bdea2e6b791342744169b024689bfaed04fa35b3f204ab10",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/content.json": {
+      "sha256": "2afd0e96724349adba7804a131de66066721d17fc3df8fe2003d8264eb4d02b7",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/plugin.json": {
+      "sha256": "4e6836fb55958f78b4961746a810779930e90ff075c9a329576329d10f482ab6",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/asset-synonyms.example.json": {
+      "sha256": "a3338b98addd2b0fa386829850e0dd2667dff593ac7aa7f8e70b91372b3439c9",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/case-workspaces.md": {
+      "sha256": "885d8a384b8c63be3ad059cfebe21e61109157728c6d9e1789ecf634573c20cf",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/case.schema.json": {
+      "sha256": "ecb37f084b901786bdc878cdc7f1e5d74c2eb31722d6a10fe24f6d88768bcbde",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/sop-interview.md": {
+      "sha256": "de211d3c6466d2f5f83b0e8fea1fc571e7ba2b248f40c1e2346b0da4598904c0",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/references/sop.md": {
+      "sha256": "a9755250b97677d51d65a21beb4d5c375c1a8d4029cd752d80c4bc1bbd9f9f49",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/assets.py": {
+      "sha256": "75790f302e97137ec97a85f6867590e556e5f14360567641cd710b3a645eb8f5",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case.py": {
+      "sha256": "60eb7768e8479d647665b9808652c6f70065dcfebf7c233fd42ddc9c5555f7bd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case_structure.py": {
+      "sha256": "f03107f3faf3f0e8f843537d1d861638e3cf9999b01796dce462ae67d23351d3",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/case_workspace.py": {
+      "sha256": "ac1eb90fe13059f9ef9433f9529c040536eb11ecf77fba1d9298ee2f327ebeea",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/i18n_orchestrator.py": {
+      "sha256": "cce79371de9ebff066eb34ac62b4bd2466df4c940ffebcc92ebfe01b597b73d5",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/locale/en.json": {
+      "sha256": "2aa0974130f2e7e8219f514924095151da90c293ab5fee5df741e94c6113c2a0",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/memory.py": {
+      "sha256": "6a1d12d3dd91135d30f97317f75819948ee5fea1b0c5f858aafe12c9c2ba1a50",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/private_paths.py": {
+      "sha256": "e1b30a7a237f6689a68180bba4efa08805792d8b97c0d44a02801559e092628f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_base.py": {
+      "sha256": "14ce5a6d08c86d8aacfd931cc1a538aaa28f37e73a71701bb0733b63b7cc6cd0",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_cli.py": {
+      "sha256": "6ac1ea8c8c72fd325b72303182988854dad2487aaa6fd40b1accc552a85b6d77",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_demo.py": {
+      "sha256": "4990d51f20956fc8dc75b7018daeacac85210385369d136e8b64db8cbab8af8c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_ext_actions.py": {
+      "sha256": "0c8aae248f83ced569f80038509903e263463aefd0e243ebda49d79d8ccdf78a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_extensions.py": {
+      "sha256": "1342ea32ffc86e6edfb95db28b0c8b8426ad8ef0d957f6c46aaa991c98ff55d2",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_extensions_demo.py": {
+      "sha256": "c515abc32eedbdab06b9208900e87990fcee0f02a692ff48047fb64c634444aa",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_maintain.py": {
+      "sha256": "da0e19b1c024b618fe2b9e8d35fa188a4dbd6a26f638f06fb858a04c39a6e168",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_menu.py": {
+      "sha256": "a67956a83f2b9defaa120c5093448771aee25ca51446fe8dc6d878cf5edc097f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_real.py": {
+      "sha256": "142899ec815feadd7da6e51cfad853233c43feab98e4b09f4a157fdd4a5f6537",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/project_write.py": {
+      "sha256": "1d87d81e4e7ed085d37bb67341c9b3c46493fe240b2c6c1e948d0c2f0c85665e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/sop.py": {
+      "sha256": "d4e074ef9ef09bd1e9cf7b63b140d91f0ec694f28e4f2f3d66c8c6fa91d3d740",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/sop_structure.py": {
+      "sha256": "7b91baece98838f8a99d50170562a66ec5a3ae76200bd8f81dba0ab59f4368ac",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/runtime/wf.py": {
+      "sha256": "8eaf856175e3a59a70b263a385d0d835213a43df429201c86ce274f40dcd63ed",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/skills/project-orchestrator/SKILL.md": {
+      "sha256": "b39e0a5ce10c60dd8925832ff5f8cc9a851b92ee000f515d55e84bec6dcefc02",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/skills/project-orchestrator/agents/openai.yaml": {
+      "sha256": "8f6f8fa7ff4a6d79ff5b417e19eeef2f83272a4d45df17fcd0764bc1af2c42eb",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/blank/SOP.en.md": {
+      "sha256": "f7929e5840f1a4ea7cb832d949237be43328c662c690fcc2e204bb36233940fa",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/blank/SOP.md": {
+      "sha256": "efec23ad29102590bdd16268c79222eb6f14fa8a1352deb27a5e55d35c413704",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/SOP.en.md": {
+      "sha256": "e30bb6fb0282f23e326e70404ac66e4419c99a53a2e3eb2cabfdffa5c2754e55",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/SOP.md": {
+      "sha256": "eaa8d7eb2338fe71b7a05fec662230a7e0b2e36f4727657558f2b51ed0a98027",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/templates/digest.en.md": {
+      "sha256": "9461e971a40307434d5460b12cf0938038ab6af2b2c98ce5a02260d816bc9d7a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/knowledge-digest/templates/digest.md": {
+      "sha256": "0741e5a8008119528c5fc71cc9c3c8064dc1173d61465643e8dc5745883ccb9a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/video-to-transcript/SOP.en.md": {
+      "sha256": "5c5797eed4fdadaec4089b43843bc43287d68cc6699e9fafd1803aa8e8e253a4",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/video-to-transcript/SOP.md": {
+      "sha256": "b8dfb1ecb0e2cf2a13d4acad78ee759f6c402776443cf5a70e2d6390a120ba4e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/SOP.en.md": {
+      "sha256": "fd9734078467066463c8005c459a9c3885236545e622b1219c52cf5633045de8",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/SOP.md": {
+      "sha256": "9dee7bcbf351e395a66e042929eede0bb425a92a88db14944b4348f2de656b1b",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/templates/review.en.md": {
+      "sha256": "ba727876879208caad46c6ce9c51411e1f451e72003572ccd18de9ef6f55811e",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/sop-templates/weekly-review/templates/review.md": {
+      "sha256": "cf8321a1739cecf6286d591e88a6af86831b01c12e77834a873ea497a5db127c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/templates/CASE.en.md": {
+      "sha256": "4aec0fab19c83bb5c2b72a31bbedb3425c82efb13e5d436f5cee35496d6eab74",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/templates/CASE.md": {
+      "sha256": "a33ffcec5c239cbcf4c0828f08336c578d6d184363b01db1419f74fcdc9e1086",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/fixtures/extensions_inventory.json": {
+      "sha256": "bc78fb276af8b1a989b3b22bb423412503fc76e0768013862ed796660d7fbaae",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_assets.py": {
+      "sha256": "e08e18906c08abac45826701760a7b01d79054ebea0f9bbb8a7b69f6c96ae85f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case.py": {
+      "sha256": "1bd82c2a9594c5ecc4d52a71f8cb4f5b2b093e0050fa082cef9b59aed3496eeb",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case_language.py": {
+      "sha256": "9383165cdf7241a55c359949bfe2e96b978db8f7c36dfa41ec99deae04c65a37",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_case_workspace.py": {
+      "sha256": "737bfcf11beeebd1621200111eb62ca4efe76d3468dab034c798b469f7266db6",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_content_change_labels.py": {
+      "sha256": "9b3caf6974026a652de3915d5452c65cfd3a5d72d2c14814938adcd808b74565",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_content_default_label.py": {
+      "sha256": "0862cf3fd27cab4067ad542d85cabe57d4fb661ee7d4270c701e1268dee16028",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_content_merge_fix.py": {
+      "sha256": "56a6f1de9a7c981e5456cab54cb9141797296b5e302c2413791be1a0adbf1961",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_memory.py": {
+      "sha256": "6c8ba9ce14543f50b128f20ac431b4d442b7f6c28d8e2acadc75a58551fa4834",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_private_decisions.py": {
+      "sha256": "697b3cd8bfdf60c08c53251170de13014ecd2a9919d9023341e6c1f950f096d2",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_private_paths.py": {
+      "sha256": "e6f3834105be1522c9ecc5636cd6fcd0bef52c9683eb8ac5c6d496b3cc4f0708",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_cli.py": {
+      "sha256": "31afb9754705caf19678c7969ae7557c00915e025083c61c3a6c23d466357528",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions.py": {
+      "sha256": "9bbe0069a5c7b1b104c5c9a3d5d271a0810a50543bc0a0eb660efd6c0f8fba26",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_actions.py": {
+      "sha256": "c346b09ff68142d9582dcc9eb2575def22f6614749c3bf338020fa8237f787bd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_menu.py": {
+      "sha256": "9b596e279cc384517c2fc2d5467e1754d7e8cec8da3aa9544c3b7733acad0efd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_real.py": {
+      "sha256": "4f51779f42491a7ab37c0105563df9fde393190a3cb97bde89ed2af0c6efd30f",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_extensions_wizard.py": {
+      "sha256": "d9dfca301caa02b1cc5fe4d88d04863a50d13f736a89c31b61050e54fffa1e1a",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_health_merge.py": {
+      "sha256": "acb804e2ebac91b4206e92a1b934a04211fe15a4b659403266d6d00f813e7469",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_maintain_clients.py": {
+      "sha256": "009c34fee60e7244954caf3ad6882e0b9e73af1a4c44be4a06cbbfc6ef76ef06",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_maintain_source.py": {
+      "sha256": "c457cddf455892379e596bf4f4776ff1bfa152f30f841dd27d6edcf2dab31b59",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_real.py": {
+      "sha256": "ec1a87aa85515da87a8c6bf7bb05cda9ebedeaad9be915df9039f53a907d9994",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_project_scaffold.py": {
+      "sha256": "b0e75a99729daf7fe015f7d8e4f94d9449054f2a84c846fee40dbaee7dfc49dd",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_sop.py": {
+      "sha256": "a6c90be646cdac82a8794f120c6a4f713702992fc8df76ff085f1a9a5266a21c",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_sop_language.py": {
+      "sha256": "c35eae551920ba4e780327cb2e47c4930788484bdbfac0e8c41e8cd5f108d391",
+      "kind": "file"
+    },
+    "plugins/project-orchestrator/tests/test_wf.py": {
+      "sha256": "52728951ac69ebf6dd1064e2deb99b621570dd39cf380222fc59026773aebe59",
+      "kind": "file"
+    },
+    "release/ACCEPTANCE.md": {
+      "sha256": "f1330041d4985f48e408f0015fd464729844756ef8e4011e113190862fd45400",
+      "kind": "file"
+    },
+    "release/VERSIONING.md": {
+      "sha256": "8238f780887584921114bc2d60215941a93eba15e3d752239d889eb49277aecf",
+      "kind": "file"
+    },
+    "release/acceptance/extract_blocks.py": {
+      "sha256": "a10e913206d1062176385e2a566b77837c569f4acb1a5376bbc685c33c95b89b",
+      "kind": "file"
+    },
+    "release/acceptance/mkfixture.py": {
+      "sha256": "0324cb2ad6c5ecfbab03eb3c99d7c064d1eae22cd17003161c95da57b518a518",
+      "kind": "file"
+    },
+    "release/verify/README.md": {
+      "sha256": "87e0b9998af06cf83fdc2b0fade5b24f9abc8ee2d7a8b5ae28c3e476130f1a81",
+      "kind": "file"
+    },
+    "release/verify/_common.py": {
+      "sha256": "96e614f60e57bd69b055cc1250d0722a4e0c05a82077ab2c68919814645376f5",
+      "kind": "file"
+    },
+    "release/verify/compare_runs.py": {
+      "sha256": "276de0fe38229f3f5f57717a1492e12d5addda3d3128765a1a1e609209dfff9e",
+      "kind": "file"
+    },
+    "release/verify/manifests/compare_runs.json": {
+      "sha256": "87dc3e1038df4e17bdfc24a5f701f986b4607d11745ddd54a07c0a9e05ccc47c",
+      "kind": "file"
+    },
+    "release/verify/payload_compare.py": {
+      "sha256": "4d3af2854da795b6b7a52a19488b611adb70e0cc183a0f92f7bc1e0af74435ca",
+      "kind": "file"
+    },
+    "release/verify/tag_matrix.py": {
+      "sha256": "46b7e5b62bfd491685e448c181bff248b27cd4ae7580c2dcbd0c8fd4be8f4e8e",
+      "kind": "file"
+    },
+    "scripts/attach_release.py": {
+      "sha256": "2605d94fe6a58ea882c74f7a536179214cdefd1de266c3c95d5206a56f1da935",
+      "kind": "file"
+    },
+    "scripts/bootstrap_and_init.py": {
+      "sha256": "f17bb5fc38810f42cbf0f53b1aaa784cdbbfb1272da2349f6f875c0a8cbd688f",
+      "kind": "file"
+    },
+    "scripts/ci_gate.py": {
+      "sha256": "d8b5d8a9c25144573088f25eed8e057aa9bb682146bd809c6912a3d2d1cd10d2",
+      "kind": "file"
+    },
+    "scripts/promote_check.py": {
+      "sha256": "d850b0bf08ad4681d7bdb79f5e4cca3e98bad6109ca5553297bc74faa562b94c",
+      "kind": "file"
+    },
+    "scripts/release_meta.py": {
+      "sha256": "5ad2f8edc047dae3ddfe8d08487a1022c2f91ba2dd6ddc1e622ab78844fb9dcc",
+      "kind": "file"
+    },
+    "scripts/release_model.py": {
+      "sha256": "eabb798332f8434b163dabb7a231aa25f569939a00adbf5e53f01b9a83bfceb3",
+      "kind": "file"
+    },
+    "scripts/release_notes.py": {
+      "sha256": "4285cbf1b5c0f3c8c9c87977563856d0a3a9950a388f1936a1302c3ba5a02198",
+      "kind": "file"
+    },
+    "scripts/release_workflow.py": {
+      "sha256": "1e38f887f76a55c624dbbb52275353bb4fa0b3b9aea7ad8939fb7bbfd24a17dc",
+      "kind": "file"
+    },
+    "scripts/validate_release.py": {
+      "sha256": "6324fc7d4d666093d73b99a7be0cc743305cb84949bafae850bf472861d09db1",
+      "kind": "file"
+    },
+    "tests/i18n-policy.json": {
+      "sha256": "bc461d5cc416ec1c95761e4343ab8270f95079ad9d31c7f672e4d64e21cbef75",
+      "kind": "file"
+    },
+    "tests/i18n_catalog.py": {
+      "sha256": "842f10fcb9182db11421720c0021b52f2aaf8356141a39af5b290f92b4bd73de",
+      "kind": "file"
+    },
+    "tests/test_acceptance_extract_blocks.py": {
+      "sha256": "7bc30987c7be60e63b5ed8e9b2b3ce3b9922336c96d8e13daa49988c8430073e",
+      "kind": "file"
+    },
+    "tests/test_acceptance_fixture.py": {
+      "sha256": "54dde85b349fdf9ae8711ef6d65296e508d0d410f345ba6e79a84ccdf42c58bb",
+      "kind": "file"
+    },
+    "tests/test_bootstrap_and_init.py": {
+      "sha256": "2f9ad976ca6da11993294538aa56d8b8fb8de35e4831bebedf67d5a060e6e420",
+      "kind": "file"
+    },
+    "tests/test_ci_gate.py": {
+      "sha256": "c220479d8ae13d736b015713631d4d9d6bf341208b22f52e7176c63cc7a60633",
+      "kind": "file"
+    },
+    "tests/test_cli_package.py": {
+      "sha256": "c0846ae0d35068074dc7a30f1fdc8edb84b9d2b0c397d96847d6f6620cfbe59c",
+      "kind": "file"
+    },
+    "tests/test_i18n.py": {
+      "sha256": "bb6a1a304bb8082497d7353fb18c9a73a9610c81a48325dd9a7caa3d9f9e9680",
+      "kind": "file"
+    },
+    "tests/test_i18n_catalog_order.py": {
+      "sha256": "a349f5a0fc5fd532f5a2bae1939177e660700ae85f3eb2cea43668083f6007e7",
+      "kind": "file"
+    },
+    "tests/test_i18n_commands.py": {
+      "sha256": "5a20558f3fb6079372d873cdefbb28482cd2f11380b6b6208172736a1f9bfdbd",
+      "kind": "file"
+    },
+    "tests/test_i18n_lint.py": {
+      "sha256": "f1e80dea6d0525a76f672024851cdc6648c046dc71e1bc614d677c7aeb34d5c2",
+      "kind": "file"
+    },
+    "tests/test_i18n_plural.py": {
+      "sha256": "15d39a92278eeb82cb9212e61f723144da8617691e0dc3afa1bc428fea0b0b3a",
+      "kind": "file"
+    },
+    "tests/test_i18n_policy.py": {
+      "sha256": "81a83c43b451e3130b855579f1475dece285a295f82bdbd4a364a5dbc7bc4b08",
+      "kind": "file"
+    },
+    "tests/test_migration_window_matrix.py": {
+      "sha256": "91bd7534ee741a1fa991b4f0486a0a70b437e5d65f7bd4c8410ff944f05bec0a",
+      "kind": "file"
+    },
+    "tests/test_plugin_e2e.py": {
+      "sha256": "626e56b9fc02d7ffbfe866d30ca0231ce1243a11125379cc68ba4c1a463abbbb",
+      "kind": "file"
+    },
+    "tests/test_private_paths_sync.py": {
+      "sha256": "400383be08de137fad480842eefd080da227ce3f0252be1081a662abadcdb3c7",
+      "kind": "file"
+    },
+    "tests/test_profile_reads_guard.py": {
+      "sha256": "097d5c96264bb652f689164f8d3d626100c416b9033c5bc1eaa6bdab8b460209",
+      "kind": "file"
+    },
+    "tests/test_project_file_language.py": {
+      "sha256": "ce61d34a7ac14869cb3f23df3311e37fe073aa0f81254432680ed15c1de55966",
+      "kind": "file"
+    },
+    "tests/test_project_file_language_audit.py": {
+      "sha256": "d5ede8c7d28a9ef16e12eec9d4057636904473e23dfcf3f977f37641fd45dd4b",
+      "kind": "file"
+    },
+    "tests/test_project_launcher.py": {
+      "sha256": "0b6ef157065aebf4b98fe4de8266dfce9a1d015ae0caafd0c11719967187eb04",
+      "kind": "file"
+    },
+    "tests/test_promote_check.py": {
+      "sha256": "81acc48b84eaf059a386044320ba4215baafffaf5a27476aca71adfa5ae5e094",
+      "kind": "file"
+    },
+    "tests/test_public_metadata.py": {
+      "sha256": "e2c5b65bb100393dd407cc759af14cc1bce47548f799f352da7df601ba518e5b",
+      "kind": "file"
+    },
+    "tests/test_public_privacy.py": {
+      "sha256": "e83215e2d87105fb99a4af7b799931c0bd4fad789c364f21c720e686ac180899",
+      "kind": "file"
+    },
+    "tests/test_release_meta.py": {
+      "sha256": "e952548abf5d73f50f8cb5561b24571f6e7347f9d36927d2fb8be9b40dd8dd8c",
+      "kind": "file"
+    },
+    "tests/test_release_verify.py": {
+      "sha256": "37de733e07f6ce1f5f05fa8db8f36e3a353ed2cd4719ab7bd7631697820d9179",
+      "kind": "file"
+    },
+    "tests/test_release_workflow.py": {
+      "sha256": "05b6cb3147ed4805a54e46b38a4cb52581eff2cc0a9e45c0297d8e654997e566",
+      "kind": "file"
+    },
+    "tests/test_site_release.py": {
+      "sha256": "60936c5a46b74ff33953939fcf2a148447140003f3f4af4e0cfdc9221ecd089f",
+      "kind": "file"
+    },
+    "tests/test_validate_release.py": {
+      "sha256": "558bae0d2b5219bd72a9169d9a17e6b2ca4a47f76bff2b7a269eefcac68efc41",
+      "kind": "file"
+    }
+  }
+}
