@@ -109,7 +109,8 @@
         "scope": "project",
         "path": "<project>/.mcp.json",
         "format": "json",
-        "root_key": "mcpServers"
+        "root_key": "mcpServers",
+        "approval_required": true
       }
     ]
   },

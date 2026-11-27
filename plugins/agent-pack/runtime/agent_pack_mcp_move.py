@@ -32,6 +32,7 @@ import agent_pack_config as core  # noqa: E402
 import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_mcp_json as mcp_json  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
+import agent_pack_reach as reach  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
 # Writers as data: the clients whose MCP stores this module knows how to edit are the ones whose driver declares a
@@ -271,6 +272,11 @@ def build_plan(home: Path, project: Path, ref: str, to: str, allow_widen: bool =
         else:
             steps.append(ext.step("s4", "keep-source", "certain", **{"from": plan["source"]["path"]}))
         steps.append(ext.step(f"s{len(steps) + 1}", "confirm-in-client", "best-effort", client=target_client))
+        retire = [reach.retire_mcp_item(item["store"], name, item["scope"])] if plan["retire_source"] else []
+        add = reach.add_item("mcp", name, target_client, target_scope, None, item.get("fingerprint"))
+        reach.attach(plan, {"kind": "mcp", "name": name, "retire": retire, "add": [add],
+                            "other_machines": item["scope"] == "project" and target_scope == "user"},
+                     reach.facts_for("mcp", [name], home, root))
     plan["status"] = "blocked" if blocks else "ready"
     ctx.update(home=home, project=root, recovery_override=recovery_override, entry=raw, package=package,
                source_scope=item["scope"], target_scope=target_scope, name=name)

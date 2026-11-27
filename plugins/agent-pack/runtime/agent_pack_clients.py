@@ -51,7 +51,8 @@ PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 STEP_ARG = re.compile(r"(?:[A-Za-z0-9._:=@/+-]|\{(?:" + "|".join(PLACEHOLDERS) + r")\}){1,128}")
 DECLARATION_KEYS = {"schema_version", "id", "display", "detect", "distribution", "stores", "capabilities"}
 MAX_DECLARATION_BYTES = 64 * 1024
-OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp", "content"}
+OPTIONAL_BUILTIN_KEYS = {"lifecycle", "precedence", "runtime_cache", "hooks", "unsupported", "sync", "mcp", "content",
+                         "compat_reads"}
 HOOK_EVENTS = ("session-start", "prompt-submit", "stop")  # canonical event names (design section 4.7)
 # Output adapters by output format, never by client id; agent_pack_nudge.ADAPTERS implements exactly these.
 HOOK_OUTPUTS = ("hookSpecificOutput", "additional_context", "followup_message", "decision_block", "injectSteps",
@@ -76,7 +77,10 @@ CONTENT_KEYS = {"manifest", "companions", "skills", "context"}
 CONTENT_SKILLS = ("agent-skills",)
 CONTENT_CONTEXTS = ("agents-md", "pointer-file", "unsupported")
 CACHE_KEYS = {"base", "env", "glob"}
-STORE_KEYS = {"scope", "path", "format", "status", "write_target", "root_key", "managed_by", "trust_required"}
+STORE_KEYS = {"scope", "path", "format", "status", "write_target", "root_key", "managed_by", "trust_required",
+              "approval_required"}
+COMPAT_READ_KEYS = {"scope", "path", "status", "source_url"}
+COMPAT_READ_STATUSES = ("observed", "documented")
 MANAGED_BY = ("agent-pack-state",)  # entries of this store are recognised through agent-pack's own sync state records
 EVIDENCE_LEVELS = ("file", "setting", "cli", "unknown")
 PRECEDENCE_KINDS = ("skills", "mcp")
@@ -139,11 +143,30 @@ def _check_stores(entries: Any, source: str, kind: str) -> None:
                f"stores.{kind}[].managed_by must be one of {', '.join(MANAGED_BY)}")
         _check(isinstance(entry.get("trust_required", False), bool) and (kind == "mcp" or "trust_required" not in entry),
                source, "trust_required must be a boolean and applies to mcp stores only")
+        _check(isinstance(entry.get("approval_required", False), bool) and (kind == "mcp" or "approval_required" not in entry),
+               source, "approval_required must be a boolean and applies to mcp stores only")
         reads_keys = kind == "mcp" and entry["format"] in ("json", "toml")
         _check(reads_keys == ("root_key" in entry) and (not reads_keys or _is_text(entry["root_key"])), source,
                "root_key (the key holding the servers) is required for json / toml mcp stores and only for them")
         _check("#" not in entry["path"] or (kind == "mcp" and entry["format"] == "json"), source,
                "a #section in a path applies to json mcp stores only")
+
+
+def _check_compat_reads(value: Any, source: str) -> None:
+    """``compat_reads`` (reach, design #184 section 3.2): places the client documents reading but inventory does not model."""
+    _check(isinstance(value, dict) and set(value) <= {"skills", "mcp"}, source, "compat_reads must be an object with skills / mcp lists")
+    for kind, entries in value.items():
+        _check(isinstance(entries, list), source, f"compat_reads.{kind} must be a list")
+        for entry in entries:
+            _check(isinstance(entry, dict) and {"scope", "path"} <= set(entry) <= COMPAT_READ_KEYS, source,
+                   f"compat_reads.{kind}[] needs scope, path (optional: status, source_url)")
+            _check(entry["scope"] in SCOPES, source, f"compat_reads.{kind}[].scope must be one of {', '.join(SCOPES)}")
+            _check(_is_text(entry["path"], 200) and (entry["path"].startswith("~/") or entry["path"].startswith("<project>/")),
+                   source, f"compat_reads.{kind}[].path must start with ~/ or <project>/")
+            _check(entry.get("status", "documented") in COMPAT_READ_STATUSES, source,
+                   f"compat_reads.{kind}[].status must be one of {', '.join(COMPAT_READ_STATUSES)}")
+            _check(entry.get("source_url") is None or _is_text(entry["source_url"], 200), source,
+                   f"compat_reads.{kind}[].source_url must be a one-line string or null")
 
 
 def _check_location(entry: Any, source: str, label: str) -> None:
@@ -456,6 +479,8 @@ def validate_builtin(data: Any, source: str) -> dict:
            and all(isinstance(v, bool) for v in capabilities.values()), source,
            f"capabilities must hold the booleans {', '.join(CAPABILITIES)} (optional: {', '.join(EXTENDED_CAPABILITIES)})")
     _check_precedence(data.get("precedence", []), source)
+    if "compat_reads" in data:
+        _check_compat_reads(data["compat_reads"], source)
     for flag in ("user_mcp_write", "user_skill_write"):
         _check(not capabilities.get(flag) or "sync" in data, source, f"capabilities.{flag} needs a sync declaration")
     for flag in ("project_mcp_write", "project_skill_write"):
@@ -722,6 +747,13 @@ def precedence(client: str, kind: str) -> tuple[dict, ...]:
     """The ordered precedence entries a driver declares for ``kind`` (``skills`` | ``mcp``); empty when it declares none."""
     driver = get(client)
     return tuple(item for item in driver.get("precedence", []) if item["kind"] == kind) if driver else ()
+
+
+def compat_reads(client: str, kind: str) -> tuple[dict, ...]:
+    """The ``compat_reads`` places of ``client`` for ``kind`` (``skills`` | ``mcp``): read by the impact computation only,
+    never by inventory or ``relocate`` (so their output does not change). Empty when the driver declares none."""
+    driver = get(client)
+    return tuple((driver or {}).get("compat_reads", {}).get(kind, ())) if driver else ()
 
 
 def skill_write_targets() -> dict[tuple[str, str], str]:

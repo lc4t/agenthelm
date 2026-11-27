@@ -33,6 +33,7 @@ import agent_pack_desktop as desktop  # noqa: E402
 import agent_pack_ext_common as ext  # noqa: E402
 import agent_pack_inventory as inv  # noqa: E402
 import agent_pack_mcp_move as mcp_write  # noqa: E402
+import agent_pack_reach as reach  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 
 DECISIONS_SCHEMA = 1
@@ -222,6 +223,7 @@ def _plan_retire(plan: dict, ctx: dict, group: dict, keep: str | None, home: Pat
             plan["warnings"].append(ext.warning("managed-origin", _("{0} 由插件管理：退役后下次同步可能又会出现").format(item["ref"]), ref=item["ref"]))
     steps.append(ext.step(f"s{len(others) + 2}", "confirm-in-client", "best-effort", client=group["client"]))
     ctx["kept_path"] = kept_real
+    _attach_impact(plan, group, others, home, project)
 
 
 def _plan_mcp(plan: dict, ctx: dict, group: dict, kept: dict, others: list[dict], home: Path, project: Path) -> None:
@@ -262,6 +264,17 @@ def _plan_mcp(plan: dict, ctx: dict, group: dict, kept: dict, others: list[dict]
         plan["warnings"].append(ext.warning("precedence-unknown", _("哪一份生效官方文档没有给出（或需要读设置），请自行确认后再执行")))
     if managed:
         steps.append(ext.step(f"s{len(steps) + 1}", "confirm-in-client", "best-effort", client=group["client"]))
+    _attach_impact(plan, group, others, home, project)
+
+
+def _attach_impact(plan: dict, group: dict, others: list[dict], home: Path, project: Path) -> None:
+    """Step 1 of #184: which clients lose, keep or swap the retired copies (file-level; added to ``warnings``, never blocks)."""
+    skill = group["kind"] == "skill"
+    names = sorted({item["name"] for item in group["members"]})
+    retire = [reach.retire_item(_entry_path(item, home, project), item["scope"]) if skill
+              else reach.retire_mcp_item(item["store"], item["name"], item["scope"]) for item in others]
+    reach.attach(plan, {"kind": group["kind"], "name": group["key"], "names": names, "retire": retire, "add": []},
+                 reach.facts_for(group["kind"], names, home, project))
 
 
 def _entry_path(item: dict, home: Path, project: Path) -> Path:
@@ -394,7 +407,9 @@ def render_text(plan: dict, applied: dict | None, command: str) -> str:
         if entry.get("backup"):
             lines.append(_("  先备份：{0}").format(entry["backup"]))
     for warning in plan["warnings"]:
-        lines.append(_("注意：{0}").format(warning["message"]))
+        if not warning["code"].startswith("impact-"):   # shown as the impact block below
+            lines.append(_("注意：{0}").format(warning["message"]))
+    lines.extend(reach.render_lines(plan["impact"]) if plan.get("impact") else [])
     for entry in plan["blocked"]:
         lines.append(_("已阻止 [{0}]：{1}").format(entry["code"], entry["message"]))
         for candidate in entry.get("candidates", []):
