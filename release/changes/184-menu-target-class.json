@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "summary": {
+    "zh": "「技能与 MCP」菜单读取 inventory 的 target_class：指纹相同但目标不同的 MCP 不再列为「不同名 · 同指纹」重复组，mcp_hints 以一行信息显示在按重复看的末尾，不计入重复数。旧版 agent-pack 没有这两个键时分组与输出不变。",
+    "en": "The Skills & MCP menu reads target_class from the inventory: MCP entries with the same fingerprint but a different target no longer form a \"different names, same fingerprint\" duplicate group, and mcp_hints appear as one line at the end of the by-duplicate view without counting as duplicates. With an older agent-pack that lacks both keys, grouping and output are unchanged."
+  },
+  "changes": [
+    {
+      "scope": "project-orchestrator",
+      "level": "patch",
+      "actions": [],
+      "user_action_required": [],
+      "touches": [],
+      "default_for_existing": "on",
+      "template_changes": [],
+      "contracts": []
+    }
+  ],
+  "suite": null
+}
