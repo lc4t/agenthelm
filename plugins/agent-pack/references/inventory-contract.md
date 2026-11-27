@@ -59,6 +59,20 @@ agenthelm inventory [--output json|text] [--client claude|codex|cursor|claude-de
   - Cursor：同名优先级文档未说明（设计文档 #82 §2.3，**本次未重读，未确认**），记 `precedence-undocumented`。
 - `overlap_hints[]`：不同名、同客户端、description 的词元集合 Jaccard 相似度 ≥ 0.8（每边至少 5 个词元；英文按单词，中文按相邻二字）。`hint_only: true`，只是机械提示，不声称语义相同。
 
+## 目标判定（MCP，#184）
+
+指纹只是已脱敏参数的摘要，同指纹的两条可能启动不同的服务：长于 64 字符的路径参数与形似令牌的服务标识被脱敏为 `<redacted>`，`env` 值与 Codex 的 `cwd` 不进指纹。**指纹与分组 id 不变**（`ext-decisions.json` 按组 id 记录决定）；本节的比较在进程内用原值完成，输出只有类别名、序号与可展示的标签，不含任何原值。`schema_version` 保持 1，键只追加。
+
+- **每个有指纹的 MCP 条目新增**（无指纹为 `null`）：
+  - `target`：`{kind, label, basis[]}`。`kind` 取 `remote`（URL）、`package`（`npx`、`bunx`、`uvx`、`pipx run`、`pnpm dlx`、`yarn dlx`、`npm exec` 启动的包，标识为规范化包名加版本规格）、`script`（解释器的第一个位置参数或 `-m` 模块）、`binary`（其他命令）、`opaque`（选项布局无法可靠解析，如 `docker run`、`python -c`、表外的带值选项；一律不猜）。`label` 只含可展示内容：remote 为 `host + path`（无查询），形似令牌的值显示为 `<redacted>`。`basis[]` 记目标取自哪里（`command`、`args[i]`、`url`）。
+  - `target_class`：`t-<指纹前 8 位>.<序号>`。同一份输出内取值相同即目标等价（目标、其余参数、`env` 非密钥值、`cwd`、URL 的路径与查询都相同）；序号按条目的既有排序依次分配，只在本份输出内有意义，不跨运行比较，不入决定文件。
+- **比较的字段**：目标；其余 `args`（`${VAR:-默认}` 规范化为 `${VAR}`，顺序敏感）；`env` 的非密钥值（键名命中密钥规则或值是强密钥形状的位置不比较）；`cwd`；URL（scheme 与 host 大小写、默认端口、末尾斜杠不算差异，路径、查询、非默认端口算差异）。`headers` 不参与。**凭据位置**（强密钥形状的参数、紧随密钥名选项的值、密钥名键的 `env` 值、URL 的用户信息与凭据形状的查询值）整体掩码，只比较它们是否相同。
+- **关系** `target_relation`：`same`；`different`（`differs_in[]` 取 `target|args|env|cwd|url`）；`unknown`（`reasons[]` 取 `opaque-launcher`、`credential-differs`、`unreadable`）。含 `opaque` 条目时只有 `env`、`cwd`、`url` 的差异算 `different`，其余为 `unknown`。
+- **`duplicates.mcps[]`**：`same-fingerprint` 与 `same-name` 的组各加 `target_relation`。`same-fingerprint` 组只有 `same` 留在这里，`different` 与 `unknown` 移入 `mcp_hints[]`；`same-name` 组不移动，`relation` 取值不变。
+- **`mcp_hints[]`**（顶层，仅非空时出现，是最后一个键）：`{kind, id, client, names[], stores[], fingerprint, target_relation, differs_in[], reasons[], refs[]}`。`kind` 取 `same-fingerprint-different-target` 或 `same-fingerprint-target-unconfirmed`；`id` 与该组作为重复组时相同（`g-` 加 `mcp|客户端|指纹` 的 SHA-256 前 10 位）。它不是重复，不进重复计数；`--output text` 增加一节「MCP 提示（不算重复）」。
+- **有意的输出差异**：同指纹但目标不同或无法确认的条目不再成组；`mcps[]` 条目多 `target` 与 `target_class`；顶层可能多 `mcp_hints`。没有这种碰撞的输入，输出去掉新键后与 6.15.0 逐字节相同。
+- **局限**：启动器选项表（`agent_pack_mcp_target.py` 里的数据表）覆盖不全，表外形式记 `opaque` 或 `binary`，向「降级为提示」方向失败，不向「误判为重复」方向失败；OAuth、`mcp-remote` 等传输形态不在本节处理（`mcp-remote` 只识别为 `package`）。
+
 ## 已知取舍与局限
 
 - **Cursor 的兼容加载未建模（有意）**：设计文档 #82 §2.3 记载 Cursor 还会兼容读取 `~/.claude/skills`、`~/.codex/skills`（及项目的 `.claude/skills`、`.codex/skills`）。本版本只列 Cursor 自己的存储（`~/.cursor/skills`、`~/.agents/skills`、`<project>/.cursor/skills`、`<project>/.agents/skills`），原因：该行为依据的是 #82 的一次读取，本次未重读，**未确认**；同名优先级与停用开关的落盘位置官方文档均未说明；建模会让同一个文件同时出现在 `claude` 与 `cursor` 两个客户端下，影响重复与字节汇总的口径。后续可作为新增键或新存储追加，不改既有键。因此 Cursor 的 Skill 清单与 description 字节汇总可能少于它实际加载的数量。

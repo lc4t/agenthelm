@@ -27,6 +27,7 @@ import agent_pack_config as core  # noqa: E402
 from i18n_agent_pack import _, N_  # noqa: E402
 import agent_pack_clients as client_registry  # noqa: E402
 import agent_pack_store_read as store_read  # noqa: E402
+import agent_pack_mcp_target as mcp_target  # noqa: E402
 
 SCHEMA_VERSION = 1
 CLIENTS = client_registry.default_ids()
@@ -115,45 +116,15 @@ def resolve_store(store: str, home: Path, project: Path | None) -> Path | None:
     return Path(store)
 
 
-ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}")
-_VAR_DEFAULT_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-[^}]*\}")
-REDACTED = "<redacted>"
-
-
-def _plain_variables(text: str) -> str:
-    """``${VAR:-default}`` keeps only the variable name: a default value is a value."""
-    return _VAR_DEFAULT_RE.sub(lambda match: "${" + match.group(1) + "}", text)
-
-
-def _safe_reference(text: str) -> bool:
-    return core._safe_env_reference(text)
+ENV_REF = mcp_target.ENV_REF
+REDACTED = mcp_target.REDACTED
+_plain_variables = mcp_target.plain_variables
+_safe_reference = mcp_target.safe_reference
 
 
 def _redact_args(args: list[Any]) -> list[str]:
     """Arguments with credential-looking values replaced; ``${VAR}`` references (names) stay."""
-    result: list[str] = []
-    previous_secret_flag = False
-    for raw in args:
-        text = _plain_variables(str(raw))
-        secret = False
-        if previous_secret_flag and not text.startswith("-") and not _safe_reference(text):
-            result.append(REDACTED)
-            previous_secret_flag = False
-            continue
-        previous_secret_flag = False
-        if text.startswith("-") and "=" in text:
-            flag, value = text.split("=", 1)
-            if (core.SECRET_NAME_RE.search(flag) or core._secret_like_arg(value)) and not _safe_reference(value):
-                result.append(f"{flag}={REDACTED}")
-                continue
-        elif text.startswith("-") and core.SECRET_NAME_RE.search(text):
-            previous_secret_flag = True
-        if core.SECRET_VALUE_RE.search(text) and not _safe_reference(text):
-            secret = True
-        elif not text.startswith("-") and not _safe_reference(text) and core.looks_like_token(text):
-            secret = True
-        result.append(REDACTED if secret else text)
-    return result
+    return [arg.shown for arg in mcp_target.scan_args(args)]
 
 
 def _credential_query(key: str, value: str) -> bool:
@@ -478,7 +449,7 @@ def _names(mapping: Any) -> list[str]:
 
 def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home: Path,
                   state: dict[str, str], trust_required: bool = False, url_key: str = "url",
-                  disabled_key: str | None = None) -> dict:
+                  disabled_key: str | None = None, project: Path | None = None) -> dict:
     """A server entry reduced to what may be shown: no ``env`` / ``headers`` values, no tokens.
 
     ``state`` is the sync-state record of a store declared ``managed_by`` (empty otherwise); ``trust_required`` is the
@@ -510,11 +481,14 @@ def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home
     shown_command = _plain_variables(display_path(command, home, None)) if command else None
     shown_url = _redact_url(url) if url else None
     if transport == "stdio" and shown_command:
-        fingerprint = _digest("stdio", shown_command, *args)
+        fingerprint, branch = _digest("stdio", shown_command, *args), "stdio"
     elif shown_url:
-        fingerprint = _digest("url", shown_url)
+        fingerprint, branch = _digest("url", shown_url), "remote"
     else:
-        fingerprint = None
+        fingerprint, branch = None, ""
+    # The private comparison of what the entry starts (raw values, never output; ``observe`` removes it).
+    analysis = mcp_target.analyze(item, command, url, branch, url_key,
+                                  lambda text: _plain_variables(display_path(text, home, project))) if fingerprint else None
     refs = set(ENV_REF.findall(" ".join(filter(None, [command or "", url or "", *map(str, item["args"] if isinstance(item.get("args"), list) else [])]))))
     for container in ("env", "headers", "http_headers"):
         if isinstance(item.get(container), dict):
@@ -539,6 +513,7 @@ def normalize_mcp(name: str, raw: Any, client: str, scope: str, store: str, home
         "fingerprint_fields": ["command", "args"] if fingerprint and transport == "stdio" else (["url"] if fingerprint else []),
         "url_host": _host(shown_url) if shown_url and transport != "stdio" else None,
         "loaded": "unknown", "precedence": "unique", "shadowed_by": None,
+        "target": analysis["target"] if analysis else None, "target_class": None, "_target": analysis,
     }
     if name in state:
         record["origin"] = {"kind": "state-record", "detail": state[name]}
@@ -586,7 +561,7 @@ def _observe_mcp_store(client: str, decl: dict, home: Path, project: Path | None
     scoped = state if decl.get("managed_by") else {}
     options = client_registry.mcp_options(client)
     return [normalize_mcp(str(name), raw, client, scope, store, home, scoped, bool(decl.get("trust_required")),
-                          options["remote_url_key"], options["disabled_key"])
+                          options["remote_url_key"], options["disabled_key"], project)
             for name, raw in sorted(servers.items())]
 
 
@@ -755,14 +730,34 @@ def _mcp_effective(client: str, group: list[dict]) -> dict:
     return _effective(client, "mcp", group)
 
 
-def mcp_duplicates(mcps: list[dict]) -> list[dict]:
-    result = []
-    by_name: dict[tuple[str, str], list[dict]] = {}
+def group_id(kind: str, client: str, key: str) -> str:
+    """The id of a duplicate group (and of the ``mcp_hints[]`` entry that replaces a same-fingerprint group)."""
+    return "g-" + hashlib.sha256(f"{kind}|{client}|{key}".encode("utf-8")).hexdigest()[:10]
+
+
+def _fingerprint_groups(mcps: list[dict]) -> list[tuple[str, str, list[dict], list[str], dict]]:
+    """``(client, fingerprint, members, names, relation)`` of every same-client, same-fingerprint, several-names set; the
+    ``relation`` is the target comparison of ``agent_pack_mcp_target`` (entries without an analysis compare as ``unknown``)."""
     by_print: dict[tuple[str, str], list[dict]] = {}
     for item in mcps:
-        by_name.setdefault((item["client"], item["name"]), []).append(item)
         if item["fingerprint"]:
             by_print.setdefault((item["client"], item["fingerprint"]), []).append(item)
+    result = []
+    for (client, fingerprint), group in sorted(by_print.items()):
+        names = sorted({item["name"] for item in group})
+        if len(names) > 1:
+            result.append((client, fingerprint, group, names, mcp_target.relation([item.get("_target") for item in group])))
+    return result
+
+
+def mcp_duplicates(mcps: list[dict]) -> list[dict]:
+    """Duplicate MCP groups. A same-fingerprint set whose targets differ or cannot be confirmed is not a duplicate: it is in
+    ``mcp_target_hints`` instead. A ``same-name`` group (one name in several stores) is never moved; it gains
+    ``target_relation``."""
+    result = []
+    by_name: dict[tuple[str, str], list[dict]] = {}
+    for item in mcps:
+        by_name.setdefault((item["client"], item["name"]), []).append(item)
     for (client, name), group in sorted(by_name.items()):
         stores = sorted({item["store"] for item in group})
         if len(stores) < 2:
@@ -770,14 +765,30 @@ def mcp_duplicates(mcps: list[dict]) -> list[dict]:
         prints = {item["fingerprint"] for item in group}
         relation = "unknown" if None in prints else ("identical" if len(prints) == 1 else "different")
         result.append({"kind": "same-name", "client": client, "names": [name], "stores": stores,
-                       "relation": relation, "effective": _mcp_effective(client, group)})
-    for (client, fingerprint), group in sorted(by_print.items()):
-        names = sorted({item["name"] for item in group})
-        if len(names) < 2:
+                       "relation": relation, "effective": _mcp_effective(client, group),
+                       "target_relation": mcp_target.relation([item.get("_target") for item in group])["relation"]})
+    for client, fingerprint, group, names, verdict in _fingerprint_groups(mcps):
+        if verdict["relation"] == "same":
+            result.append({"kind": "same-fingerprint", "client": client, "names": names,
+                           "stores": sorted({item["store"] for item in group}), "relation": "identical",
+                           "fingerprint": fingerprint, "effective": None, "target_relation": "same"})
+    return result
+
+
+def mcp_target_hints(mcps: list[dict]) -> list[dict]:
+    """``mcp_hints[]``: same-fingerprint sets that are not duplicates because the targets differ or cannot be confirmed.
+    ``mcps`` already carry ``ref``. The id is the one the set had as a duplicate group."""
+    result = []
+    for client, fingerprint, group, names, verdict in _fingerprint_groups(mcps):
+        if verdict["relation"] == "same":
             continue
-        result.append({"kind": "same-fingerprint", "client": client, "names": names,
-                       "stores": sorted({item["store"] for item in group}), "relation": "identical",
-                       "fingerprint": fingerprint, "effective": None})
+        result.append({
+            "kind": ("same-fingerprint-different-target" if verdict["relation"] == "different"
+                     else "same-fingerprint-target-unconfirmed"),
+            "id": group_id("mcp", client, fingerprint), "client": client, "names": names,
+            "stores": sorted({item["store"] for item in group}), "fingerprint": fingerprint,
+            "target_relation": verdict["relation"], "differs_in": verdict["differs_in"], "reasons": verdict["reasons"],
+            "refs": sorted(item["ref"] for item in group)})
     return result
 
 
@@ -872,9 +883,13 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
     order = {client: index for index, client in enumerate(ALL_CLIENTS)}
     skills.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
     mcps.sort(key=lambda item: (order[item["client"]], SCOPE_ORDER[item["scope"]], item["store"], item["name"]))
+    mcp_target.assign_classes(mcps)
     duplicates = {"skills": skill_duplicates(skills, real_paths), "mcps": mcp_duplicates(mcps)}
     hints = overlap_hints(skills)
     _annotate(skills, mcps, duplicates)
+    target_hints = mcp_target_hints(mcps)
+    for item in mcps:
+        item.pop("_target", None)
     for item in skills:
         item.pop("_description", None)
     summary: dict[str, dict] = {}
@@ -906,6 +921,8 @@ def observe(home: Path, project: Path | None = None, clients: list[str] | None =
         report["desktop"] = desktop_info(home, platform)
     if probes:
         report["cli"] = {client: cli_section(result, home, project) for client, result in probes.items() if client in chosen}
+    if target_hints:
+        report["mcp_hints"] = target_hints   # last key, present only when there is something to say
     return report
 
 
@@ -939,6 +956,8 @@ RULE_TEXT = {
     "project-trust-unknown": N_("项目是否受信任未读取，无法判定哪份生效"),
     "unknown": N_("无法判定"),
 }
+DIFFERS_TEXT = {"target": N_("目标"), "args": N_("参数"), "env": N_("环境变量"), "cwd": N_("工作目录"), "url": N_("地址")}
+HINT_REASON_TEXT = {"opaque-launcher": N_("启动方式无法解析"), "credential-differs": N_("凭据位置"), "unreadable": N_("读取失败")}
 RELATION_TEXT = {"same-file": N_("同一个文件"), "identical": N_("内容相同"), "different": N_("内容不同"),
                  "unknown": N_("无法比较")}
 
@@ -962,6 +981,16 @@ def render_text(report: dict) -> str:
         lines.append(_("重复 [{0}] {1}（{2}）：{3}").format(
             group["client"], label, _(RELATION_TEXT[group["relation"]]), ", ".join(group["stores"]))
             + (f" — {_(RULE_TEXT.get(verdict, verdict))}" if verdict else ""))
+    if report.get("mcp_hints"):
+        lines.append(_("MCP 提示（不算重复）"))
+        for hint in report["mcp_hints"]:
+            first, last = ", ".join(hint["names"][:-1]), hint["names"][-1]
+            if hint["target_relation"] == "different":
+                lines.append(_("  {0} 与 {1}：指纹相同，目标不同（差异：{2}）").format(
+                    first, last, ", ".join(_(DIFFERS_TEXT[name]) for name in hint["differs_in"])))
+            else:
+                lines.append(_("  {0} 与 {1}：指纹相同，无法确认目标是否相同（{2}）").format(
+                    first, last, ", ".join(_(HINT_REASON_TEXT[name]) for name in hint["reasons"])))
     for hint in report["overlap_hints"]:
         lines.append(_("相似提示（仅机械比对，不是语义判断）[{0}] {1}：{2}").format(
             hint["client"], " / ".join(hint["names"]), hint["similarity"]))

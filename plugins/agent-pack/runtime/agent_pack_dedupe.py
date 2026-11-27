@@ -53,7 +53,7 @@ def decisions_path(home: Path) -> Path:
 # ------------------------------------------------------------------ groups
 
 def group_id(kind: str, client: str, key: str) -> str:
-    return "g-" + hashlib.sha256(f"{kind}|{client}|{key}".encode("utf-8")).hexdigest()[:10]
+    return inv.group_id(kind, client, key)
 
 
 def list_groups(report: dict) -> list[dict]:
@@ -76,7 +76,8 @@ def list_groups(report: dict) -> list[dict]:
             key = dup["fingerprint"]
         groups.append({"id": group_id("mcp", dup["client"], key), "kind": "mcp", "group_kind": dup["kind"],
                        "client": dup["client"], "key": key if dup["kind"] == "same-name" else "|".join(dup["names"]),
-                       "relation": dup["relation"], "effective": dup.get("effective"), "members": members})
+                       "relation": dup["relation"], "effective": dup.get("effective"), "members": members,
+                       "target_relation": dup.get("target_relation")})
     return groups
 
 
@@ -109,14 +110,32 @@ def _summary(group: dict, decisions: dict) -> dict:
 
 
 def cross_client_hint(report: dict, group: dict) -> list[dict]:
-    """D-CB4: the same MCP fingerprint in several clients is intentional by default and is never recommended for retirement."""
+    """D-CB4: the same MCP target in several clients is intentional by default and is never recommended for retirement.
+
+    "Same target" is the same ``target_class`` (the fingerprint alone also matches services that differ in a redacted
+    argument, an ``env`` value or a ``cwd``). Another client's entry with the same fingerprint but another class says
+    nothing, unless a launcher cannot be read (``opaque``): then the target cannot be confirmed, which is no reason to keep."""
     if group["kind"] != "mcp":
         return []
     prints = {item["fingerprint"] for item in group["members"] if item.get("fingerprint")}
-    others = sorted({item["ref"] for item in report["mcps"] if item["client"] != group["client"]
-                     and item.get("fingerprint") in prints})
-    return [ext.warning("cross-client-keep-recommended",
-                        _("其他客户端里有同指纹的条目：跨客户端的相同 MCP 不冲突，建议保留，不推荐退役"), refs=others)] if others else []
+    classes = {item.get("target_class") for item in group["members"]} - {None}
+    opaque = any((item.get("target") or {}).get("kind") == "opaque" for item in group["members"])
+    same, unconfirmed = set(), set()
+    for item in report["mcps"]:
+        if item["client"] == group["client"] or item.get("fingerprint") not in prints:
+            continue
+        if item.get("target_class") in classes:
+            same.add(item["ref"])
+        elif opaque or (item.get("target") or {}).get("kind") == "opaque":
+            unconfirmed.add(item["ref"])
+    result = []
+    if same:
+        result.append(ext.warning("cross-client-keep-recommended",
+                                  _("其他客户端里有同指纹的条目：跨客户端的相同 MCP 不冲突，建议保留，不推荐退役"), refs=sorted(same)))
+    if unconfirmed:
+        result.append(ext.warning("cross-client-target-unconfirmed",
+                                  _("其他客户端里有同指纹的条目，但无法确认目标相同：不据此建议保留"), refs=sorted(unconfirmed)))
+    return result
 
 
 # ------------------------------------------------------------------ plan
@@ -142,6 +161,12 @@ def build_plan(home: Path, project: Path, group: str, keep: str | None, retire_o
     plan["disposition"] = chosen[0]
     found = next((item for item in list_groups(report) if item["id"] == group), None)
     if found is None:
+        hint = next((item for item in report.get("mcp_hints", []) if item["id"] == group), None)
+        if hint is not None:
+            blocks.append(ext.blocked("not-a-duplicate-group", _("这个分组不是重复：指纹相同但目标不同或无法确认（见 inventory 的 mcp_hints）"),
+                                      target_relation=hint["target_relation"], differs_in=hint["differs_in"],
+                                      reasons=hint["reasons"], refs=hint["refs"]))
+            return _finish(plan), ctx
         blocks.append(ext.blocked("group-not-found", _("没有这个重复分组；先用 --list 查看"),
                                   candidates=[item["id"] for item in list_groups(report)]))
         return _finish(plan), ctx
@@ -150,6 +175,9 @@ def build_plan(home: Path, project: Path, group: str, keep: str | None, retire_o
     plan["members_digest"] = members_digest(found)
     plan["existing_decision"] = (decisions["decisions"].get(group) or {}).get("decision")
     plan["warnings"].extend(cross_client_hint(report, found))
+    if found["group_kind"] == "same-name" and found["kind"] == "mcp" and found["relation"] == "identical" \
+            and found.get("target_relation") in ("different", "unknown"):
+        plan["warnings"].append(ext.warning("fingerprint-collision", _("指纹相同但内容可能不是同一个服务：先确认两份的目标再处置")))
     ctx["group"] = found
 
     if chosen[0] in ("keep-all", "ignore", "unignore"):
