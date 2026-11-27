@@ -27,7 +27,7 @@ def _mcp(name: str, client: str, scope: str, store: str, fingerprint: str, *, tr
          env: tuple[str, ...] = (), evidence: str = "file", **extra: object) -> dict:
     entry = {"name": name, "client": client, "scope": scope, "store": store, "evidence": evidence, "transport": transport,
              "fingerprint": fingerprint, "fingerprint_fields": ["command", "args", "env_var_names"],
-             "env_var_names": list(env), "has_inline_secret": False}
+             "env_var_names": list(env), "has_inline_secret": False, "target_class": f"t-{fingerprint[:8]}.1"}
     entry.update(extra)
     return entry
 
@@ -56,7 +56,13 @@ INVENTORY = {
              url_host="docs.example.com", env=("DOCS_TOKEN",)),
         _mcp("local-db", "claude-desktop", "desktop", "<app-config>/claude_desktop_config.json", "99887766aabbccdd",
              has_inline_secret=True, evidence="unknown"),
+        # 指纹相同、目标不同（例如只有 cwd 不同）：不算重复，只出现在 mcp_hints
+        _mcp("docs-a", "claude", "project", ".mcp.json", "5566778899aabbcc", target_class="t-55667788.1"),
+        _mcp("docs-b", "claude", "project", ".mcp.json", "5566778899aabbcc", target_class="t-55667788.2"),
     ],
+    "mcp_hints": [{"kind": "same-fingerprint-different-target", "client": "claude", "names": ["docs-a", "docs-b"],
+                   "stores": [".mcp.json"], "fingerprint": "5566778899aabbcc", "target_relation": "different",
+                   "differs_in": ["cwd"], "reasons": [], "refs": ["mcp:docs-a@claude:project", "mcp:docs-b@claude:project"]}],
 }
 
 

@@ -210,13 +210,30 @@ def _entry(kind: str, raw: Any) -> dict | None:
             "fingerprint_fields": [item for item in fields if isinstance(item, str)] if isinstance(fields, list) else None,
             "env_var_names": [item for item in names if isinstance(item, str)] if isinstance(names, list) else None,
             "has_inline_secret": raw.get("has_inline_secret") if isinstance(raw.get("has_inline_secret"), bool) else None,
-            "url_host": _text(raw.get("url_host"))})
+            "url_host": _text(raw.get("url_host")),
+            "_tc": _text(raw.get("target_class"))})  # 旧版 agent-pack 没有这个键：None，分组保持旧行为
     if kind == "mcp":
         entry.update({"precedence": _text(raw.get("precedence")), "shadowed_by": _shadowed(raw.get("shadowed_by"))})
     referenced = _referenced(raw.get("referenced_by"))
     if referenced:
         entry["referenced_by"] = referenced
     return entry
+
+
+HINT_KINDS = ("same-fingerprint-different-target", "same-fingerprint-target-unconfirmed")
+HINT_DIFFERS = {"target": N_("目标"), "args": N_("参数"), "env": N_("环境变量"), "cwd": N_("工作目录"), "url": N_("URL")}
+
+
+def _hints(raw: Any) -> list[dict]:
+    """``mcp_hints[]`` 的白名单字段；不是重复，不进分组与计数。旧版 agent-pack 没有这个键。"""
+    result = []
+    for item in raw if isinstance(raw, list) else []:
+        names = [name for name in item.get("names") or [] if isinstance(name, str)] if isinstance(item, dict) else []
+        if names and item.get("kind") in HINT_KINDS:
+            differs = item.get("differs_in")
+            result.append({"kind": item["kind"], "client": _text(item.get("client")) or "unknown", "names": names,
+                           "differs_in": [name for name in differs if isinstance(name, str)] if isinstance(differs, list) else []})
+    return result
 
 
 def normalize(inventory: dict) -> dict:
@@ -239,7 +256,7 @@ def normalize(inventory: dict) -> dict:
             effective = item.get("effective") if isinstance(item, dict) else None
             if isinstance(effective, dict) and _text(effective.get("rule")) and _text(item.get("name")):
                 rules[(kind_name, item["name"])] = effective["rule"]
-    return {"rules": rules, "projects": known, "entries": entries,
+    return {"rules": rules, "projects": known, "hints": _hints(inventory.get("mcp_hints")), "entries": entries,
             "clients": sorted({*(name for name in names if isinstance(name, str)),
                                                    *(entry["client"] for entry in entries)}),
             "unknown_extra": len(unknown_extra) if isinstance(unknown_extra, list) else 0}
@@ -324,21 +341,23 @@ def build_groups(entries: list[dict], rules: dict | None = None) -> list[dict]:
             cls = "same-name-unknown" if None in keys else "same-name-same" if len(set(keys)) == 1 else "same-name-differs"
             groups.append(_group(kind, cls, name, members, rules))
         if kind == "mcp":
-            by_fp: dict[str, list[dict]] = {}
-            for entry in scoped:
+            by_fp: dict[tuple[str, str | None], list[dict]] = {}
+            for entry in scoped:  # 指纹相同但 target_class 不同：目标不同或未确认，不是重复（见 mcp_hints）
                 if entry["_fp"]:
-                    by_fp.setdefault(entry["_fp"], []).append(entry)
-            for fingerprint, members in by_fp.items():
+                    by_fp.setdefault((entry["_fp"], entry["_tc"]), []).append(entry)
+            split = {fingerprint for fingerprint, _tc in by_fp if sum(key[0] == fingerprint for key in by_fp) > 1}
+            for (fingerprint, target_class), members in by_fp.items():
                 if len({member["name"] for member in members}) > 1:
-                    groups.append(_group(kind, "diff-name-same-fp", fingerprint[:8], members, rules))
+                    key = target_class if fingerprint in split else None  # 同指纹拆成多组时分组 id 才带上目标类
+                    groups.append(_group(kind, "diff-name-same-fp", fingerprint[:8], members, rules, key))
     return sorted(groups, key=lambda group: (group["kind"] != "mcp", group["name"], group["class"]))
 
 
-def _group(kind: str, cls: str, name: str, members: list[dict], rules: dict) -> dict:
+def _group(kind: str, cls: str, name: str, members: list[dict], rules: dict, key: str | None = None) -> dict:
     clients = [member["client"] for member in members]
     cross = len(set(clients)) == len(clients)
     ordered = sorted(members, key=lambda member: (member["client"], member["scope"], member["store"] or ""))
-    return {"id": _group_id(kind, cls, name), "kind": kind, "class": cls, "name": name,
+    return {"id": _group_id(kind, cls, key or name), "kind": kind, "class": cls, "name": name,
             "label": CLASS_LABEL[(kind, cls)], "cross_client": cross,
             "evidence": "unknown" if any(member["evidence"] == "unknown" for member in members) else
             min((member["evidence"] for member in members), key=EVIDENCE_LEVELS.index),
@@ -555,7 +574,10 @@ def listing(analysis: dict, *, kind: str | None = None, client: str | None = Non
 
 
 def dups(analysis: dict, kind: str | None = None) -> dict:
-    return {"groups": [public_group(group) for group in analysis["groups"] if kind is None or group["kind"] == kind]}
+    data: dict[str, Any] = {"groups": [public_group(group) for group in analysis["groups"] if kind is None or group["kind"] == kind]}
+    if analysis["norm"]["hints"] and kind in (None, "mcp"):
+        data["hints"] = analysis["norm"]["hints"]  # 仅非空时出现，旧输出保持不变
+    return data
 
 
 REACH = {"project": "project", "local": "project", "user": "all", "personal": "all", "managed": "all", "enterprise": "all",
@@ -752,6 +774,14 @@ def render_dups(data: dict) -> tuple[list[str], list[dict]]:
             lines += render_group(len(numbered), group)
     if not numbered:
         lines.append(S.green(_("没有发现重复。")))
+    if data.get("hints"):
+        lines.append(S.bold(_("MCP 提示（不算重复，{0} 条）").format(len(data["hints"]))))
+        for hint in data["hints"]:
+            if hint["kind"] == "same-fingerprint-different-target":
+                why = _("目标不同（差异：{0}）").format(_("、").join(_(HINT_DIFFERS[name]) if name in HINT_DIFFERS else name for name in hint["differs_in"]))
+            else:
+                why = _("无法确认目标是否相同")
+            lines.append(S.dim(_("  {0}：{1} 指纹相同，{2}").format(hint["client"], _("、").join(hint["names"]), why)))
     return lines, numbered
 
 

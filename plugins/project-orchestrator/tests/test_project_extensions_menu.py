@@ -298,7 +298,7 @@ class DemoMenuTests(unittest.TestCase):
     def test_every_scenario_walks_through_the_screen(self) -> None:
         for scenario in project_demo.SCENARIOS:
             text = self.run_demo(scenario, ["9", "1", "", "2", "", "3", "1", "", "", "4", "d", "", "", "9", "code-review@claude:user", "", "", "q"])
-            self.assertIn("技能 7 个 · MCP 8 个", text, scenario)
+            self.assertIn("技能 7 个 · MCP 10 个", text, scenario)
             self.assertIn("按重复看", text)
             self.assertIn("演示数据", text)
             self.assertNotIn(FAKE_SECRET, text)
@@ -308,6 +308,101 @@ class DemoMenuTests(unittest.TestCase):
         self.assertFalse([line for line in text.splitlines() if CJK.search(line)], [line for line in text.splitlines() if CJK.search(line)][:3])
         self.assertIn("Skills & MCP", text)
         self.assertIn("Move or copy", text)
+
+
+class TargetClassTests(MenuCase):
+    """T3：同指纹的条目只在 target_class 相同时才算「不同名 · 同指纹」；mcp_hints 是一行信息，不算重复。没有这两个键就是旧版 agent-pack。"""
+
+    COPY = {"name": "notes-copy", "client": "claude", "scope": "user", "store": "~/.claude.json", "evidence": "file",
+            "transport": "stdio", "fingerprint": "a1b2c3d4e5f60718"}
+    HINT = {"kind": "same-fingerprint-different-target", "client": "claude", "names": ["notes-server", "notes-copy"],
+            "stores": ["~/.claude.json"], "fingerprint": "a1b2c3d4e5f60718", "target_relation": "different",
+            "differs_in": ["cwd"], "reasons": [], "refs": []}
+
+    def setup_inventory(self, copy_class: str | None, *, hint: dict | None = None, old: bool = False) -> None:
+        def change(data: dict) -> None:
+            data["mcps"].append(dict(self.COPY))
+            if not old:
+                for entry in data["mcps"]:
+                    if entry["fingerprint"] == "a1b2c3d4e5f60718":
+                        entry["target_class"] = "t-a1b2c3d4.1"
+                data["mcps"][-1]["target_class"] = copy_class
+                if hint:
+                    data["mcp_hints"] = [hint]
+        self.set_inventory(change)
+
+    def dups(self) -> dict:
+        return json.loads(self.run_cli("extensions", "dups", "--output", "json").stdout)["data"]
+
+    def test_old_agent_pack_without_the_keys_keeps_the_old_grouping_and_output(self) -> None:
+        self.setup_inventory(None, old=True)
+        data = self.dups()
+        self.assertEqual([g["label"] for g in data["groups"]].count("不同名 · 同指纹"), 1)
+        self.assertNotIn("hints", data)
+        text = self.run_menu(self.provider(), ["9", "3"])[1]
+        self.assertIn("重复 MCP（4 组）", text)
+        self.assertNotIn("MCP 提示", text)
+
+    def test_same_target_class_still_groups(self) -> None:
+        self.setup_inventory("t-a1b2c3d4.1")
+        self.assertEqual([g["label"] for g in self.dups()["groups"]].count("不同名 · 同指纹"), 1)
+
+    def test_different_target_class_is_not_a_duplicate_and_shows_one_hint_line(self) -> None:
+        self.setup_inventory("t-a1b2c3d4.2", hint=self.HINT)
+        data = self.dups()
+        self.assertNotIn("不同名 · 同指纹", [g["label"] for g in data["groups"]])
+        self.assertEqual([g["kind"] for g in data["groups"]].count("mcp"), 3)
+        self.assertEqual(len(data["hints"]), 1)
+        text = self.run_menu(self.provider(), ["9", "3"])[1]
+        self.assertIn("重复 MCP（3 组）", text)
+        self.assertIn("MCP 提示（不算重复，1 条）", text)
+        self.assertIn("claude：notes-server、notes-copy 指纹相同，目标不同（差异：工作目录）", text)
+        self.assertIn("重复 5 组（MCP 3 · 技能 2）", self.run_menu(self.provider(), ["9"])[1])
+
+    def test_hint_without_a_group_still_shows_and_the_screen_says_no_duplicates(self) -> None:
+        def clean(data: dict) -> None:
+            data["mcps"] = [{**self.COPY, "name": "a", "target_class": "t-a1b2c3d4.1"},
+                            {**self.COPY, "name": "b", "target_class": "t-a1b2c3d4.2"}]
+            data["skills"] = []
+            data["mcp_hints"] = [{**self.HINT, "names": ["a", "b"], "kind": "same-fingerprint-target-unconfirmed", "differs_in": []}]
+        self.set_inventory(clean)
+        text = self.run_menu(self.provider(), ["9", "3"])[1]
+        self.assertIn("没有发现重复", text)
+        self.assertIn("claude：a、b 指纹相同，无法确认目标是否相同", text)
+
+    def test_hint_lines_follow_the_interface_language(self) -> None:
+        self.setup_inventory("t-a1b2c3d4.2", hint=self.HINT)
+        text = self.run_menu(self.provider(), ["9", "3"], lang="en")[1]
+        self.assertIn("MCP hints (not duplicates, 1)", text)
+        self.assertIn("claude: notes-server, notes-copy have the same fingerprint, target differs (differs in: working directory)", text)
+        self.assertFalse([line for line in text.splitlines() if CJK.search(line)])
+
+    def test_one_fingerprint_split_into_two_target_classes_gives_two_groups_with_distinct_ids(self) -> None:
+        def split(data: dict) -> None:
+            for name, tc in (("notes-copy", "t-a1b2c3d4.2"), ("notes-twin", "t-a1b2c3d4.2")):
+                data["mcps"].append({**self.COPY, "name": name, "target_class": tc})
+            for entry in data["mcps"]:
+                if entry["fingerprint"] == "a1b2c3d4e5f60718" and "target_class" not in entry:
+                    entry["target_class"] = "t-a1b2c3d4.1"
+            data["mcps"][1]["name"] = "notes-other"  # codex 的那份改名：.1 这一类里有两个不同的名字
+        self.set_inventory(split)
+        groups = [g for g in self.dups()["groups"] if g["class"] == "diff-name-same-fp"]
+        self.assertEqual(len(groups), 2)
+        self.assertEqual(len({g["id"] for g in groups}), 2)
+
+    def test_malformed_hints_are_ignored_and_an_unknown_schema_version_still_wins(self) -> None:
+        self.set_inventory(lambda data: data.update(mcp_hints=["x", {"kind": "other", "names": ["a"]}, {"kind": self.HINT["kind"]}]))
+        self.assertNotIn("hints", self.dups())
+        self.set_inventory(lambda data: data.update(schema_version=7, mcp_hints=[self.HINT]))
+        text = self.run_menu(self.provider(), ["9", "3"])[1]
+        self.assertIn("不可用：inventory 的 schema_version 7", text)
+        self.assertNotIn("MCP 提示", text)
+
+    def test_demo_inventory_shows_the_hint_and_no_extra_group(self) -> None:
+        text = DemoMenuTests().run_demo("study", ["9", "3"])
+        self.assertIn("MCP 提示（不算重复，1 条）", text)
+        self.assertIn("claude：docs-a、docs-b 指纹相同，目标不同（差异：工作目录）", text)
+        self.assertIn("重复 MCP（3 组）", text)
 
 
 class RealMenuEnglishTests(MenuCase):
